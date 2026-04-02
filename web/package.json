@@ -1,0 +1,41 @@
+{
+  "name": "web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "react-router build",
+    "build:prod": "react-router build --mode production",
+    "dev": "react-router dev",
+    "start": "react-router-serve ./build/server/index.js",
+    "typecheck": "react-router typegen && tsc",
+    "format": "prettier --write .",
+    "lint": "prettier --check ."
+  },
+  "dependencies": {
+    "@react-router/fs-routes": "^7.13.2",
+    "@react-router/node": "7.13.2",
+    "@react-router/serve": "7.13.2",
+    "@types/js-cookie": "^3.0.6",
+    "clsx": "^2.1.1",
+    "isbot": "^5.1.36",
+    "jose": "^6.2.2",
+    "js-cookie": "^3.0.5",
+    "lucide-react": "^1.7.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router": "7.13.2",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@react-router/dev": "7.13.2",
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/node": "^22",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "prettier": "^3.8.1",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.7",
+    "vite-tsconfig-paths": "^5.1.4"
+  }
+}

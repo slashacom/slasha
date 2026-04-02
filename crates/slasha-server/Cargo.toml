@@ -1,0 +1,21 @@
+[package]
+name = "slasha-server"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "slasha-server"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.102"
+axum = "0.8.8"
+mime_guess = "2.0.5"
+rust-embed = { version = "8.11.0", features = ["interpolate-folder-path"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+thiserror = "2.0.18"
+tokio = { version = "1.50.0", features = ["full", "macros"] }
+tower-http = { version = "0.6.8", features = ["cors", "trace", "fs"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
