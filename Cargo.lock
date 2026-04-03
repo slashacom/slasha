@@ -1599,6 +1599,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "models"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "diesel",
+ "serde",
+ "ts-rs",
+]
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2557,6 +2567,7 @@ dependencies = [
  "dirs",
  "indicatif",
  "inquire",
+ "models",
  "reqwest",
  "serde",
  "serde_json",
@@ -2578,6 +2589,7 @@ dependencies = [
  "dotenv",
  "jsonwebtoken",
  "mime_guess",
+ "models",
  "rand_core 0.10.0",
  "rust-embed",
  "serde",
@@ -2587,7 +2599,6 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
- "ts-rs",
  "uuid",
  "zeroize",
 ]

@@ -5,6 +5,7 @@ use inquire::{Password, PasswordDisplayMode, Text};
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
+use models::user::User;
 
 #[derive(Deserialize)]
 struct AuthResponse {
@@ -54,12 +55,6 @@ pub async fn handle_login() -> Result<()> {
 
     pb.finish_with_message("Successfully logged in.");
     Ok(())
-}
-
-#[derive(Deserialize)]
-struct User {
-    email: String,
-    role: String,
 }
 
 pub async fn handle_me() -> Result<()> {

@@ -3,9 +3,7 @@ pub mod assets;
 
 pub mod auth;
 pub mod error;
-pub mod models;
 pub mod routing;
-pub mod schema;
 
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
