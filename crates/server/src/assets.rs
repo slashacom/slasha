@@ -15,7 +15,6 @@ pub async fn static_handler(path: Option<axum::extract::Path<String>>) -> impl I
         .map(|p| p.0)
         .unwrap_or_else(|| "index.html".to_string());
 
- 
     let path = path.trim_start_matches('/');
 
     if path.is_empty() || path == "index.html" {

@@ -1,5 +1,7 @@
-import { Link } from 'react-router';
+import { redirect } from 'react-router';
 import type { Route } from './+types/_index';
+import { queryClient } from '~/utils/query-client';
+import { getAuthMeOptions } from '~/queries/auth';
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -19,17 +21,6 @@ export default function Index() {
         <p className="max-w-2xl py-2 text-center text-2xl text-gray-500">
           A self hostable, open source PaaS for developers.
         </p>
-
-        <div className="flex flex-col items-center justify-center gap-4">
-          <div className="flex flex-row items-center justify-center gap-2 my-4">
-            <Link
-              to="/login"
-              className="flex flex-row items-center gap-2 rounded-full bg-black px-8 py-2 text-white hover:opacity-80"
-            >
-              Sign up
-            </Link>
-          </div>
-        </div>
       </div>
     </div>
   );

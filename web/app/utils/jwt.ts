@@ -17,13 +17,10 @@ export function decodeToken(token: string): TokenPayload {
 }
 
 export function setAuthToken(token: string) {
-  const isDev = import.meta.env.DEV;
-
   Cookies.set(TOKEN_STORAGE_KEY, token, {
     expires: 30,
     sameSite: 'lax',
-    secure: !isDev,
-    domain: isDev ? 'localhost' : '.slasha.app',
+    secure: window.location.protocol === 'https:',
   });
 }
 
@@ -48,9 +45,5 @@ export function getUser() {
 }
 
 export function removeAuthToken() {
-  const isDev = import.meta.env.DEV;
-
-  Cookies.remove(TOKEN_STORAGE_KEY, {
-    domain: isDev ? 'localhost' : '.slasha.app',
-  });
+  Cookies.remove(TOKEN_STORAGE_KEY);
 }

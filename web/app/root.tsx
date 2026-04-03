@@ -1,24 +1,47 @@
-import { Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router';
+import {
+  Links,
+  Meta,
+  Outlet,
+  Scripts,
+  ScrollRestoration,
+  useLocation,
+  useNavigate,
+} from 'react-router';
 import type { Route } from './+types/root';
+
+import { Toaster } from 'sonner';
+import { QueryClientProvider } from '@tanstack/react-query';
+
+import { queryClient } from '~/utils/query-client';
+
 import { ErrorView } from '~/components/global/error-view';
 import { Loader } from '~/components/icons/loader';
+import { NavigationProgress } from '~/components/interface/navigation-progress';
 
 import './styles/global.css';
+import { useEffect } from 'react';
+import { isLoggedIn } from './utils/jwt';
+import { getAuthMeOptions } from './queries/auth';
 
-export const links: Route.LinksFunction = () => [
-  { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-  {
-    rel: 'preconnect',
-    href: 'https://fonts.gstatic.com',
-    crossOrigin: 'anonymous',
-  },
-  {
-    rel: 'stylesheet',
-    href: 'https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap',
-  },
-];
+export const links: Route.LinksFunction = () => [];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (['/login', '/signup'].includes(location.pathname)) return;
+
+    if (!isLoggedIn()) {
+      navigate('/login');
+      return;
+    }
+
+    queryClient.fetchQuery(getAuthMeOptions()).catch((err) => {
+      // session expired, http.ts handles 401s and deletes the JWT and reloads
+    });
+  }, [location.pathname, navigate]);
+
   return (
     <html lang="en">
       <head>
@@ -28,9 +51,29 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
-        {children}
-        <ScrollRestoration />
-        <Scripts />
+        <QueryClientProvider client={queryClient}>
+          {children}
+          <ScrollRestoration />
+          <Scripts />
+          <Toaster
+            position="bottom-center"
+            richColors
+            className="flex w-full items-center justify-center rounded-lg bg-zinc-800 px-5 py-2 text-zinc-200 shadow-lg"
+            offset={{
+              top: 15,
+            }}
+            visibleToasts={1}
+            toastOptions={{
+              className: '!w-fit !bg-zinc-800 !text-zinc-300 !border-zinc-900',
+              style: {
+                width: 'fit-content',
+                maxWidth: 'fit-content',
+                padding: '8px 15px',
+              },
+            }}
+          />
+          <NavigationProgress />
+        </QueryClientProvider>
       </body>
     </html>
   );

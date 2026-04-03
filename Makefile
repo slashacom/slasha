@@ -1,21 +1,34 @@
-.PHONY: setup dev-server docker-build docker-run clean format lint
+.PHONY: setup migrate dev dev-cli dev-bundle docker-build docker-run clean format lint
 
-setup:
+.DEFAULT_GOAL := dev
+
+setup: migrate
 	cd web && bun install && bun run build
 	cargo build
 
-dev-server:
-	cd web && bun run build
-	cargo run -p slasha-server
+migrate:
+	mkdir -p db && touch db/slasha.db
+	cd crates/server && diesel migration run
+
+
+dev:
+	@trap 'kill $$(jobs -p)' EXIT; \
+	cargo run -p slasha-server & \
+	cd web && bun run dev & \
+	wait
 
 dev-cli:
 	cargo run -p slasha-cli -- $(ARGS)
+
+dev-bundle:
+	cd web && bun run build
+	cargo run -p slasha-server --features bundle
 
 docker-build:
 	docker build -t slasha-server:latest .
 
 docker-run:
-	docker run -p 3000:3000 slasha-server:latest
+	docker run --rm --init -p 3000:3000 slasha-server:latest
 
 clean:
 	@cargo clean

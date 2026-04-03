@@ -34,9 +34,12 @@ export async function httpCall<ResponseType = AppResponse>(
 
     const headers = new Headers({
       Accept: 'application/json',
-      Authorization: token ? `Bearer ${token}` : '',
       ...(options?.headers ?? {}),
     });
+
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
 
     if (!isMultiPartFormData) {
       headers.set('Content-Type', 'application/json');
@@ -54,7 +57,7 @@ export async function httpCall<ResponseType = AppResponse>(
     const data = doesAcceptHtml ? await response.text() : await response.json();
 
     // Logout user if token is invalid
-    if (data.status === 401 && (options?.handleUnauthorized ?? true)) {
+    if (response.status === 401 && (options?.handleUnauthorized ?? true)) {
       removeAuthToken();
       window.location.reload();
       return null as unknown as ApiReturn<ResponseType>;

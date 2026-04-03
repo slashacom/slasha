@@ -6,6 +6,7 @@ export type SadIconProps = {
 
 export function SadIcon(props: SadIconProps) {
   const { className } = props;
+
   return (
     <svg
       className={cn('size-6', className)}

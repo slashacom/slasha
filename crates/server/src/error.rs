@@ -17,6 +17,9 @@ pub enum Error {
     #[error("Unauthorized")]
     Unauthorized,
 
+    #[error("DB Error: {0}")]
+    DBError(#[from] diesel::result::Error),
+
     #[error("Bad Request: {0}")]
     BadRequest(String),
 }
@@ -33,6 +36,7 @@ impl IntoResponse for Error {
             }
             Error::NotFound(ref m) => (StatusCode::NOT_FOUND, m.clone()),
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
+            Error::DBError(ref e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
             Error::BadRequest(ref m) => (StatusCode::BAD_REQUEST, m.clone()),
         };
 
