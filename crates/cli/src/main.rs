@@ -1,6 +1,12 @@
+pub mod auth;
 mod clap_app;
+pub mod config;
+pub mod http;
 
-use crate::clap_app::{ClapApp, Command};
+use crate::{
+    clap_app::{ClapApp, Command},
+    config::Config,
+};
 use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -16,9 +22,22 @@ async fn main() -> anyhow::Result<()> {
     let cli = ClapApp::parse();
 
     match cli.command {
+        Command::Login => {
+            auth::handle_login().await?;
+        }
+
+        Command::Me => {
+            auth::handle_me().await?;
+        }
+        Command::SetUrl { url } => {
+            let mut conf = Config::load()?;
+            conf.base_url = Some(url.clone());
+            conf.save()?;
+
+            tracing::info!("Set Slasha API URL to: {}", url);
+        }
         Command::Status => {
-            let client = reqwest::Client::new();
-            let res = client.get("http://localhost:3000/api/health").send().await;
+            let res = http::client()?.get("/api/health").await;
 
             match res {
                 Ok(response) => {
@@ -30,8 +49,8 @@ async fn main() -> anyhow::Result<()> {
                         tracing::error!("Slasha server returned error: {}", response.status());
                     }
                 }
-                Err(_) => {
-                    tracing::error!("Could not connect to Slasha server at http://localhost:3000");
+                Err(e) => {
+                    tracing::error!("Could not connect to Slasha server: {}", e);
                 }
             }
         }
