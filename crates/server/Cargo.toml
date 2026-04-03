@@ -21,7 +21,6 @@ tokio = { version = "1.50.0", features = ["full", "macros"] }
 tower-http = { version = "0.6.8", features = ["trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-ts-rs = { version = "12.0.1", features = ["chrono-impl"] }
 uuid = { version = "1.23.0", features = ["v4", "serde"] }
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
 argon2 = { version = "0.5.3", features = ["std", "zeroize"] }
@@ -29,6 +28,7 @@ chrono = { version = "0.4.44", features = ["serde"] }
 zeroize = "1.8.2"
 rand_core = "0.10.0"
 dotenv = "0.15.0"
+models = { path = "../models" }
 
 [features]
 bundle = ["rust-embed", "mime_guess"]

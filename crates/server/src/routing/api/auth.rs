@@ -18,9 +18,9 @@ use crate::{
     AppState,
     auth::{TokenPayload, create_jwt, hash_password, verify_password},
     error::{Error, Result},
-    models::user::User,
-    schema::users,
 };
+
+use models::{schema::users, user::User};
 
 const EXP_TIME: usize = 30 * 24 * 60 * 60;
 

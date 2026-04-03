@@ -1,4 +1,4 @@
-.PHONY: setup migrate dev dev-cli dev-bundle docker-build docker-run clean format lint
+.PHONY: setup migrate gen-models dev dev-cli dev-bundle docker-build docker-run clean format lint
 
 .DEFAULT_GOAL := dev
 
@@ -10,6 +10,8 @@ migrate:
 	mkdir -p db && touch db/slasha.db
 	cd crates/server && diesel migration run
 
+gen-models:
+	cd crates/models && cargo test
 
 dev:
 	@trap 'kill $$(jobs -p)' EXIT; \
