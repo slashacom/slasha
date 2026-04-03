@@ -15,4 +15,17 @@ pub enum Command {
         override_usage = "slasha status"
     )]
     Status,
+
+    #[command(
+        name = "set-url",
+        about = "Set the base API URL of the remote slasha server",
+        override_usage = "slasha set-url <URL>"
+    )]
+    SetUrl { url: String },
+
+    #[command(name = "login", about = "Log into the slasha server")]
+    Login,
+
+    #[command(name = "me", about = "Get current user info")]
+    Me,
 }
