@@ -1,9 +1,13 @@
-use crate::error::Result;
+use crate::{AppState, error::Result};
 use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
 
-pub fn router() -> Router {
-    Router::new().route("/health", get(health_check))
+pub mod auth;
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/health", get(health_check))
+        .nest("/auth", auth::router())
 }
 
 async fn health_check() -> Result<Json<Value>> {

@@ -11,7 +11,7 @@ COPY crates/ ./crates/
 COPY Cargo.toml Cargo.lock ./
 COPY --from=frontend-builder /app/web/build/client /app/web/build/client
 
-RUN cargo build --release -p slasha-server
+RUN cargo build --release -p slasha-server --features bundle
 
 FROM debian:bookworm-slim
 WORKDIR /app
