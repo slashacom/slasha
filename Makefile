@@ -8,7 +8,7 @@ setup: migrate
 
 migrate:
 	mkdir -p db && touch db/slasha.db
-	cd crates/server && diesel migration run
+	cd crates/server && diesel migration run --database-url ../../db/slasha.db
 
 gen-models:
 	cd crates/models && cargo test
