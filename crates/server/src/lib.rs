@@ -4,6 +4,7 @@ pub mod assets;
 pub mod auth;
 pub mod error;
 pub mod extractors;
+pub mod middleware;
 pub mod routing;
 pub mod utils;
 
@@ -27,7 +28,7 @@ pub struct AppState {
 }
 
 pub async fn run(address: Option<SocketAddr>, state: AppState) -> anyhow::Result<()> {
-    let app = routing::router().with_state(state);
+    let app = routing::router(state.clone()).with_state(state);
 
     let address = address.unwrap_or_else(|| "0.0.0.0:3000".parse().unwrap());
 

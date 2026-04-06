@@ -23,6 +23,9 @@ pub enum Error {
     #[error("Bad Request: {0}")]
     BadRequest(String),
 
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
     #[error("Git Error: {0}")]
     GitError(#[from] GitError),
 }
@@ -33,37 +36,40 @@ pub enum GitError {
     Unauthorized,
     #[error("Bad Request: {0}")]
     BadRequest(String),
+    #[error("Repository Not Found")]
+    RepoNotFound,
+    #[error("Invalid Credentials")]
+    InvalidCredentials,
+    #[error("Not a member")]
+    NotMember,
     #[error("Internal Server Error: {0}")]
     Internal(#[from] anyhow::Error),
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        match self {
-            Error::GitError(e) => e.into_response(),
-            _ => {
-                let (status, error_message) = match self {
-                    Error::Internal(ref e) => {
-                        tracing::error!("Internal server error: {:?}", e);
-                        (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "Internal Server Error".to_string(),
-                        )
-                    }
-                    Error::NotFound(ref m) => (StatusCode::NOT_FOUND, m.clone()),
-                    Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
-                    Error::DBError(ref e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-                    Error::BadRequest(ref m) => (StatusCode::BAD_REQUEST, m.clone()),
-                    Error::GitError(_) => unreachable!(),
-                };
-
-                let body = Json(json!({
-                    "error": error_message,
-                }));
-
-                (status, body).into_response()
-            }
+        if let Error::GitError(e) = self {
+            return e.into_response();
         }
+
+        let (status, message) = match self {
+            Error::Internal(e) => {
+                tracing::error!("Internal server error: {:?}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal Server Error".to_string(),
+                )
+            }
+            Error::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
+            Error::DBError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+            Error::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
+            Error::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
+            Error::GitError(_) => unreachable!(),
+        };
+
+        let body = Json(json!({ "error": message }));
+        (status, body).into_response()
     }
 }
 
@@ -76,8 +82,17 @@ impl IntoResponse for GitError {
                 "Unauthorized",
             )
                 .into_response(),
+            GitError::RepoNotFound => {
+                (StatusCode::NOT_FOUND, "Repository Not Found").into_response()
+            }
+            GitError::InvalidCredentials => {
+                (StatusCode::UNAUTHORIZED, "Invalid Credentials").into_response()
+            }
+            GitError::NotMember => (StatusCode::FORBIDDEN, "Not a member").into_response(),
             GitError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg).into_response(),
-            GitError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.to_string()).into_response()
+            GitError::Internal(msg) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, msg.to_string()).into_response()
+            }
         }
     }
 }

@@ -34,24 +34,21 @@ where
             .ok_or_else(|| GitError::BadRequest("Missing slug".into()))?
             .trim_end_matches(".git");
 
-        tracing::info!("slug: {}", slug);
         let auth_header = parts
             .headers
             .get(header::AUTHORIZATION)
             .and_then(|h| h.to_str().ok())
+            .and_then(|s| s.strip_prefix("Basic "))
             .ok_or(GitError::Unauthorized)?;
-
-        let auth_header = auth_header
-            .strip_prefix("Basic ")
-            .ok_or(GitError::Unauthorized)?;
-
-        tracing::info!("auth_header: {}", auth_header);
 
         let decoded = BASE64_STANDARD
             .decode(auth_header)
-            .map_err(|_| GitError::Unauthorized)?;
-        let decoded = String::from_utf8(decoded).map_err(|_| GitError::Unauthorized)?;
-        let (email, password) = decoded.split_once(':').ok_or(GitError::Unauthorized)?;
+            .map_err(|_| GitError::InvalidCredentials)?;
+
+        let decoded = String::from_utf8(decoded).map_err(|_| GitError::InvalidCredentials)?;
+        let (email, password) = decoded
+            .split_once(':')
+            .ok_or(GitError::InvalidCredentials)?;
 
         tracing::info!("Git auth: {} {}", email, password);
 
@@ -64,17 +61,17 @@ where
             .filter(models::schema::users::email.eq(email))
             .first::<User>(&mut conn)
             .optional()?
-            .ok_or(GitError::Unauthorized)?;
+            .ok_or(GitError::InvalidCredentials)?;
 
         if !verify_password(password, &user.password_hash)? {
-            return Err(GitError::Unauthorized.into());
+            return Err(GitError::InvalidCredentials.into());
         }
 
         let app = models::schema::apps::table
             .filter(models::schema::apps::slug.eq(slug))
             .first::<App>(&mut conn)
             .optional()?
-            .ok_or(GitError::Unauthorized)?;
+            .ok_or(GitError::RepoNotFound)?;
 
         let is_member = models::schema::app_members::table
             .filter(models::schema::app_members::app_id.eq(&app.id))
@@ -84,7 +81,7 @@ where
             .is_some();
 
         if !is_member {
-            return Err(GitError::Unauthorized.into());
+            return Err(GitError::NotMember.into());
         }
 
         tracing::info!("verified user");

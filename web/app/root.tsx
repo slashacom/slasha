@@ -21,26 +21,29 @@ import { NavigationProgress } from '~/components/interface/navigation-progress';
 import './styles/global.css';
 import { useEffect } from 'react';
 import { isLoggedIn } from './utils/jwt';
-import { getAuthMeOptions } from './queries/auth';
 
 export const links: Route.LinksFunction = () => [];
+
+const guestRoutes = ['/', '/login', '/register'];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (['/login', '/signup'].includes(location.pathname)) return;
+    const isGuestRoute = guestRoutes.includes(location.pathname);
+    const isUser = isLoggedIn();
 
-    if (!isLoggedIn()) {
-      navigate('/login');
+    if (isUser && isGuestRoute) {
+      navigate('/apps');
       return;
     }
 
-    queryClient.fetchQuery(getAuthMeOptions()).catch((err) => {
-      // session expired, http.ts handles 401s and deletes the JWT and reloads
-    });
-  }, [location.pathname, navigate]);
+    if (!isUser && !isGuestRoute) {
+      navigate('/login');
+      return;
+    }
+  }, [location.pathname]);
 
   return (
     <html lang="en">
@@ -58,7 +61,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <Toaster
             position="bottom-center"
             richColors
-            className="flex w-full items-center justify-center rounded-lg bg-zinc-800 px-5 py-2 text-zinc-200 shadow-lg"
+            className="flex w-full items-center justify-center rounded-lg bg-zinc-800 px-5 py-2 text-zinc-200"
             offset={{
               top: 15,
             }}

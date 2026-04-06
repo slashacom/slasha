@@ -4,12 +4,22 @@ use serde_json::{Value, json};
 
 pub mod apps;
 pub mod auth;
+pub mod users;
 
-pub fn router() -> Router<AppState> {
+use crate::middleware::admin::admin_middleware;
+
+pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/health", get(health_check))
         .nest("/auth", auth::router())
         .nest("/apps", apps::router())
+        .nest(
+            "/users",
+            users::router().route_layer(axum::middleware::from_fn_with_state(
+                state,
+                admin_middleware,
+            )),
+        )
 }
 
 async fn health_check() -> Result<Json<Value>> {

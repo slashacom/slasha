@@ -66,7 +66,7 @@ export async function httpCall<ResponseType = AppResponse>(
     if (!response.ok) {
       throw new FetchError(
         response.status || 500,
-        data.message || 'An unexpected error occurred'
+        data.message || data.error || 'An unexpected error occurred'
       );
     }
 
