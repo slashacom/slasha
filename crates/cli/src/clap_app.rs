@@ -28,4 +28,31 @@ pub enum Command {
 
     #[command(name = "me", about = "Get current user info")]
     Me,
+
+    #[command(name = "apps", about = "Manage apps")]
+    Apps {
+        #[command(subcommand)]
+        command: AppsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AppsCommand {
+    #[command(name = "create", about = "Create a new app")]
+    Create {
+        name: String,
+    },
+
+    #[command(name = "delete", about = "Delete an app")]
+    Delete {
+        slug: String,
+    },
+
+    #[command(name = "info", about = "Get info about an app")]
+    Info {
+        slug: String,
+    },
+
+    #[command(name = "list", about = "List all your apps")]
+    List,
 }

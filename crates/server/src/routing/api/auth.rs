@@ -4,13 +4,8 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use axum_extra::{
-    TypedHeader,
-    headers::{Authorization, authorization::Bearer},
-};
 use chrono::Utc;
 use diesel::prelude::*;
-use jsonwebtoken::{DecodingKey, Validation, decode};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -18,6 +13,7 @@ use crate::{
     AppState,
     auth::{TokenPayload, create_jwt, hash_password, verify_password},
     error::{Error, Result},
+    extractors::auth::AuthUser,
 };
 
 use models::{schema::users, user::User};
@@ -147,36 +143,8 @@ async fn login(
     })))
 }
 
-async fn me(
-    State(state): State<AppState>,
-    auth: Option<TypedHeader<Authorization<Bearer>>>,
-) -> Result<impl IntoResponse> {
-    let auth = auth.ok_or(Error::Unauthorized)?;
-    let token = auth.token();
-
-    let decoding_key = DecodingKey::from_secret(state.jwt_secret.as_bytes());
-    let mut validation = Validation::default();
-    validation.validate_exp = true;
-
-    let token_data = decode::<TokenPayload>(token, &decoding_key, &validation)
-        .map_err(|_| Error::Unauthorized)?;
-
-    let mut conn = state
-        .db_pool
-        .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
-
-    let user = users::table
-        .filter(users::id.eq(&token_data.claims.id))
-        .first::<User>(&mut conn)
-        .optional()?;
-
-    let user = match user {
-        Some(u) => u,
-        None => return Err(Error::Unauthorized),
-    };
-
+async fn me(auth: AuthUser) -> Result<impl IntoResponse> {
     Ok(Json(serde_json::json!({
-        "user": user
+        "user": auth.0
     })))
 }

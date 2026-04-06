@@ -1,4 +1,5 @@
 pub mod api;
+pub mod git;
 
 #[cfg(feature = "bundle")]
 use crate::assets::static_handler;
@@ -12,6 +13,7 @@ use tower_http::trace::TraceLayer;
 pub fn router() -> Router<AppState> {
     let router = Router::new()
         .nest("/api", api::router())
+        .nest("/git", git::router())
         .layer(TraceLayer::new_for_http());
 
     #[cfg(feature = "bundle")]

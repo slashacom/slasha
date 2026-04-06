@@ -3,9 +3,12 @@ pub mod assets;
 
 pub mod auth;
 pub mod error;
+pub mod extractors;
 pub mod routing;
+pub mod utils;
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use tokio::net::TcpListener;
 use tracing::info;
 
@@ -20,6 +23,7 @@ pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 pub struct AppState {
     pub db_pool: DbPool,
     pub jwt_secret: String,
+    pub repos_dir: PathBuf,
 }
 
 pub async fn run(address: Option<SocketAddr>, state: AppState) -> anyhow::Result<()> {
