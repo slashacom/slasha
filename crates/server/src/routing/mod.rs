@@ -10,9 +10,9 @@ use crate::AppState;
 use axum::Router;
 use tower_http::trace::TraceLayer;
 
-pub fn router() -> Router<AppState> {
+pub fn router(state: AppState) -> Router<AppState> {
     let router = Router::new()
-        .nest("/api", api::router())
+        .nest("/api", api::router(state))
         .nest("/git", git::router())
         .layer(TraceLayer::new_for_http());
 
