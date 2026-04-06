@@ -69,7 +69,7 @@ export default function Signup() {
             <Input
               id="email"
               name="email"
-              type="email"
+              type="username"
               required
               className="h-10 border-neutral-200 bg-neutral-50/50 transition-colors focus-visible:border-neutral-400 focus-visible:bg-white focus-visible:ring-0"
               placeholder="admin@slasha.app"

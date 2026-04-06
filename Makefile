@@ -1,14 +1,10 @@
-.PHONY: setup migrate gen-models dev dev-cli dev-bundle docker-build docker-run clean format lint
+.PHONY: setup gen-models dev dev-cli dev-bundle docker-up docker-logs clean format lint
 
 .DEFAULT_GOAL := dev
 
-setup: migrate
+setup:
 	cd web && bun install && bun run build
 	cargo build
-
-migrate:
-	mkdir -p db && touch db/slasha.db
-	cd crates/server && diesel migration run --database-url ../../db/slasha.db
 
 gen-models:
 	cd crates/models && cargo test
@@ -26,15 +22,17 @@ dev-bundle:
 	cd web && bun run build
 	cargo run -p slasha-server --features bundle
 
-docker-build:
-	docker build -t slasha-server:latest .
+docker-up:
+	docker compose up --build
 
-docker-run:
-	docker run --rm --init -p 3000:3000 slasha-server:latest
+docker-logs:
+	docker compose logs -f
 
 clean:
 	@cargo clean
 	@rm -rf web/build
+	@rm -rf db/
+	@rm -rf repos/
 
 format:
 	@cargo fmt

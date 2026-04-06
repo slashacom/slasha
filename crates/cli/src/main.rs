@@ -1,10 +1,12 @@
+pub mod apps;
 pub mod auth;
 mod clap_app;
 pub mod config;
 pub mod http;
+pub mod utils;
 
 use crate::{
-    clap_app::{ClapApp, Command},
+    clap_app::{AppsCommand, ClapApp, Command},
     config::Config,
 };
 use clap::Parser;
@@ -54,6 +56,20 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+        Command::Apps { command } => match command {
+            AppsCommand::Create { name } => {
+                apps::handle_create(&name).await?;
+            }
+            AppsCommand::Delete { slug } => {
+                apps::handle_delete(&slug).await?;
+            }
+            AppsCommand::Info { slug } => {
+                apps::handle_info(&slug).await?;
+            }
+            AppsCommand::List => {
+                apps::handle_list().await?;
+            }
+        },
     }
 
     Ok(())

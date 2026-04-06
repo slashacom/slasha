@@ -8,3 +8,5 @@ diesel = { version = "2.2.0", features = ["sqlite", "returning_clauses_for_sqlit
 serde = { version = "1.0.228", features = ["derive"] }
 ts-rs = { version = "12.0.1", features = ["chrono-impl"] }
 chrono = { version = "0.4.44", features = ["serde"] }
+strum = "0.28"
+strum_macros = "0.28"

@@ -37,7 +37,7 @@ pub struct TokenPayload {
 
 pub fn create_jwt(payload: &TokenPayload, secret: &str) -> Result<String> {
     let encoding_key = EncodingKey::from_secret(secret.as_bytes());
-    
+
     encode(&Header::default(), payload, &encoding_key)
         .map_err(|e| Error::Internal(anyhow::anyhow!("JWT encoding error: {}", e)))
 }
