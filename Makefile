@@ -3,13 +3,14 @@
 .DEFAULT_GOAL := dev
 
 setup:
-	cd web && bun install && bun run build
+	cd web && bun install
 	cargo build
 
 gen-models:
 	cd crates/models && cargo test
 
-dev:
+dev: setup
+	@test -f .env || cp .env.example .env
 	@trap 'kill $$(jobs -p)' EXIT; \
 	cargo run -p slasha-server & \
 	cd web && bun run dev & \
