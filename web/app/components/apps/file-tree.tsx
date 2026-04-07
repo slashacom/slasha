@@ -38,17 +38,24 @@ function TreeNode(props: TreeNodeProps) {
           'hover:bg-white/[0.04]',
           isSelected && 'bg-white/[0.07] text-text',
           isSelected &&
-            'before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-text',
+            'after:pointer-events-none after:absolute after:inset-y-0 after:left-0 after:w-[2px] after:bg-text',
           !isSelected && 'text-text-secondary'
         )}
         style={{ paddingLeft: `${depth * 12 + 10}px` }}
       >
+        <button
+          type="button"
+          onClick={handleSelect}
+          aria-label={`Open ${node.name}`}
+          className="absolute inset-0"
+        />
+
         {isDir ? (
           <button
             type="button"
             onClick={handleToggle}
             aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
-            className="flex size-4 shrink-0 items-center justify-center text-text-tertiary hover:text-text"
+            className="relative z-10 flex size-4 shrink-0 items-center justify-center text-text-tertiary hover:text-text before:absolute before:-inset-1.5 before:content-['']"
           >
             <ChevronRight
               className={cn(
@@ -60,11 +67,7 @@ function TreeNode(props: TreeNodeProps) {
         ) : (
           <span className="size-4 shrink-0" />
         )}
-        <button
-          type="button"
-          onClick={handleSelect}
-          className="flex min-w-0 flex-1 items-center gap-1.5 pl-1 text-left hover:text-text"
-        >
+        <div className="pointer-events-none relative flex min-w-0 flex-1 items-center gap-1.5 pl-1 group-hover:text-text">
           {isDir ? (
             isExpanded ? (
               <FolderOpen className="size-3.5 shrink-0 text-text-secondary" />
@@ -75,7 +78,7 @@ function TreeNode(props: TreeNodeProps) {
             <FileIcon className="size-3.5 shrink-0 text-text-tertiary" />
           ) : null}
           <span className="truncate">{node.name}</span>
-        </button>
+        </div>
       </div>
 
       {isDir && isExpanded && node.children && (
