@@ -9,12 +9,13 @@ import {
   GitBranch,
 } from 'lucide-react';
 import { getAppOptions } from '~/queries/apps';
-import { getFileTreeOptions } from '~/queries/files';
+import { findNodeByPath, getFileTreeOptions } from '~/queries/files';
 import type { FileTreeNode } from '~/queries/files';
 import type { App } from '~/models/app';
 import { Skeleton } from '~/components/interface/skeleton';
 import { FileTree } from '~/components/apps/file-tree';
 import { CodeViewer } from '~/components/apps/code-viewer';
+import { FolderViewer } from '~/components/apps/folder-viewer';
 import { cn } from '~/utils/classname';
 import { queryClient } from '~/utils/query-client';
 
@@ -146,9 +147,32 @@ export default function AppIndexPage() {
     });
   }, []);
 
-  const handleSelect = useCallback((path: string) => {
-    setSelectedPath(path);
-  }, []);
+  const tree: FileTreeNode[] = treeData?.tree ?? [];
+
+  const handleSelect = useCallback(
+    (path: string) => {
+      setSelectedPath(path);
+      const node = findNodeByPath(tree, path);
+      if (node?.node_type === 'directory') {
+        setExpandedPaths((prev) => {
+          if (prev.has(path)) {
+            return prev;
+          }
+          const next = new Set(prev);
+          next.add(path);
+          return next;
+        });
+      }
+    },
+    [tree]
+  );
+
+  const selectedNode = useMemo(() => {
+    if (!selectedPath) {
+      return null;
+    }
+    return findNodeByPath(tree, selectedPath);
+  }, [tree, selectedPath]);
 
   if (appLoading || treeLoading) {
     return (
@@ -191,7 +215,6 @@ export default function AppIndexPage() {
   }
 
   const hasCommits = treeData?.has_commits ?? false;
-  const tree: FileTreeNode[] = treeData?.tree ?? [];
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
@@ -217,8 +240,16 @@ export default function AppIndexPage() {
             onToggle={handleToggle}
           />
           <div className="flex-1 min-w-0 overflow-hidden">
-            {selectedPath ? (
-              <CodeViewer slug={slug!} filePath={selectedPath} />
+            {selectedNode ? (
+              selectedNode.node_type === 'directory' ? (
+                <FolderViewer node={selectedNode} onSelect={handleSelect} />
+              ) : (
+                <CodeViewer
+                  slug={slug!}
+                  filePath={selectedNode.path}
+                  onNavigate={handleSelect}
+                />
+              )
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
                 <FileText className="size-6" />

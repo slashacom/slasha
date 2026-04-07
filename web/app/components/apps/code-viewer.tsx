@@ -1,22 +1,22 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileWarning, Download, Copy, Check, ChevronRight } from 'lucide-react';
+import { FileWarning, Download, Copy, Check } from 'lucide-react';
 import { codeToHtml } from 'shiki';
 import { getFileContentOptions } from '~/queries/files';
 import { VStack, HStack } from '~/components/interface/stacks';
 import { Skeleton } from '~/components/interface/skeleton';
 import { Button } from '~/components/interface/button';
 import { inferLang, formatFileSize } from '~/utils/format';
-import { getFileIcon } from '~/utils/file-icon';
-import { cn } from '~/utils/classname';
+import { PathBreadcrumb } from './path-breadcrumb';
 
 interface CodeViewerProps {
   slug: string;
   filePath: string;
+  onNavigate: (path: string) => void;
 }
 
 export function CodeViewer(props: CodeViewerProps) {
-  const { slug, filePath } = props;
+  const { slug, filePath, onNavigate } = props;
   const { data, isLoading, error } = useQuery(
     getFileContentOptions(slug, filePath)
   );
@@ -26,7 +26,6 @@ export function CodeViewer(props: CodeViewerProps) {
 
   const segments = filePath.split('/');
   const fileName = segments[segments.length - 1] ?? filePath;
-  const FileIcon = getFileIcon(fileName);
 
   const downloadUrl = useMemo(() => {
     if (!data?.content) {
@@ -124,27 +123,11 @@ export function CodeViewer(props: CodeViewerProps) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
-        <div className="flex min-w-0 items-center gap-1 text-[12px]">
-          <FileIcon className="size-3.5 shrink-0 text-text-tertiary" />
-          {segments.map((segment, idx) => {
-            const isLast = idx === segments.length - 1;
-            return (
-              <div key={idx} className="flex min-w-0 items-center gap-1">
-                <span
-                  className={cn(
-                    'truncate',
-                    isLast ? 'text-text font-medium' : 'text-text-tertiary'
-                  )}
-                >
-                  {segment}
-                </span>
-                {!isLast && (
-                  <ChevronRight className="size-3 shrink-0 text-text-tertiary/60" />
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <PathBreadcrumb
+          path={filePath}
+          isDirectory={false}
+          onNavigate={onNavigate}
+        />
 
         <HStack space={3} className="shrink-0">
           <span className="text-[11px] text-text-tertiary">
