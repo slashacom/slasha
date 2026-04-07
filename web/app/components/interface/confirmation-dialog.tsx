@@ -1,72 +1,48 @@
-import type { ReactNode } from 'react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './alert-dialog';
-
-import { AlertTriangle } from 'lucide-react';
+import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
 
 interface ConfirmationDialogProps {
-  icon: ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   description: string;
-  onConfirm?: () => void;
+  confirmLabel?: string;
+  onConfirm: () => void;
 }
 
 export function ConfirmationDialog(props: ConfirmationDialogProps) {
   const {
-    icon = <AlertTriangle className="h-7 w-7 text-neutral-500" />,
     open,
     onOpenChange,
     title,
     description,
+    confirmLabel = 'Confirm',
     onConfirm,
   } = props;
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="mx-auto w-[320px] !rounded-xl border-neutral-200 bg-white text-center">
-        <AlertDialogHeader className="flex flex-col items-center">
-          <div className="mt-2 mb-5">{icon}</div>
-          <AlertDialogTitle className="text-center text-lg font-medium text-neutral-900">
+    <AlertDialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <AlertDialogPrimitive.Portal>
+        <AlertDialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <AlertDialogPrimitive.Content className="fixed top-1/2 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-surface p-6 shadow-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
+          <AlertDialogPrimitive.Title className="text-[14px] font-semibold text-text">
             {title}
-          </AlertDialogTitle>
-          <AlertDialogDescription className="text-center text-sm text-balance text-neutral-600">
+          </AlertDialogPrimitive.Title>
+          <AlertDialogPrimitive.Description className="mt-2 text-[13px] leading-relaxed text-text-secondary">
             {description}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter className="flex gap-2">
-          <AlertDialogCancel
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onOpenChange(false);
-            }}
-            className="flex-grow text-sm cursor-pointer rounded-md bg-neutral-200/70 text-neutral-700 outline-neutral-300 hover:bg-neutral-300/70 focus:outline-2 border-0"
-          >
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            className="flex-grow text-sm cursor-pointer rounded-md bg-red-600 px-4 py-2 text-white outline-red-400 hover:bg-red-500 focus:outline-2"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onConfirm?.();
-              onOpenChange(false);
-            }}
-          >
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </AlertDialogPrimitive.Description>
+          <div className="mt-5 flex justify-end gap-2">
+            <AlertDialogPrimitive.Cancel className="cursor-pointer rounded-md px-3 py-1.5 text-[13px] text-text-secondary outline-none transition-colors hover:bg-white/5 hover:text-text">
+              Cancel
+            </AlertDialogPrimitive.Cancel>
+            <AlertDialogPrimitive.Action
+              onClick={onConfirm}
+              className="cursor-pointer rounded-md bg-red-600 px-3 py-1.5 text-[13px] font-medium text-white outline-none transition-colors hover:bg-red-500"
+            >
+              {confirmLabel}
+            </AlertDialogPrimitive.Action>
+          </div>
+        </AlertDialogPrimitive.Content>
+      </AlertDialogPrimitive.Portal>
+    </AlertDialogPrimitive.Root>
   );
 }
