@@ -144,20 +144,24 @@ export function FileTree(props: FileTreeProps) {
   const effectiveExpanded = searchExpanded ?? expandedPaths;
 
   return (
-    <div className="flex w-60 shrink-0 flex-col border-r border-border bg-bg/40">
-      <div className="border-b border-border px-2 py-2">
+    <div className="flex w-64 shrink-0 flex-col border-r border-border">
+      <div className="px-3 pt-3 pb-2">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-text-tertiary" />
           <input
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+            }}
             placeholder="Search files…"
-            className="h-7 w-full rounded border border-border bg-bg pl-7 pr-7 text-[12px] text-text placeholder:text-text-tertiary focus:border-white/20 focus:outline-none"
+            className="h-7 w-full rounded bg-white/[0.04] pl-7 pr-7 text-[12px] text-text placeholder:text-text-tertiary focus:bg-white/[0.06] focus:outline-none"
           />
           {query && (
             <button
-              onClick={() => setQuery('')}
+              onClick={() => {
+                setQuery('');
+              }}
               className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-text-tertiary hover:bg-white/[0.06] hover:text-text"
               aria-label="Clear search"
             >
@@ -167,7 +171,7 @@ export function FileTree(props: FileTreeProps) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="flex-1 overflow-y-auto pb-2">
         {displayTree.length === 0 ? (
           <p className="px-3 py-4 text-center text-[12px] text-text-tertiary">
             No matches

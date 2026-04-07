@@ -26,20 +26,30 @@ function usePageTitle() {
 
 export default function UserLayout() {
   const title = usePageTitle();
+  const location = useLocation();
+  const params = useParams();
+  const isFullWidth =
+    !!params.slug && location.pathname.startsWith('/apps/');
 
   return (
-    <div className="flex min-h-screen bg-bg">
+    <div className="flex h-screen bg-bg">
       <Sidebar />
 
-      <div className="ml-[240px] flex flex-1 flex-col">
+      <div className="ml-[240px] flex flex-1 flex-col overflow-hidden">
         <header className="flex h-12 shrink-0 items-center border-b border-border px-8">
           <span className="text-[13px] text-text-tertiary">{title}</span>
         </header>
-        <main className="flex-1 p-6">
-          <div className="max-w-4xl">
+        {isFullWidth ? (
+          <main className="flex flex-1 flex-col overflow-hidden">
             <Outlet />
-          </div>
-        </main>
+          </main>
+        ) : (
+          <main className="flex-1 overflow-y-auto p-6">
+            <div className="max-w-4xl">
+              <Outlet />
+            </div>
+          </main>
+        )}
       </div>
     </div>
   );
