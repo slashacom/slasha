@@ -46,3 +46,38 @@ a:not(nav a) {
 #nprogress .peg {
   display: none;
 }
+
+.shiki-wrapper pre {
+  background: transparent !important;
+  padding: 16px 16px 16px 0;
+  margin: 0;
+  counter-reset: line;
+}
+
+.shiki-wrapper code {
+  display: block;
+}
+
+.shiki-wrapper .line {
+  position: relative;
+  padding-left: 56px;
+  padding-right: 8px;
+  min-height: 1.55em;
+  counter-increment: line;
+}
+
+.shiki-wrapper .line::before {
+  content: counter(line);
+  position: absolute;
+  left: 0;
+  width: 44px;
+  padding-right: 12px;
+  text-align: right;
+  color: hsl(0 0% 100% / 25%);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.shiki-wrapper .line:hover {
+  background: hsl(0 0% 100% / 2.5%);
+}

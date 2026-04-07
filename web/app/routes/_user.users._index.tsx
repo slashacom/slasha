@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { PlusIcon } from 'lucide-react';
 import { Button } from '~/components/interface/button';
 import { Skeleton } from '~/components/interface/skeleton';
+import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { queryClient } from '~/utils/query-client';
 import { getUsersOptions, useDeleteUser } from '~/queries/users';
 import type { User } from '~/models/user';
@@ -17,11 +19,13 @@ export default function UsersPage() {
   const navigate = useNavigate();
   const { data: usersData, isLoading } = useQuery(getUsersOptions());
   const deleteUser = useDeleteUser();
+  const [pendingDelete, setPendingDelete] = useState<User | null>(null);
 
-  const handleDelete = (id: string, email: string) => {
-    if (!confirm(`Are you sure you want to delete user ${email}?`)) {
+  const handleConfirmDelete = () => {
+    if (!pendingDelete) {
       return;
     }
+    const { id, email } = pendingDelete;
 
     const promise = deleteUser.mutateAsync(id);
 
@@ -33,6 +37,8 @@ export default function UsersPage() {
       },
       error: (err) => err.message || 'Failed to delete user.',
     });
+
+    setPendingDelete(null);
   };
 
   return (
@@ -97,7 +103,7 @@ export default function UsersPage() {
                         Edit
                       </Link>
                       <button
-                        onClick={() => handleDelete(user.id, user.email)}
+                        onClick={() => setPendingDelete(user)}
                         disabled={deleteUser.isPending}
                         className="text-xs text-red-500 hover:underline disabled:opacity-50"
                       >
@@ -111,6 +117,19 @@ export default function UsersPage() {
           </table>
         )}
       </div>
+
+      <ConfirmationDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title="Delete user"
+        description={
+          pendingDelete
+            ? `Are you sure you want to delete ${pendingDelete.email}? This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete"
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

@@ -1,29 +1,37 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileText, FileWarning, Download } from 'lucide-react';
+import { FileWarning, Download, Copy, Check, ChevronRight } from 'lucide-react';
 import { codeToHtml } from 'shiki';
 import { getFileContentOptions } from '~/queries/files';
 import { VStack, HStack } from '~/components/interface/stacks';
 import { Skeleton } from '~/components/interface/skeleton';
 import { Button } from '~/components/interface/button';
 import { inferLang, formatFileSize } from '~/utils/format';
+import { getFileIcon } from '~/utils/file-icon';
+import { cn } from '~/utils/classname';
 
 interface CodeViewerProps {
   slug: string;
   filePath: string;
 }
 
-export function CodeViewer({ slug, filePath }: CodeViewerProps) {
+export function CodeViewer(props: CodeViewerProps) {
+  const { slug, filePath } = props;
   const { data, isLoading, error } = useQuery(
     getFileContentOptions(slug, filePath)
   );
   const [highlightedHtml, setHighlightedHtml] = useState('');
   const [isHighlighting, setIsHighlighting] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const fileName = filePath.split('/').pop() ?? filePath;
+  const segments = filePath.split('/');
+  const fileName = segments[segments.length - 1] ?? filePath;
+  const FileIcon = getFileIcon(fileName);
 
   const downloadUrl = useMemo(() => {
-    if (!data?.content) return null;
+    if (!data?.content) {
+      return null;
+    }
     const blob = new Blob([data.content], { type: 'text/plain' });
     return URL.createObjectURL(blob);
   }, [data?.content]);
@@ -37,11 +45,24 @@ export function CodeViewer({ slug, filePath }: CodeViewerProps) {
   }, [downloadUrl]);
 
   const handleDownload = () => {
-    if (!downloadUrl) return;
+    if (!downloadUrl) {
+      return;
+    }
     const link = document.createElement('a');
     link.href = downloadUrl;
     link.download = fileName;
     link.click();
+  };
+
+  const handleCopy = async () => {
+    if (!data?.content) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(data.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
   };
 
   useEffect(() => {
@@ -87,7 +108,7 @@ export function CodeViewer({ slug, filePath }: CodeViewerProps) {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 py-20 text-text-tertiary">
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
         <FileWarning className="size-6" />
         <p className="text-xs">Failed to load file</p>
       </div>
@@ -98,34 +119,70 @@ export function CodeViewer({ slug, filePath }: CodeViewerProps) {
     return null;
   }
 
+  const lineCount = data.content ? data.content.split('\n').length : 0;
+
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border px-4 py-2">
-        <HStack space={2}>
-          <FileText className="size-3.5 text-text-tertiary" />
-          <span className="text-[13px] font-medium text-text">{fileName}</span>
-        </HStack>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+        <div className="flex min-w-0 items-center gap-1 text-[12px]">
+          <FileIcon className="size-3.5 shrink-0 text-text-tertiary" />
+          {segments.map((segment, idx) => {
+            const isLast = idx === segments.length - 1;
+            return (
+              <div key={idx} className="flex min-w-0 items-center gap-1">
+                <span
+                  className={cn(
+                    'truncate',
+                    isLast ? 'text-text font-medium' : 'text-text-tertiary'
+                  )}
+                >
+                  {segment}
+                </span>
+                {!isLast && (
+                  <ChevronRight className="size-3 shrink-0 text-text-tertiary/60" />
+                )}
+              </div>
+            );
+          })}
+        </div>
 
-        <HStack space={4}>
+        <HStack space={3} className="shrink-0">
           <span className="text-[11px] text-text-tertiary">
+            {lineCount > 0 && `${lineCount} lines · `}
             {formatFileSize(data.size)}
             {data.is_truncated && ' (truncated)'}
           </span>
 
-          <Button
-            variant="ghost"
-            color="neutral"
-            size="sm"
-            icon={<Download className="size-4" />}
-            onClick={handleDownload}
-            isDisabled={!data.content}
-          />
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              color="neutral"
+              size="sm"
+              icon={
+                copied ? (
+                  <Check className="size-4 text-emerald-400" />
+                ) : (
+                  <Copy className="size-4" />
+                )
+              }
+              onClick={handleCopy}
+              isDisabled={!data.content}
+            />
+            <Button
+              variant="ghost"
+              color="neutral"
+              size="sm"
+              icon={<Download className="size-4" />}
+              onClick={handleDownload}
+              isDisabled={!data.content}
+            />
+          </div>
         </HStack>
       </div>
 
       <div className="flex-1 overflow-auto">
         {data.is_binary ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-20 text-text-tertiary">
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
             <FileWarning className="size-6" />
             <p className="text-xs">Binary file — cannot be displayed</p>
           </div>
@@ -135,7 +192,7 @@ export function CodeViewer({ slug, filePath }: CodeViewerProps) {
           </pre>
         ) : (
           <div
-            className="shiki-wrapper overflow-auto text-[13px] leading-relaxed [&_pre]:!bg-transparent [&_pre]:p-4 [&_code]:block [&_.line]:min-h-[1.4em]"
+            className="shiki-wrapper overflow-auto text-[13px] leading-[1.55]"
             dangerouslySetInnerHTML={{ __html: highlightedHtml }}
           />
         )}

@@ -1,11 +1,7 @@
-import {
-  ChevronRight,
-  ChevronDown,
-  FileText,
-  Folder,
-  FolderOpen,
-} from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ChevronRight, Folder, FolderOpen, Search, X } from 'lucide-react';
 import { cn } from '~/utils/classname';
+import { getFileIcon } from '~/utils/file-icon';
 import type { FileTreeNode } from '~/queries/files';
 
 interface TreeNodeProps {
@@ -17,14 +13,9 @@ interface TreeNodeProps {
   onToggle: (path: string) => void;
 }
 
-function TreeNode({
-  node,
-  depth,
-  selectedPath,
-  onSelect,
-  expandedPaths,
-  onToggle,
-}: TreeNodeProps) {
+function TreeNode(props: TreeNodeProps) {
+  const { node, depth, selectedPath, onSelect, expandedPaths, onToggle } =
+    props;
   const isDir = node.node_type === 'directory';
   const isExpanded = expandedPaths.has(node.path);
   const isSelected = selectedPath === node.path;
@@ -32,40 +23,48 @@ function TreeNode({
   const handleClick = () => {
     if (isDir) {
       onToggle(node.path);
-    } else {
-      onSelect(node.path);
+      return;
     }
+    onSelect(node.path);
   };
+
+  const FileIcon = !isDir ? getFileIcon(node.name) : null;
 
   return (
     <div>
       <button
         onClick={handleClick}
         className={cn(
-          'flex w-full items-center gap-1.5 px-2 py-1 text-left text-[13px] transition-colors',
+          'group relative flex w-full items-center gap-1.5 py-[5px] pr-2 text-left text-[13px] transition-colors',
           'hover:bg-white/[0.04]',
-          isSelected && !isDir && 'bg-white/[0.06] text-text',
-          !isSelected && 'text-text-secondary'
+          isSelected && !isDir && 'bg-white/[0.07] text-text',
+          isSelected &&
+            !isDir &&
+            'before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-text',
+          !isSelected && 'text-text-secondary hover:text-text'
         )}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+        style={{ paddingLeft: `${depth * 12 + 10}px` }}
       >
         {isDir ? (
           <>
+            <ChevronRight
+              className={cn(
+                'size-3 shrink-0 text-text-tertiary transition-transform',
+                isExpanded && 'rotate-90'
+              )}
+            />
             {isExpanded ? (
-              <ChevronDown className="size-3.5 shrink-0 text-text-tertiary" />
-            ) : (
-              <ChevronRight className="size-3.5 shrink-0 text-text-tertiary" />
-            )}
-            {isExpanded ? (
-              <FolderOpen className="size-3.5 shrink-0 text-text-tertiary" />
+              <FolderOpen className="size-3.5 shrink-0 text-text-secondary" />
             ) : (
               <Folder className="size-3.5 shrink-0 text-text-tertiary" />
             )}
           </>
         ) : (
           <>
-            <span className="size-3.5 shrink-0" />
-            <FileText className="size-3.5 shrink-0 text-text-tertiary" />
+            <span className="size-3 shrink-0" />
+            {FileIcon ? (
+              <FileIcon className="size-3.5 shrink-0 text-text-tertiary" />
+            ) : null}
           </>
         )}
         <span className="truncate">{node.name}</span>
@@ -90,6 +89,38 @@ function TreeNode({
   );
 }
 
+function filterTree(
+  nodes: FileTreeNode[],
+  query: string
+): { nodes: FileTreeNode[]; matchedDirs: string[] } {
+  const lower = query.toLowerCase();
+  const matchedDirs: string[] = [];
+
+  const walk = (list: FileTreeNode[]): FileTreeNode[] => {
+    const out: FileTreeNode[] = [];
+    for (const node of list) {
+      if (node.node_type === 'directory') {
+        const childMatches = node.children ? walk(node.children) : [];
+        const selfMatches = node.name.toLowerCase().includes(lower);
+        if (childMatches.length > 0 || selfMatches) {
+          matchedDirs.push(node.path);
+          out.push({
+            ...node,
+            children: childMatches.length > 0 ? childMatches : node.children,
+          });
+        }
+        continue;
+      }
+      if (node.name.toLowerCase().includes(lower)) {
+        out.push(node);
+      }
+    }
+    return out;
+  };
+
+  return { nodes: walk(nodes), matchedDirs };
+}
+
 interface FileTreeProps {
   tree: FileTreeNode[];
   selectedPath: string | null;
@@ -98,26 +129,63 @@ interface FileTreeProps {
   onToggle: (path: string) => void;
 }
 
-export function FileTree({
-  tree,
-  selectedPath,
-  onSelect,
-  expandedPaths,
-  onToggle,
-}: FileTreeProps) {
+export function FileTree(props: FileTreeProps) {
+  const { tree, selectedPath, onSelect, expandedPaths, onToggle } = props;
+  const [query, setQuery] = useState('');
+
+  const { displayTree, searchExpanded } = useMemo(() => {
+    if (!query.trim()) {
+      return { displayTree: tree, searchExpanded: null as Set<string> | null };
+    }
+    const { nodes, matchedDirs } = filterTree(tree, query.trim());
+    return { displayTree: nodes, searchExpanded: new Set(matchedDirs) };
+  }, [tree, query]);
+
+  const effectiveExpanded = searchExpanded ?? expandedPaths;
+
   return (
-    <div className="w-56 shrink-0 overflow-y-auto border-r border-border bg-bg/40 py-2">
-      {tree.map((node) => (
-        <TreeNode
-          key={node.path}
-          node={node}
-          depth={0}
-          selectedPath={selectedPath}
-          onSelect={onSelect}
-          expandedPaths={expandedPaths}
-          onToggle={onToggle}
-        />
-      ))}
+    <div className="flex w-60 shrink-0 flex-col border-r border-border bg-bg/40">
+      <div className="border-b border-border px-2 py-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-text-tertiary" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search files…"
+            className="h-7 w-full rounded border border-border bg-bg pl-7 pr-7 text-[12px] text-text placeholder:text-text-tertiary focus:border-white/20 focus:outline-none"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery('')}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-text-tertiary hover:bg-white/[0.06] hover:text-text"
+              aria-label="Clear search"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto py-1">
+        {displayTree.length === 0 ? (
+          <p className="px-3 py-4 text-center text-[12px] text-text-tertiary">
+            No matches
+          </p>
+        ) : (
+          displayTree.map((node) => (
+            <TreeNode
+              key={node.path}
+              node={node}
+              depth={0}
+              selectedPath={selectedPath}
+              onSelect={onSelect}
+              expandedPaths={effectiveExpanded}
+              onToggle={onToggle}
+            />
+          ))
+        )}
+      </div>
     </div>
   );
 }
