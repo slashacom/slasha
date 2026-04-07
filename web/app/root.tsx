@@ -15,7 +15,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '~/utils/query-client';
 
 import { ErrorView } from '~/components/global/error-view';
-import { Loader } from '~/components/icons/loader';
+import { FullPageSpinner } from '~/components/icons/spinner';
 import { NavigationProgress } from '~/components/interface/navigation-progress';
 
 import './styles/global.css';
@@ -95,15 +95,5 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 }
 
 export function HydrateFallback() {
-  return (
-    <div className="bg-opacity-75 fixed top-0 left-0 z-[100] flex h-full w-full items-center justify-center bg-white">
-      <div className="flex items-center justify-center rounded-lg border border-gray-200 bg-white px-4 py-2">
-        <Loader className="size-4 text-gray-500" />
-        <span className="ml-2 text-sm text-gray-500">
-          please wait&nbsp;
-          <span className="animate-pulse">...</span>
-        </span>
-      </div>
-    </div>
-  );
+  return <FullPageSpinner />;
 }

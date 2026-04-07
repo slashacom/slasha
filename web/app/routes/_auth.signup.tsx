@@ -1,9 +1,11 @@
+import { MailIcon, KeyRoundIcon } from 'lucide-react';
 import { redirect, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
 import { VStack } from '~/components/interface/stacks';
+import { SlashaLogo } from '~/components/icons/slasha-logo';
 import { getAuthStatusOptions, useSignup } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
 
@@ -17,7 +19,7 @@ export async function clientLoader() {
 }
 
 export function meta() {
-  return [{ title: 'Sign up to Slasha' }];
+  return [{ title: 'Set up Slasha' }];
 }
 
 export default function Signup() {
@@ -36,51 +38,57 @@ export default function Signup() {
       loading: 'Creating admin account...',
       success: () => {
         navigate('/');
-        return `Successfully signed up as ${email}`;
+        return `Welcome aboard, ${email}`;
       },
-      error: (err) => err.message || 'Failed to sign up.',
+      error: (err) => err.message || 'Failed to set up.',
     });
   };
 
   return (
     <div className="flex w-full flex-col gap-8 py-10">
-      <VStack space={6}>
-        <VStack space={1} alignItems="center">
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-900">
-            Welcome to Slasha
-          </h1>
-          <p className="text-sm text-neutral-500">
-            Create your admin account to get started
-          </p>
-        </VStack>
+      <div className="flex flex-col items-start gap-6">
+        <SlashaLogo className="h-9 w-auto text-text" />
 
-        <form onSubmit={handleSubmit}>
-          <VStack space={5}>
-            <VStack space={2}>
-              <Label
-                htmlFor="email"
-                className="text-sm font-medium text-neutral-700"
-              >
-                Email Address
-              </Label>
+        <div className="flex flex-col items-start gap-1.5">
+          <p className="text-sm text-text-secondary">
+            Create the first admin account. This account will own the instance
+            and be able to invite others.
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit}>
+        <VStack space={4}>
+          <VStack space={2}>
+            <Label
+              htmlFor="email"
+              className="text-[13px] font-medium text-text-secondary"
+            >
+              Email address
+            </Label>
+            <div className="relative">
+              <MailIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
               <Input
                 id="email"
                 name="email"
                 type="email"
                 required
-                className="h-11 border-neutral-200 bg-neutral-50/30 transition-all focus-visible:border-black focus-visible:bg-white focus-visible:ring-0"
+                className="h-11 border-border bg-surface pl-9 text-text placeholder:text-text-tertiary transition-all focus-visible:border-text-secondary focus-visible:ring-0"
                 placeholder="admin@slasha.app"
                 autoComplete="email"
               />
-            </VStack>
+            </div>
+          </VStack>
 
-            <VStack space={2}>
-              <Label
-                htmlFor="password"
-                className="text-sm font-medium text-neutral-700"
-              >
-                Password
-              </Label>
+          <VStack space={2}>
+            <Label
+              htmlFor="password"
+              className="text-[13px] font-medium text-text-secondary"
+            >
+              Password
+            </Label>
+            <div className="relative">
+              <KeyRoundIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
               <Input
                 id="password"
                 name="password"
@@ -88,22 +96,27 @@ export default function Signup() {
                 required
                 pattern=".{8,}"
                 title="8 characters minimum"
-                className="h-11 border-neutral-200 bg-neutral-50/30 transition-all focus-visible:border-black focus-visible:bg-white focus-visible:ring-0"
-                placeholder="••••••••"
+                className="h-11 border-border bg-surface pl-9 text-text placeholder:text-text-tertiary transition-all focus-visible:border-text-secondary focus-visible:ring-0"
+                placeholder="At least 8 characters"
                 autoComplete="new-password"
               />
-            </VStack>
-
-            <Button
-              type="submit"
-              isLoading={signup.isPending}
-              isDisabled={signup.isPending}
-              label={signup.isPending ? 'Creating Account...' : 'Continue'}
-              className="mt-2 h-11 w-full justify-center"
-            />
+            </div>
+            <p className="text-[12px] text-text-tertiary">
+              Must be at least 8 characters.
+            </p>
           </VStack>
-        </form>
-      </VStack>
+
+          <Button
+            type="submit"
+            isLoading={signup.isPending}
+            isDisabled={signup.isPending}
+            label={
+              signup.isPending ? 'Creating account…' : 'Create admin account'
+            }
+            className="mt-2 h-11 w-full justify-center bg-white text-bg hover:bg-white/90 focus:ring-0 focus:ring-offset-0"
+          />
+        </VStack>
+      </form>
     </div>
   );
 }

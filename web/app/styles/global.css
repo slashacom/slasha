@@ -1,1 +1,44 @@
 @import 'tailwindcss';
+
+@theme {
+  --color-bg: #1a1a1a;
+  --color-surface: #232323;
+  --color-text: hsl(0 0% 100% / 85%);
+  --color-text-secondary: hsl(0 0% 100% / 55%);
+  --color-text-tertiary: hsl(0 0% 100% / 40%);
+  --color-primary: #ffffff;
+  --color-border: hsl(0 0% 100% / 8%);
+  --color-code-bg: #111111;
+  --color-code-text: #e5e5e5;
+  --font-body:
+    'Geist Variable', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+}
+
+html,
+body {
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  @apply bg-bg text-text font-body;
+}
+
+code,
+pre {
+  @apply font-mono;
+}
+
+a:not(nav a) {
+  @apply text-text decoration-[hsl(0_0%_100%/15%)] underline-offset-2 hover:decoration-[hsl(0_0%_100%/35%)];
+}
+
+#nprogress .bar {
+  background: hsl(0 0% 100% / 60%);
+  height: 2px;
+}
+
+#nprogress .peg {
+  display: none;
+}
