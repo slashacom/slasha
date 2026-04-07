@@ -20,55 +20,63 @@ function TreeNode(props: TreeNodeProps) {
   const isExpanded = expandedPaths.has(node.path);
   const isSelected = selectedPath === node.path;
 
-  const handleClick = () => {
-    if (isDir) {
-      onToggle(node.path);
-      return;
-    }
+  const handleSelect = () => {
     onSelect(node.path);
+  };
+
+  const handleToggle = () => {
+    onToggle(node.path);
   };
 
   const FileIcon = !isDir ? getFileIcon(node.name) : null;
 
   return (
     <div>
-      <button
-        onClick={handleClick}
+      <div
         className={cn(
-          'group relative flex w-full items-center gap-1.5 py-[5px] pr-2 text-left text-[13px] transition-colors',
+          'group relative flex w-full items-center py-[5px] pr-2 text-[13px] transition-colors',
           'hover:bg-white/[0.04]',
-          isSelected && !isDir && 'bg-white/[0.07] text-text',
+          isSelected && 'bg-white/[0.07] text-text',
           isSelected &&
-            !isDir &&
             'before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-text',
-          !isSelected && 'text-text-secondary hover:text-text'
+          !isSelected && 'text-text-secondary'
         )}
         style={{ paddingLeft: `${depth * 12 + 10}px` }}
       >
         {isDir ? (
-          <>
+          <button
+            type="button"
+            onClick={handleToggle}
+            aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
+            className="flex size-4 shrink-0 items-center justify-center text-text-tertiary hover:text-text"
+          >
             <ChevronRight
               className={cn(
-                'size-3 shrink-0 text-text-tertiary transition-transform',
+                'size-3 transition-transform',
                 isExpanded && 'rotate-90'
               )}
             />
-            {isExpanded ? (
+          </button>
+        ) : (
+          <span className="size-4 shrink-0" />
+        )}
+        <button
+          type="button"
+          onClick={handleSelect}
+          className="flex min-w-0 flex-1 items-center gap-1.5 pl-1 text-left hover:text-text"
+        >
+          {isDir ? (
+            isExpanded ? (
               <FolderOpen className="size-3.5 shrink-0 text-text-secondary" />
             ) : (
               <Folder className="size-3.5 shrink-0 text-text-tertiary" />
-            )}
-          </>
-        ) : (
-          <>
-            <span className="size-3 shrink-0" />
-            {FileIcon ? (
-              <FileIcon className="size-3.5 shrink-0 text-text-tertiary" />
-            ) : null}
-          </>
-        )}
-        <span className="truncate">{node.name}</span>
-      </button>
+            )
+          ) : FileIcon ? (
+            <FileIcon className="size-3.5 shrink-0 text-text-tertiary" />
+          ) : null}
+          <span className="truncate">{node.name}</span>
+        </button>
+      </div>
 
       {isDir && isExpanded && node.children && (
         <div>

@@ -14,6 +14,24 @@ export interface FileTreeResponse {
   has_commits: boolean;
 }
 
+export function findNodeByPath(
+  tree: FileTreeNode[],
+  path: string
+): FileTreeNode | null {
+  for (const node of tree) {
+    if (node.path === path) {
+      return node;
+    }
+    if (node.children) {
+      const found = findNodeByPath(node.children, path);
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+
 export interface FileContentResponse {
   path: string;
   name: string;
