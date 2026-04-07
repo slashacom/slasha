@@ -1,31 +1,31 @@
 import { NavLink, useNavigate } from 'react-router';
-import { LayoutGrid, Users, LogOut } from 'lucide-react';
+import { Users } from 'lucide-react';
+import { LayoutGrid } from '../icons/layout';
 import { useQuery } from '@tanstack/react-query';
 import { cn } from '~/utils/classname';
-import { VStack } from '~/components/interface/stacks';
 import { getAuthMeOptions } from '~/queries/auth';
 import { removeAuthToken } from '~/utils/jwt';
 
 interface SidebarItemProps {
   to: string;
-  icon: React.ReactNode;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
 }
 
-function SidebarItem({ to, icon, label }: SidebarItemProps) {
+function SidebarItem({ to, icon: Icon, label }: SidebarItemProps) {
   return (
     <NavLink
       to={to}
       className={({ isActive }) =>
         cn(
-          'flex items-center gap-3 px-3 py-2 text-sm font-medium transition-all hover:bg-black/5 rounded-lg',
+          'flex items-center gap-2 py-1.5 text-[14px] transition-colors',
           isActive
-            ? 'text-black font-semibold bg-black/5'
-            : 'text-neutral-500 hover:text-black'
+            ? 'font-medium text-text'
+            : 'text-text-tertiary hover:text-text-secondary'
         )
       }
     >
-      {icon}
+      <Icon className="h-4 w-4" />
       {label}
     </NavLink>
   );
@@ -42,39 +42,29 @@ export function Sidebar() {
   };
 
   return (
-    <div className="flex h-screen w-64 flex-col border-r border-neutral-100 bg-neutral-50 p-4">
-      <VStack space={6} className="h-full">
-        <div className="px-2 py-4">
-          <h1 className="text-xl font-bold tracking-tight text-black">
-            slasha
-          </h1>
-        </div>
+    <aside className="fixed inset-y-0 left-0 z-50 flex w-[240px] flex-col border-r border-border bg-bg">
+      <div className="flex h-12 items-center border-b border-border px-6">
+        <NavLink
+          to="/apps"
+          className="text-[18px] font-medium tracking-tight !text-text !no-underline"
+        >
+          slasha
+        </NavLink>
+      </div>
 
-        <nav className="flex-grow">
-          <VStack space={1}>
-            <SidebarItem
-              to="/apps"
-              icon={<LayoutGrid className="size-4" />}
-              label="Apps"
-            />
-            {isAdmin && (
-              <SidebarItem
-                to="/users"
-                icon={<Users className="size-4" />}
-                label="Users"
-              />
-            )}
-          </VStack>
-        </nav>
+      <nav className="flex-1 px-6 pt-5">
+        <SidebarItem to="/apps" icon={LayoutGrid} label="Apps" />
+        {isAdmin && <SidebarItem to="/users" icon={Users} label="Users" />}
+      </nav>
 
+      <div className="px-6 pb-6">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-neutral-500 transition-all hover:bg-red-50 hover:text-red-600 rounded-lg w-full text-left"
+          className="block py-1.5 text-[14px] text-text-tertiary transition-colors hover:text-text-secondary"
         >
-          <LogOut className="size-4" />
           Logout
         </button>
-      </VStack>
-    </div>
+      </div>
+    </aside>
   );
 }

@@ -1,15 +1,11 @@
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, redirect } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, Loader2 } from 'lucide-react';
-import { PageContainer } from '~/components/interface/page-container';
-import { Button } from '~/components/interface/button';
-import { VStack, HStack } from '~/components/interface/stacks';
 import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getUserOptions, useUpdateUser } from '~/queries/users';
-import { redirect } from 'react-router';
 import { UserForm } from '~/components/users/user-form';
+import { Spinner } from '~/components/icons/spinner';
 
 export async function clientLoader({ params }: { params: { id: string } }) {
   const me = await queryClient.ensureQueryData(getAuthMeOptions());
@@ -21,7 +17,7 @@ export async function clientLoader({ params }: { params: { id: string } }) {
 }
 
 export function meta() {
-  return [{ title: 'Edit User | Slasha' }];
+  return [{ title: 'Edit user · slasha' }];
 }
 
 export default function EditUser() {
@@ -51,8 +47,8 @@ export default function EditUser() {
 
   if (isLoading || !userData) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="size-8 animate-spin text-neutral-400" />
+      <div className="flex min-h-[300px] items-center justify-center">
+        <Spinner className="size-5" />
       </div>
     );
   }
@@ -60,30 +56,24 @@ export default function EditUser() {
   const { user } = userData;
 
   return (
-    <PageContainer variant="center" className="py-10">
-      <VStack space={6} className="max-w-2xl mx-auto">
-        <HStack space={4} alignItems="center">
-          <Button
-            variant="ghost"
-            icon={<ArrowLeft className="size-4" />}
-            onClick={() => navigate('/users')}
-          />
-          <VStack space={1}>
-            <h1 className="text-3xl font-bold tracking-tight text-neutral-900">
-              Edit User
-            </h1>
-            <p className="text-neutral-500">Update details for {user.email}</p>
-          </VStack>
-        </HStack>
+    <div>
+      <div>
+        <h3 className="font-semibold text-text">Edit user</h3>
+        <p className="mt-2 text-sm text-text-secondary">
+          Update details for{' '}
+          <span className="text-text">{user.email}</span>.
+        </p>
+      </div>
 
+      <div className="mt-6">
         <UserForm
           initialData={user}
           onSubmit={handleSubmit}
           onCancel={() => navigate('/users')}
           isPending={updateUser.isPending}
-          submitLabel="Save Changes"
+          submitLabel="Save changes"
         />
-      </VStack>
-    </PageContainer>
+      </div>
+    </div>
   );
 }

@@ -22,7 +22,18 @@ import './styles/global.css';
 import { useEffect } from 'react';
 import { isLoggedIn } from './utils/jwt';
 
-export const links: Route.LinksFunction = () => [];
+export const links: Route.LinksFunction = () => [
+  { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+  {
+    rel: 'preconnect',
+    href: 'https://fonts.gstatic.com',
+    crossOrigin: 'anonymous',
+  },
+  {
+    rel: 'stylesheet',
+    href: 'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap',
+  },
+];
 
 const guestRoutes = ['/', '/login', '/register'];
 
