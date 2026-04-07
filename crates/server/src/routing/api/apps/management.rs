@@ -16,6 +16,9 @@ use crate::{
     extractors::auth::AuthUser,
     utils::slugify,
 };
+
+use super::utils::lookup_app_for_user;
+
 use models::{
     app::{App, AppMember, AppMemberRole},
     schema::{app_members, apps},
@@ -128,27 +131,7 @@ async fn get_app(
     auth: AuthUser,
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state
-        .db_pool
-        .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
-
-    let app = apps::table
-        .filter(apps::slug.eq(&slug))
-        .first::<App>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound(format!("App '{}' not found", slug)))?;
-
-    let is_member = app_members::table
-        .filter(app_members::app_id.eq(&app.id))
-        .filter(app_members::user_id.eq(&auth.0.id))
-        .first::<AppMember>(&mut conn)
-        .optional()?
-        .is_some();
-
-    if !is_member {
-        return Err(Error::NotFound(format!("App '{}' not found", slug)));
-    }
+    let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
     Ok(Json(serde_json::json!({
         "app": app,
@@ -165,11 +148,7 @@ async fn delete_app(
         .get()
         .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
 
-    let app = apps::table
-        .filter(apps::slug.eq(&slug))
-        .first::<App>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound(format!("App '{}' not found", slug)))?;
+    let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
     let membership = app_members::table
         .filter(app_members::app_id.eq(&app.id))

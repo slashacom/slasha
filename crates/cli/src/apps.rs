@@ -33,7 +33,7 @@ pub async fn handle_create(name: &str) -> Result<()> {
     tracing::info!("");
     tracing::info!("To deploy, add this remote and push:");
     tracing::info!("  git remote add slasha {}", git_url);
-    tracing::info!("  git push slasha main");
+    tracing::info!("  git push -u slasha main");
 
     Ok(())
 }
