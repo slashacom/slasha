@@ -1,13 +1,21 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { FileText, GitBranch } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  FileText,
+  Folder,
+  GitBranch,
+} from 'lucide-react';
 import { getAppOptions } from '~/queries/apps';
 import { getFileTreeOptions } from '~/queries/files';
 import type { FileTreeNode } from '~/queries/files';
+import type { App } from '~/models/app';
 import { Skeleton } from '~/components/interface/skeleton';
 import { FileTree } from '~/components/apps/file-tree';
 import { CodeViewer } from '~/components/apps/code-viewer';
+import { cn } from '~/utils/classname';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader({ params }: { params: { slug: string } }) {
@@ -17,6 +25,101 @@ export async function clientLoader({ params }: { params: { slug: string } }) {
 
 export function meta() {
   return [{ title: 'App · slasha' }];
+}
+
+type Protocol = 'https' | 'ssh';
+
+function AppToolbar(props: { app: App }) {
+  const { app } = props;
+  const [protocol, setProtocol] = useState<Protocol>('https');
+  const [copied, setCopied] = useState(false);
+
+  const { httpsUrl, sshUrl } = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return {
+        httpsUrl: `/git/${app.slug}`,
+        sshUrl: `git@localhost:${app.slug}.git`,
+      };
+    }
+    return {
+      httpsUrl: `${window.location.origin}/git/${app.slug}`,
+      sshUrl: `git@${window.location.hostname}:${app.slug}.git`,
+    };
+  }, [app.slug]);
+
+  const url = protocol === 'https' ? httpsUrl : sshUrl;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => {
+        setCopied(false);
+      }, 1500);
+    } catch {}
+  };
+
+  return (
+    <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-8 py-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <Folder className="size-4 shrink-0 text-text-tertiary" />
+        <span className="truncate text-[13px] font-medium text-text">
+          {app.name}
+        </span>
+        <span className="font-mono text-[12px] text-text-tertiary">
+          {app.slug}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded border border-border bg-surface px-1.5 py-0.5 text-[11px] font-medium text-text-secondary">
+          <GitBranch className="size-3" />
+          {app.default_branch}
+        </span>
+      </div>
+
+      <div className="flex items-center rounded border border-border bg-surface">
+        <button
+          onClick={() => {
+            setProtocol('https');
+          }}
+          className={cn(
+            'h-7 px-2.5 text-[11px] font-medium transition-colors',
+            protocol === 'https'
+              ? 'bg-white/[0.06] text-text'
+              : 'text-text-tertiary hover:text-text'
+          )}
+        >
+          HTTPS
+        </button>
+        <button
+          onClick={() => {
+            setProtocol('ssh');
+          }}
+          className={cn(
+            'h-7 border-l border-border px-2.5 text-[11px] font-medium transition-colors',
+            protocol === 'ssh'
+              ? 'bg-white/[0.06] text-text'
+              : 'text-text-tertiary hover:text-text'
+          )}
+        >
+          SSH
+        </button>
+        <div className="h-7 w-px bg-border" />
+        <code className="max-w-[320px] truncate px-2.5 font-mono text-[11px] text-text-secondary">
+          {url}
+        </code>
+        <button
+          onClick={handleCopy}
+          aria-label="Copy clone URL"
+          className="flex h-7 w-8 items-center justify-center border-l border-border text-text-tertiary transition-colors hover:text-text"
+        >
+          {copied ? (
+            <Check className="size-3.5 text-emerald-400" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function AppIndexPage() {
@@ -49,10 +152,28 @@ export default function AppIndexPage() {
 
   if (appLoading || treeLoading) {
     return (
-      <div className="space-y-3">
-        <Skeleton className="h-6 w-48 bg-surface" />
-        <Skeleton className="h-4 w-32 bg-surface" />
-        <Skeleton className="mt-6 h-96 w-full bg-surface" />
+      <div className="flex flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-8 py-3">
+          <div className="flex items-center gap-3">
+            <Skeleton className="size-4 bg-surface" />
+            <Skeleton className="h-4 w-32 bg-surface" />
+            <Skeleton className="h-4 w-20 bg-surface" />
+          </div>
+          <Skeleton className="h-7 w-64 bg-surface" />
+        </div>
+        <div className="flex flex-1 min-h-0">
+          <div className="w-64 shrink-0 border-r border-border p-3">
+            <Skeleton className="mb-3 h-7 w-full bg-surface" />
+            <div className="space-y-2">
+              {[...Array(8)].map((_, i) => (
+                <Skeleton key={i} className="h-5 w-full bg-surface" />
+              ))}
+            </div>
+          </div>
+          <div className="flex-1 p-6">
+            <Skeleton className="h-full w-full bg-surface" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -60,7 +181,7 @@ export default function AppIndexPage() {
   const app = appData?.app;
   if (!app) {
     return (
-      <div>
+      <div className="p-8">
         <h3 className="font-semibold text-text">App not found</h3>
         <p className="mt-2 text-sm text-text-secondary">
           The application you're looking for doesn't exist.
@@ -73,52 +194,40 @@ export default function AppIndexPage() {
   const tree: FileTreeNode[] = treeData?.tree ?? [];
 
   return (
-    <div>
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="font-semibold text-text">{app.name}</h3>
-          <p className="mt-2 font-mono text-sm text-text-tertiary">
-            {app.slug}
+    <div className="flex flex-1 flex-col min-h-0">
+      <AppToolbar app={app} />
+
+      {!hasCommits ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3">
+          <div className="rounded-full border border-border p-3">
+            <GitBranch className="size-5 text-text-tertiary" />
+          </div>
+          <p className="text-sm font-medium text-text">No commits yet</p>
+          <p className="text-xs text-text-tertiary">
+            Push code to this repository to see the file tree.
           </p>
         </div>
-        <span className="rounded border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-text-secondary">
-          {app.default_branch}
-        </span>
-      </div>
-
-      <div className="mt-6">
-        {!hasCommits ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-border bg-surface py-16">
-            <div className="rounded-full border border-border p-3">
-              <GitBranch className="size-5 text-text-tertiary" />
-            </div>
-            <p className="text-sm font-medium text-text">No commits yet</p>
-            <p className="text-xs text-text-tertiary">
-              Push code to this repository to see the file tree.
-            </p>
+      ) : (
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <FileTree
+            tree={tree}
+            selectedPath={selectedPath}
+            onSelect={handleSelect}
+            expandedPaths={expandedPaths}
+            onToggle={handleToggle}
+          />
+          <div className="flex-1 min-w-0 overflow-hidden">
+            {selectedPath ? (
+              <CodeViewer slug={slug!} filePath={selectedPath} />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
+                <FileText className="size-6" />
+                <p className="text-xs">Select a file to view its contents</p>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="flex h-[calc(100vh-200px)] overflow-hidden rounded-lg border border-border bg-surface">
-            <FileTree
-              tree={tree}
-              selectedPath={selectedPath}
-              onSelect={handleSelect}
-              expandedPaths={expandedPaths}
-              onToggle={handleToggle}
-            />
-            <div className="flex-1 overflow-hidden">
-              {selectedPath ? (
-                <CodeViewer slug={slug!} filePath={selectedPath} />
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
-                  <FileText className="size-6" />
-                  <p className="text-xs">Select a file to view its contents</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
