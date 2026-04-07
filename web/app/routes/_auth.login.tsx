@@ -1,10 +1,10 @@
-import { LockIcon } from 'lucide-react';
+import { MailIcon, KeyRoundIcon } from 'lucide-react';
 import { redirect, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
-import { VStack, HStack } from '~/components/interface/stacks';
+import { VStack } from '~/components/interface/stacks';
 import { getAuthStatusOptions, useLogin } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
 
@@ -46,69 +46,68 @@ export default function Login() {
 
   return (
     <div className="flex w-full flex-col gap-8 py-10">
-      <VStack space={6}>
-        <VStack space={4} alignItems="center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-50 border border-neutral-100">
-            <LockIcon className="size-5 text-neutral-900" />
-          </div>
-          <VStack space={1} alignItems="center">
-            <h1 className="text-2xl font-bold tracking-tight text-neutral-900">
-              Welcome Back
-            </h1>
-            <p className="text-sm text-neutral-500">
-              Sign in to your Slasha instance.
-            </p>
-          </VStack>
-        </VStack>
+      <div className="flex flex-col items-start gap-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight text-text">
+          Welcome back
+        </h1>
+        <p className="text-sm text-text-secondary">
+          Sign in to your Slasha instance.
+        </p>
+      </div>
 
-        <form onSubmit={handleSubmit}>
-          <VStack space={5}>
-            <VStack space={2}>
-              <Label
-                htmlFor="email"
-                className="text-sm font-medium text-neutral-700"
-              >
-                Email Address
-              </Label>
+      <form onSubmit={handleSubmit}>
+        <VStack space={4}>
+          <VStack space={2}>
+            <Label
+              htmlFor="email"
+              className="text-[13px] font-medium text-text-secondary"
+            >
+              Email address
+            </Label>
+            <div className="relative">
+              <MailIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
               <Input
                 id="email"
                 name="email"
                 type="email"
                 required
-                className="h-11 border-neutral-200 bg-neutral-50/30 transition-all focus-visible:border-black focus-visible:bg-white focus-visible:ring-0"
+                className="h-11 border-border bg-surface pl-9 text-text placeholder:text-text-tertiary transition-all focus-visible:border-text-secondary focus-visible:ring-0"
                 placeholder="admin@slasha.app"
                 autoComplete="email"
               />
-            </VStack>
+            </div>
+          </VStack>
 
-            <VStack space={2}>
-              <Label
-                htmlFor="password"
-                className="text-sm font-medium text-neutral-700"
-              >
-                Password
-              </Label>
+          <VStack space={2}>
+            <Label
+              htmlFor="password"
+              className="text-[13px] font-medium text-text-secondary"
+            >
+              Password
+            </Label>
+            <div className="relative">
+              <KeyRoundIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
               <Input
                 id="password"
                 name="password"
                 type="password"
                 required
-                className="h-11 border-neutral-200 bg-neutral-50/30 transition-all focus-visible:border-black focus-visible:bg-white focus-visible:ring-0"
+                className="h-11 border-border bg-surface pl-9 text-text placeholder:text-text-tertiary transition-all focus-visible:border-text-secondary focus-visible:ring-0"
                 placeholder="••••••••"
                 autoComplete="current-password"
               />
-            </VStack>
-
-            <Button
-              type="submit"
-              isLoading={login.isPending}
-              isDisabled={login.isPending}
-              label={login.isPending ? 'Signing in...' : 'Sign In'}
-              className="mt-2 h-11 w-full justify-center"
-            />
+            </div>
           </VStack>
-        </form>
-      </VStack>
+
+          <Button
+            type="submit"
+            isLoading={login.isPending}
+            isDisabled={login.isPending}
+            label={login.isPending ? 'Signing in…' : 'Sign in'}
+            className="mt-2 h-11 w-full justify-center bg-white text-bg hover:bg-white/90 focus:ring-0 focus:ring-offset-0"
+          />
+        </VStack>
+      </form>
     </div>
   );
 }
