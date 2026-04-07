@@ -44,20 +44,22 @@ export function ErrorView({ error }: ErrorViewProps) {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center p-8">
       <div className="flex max-w-md flex-col items-center text-center">
-        <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-red-50">
-          <AlertTriangle className="size-6 text-red-500" />
+        <div className="mb-5 flex size-12 items-center justify-center rounded-full border border-red-500/20 bg-red-500/10">
+          <AlertTriangle className="size-5 text-red-400" />
         </div>
 
-        <h1 className="mb-1 text-base font-semibold text-neutral-900">
+        <h1 className="mb-1.5 text-[15px] font-medium tracking-tight text-text">
           {title}
         </h1>
-        <p className="text-sm text-neutral-500 leading-relaxed">{message}</p>
+        <p className="text-[13px] leading-relaxed text-text-secondary">
+          {message}
+        </p>
 
         {stack && (
-          <div className="mt-3 w-full">
+          <div className="mt-4 w-full">
             <button
               onClick={() => setShowStack(!showStack)}
-              className="flex cursor-pointer items-center gap-1 text-xs text-neutral-400 hover:text-neutral-600 mx-auto"
+              className="mx-auto flex cursor-pointer items-center gap-1 font-mono text-[11px] uppercase tracking-[0.14em] text-text-tertiary transition-colors hover:text-text-secondary"
             >
               {showStack ? (
                 <ChevronUpIcon className="size-3" />
@@ -67,7 +69,7 @@ export function ErrorView({ error }: ErrorViewProps) {
               {showStack ? 'Hide details' : 'Show details'}
             </button>
             {showStack && (
-              <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-neutral-50 p-3 text-left text-[11px] leading-relaxed text-neutral-600 border border-neutral-200">
+              <pre className="mt-3 max-h-48 overflow-auto rounded-md border border-border bg-code-bg p-3 text-left font-mono text-[11px] leading-relaxed text-code-text">
                 {stack}
               </pre>
             )}
@@ -75,7 +77,7 @@ export function ErrorView({ error }: ErrorViewProps) {
         )}
 
         <button
-          className="mt-5 flex cursor-pointer items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
+          className="mt-6 flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-surface px-4 text-[12.5px] font-medium text-text-secondary transition-colors hover:bg-white/5 hover:text-text"
           onClick={() => navigate(-1)}
         >
           <ArrowLeftIcon className="size-3.5" />

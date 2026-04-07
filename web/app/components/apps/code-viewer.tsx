@@ -56,7 +56,7 @@ export function CodeViewer({ slug, filePath }: CodeViewerProps) {
     const lang = inferLang(data.name);
     codeToHtml(data.content, {
       lang,
-      theme: 'github-light',
+      theme: 'github-dark-default',
     })
       .then((html) => {
         if (!cancelled) {
@@ -79,35 +79,35 @@ export function CodeViewer({ slug, filePath }: CodeViewerProps) {
   if (isLoading) {
     return (
       <VStack space={3} className="p-6">
-        <Skeleton className="h-4 w-48" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-4 w-48 bg-white/5" />
+        <Skeleton className="h-64 w-full bg-white/5" />
       </VStack>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 py-20 text-neutral-400">
-        <FileWarning className="size-8" />
-        <p className="text-sm">Failed to load file</p>
+      <div className="flex flex-col items-center justify-center gap-3 py-20 text-text-tertiary">
+        <FileWarning className="size-6" />
+        <p className="text-xs">Failed to load file</p>
       </div>
     );
   }
 
-  if (!data) return null;
+  if (!data) {
+    return null;
+  }
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-2">
+      <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <HStack space={2}>
-          <FileText className="size-4 text-neutral-400" />
-          <span className="text-sm font-medium text-neutral-800">
-            {fileName}
-          </span>
+          <FileText className="size-3.5 text-text-tertiary" />
+          <span className="text-[13px] font-medium text-text">{fileName}</span>
         </HStack>
 
         <HStack space={4}>
-          <span className="text-xs text-neutral-400">
+          <span className="text-[11px] text-text-tertiary">
             {formatFileSize(data.size)}
             {data.is_truncated && ' (truncated)'}
           </span>
@@ -125,12 +125,12 @@ export function CodeViewer({ slug, filePath }: CodeViewerProps) {
 
       <div className="flex-1 overflow-auto">
         {data.is_binary ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-20 text-neutral-400">
-            <FileWarning className="size-8" />
-            <p className="text-sm">Binary file — cannot be displayed</p>
+          <div className="flex flex-col items-center justify-center gap-3 py-20 text-text-tertiary">
+            <FileWarning className="size-6" />
+            <p className="text-xs">Binary file — cannot be displayed</p>
           </div>
         ) : isHighlighting || !highlightedHtml ? (
-          <pre className="p-4 text-[13px] leading-relaxed text-neutral-700">
+          <pre className="p-4 text-[13px] leading-relaxed text-text-secondary">
             <code>{data.content}</code>
           </pre>
         ) : (

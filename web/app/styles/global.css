@@ -11,9 +11,13 @@
   --color-code-bg: #111111;
   --color-code-text: #e5e5e5;
   --font-body:
-    'Geist Variable', ui-sans-serif, system-ui, -apple-system,
+    'Geist', 'Geist Variable', ui-sans-serif, system-ui, -apple-system,
     'Segoe UI', sans-serif;
-  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --font-sans:
+    'Geist', 'Geist Variable', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', sans-serif;
+  --font-mono:
+    'Geist Mono', 'Geist Mono Variable', ui-monospace, monospace;
 }
 
 html,

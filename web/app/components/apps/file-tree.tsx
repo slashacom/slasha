@@ -42,30 +42,30 @@ function TreeNode({
       <button
         onClick={handleClick}
         className={cn(
-          'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] transition-colors',
-          'hover:bg-neutral-100',
-          isSelected && !isDir && 'bg-neutral-100 font-medium text-black',
-          !isSelected && 'text-neutral-700'
+          'flex w-full items-center gap-1.5 px-2 py-1 text-left text-[13px] transition-colors',
+          'hover:bg-white/[0.04]',
+          isSelected && !isDir && 'bg-white/[0.06] text-text',
+          !isSelected && 'text-text-secondary'
         )}
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
         {isDir ? (
           <>
             {isExpanded ? (
-              <ChevronDown className="size-3.5 shrink-0 text-neutral-400" />
+              <ChevronDown className="size-3.5 shrink-0 text-text-tertiary" />
             ) : (
-              <ChevronRight className="size-3.5 shrink-0 text-neutral-400" />
+              <ChevronRight className="size-3.5 shrink-0 text-text-tertiary" />
             )}
             {isExpanded ? (
-              <FolderOpen className="size-3.5 shrink-0 text-neutral-500" />
+              <FolderOpen className="size-3.5 shrink-0 text-text-tertiary" />
             ) : (
-              <Folder className="size-3.5 shrink-0 text-neutral-500" />
+              <Folder className="size-3.5 shrink-0 text-text-tertiary" />
             )}
           </>
         ) : (
           <>
             <span className="size-3.5 shrink-0" />
-            <FileText className="size-3.5 shrink-0 text-neutral-400" />
+            <FileText className="size-3.5 shrink-0 text-text-tertiary" />
           </>
         )}
         <span className="truncate">{node.name}</span>
@@ -106,7 +106,7 @@ export function FileTree({
   onToggle,
 }: FileTreeProps) {
   return (
-    <div className="w-72 shrink-0 overflow-y-auto border-r border-neutral-100 bg-neutral-50/50 py-2">
+    <div className="w-56 shrink-0 overflow-y-auto border-r border-border bg-bg/40 py-2">
       {tree.map((node) => (
         <TreeNode
           key={node.path}

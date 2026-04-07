@@ -1,13 +1,8 @@
-import { useNavigate } from 'react-router';
+import { useNavigate, redirect } from 'react-router';
 import { toast } from 'sonner';
-import { ArrowLeft } from 'lucide-react';
-import { PageContainer } from '~/components/interface/page-container';
-import { Button } from '~/components/interface/button';
-import { VStack, HStack } from '~/components/interface/stacks';
 import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { useCreateUser } from '~/queries/users';
-import { redirect } from 'react-router';
 import { UserForm } from '~/components/users/user-form';
 
 export async function clientLoader() {
@@ -19,7 +14,7 @@ export async function clientLoader() {
 }
 
 export function meta() {
-  return [{ title: 'Add User | Slasha' }];
+  return [{ title: 'Add user · slasha' }];
 }
 
 export default function NewUser() {
@@ -47,32 +42,23 @@ export default function NewUser() {
   };
 
   return (
-    <PageContainer variant="center" className="py-10">
-      <VStack space={6} className="max-w-2xl mx-auto">
-        <HStack space={4} alignItems="center">
-          <Button
-            variant="ghost"
-            icon={<ArrowLeft className="size-4" />}
-            onClick={() => navigate('/users')}
-          />
-          <VStack space={1}>
-            <h1 className="text-3xl font-bold tracking-tight text-neutral-900">
-              Add User
-            </h1>
-            <p className="text-neutral-500">
-              Create a new user account for your platform.
-            </p>
-          </VStack>
-        </HStack>
+    <div>
+      <div>
+        <h3 className="font-semibold text-text">Add user</h3>
+        <p className="mt-2 text-sm text-text-secondary">
+          Create a new account for someone on your team.
+        </p>
+      </div>
 
+      <div className="mt-6">
         <UserForm
           onSubmit={handleSubmit}
           onCancel={() => navigate('/users')}
           isPending={createUser.isPending}
           showPassword
-          submitLabel="Create User"
+          submitLabel="Create user"
         />
-      </VStack>
-    </PageContainer>
+      </div>
+    </div>
   );
 }

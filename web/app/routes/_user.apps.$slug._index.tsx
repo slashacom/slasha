@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { FileText, GitBranch } from 'lucide-react';
 import { getAppOptions } from '~/queries/apps';
 import { getFileTreeOptions } from '~/queries/files';
 import type { FileTreeNode } from '~/queries/files';
-import { PageContainer } from '~/components/interface/page-container';
-import { VStack, HStack } from '~/components/interface/stacks';
 import { Skeleton } from '~/components/interface/skeleton';
 import { FileTree } from '~/components/apps/file-tree';
 import { CodeViewer } from '~/components/apps/code-viewer';
@@ -15,6 +13,10 @@ import { queryClient } from '~/utils/query-client';
 export async function clientLoader({ params }: { params: { slug: string } }) {
   await queryClient.ensureQueryData(getAppOptions(params.slug));
   await queryClient.ensureQueryData(getFileTreeOptions(params.slug));
+}
+
+export function meta() {
+  return [{ title: 'App · slasha' }];
 }
 
 export default function AppIndexPage() {
@@ -47,21 +49,23 @@ export default function AppIndexPage() {
 
   if (appLoading || treeLoading) {
     return (
-      <PageContainer variant="center" className="py-10">
-        <VStack space={3}>
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-96 w-full" />
-        </VStack>
-      </PageContainer>
+      <div className="space-y-3">
+        <Skeleton className="h-6 w-48 bg-surface" />
+        <Skeleton className="h-4 w-32 bg-surface" />
+        <Skeleton className="mt-6 h-96 w-full bg-surface" />
+      </div>
     );
   }
 
   const app = appData?.app;
   if (!app) {
     return (
-      <PageContainer variant="center" className="py-10">
-        <h1 className="text-xl font-bold">App not found</h1>
-      </PageContainer>
+      <div>
+        <h3 className="font-semibold text-text">App not found</h3>
+        <p className="mt-2 text-sm text-text-secondary">
+          The application you're looking for doesn't exist.
+        </p>
+      </div>
     );
   }
 
@@ -69,38 +73,32 @@ export default function AppIndexPage() {
   const tree: FileTreeNode[] = treeData?.tree ?? [];
 
   return (
-    <PageContainer variant="center" className="px-6 py-10">
-      <VStack space={6}>
-        <HStack justifyContent="between" alignItems="center">
-          <VStack space={1}>
-            <h1 className="text-4xl font-bold tracking-tight text-black">
-              {app.name}
-            </h1>
-            <p className="font-mono text-sm text-neutral-500">{app.slug}</p>
-          </VStack>
-          <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600">
-            {app.default_branch}
-          </div>
-        </HStack>
+    <div>
+      <div className="flex items-start justify-between">
+        <div>
+          <h3 className="font-semibold text-text">{app.name}</h3>
+          <p className="mt-2 font-mono text-sm text-text-tertiary">
+            {app.slug}
+          </p>
+        </div>
+        <span className="rounded border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-text-secondary">
+          {app.default_branch}
+        </span>
+      </div>
 
-        <div className="h-px w-full bg-neutral-100" />
-
+      <div className="mt-6">
         {!hasCommits ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 py-20">
-            <div className="rounded-full bg-neutral-50 p-4">
-              <GitBranch className="size-8 text-neutral-300" />
+          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-border bg-surface py-16">
+            <div className="rounded-full border border-border p-3">
+              <GitBranch className="size-5 text-text-tertiary" />
             </div>
-            <VStack space={1} alignItems="center">
-              <p className="text-sm font-medium text-neutral-700">
-                No commits yet
-              </p>
-              <p className="text-sm text-neutral-400">
-                Push code to this repository to see the file tree.
-              </p>
-            </VStack>
+            <p className="text-sm font-medium text-text">No commits yet</p>
+            <p className="text-xs text-text-tertiary">
+              Push code to this repository to see the file tree.
+            </p>
           </div>
         ) : (
-          <div className="flex h-[calc(100vh-220px)] overflow-hidden rounded-lg border border-neutral-200">
+          <div className="flex h-[calc(100vh-200px)] overflow-hidden rounded-lg border border-border bg-surface">
             <FileTree
               tree={tree}
               selectedPath={selectedPath}
@@ -108,19 +106,19 @@ export default function AppIndexPage() {
               expandedPaths={expandedPaths}
               onToggle={handleToggle}
             />
-            <div className="flex-1 overflow-hidden bg-white">
+            <div className="flex-1 overflow-hidden">
               {selectedPath ? (
                 <CodeViewer slug={slug!} filePath={selectedPath} />
               ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-3 text-neutral-400">
-                  <FileText className="size-8" />
-                  <p className="text-sm">Select a file to view its contents</p>
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
+                  <FileText className="size-6" />
+                  <p className="text-xs">Select a file to view its contents</p>
                 </div>
               )}
             </div>
           </div>
         )}
-      </VStack>
-    </PageContainer>
+      </div>
+    </div>
   );
 }
