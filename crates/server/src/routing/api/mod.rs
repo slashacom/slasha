@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 pub mod apps;
 pub mod auth;
+pub mod ssh_keys;
 pub mod users;
 
 use crate::middleware::admin::admin_middleware;
@@ -13,6 +14,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/health", get(health_check))
         .nest("/auth", auth::router())
         .nest("/apps", apps::router())
+        .nest("/ssh-keys", ssh_keys::router())
         .nest(
             "/users",
             users::router().route_layer(axum::middleware::from_fn_with_state(

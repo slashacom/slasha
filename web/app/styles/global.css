@@ -16,8 +16,7 @@
   --font-sans:
     'Geist', 'Geist Variable', ui-sans-serif, system-ui, -apple-system,
     'Segoe UI', sans-serif;
-  --font-mono:
-    'Geist Mono', 'Geist Mono Variable', ui-monospace, monospace;
+  --font-mono: 'Geist Mono', 'Geist Mono Variable', ui-monospace, monospace;
 }
 
 html,

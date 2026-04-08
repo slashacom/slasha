@@ -2734,6 +2734,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "slasha-git-ssh-handler"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "diesel",
+ "dirs",
+ "models",
+]
+
+[[package]]
 name = "slasha-server"
 version = "0.1.0"
 dependencies = [

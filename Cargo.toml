@@ -1,3 +1,3 @@
 [workspace]
 resolver = "3"
-members = ["crates/server", "crates/cli", "crates/models"]
+members = ["crates/server", "crates/cli", "crates/models", "crates/git-ssh-handler"]

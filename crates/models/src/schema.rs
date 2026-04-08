@@ -22,6 +22,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    ssh_keys (id) {
+        id -> Text,
+        user_id -> Text,
+        title -> Nullable<Text>,
+        public_key -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Text,
         email -> Text,
@@ -34,5 +44,6 @@ diesel::table! {
 
 diesel::joinable!(app_members -> apps (app_id));
 diesel::joinable!(app_members -> users (user_id));
+diesel::joinable!(ssh_keys -> users (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(app_members, apps, users,);
+diesel::allow_tables_to_appear_in_same_query!(app_members, apps, ssh_keys, users,);

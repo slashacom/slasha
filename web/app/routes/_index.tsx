@@ -110,8 +110,8 @@ function Hero() {
           </h1>
 
           <p className="mt-6 max-w-[520px] text-[15.5px] leading-relaxed text-text-secondary">
-            A self-hostable, open-source PaaS built on Docker. Point a remote
-            at your own server and ship — no dashboards, no YAML, no lock-in.
+            A self-hostable, open-source PaaS built on Docker. Point a remote at
+            your own server and ship — no dashboards, no YAML, no lock-in.
             Heroku-grade DX on infrastructure you control.
           </p>
 
@@ -196,9 +196,7 @@ function TerminalCard() {
         {'\n'}
         <span className="text-text-tertiary">→ routing traffic…</span>
         {'\n'}
-        <span className="text-emerald-400">
-          ✓ live at my-app.my-server.com
-        </span>
+        <span className="text-emerald-400">✓ live at my-app.my-server.com</span>
       </pre>
     </div>
   );
@@ -225,9 +223,9 @@ function Features() {
             <span className="text-text-tertiary">in a single binary.</span>
           </h2>
           <p className="mt-4 text-[15px] leading-relaxed text-text-secondary">
-            slasha bundles the things you'd cobble together yourself —
-            builds, isolation, scaling, monitoring — into a single binary
-            that runs on any Linux box.
+            slasha bundles the things you'd cobble together yourself — builds,
+            isolation, scaling, monitoring — into a single binary that runs on
+            any Linux box.
           </p>
         </div>
 
@@ -403,7 +401,9 @@ function MicroVmVisual() {
           key={i}
           className="flex h-10 items-center justify-between rounded-md border border-border bg-bg/60 px-2 font-mono text-[9px] text-text-tertiary"
         >
-          <span className="truncate">vm-{(i + 1).toString().padStart(2, '0')}</span>
+          <span className="truncate">
+            vm-{(i + 1).toString().padStart(2, '0')}
+          </span>
           <span className="size-1.5 rounded-full bg-emerald-400/70" />
         </div>
       ))}
@@ -499,8 +499,8 @@ function FinalCta() {
             <span className="text-text-tertiary">Start shipping.</span>
           </h2>
           <p className="mx-auto mt-5 max-w-xl text-[15px] leading-relaxed text-text-secondary">
-            Self-host slasha in five minutes. Deploy your first app in
-            another five.
+            Self-host slasha in five minutes. Deploy your first app in another
+            five.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link

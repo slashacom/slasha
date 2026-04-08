@@ -30,7 +30,7 @@ const NAME_MAP: Record<string, LucideIcon> = {
   'yarn.lock': FileLock,
   'tsconfig.json': FileCog,
   'readme.md': FileText,
-  'license': FileText,
+  license: FileText,
 };
 
 const EXT_MAP: Record<string, LucideIcon> = {

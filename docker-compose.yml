@@ -1,10 +1,14 @@
 services:
   slasha:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
+      - "22:22"
     volumes:
-      - ./data:/root/.slasha
+      - ./data/.slasha:/home/slasha/.slasha
+      - ./data/.ssh:/home/slasha/.ssh
     env_file:
       - .env
     restart: unless-stopped

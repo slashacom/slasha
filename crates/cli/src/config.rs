@@ -4,7 +4,7 @@ use std::{fs, path::PathBuf};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Config {
-    pub base_url: Option<String>,
+    pub base_url: String,
     pub auth_token: Option<String>,
 }
 
@@ -25,8 +25,12 @@ impl Config {
         let content = fs::read_to_string(&path)
             .with_context(|| format!("failed to read config file: {}", path.display()))?;
 
-        let config = serde_json::from_str(&content)
+        let mut config: Config = serde_json::from_str(&content)
             .with_context(|| format!("failed to parse config file: {}", path.display()))?;
+
+        if config.base_url.is_empty() {
+            config.base_url = "http://localhost:3000".to_string();
+        }
 
         Ok(config)
     }

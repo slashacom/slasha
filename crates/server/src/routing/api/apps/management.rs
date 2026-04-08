@@ -71,8 +71,9 @@ async fn create_app(
         )));
     }
 
-    let repo_dir = state.repos_dir.join(format!("{}.git", slug));
-    let repo_path = repo_dir
+    let repo_path = state
+        .repos_dir
+        .join(format!("{}.git", slug))
         .to_str()
         .ok_or_else(|| Error::Internal(anyhow::anyhow!("Invalid repo path")))?
         .to_string();
@@ -80,6 +81,7 @@ async fn create_app(
     let git_status = Command::new("git")
         .arg("init")
         .arg("--bare")
+        .arg("--initial-branch=main")
         .arg(&repo_path)
         .output()
         .await
