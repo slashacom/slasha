@@ -2,10 +2,10 @@ use crate::{config::Config, http::client};
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use inquire::{Password, PasswordDisplayMode, Text};
+use models::user::User;
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
-use models::user::User;
 
 #[derive(Deserialize)]
 struct AuthResponse {

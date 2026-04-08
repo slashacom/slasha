@@ -147,7 +147,7 @@ async fn delete_user(
     let user = users::table
         .filter(users::id.eq(&id))
         .first::<User>(&mut conn)
-        .optional()? 
+        .optional()?
         .ok_or_else(|| Error::NotFound("User not found".into()))?;
 
     let admin_count = users::table

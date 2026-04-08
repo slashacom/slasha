@@ -1,13 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Check,
-  Copy,
-  FileText,
-  Folder,
-  GitBranch,
-} from 'lucide-react';
+import { Check, Copy, FileText, Folder, GitBranch } from 'lucide-react';
 import { getAppOptions } from '~/queries/apps';
 import { findNodeByPath, getFileTreeOptions } from '~/queries/files';
 import type { FileTreeNode } from '~/queries/files';
@@ -39,12 +33,12 @@ function AppToolbar(props: { app: App }) {
     if (typeof window === 'undefined') {
       return {
         httpsUrl: `/git/${app.slug}`,
-        sshUrl: `git@localhost:${app.slug}.git`,
+        sshUrl: `slasha@localhost:${app.slug}.git`,
       };
     }
     return {
       httpsUrl: `${window.location.origin}/git/${app.slug}`,
-      sshUrl: `git@${window.location.hostname}:${app.slug}.git`,
+      sshUrl: `slasha@${window.location.hostname}:${app.slug}.git`,
     };
   }, [app.slug]);
 

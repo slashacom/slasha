@@ -25,17 +25,13 @@ impl ApiClient {
     fn from_config() -> anyhow::Result<Self> {
         let config = Config::load().context("failed to load config")?;
 
-        let base_url = config
-            .base_url
-            .unwrap_or_else(|| "http://localhost:3000".to_string());
-
         let inner = Client::builder()
             .build()
             .context("failed to build HTTP client")?;
 
         Ok(Self {
             inner,
-            base_url,
+            base_url: config.base_url,
             auth_token: config.auth_token,
         })
     }

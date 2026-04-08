@@ -60,8 +60,7 @@ export default function EditUser() {
       <div>
         <h3 className="font-semibold text-text">Edit user</h3>
         <p className="mt-2 text-sm text-text-secondary">
-          Update details for{' '}
-          <span className="text-text">{user.email}</span>.
+          Update details for <span className="text-text">{user.email}</span>.
         </p>
       </div>
 

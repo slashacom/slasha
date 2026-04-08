@@ -3,7 +3,6 @@ pub mod auth;
 mod clap_app;
 pub mod config;
 pub mod http;
-pub mod utils;
 
 use crate::{
     clap_app::{AppsCommand, ClapApp, Command},
@@ -33,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::SetUrl { url } => {
             let mut conf = Config::load()?;
-            conf.base_url = Some(url.clone());
+            conf.base_url = url.clone();
             conf.save()?;
 
             tracing::info!("Set Slasha API URL to: {}", url);

@@ -1,7 +1,26 @@
-use crate::{http::client, utils::build_git_remote_url};
+use crate::{config::Config, http::client};
 use anyhow::{Context, Result};
 use models::app::App;
 use serde_json::json;
+
+fn build_git_remote_url(slug: &str) -> String {
+    let config = Config::load().unwrap();
+    format!("{}/git/{}", config.base_url, slug)
+}
+
+fn build_ssh_git_url(slug: &str) -> String {
+    let config = Config::load().unwrap();
+
+    let host = config
+        .base_url
+        .trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .split(':')
+        .next()
+        .unwrap_or("localhost");
+
+    format!("slasha@{}:{}.git", host, slug)
+}
 
 pub async fn handle_create(name: &str) -> Result<()> {
     let response = client()?
@@ -22,17 +41,19 @@ pub async fn handle_create(name: &str) -> Result<()> {
         serde_json::from_value(body["app"].clone()).context("Failed to parse app object")?;
 
     let git_url = build_git_remote_url(&app.slug);
+    let ssh_url = build_ssh_git_url(&app.slug);
 
     tracing::info!("App created successfully!");
     tracing::info!("  Name:   {}", app.name);
     tracing::info!("  Slug:   {}", app.slug);
     tracing::info!("  Status: {}", app.status);
     tracing::info!("");
-    tracing::info!("Git remote URL:");
-    tracing::info!("  {}", git_url);
+    tracing::info!("Git Remote URLs:");
+    tracing::info!("  HTTPS: {}", git_url);
+    tracing::info!("  SSH:   {}", ssh_url);
     tracing::info!("");
-    tracing::info!("To deploy, add this remote and push:");
-    tracing::info!("  git remote add slasha {}", git_url);
+    tracing::info!("To deploy, add a remote and push:");
+    tracing::info!("  git remote add slasha {}", ssh_url);
     tracing::info!("  git push -u slasha main");
 
     Ok(())
@@ -76,17 +97,19 @@ pub async fn handle_info(slug: &str) -> Result<()> {
         serde_json::from_value(body["app"].clone()).context("Failed to parse app object")?;
 
     let git_url = build_git_remote_url(&app.slug);
+    let ssh_url = build_ssh_git_url(&app.slug);
 
     tracing::info!("App info:");
     tracing::info!("  Name:   {}", app.name);
     tracing::info!("  Slug:   {}", app.slug);
     tracing::info!("  Status: {}", app.status);
     tracing::info!("");
-    tracing::info!("Git remote URL:");
-    tracing::info!("  {}", git_url);
+    tracing::info!("Git Remote URLs:");
+    tracing::info!("  HTTPS: {}", git_url);
+    tracing::info!("  SSH:   {}", ssh_url);
     tracing::info!("");
-    tracing::info!("To deploy, add this remote and push:");
-    tracing::info!("  git remote add slasha {}", git_url);
+    tracing::info!("To deploy, add a remote and push:");
+    tracing::info!("  git remote add slasha {}", ssh_url);
     tracing::info!("  git push slasha main");
 
     Ok(())

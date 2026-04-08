@@ -21,6 +21,9 @@ function usePageTitle() {
   if (path.startsWith('/users/')) {
     return 'Users';
   }
+  if (path.startsWith('/settings/')) {
+    return 'Settings';
+  }
   return '';
 }
 
@@ -28,8 +31,7 @@ export default function UserLayout() {
   const title = usePageTitle();
   const location = useLocation();
   const params = useParams();
-  const isFullWidth =
-    !!params.slug && location.pathname.startsWith('/apps/');
+  const isFullWidth = !!params.slug && location.pathname.startsWith('/apps/');
 
   return (
     <div className="flex h-screen bg-bg">
