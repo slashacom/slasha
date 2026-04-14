@@ -3,7 +3,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use file_rotate::{ContentLimit, FileRotate, compression::Compression, suffix::AppendTimestamp};
+use file_rotate::{
+    ContentLimit, FileRotate,
+    compression::Compression,
+    suffix::{AppendTimestamp, DateFrom, FileLimit},
+};
 use tokio::sync::{Mutex, broadcast};
 
 use crate::error::Result;
@@ -78,8 +82,12 @@ impl DeploymentBroadcaster {
 
             let file_rotate = FileRotate::new(
                 path,
-                AppendCount::new(5),         // keep 5 rotated files
-                ContentLimit::Lines(10_000), // rotate after 10k lines
+                AppendTimestamp::with_format(
+                    "%Y-%m-%d_%H-%M-%S",
+                    FileLimit::MaxFiles(10),
+                    DateFrom::Now,
+                ),
+                ContentLimit::Lines(10_000),
                 Compression::None,
                 None,
             );
