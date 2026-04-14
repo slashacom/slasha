@@ -28,6 +28,9 @@ pub enum Error {
 
     #[error("Git Error: {0}")]
     GitError(#[from] GitError),
+
+    #[error("IO Error: {0}")]
+    IOError(#[from] std::io::Error),
 }
 
 #[derive(Error, Debug)]
@@ -66,6 +69,7 @@ impl IntoResponse for Error {
             Error::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             Error::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
             Error::GitError(_) => unreachable!(),
+            Error::IOError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
         };
 
         let body = Json(json!({ "error": message }));

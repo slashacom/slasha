@@ -22,6 +22,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    deployments (id) {
+        id -> Text,
+        app_id -> Text,
+        commit_sha -> Text,
+        commit_message -> Text,
+        status -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     ssh_keys (id) {
         id -> Text,
         user_id -> Text,
@@ -44,6 +56,7 @@ diesel::table! {
 
 diesel::joinable!(app_members -> apps (app_id));
 diesel::joinable!(app_members -> users (user_id));
+diesel::joinable!(deployments -> apps (app_id));
 diesel::joinable!(ssh_keys -> users (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(app_members, apps, ssh_keys, users,);
+diesel::allow_tables_to_appear_in_same_query!(app_members, apps, deployments, ssh_keys, users,);

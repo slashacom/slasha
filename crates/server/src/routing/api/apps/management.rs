@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     AppState,
+    docker::pipeline::delete_deployment_container,
     error::{Error, Result},
     extractors::auth::AuthUser,
     utils::slugify,
@@ -21,7 +22,8 @@ use super::utils::lookup_app_for_user;
 
 use models::{
     app::{App, AppMember, AppMemberRole},
-    schema::{app_members, apps},
+    deployment::Deployment,
+    schema::{app_members, apps, deployments},
 };
 
 pub fn router() -> Router<AppState> {
@@ -161,6 +163,28 @@ async fn delete_app(
 
     if membership.role != AppMemberRole::Owner {
         return Err(Error::BadRequest("Only app owners can delete apps".into()));
+    }
+
+    let deployments: Vec<Deployment> = deployments::table
+        .filter(deployments::app_id.eq(&app.id))
+        .load(&mut conn)?;
+
+    for dep in deployments {
+        if let Err(e) = delete_deployment_container(
+            &state.docker,
+            &state.port_pool,
+            &state.deployment_broadcaster,
+            &app,
+            &dep,
+        )
+        .await
+        {
+            tracing::warn!(
+                "Failed to delete container for deployment {}: {}",
+                dep.id,
+                e
+            );
+        }
     }
 
     diesel::delete(apps::table.filter(apps::id.eq(&app.id))).execute(&mut conn)?;
