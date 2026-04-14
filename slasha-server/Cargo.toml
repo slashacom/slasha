@@ -28,7 +28,7 @@ chrono = { version = "0.4.44", features = ["serde"] }
 zeroize = "1.8.2"
 rand_core = "0.10.0"
 dotenv = "0.15.0"
-models = { path = "../models" }
+models = { path = "../slasha-models" }
 base64 = "0.22.1"
 dirs = "6.0.0"
 diesel_migrations = "2.3.1"

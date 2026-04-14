@@ -1,5 +1,5 @@
 [package]
-name = "slasha-git-ssh-handler"
+name = "git-ssh-handler"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,4 +7,8 @@ edition = "2024"
 anyhow = "1.0.102"
 diesel = { version = "2.2.0", features = ["sqlite", "chrono"] }
 dirs = "6.0.0"
-models = { path = "../models" }
+models = { path = "../../slasha-models" }
+
+[[bin]]
+name = "slasha-git-ssh-handler"   
+path = "src/main.rs"
