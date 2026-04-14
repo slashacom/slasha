@@ -1,10 +1,9 @@
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use tokio::fs;
-use tokio::fs::OpenOptions;
-use tokio::io::AsyncWriteExt;
+use file_rotate::{ContentLimit, FileRotate, compression::Compression, suffix::AppendTimestamp};
 use tokio::sync::{Mutex, broadcast};
 
 use crate::error::Result;
@@ -13,7 +12,7 @@ const CHANNEL_CAPACITY: usize = 1024;
 
 pub struct DeploymentBroadcaster {
     channels: DashMap<String, broadcast::Sender<String>>,
-    files: DashMap<String, Arc<Mutex<fs::File>>>,
+    files: DashMap<String, Arc<Mutex<FileRotate<AppendTimestamp>>>>,
     logs_dir: PathBuf,
 }
 
@@ -27,23 +26,25 @@ impl DeploymentBroadcaster {
     }
 
     pub async fn get_historical(&self, deployment_id: &str) -> Vec<String> {
-        let path = self.logs_dir.join(format!("{}.log", deployment_id));
+        let path = self.logs_dir.join(format!("{deployment_id}.log"));
+
         if !path.exists() {
             return Vec::new();
         }
 
-        let content = fs::read_to_string(path).await.unwrap_or_default();
-        content.lines().map(|line| line.to_string()).collect()
+        let content = tokio::fs::read_to_string(path).await.unwrap_or_default();
+
+        content.lines().map(|s| s.to_string()).collect()
     }
 
     pub async fn delete_logs(&self, deployment_id: &str) -> Result<()> {
         self.channels.remove(deployment_id);
         self.files.remove(deployment_id);
 
-        let path = self.logs_dir.join(format!("{}.log", deployment_id));
+        let path = self.logs_dir.join(format!("{deployment_id}.log"));
 
-        if fs::try_exists(&path).await.unwrap_or(false) {
-            fs::remove_file(&path).await?;
+        if tokio::fs::try_exists(&path).await.unwrap_or(false) {
+            tokio::fs::remove_file(path).await?;
         }
 
         Ok(())
@@ -55,6 +56,7 @@ impl DeploymentBroadcaster {
         }
 
         let (tx, rx) = broadcast::channel(CHANNEL_CAPACITY);
+
         match self.channels.entry(deployment_id.to_string()) {
             dashmap::Entry::Occupied(e) => e.get().subscribe(),
             dashmap::Entry::Vacant(e) => {
@@ -66,28 +68,33 @@ impl DeploymentBroadcaster {
 
     pub async fn send(&self, deployment_id: &str, line: String) -> Result<()> {
         if let Some(sender) = self.channels.get(deployment_id) {
-            let _ = sender.send(line.clone()); // ignore if no one is listening
+            let _ = sender.send(line.clone()); // there may be no one listening 
         }
 
-        let file = if let Some(file_entry) = self.files.get(deployment_id) {
-            file_entry.clone()
+        let writer = if let Some(entry) = self.files.get(deployment_id) {
+            entry.clone()
         } else {
-            let f = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(self.logs_dir.join(format!("{}.log", deployment_id)))
-                .await?;
+            let path = self.logs_dir.join(format!("{deployment_id}.log"));
 
-            let file_arc = Arc::new(Mutex::new(f));
+            let file_rotate = FileRotate::new(
+                path,
+                AppendCount::new(5),         // keep 5 rotated files
+                ContentLimit::Lines(10_000), // rotate after 10k lines
+                Compression::None,
+                None,
+            );
+
+            let arc = Arc::new(Mutex::new(file_rotate));
+
             self.files
                 .entry(deployment_id.to_string())
-                .or_insert(file_arc.clone())
-                .clone()
+                .or_insert(arc.clone());
+
+            arc
         };
 
-        let mut file = file.lock().await;
-        file.write_all(line.as_bytes()).await?;
-        file.write_all(b"\n").await?;
+        let mut file = writer.lock().await;
+        writeln!(file, "{line}")?;
 
         Ok(())
     }
