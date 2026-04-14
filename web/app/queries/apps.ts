@@ -1,5 +1,5 @@
 import { queryOptions, useMutation } from '@tanstack/react-query';
-import { httpGet, httpPost } from '~/utils/http';
+import { httpDelete, httpGet, httpPost } from '~/utils/http';
 import type { App } from '~/models/app';
 
 export function getAppsOptions() {
@@ -20,5 +20,11 @@ export function useCreateApp() {
   return useMutation({
     mutationFn: (data: { name: string }) =>
       httpPost<{ app: App }>('apps', data),
+  });
+}
+
+export function useDeleteApp() {
+  return useMutation({
+    mutationFn: (slug: string) => httpDelete(`apps/${slug}`),
   });
 }

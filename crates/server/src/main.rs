@@ -1,6 +1,7 @@
 #[cfg(feature = "bundle")]
 pub mod assets;
 pub mod auth;
+pub mod docker;
 pub mod error;
 pub mod extractors;
 pub mod middleware;
@@ -10,8 +11,12 @@ pub mod utils;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
+
+use docker::broadcaster::DeploymentBroadcaster;
+use docker::port_pool::PortPool;
 
 pub use error::{Error, Result};
 
@@ -26,6 +31,9 @@ pub struct AppState {
     pub db_pool: Pool<ConnectionManager<SqliteConnection>>,
     pub jwt_secret: String,
     pub repos_dir: PathBuf,
+    pub docker: bollard::Docker,
+    pub port_pool: Arc<PortPool>,
+    pub deployment_broadcaster: Arc<DeploymentBroadcaster>,
 }
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../models/migrations");
@@ -71,6 +79,10 @@ async fn main() -> anyhow::Result<()> {
 
     let db_path = utils::ensure_dir(&data_dir).join("slasha.db");
     let repos_dir = utils::ensure_dir(&data_dir.join("repos"));
+    let logs_dir = utils::ensure_dir(&data_dir.join("logs"));
+
+    let docker =
+        bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");
 
     let state = AppState {
         db_pool: Pool::builder()
@@ -80,6 +92,15 @@ async fn main() -> anyhow::Result<()> {
             .expect("Failed to create DB pool"),
         jwt_secret: std::env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
         repos_dir,
+        port_pool: Arc::new(
+            PortPool::new(4000, 5000, &docker)
+                .await
+                .expect("Failed to initialise port pool"),
+        ),
+        docker,
+        deployment_broadcaster: Arc::new(DeploymentBroadcaster::new(utils::ensure_dir(
+            &logs_dir.join("deployments"),
+        ))),
     };
 
     run_migrations(&state)?;

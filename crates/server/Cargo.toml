@@ -35,6 +35,10 @@ diesel_migrations = "2.3.1"
 flate2 = "1.1.9"
 tokio-util = { version = "0.7.18", features = ["io"] }
 git2 = "0.20.4"
+bollard = "0.20.2"
+futures-util = "0.3.32"
+dashmap = "6.1.0"
+bytes = "1"
 
 [features]
 bundle = ["rust-embed", "mime_guess"]

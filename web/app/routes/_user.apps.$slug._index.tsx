@@ -1,8 +1,18 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Copy, FileText, Folder, GitBranch } from 'lucide-react';
-import { getAppOptions } from '~/queries/apps';
+import {
+  Check,
+  Copy,
+  FileText,
+  Folder,
+  GitBranch,
+  Loader2,
+  Settings,
+  Trash,
+} from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { getAppOptions, useDeleteApp } from '~/queries/apps';
 import { findNodeByPath, getFileTreeOptions } from '~/queries/files';
 import type { FileTreeNode } from '~/queries/files';
 import type { App } from '~/models/app';
@@ -10,12 +20,19 @@ import { Skeleton } from '~/components/interface/skeleton';
 import { FileTree } from '~/components/apps/file-tree';
 import { CodeViewer } from '~/components/apps/code-viewer';
 import { FolderViewer } from '~/components/apps/folder-viewer';
+import { DeploymentsView } from '~/components/apps/deployments';
+import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { cn } from '~/utils/classname';
 import { queryClient } from '~/utils/query-client';
+import { getDeploymentsOptions } from '~/queries/deployments';
+import { HStack } from '~/components/interface/stacks';
 
 export async function clientLoader({ params }: { params: { slug: string } }) {
-  await queryClient.ensureQueryData(getAppOptions(params.slug));
-  await queryClient.ensureQueryData(getFileTreeOptions(params.slug));
+  await Promise.all([
+    queryClient.ensureQueryData(getAppOptions(params.slug)),
+    queryClient.ensureQueryData(getFileTreeOptions(params.slug)),
+    queryClient.ensureQueryData(getDeploymentsOptions(params.slug)),
+  ]);
 }
 
 export function meta() {
@@ -126,8 +143,14 @@ export default function AppIndexPage() {
     getFileTreeOptions(slug!)
   );
 
+  const navigate = useNavigate();
+  const deleteApp = useDeleteApp();
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<
+    'files' | 'deployments' | 'settings'
+  >('files');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleToggle = useCallback((path: string) => {
     setExpandedPaths((prev) => {
@@ -214,7 +237,91 @@ export default function AppIndexPage() {
     <div className="flex flex-1 flex-col min-h-0">
       <AppToolbar app={app} />
 
-      {!hasCommits ? (
+      <div className="flex shrink-0 border-b border-border bg-surface/30 px-8">
+        <HStack space={6}>
+          <button
+            onClick={() => setActiveTab('files')}
+            className={cn(
+              'h-10 text-[13px] font-medium transition-colors border-b-2 -mb-[2px]',
+              activeTab === 'files'
+                ? 'border-white text-text'
+                : 'border-transparent text-text-tertiary hover:text-text-secondary'
+            )}
+          >
+            Files
+          </button>
+          <button
+            onClick={() => setActiveTab('deployments')}
+            className={cn(
+              'h-10 text-[13px] font-medium transition-colors border-b-2 -mb-[2px]',
+              activeTab === 'deployments'
+                ? 'border-white text-text'
+                : 'border-transparent text-text-tertiary hover:text-text-secondary'
+            )}
+          >
+            Deployments
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={cn(
+              'h-10 text-[13px] font-medium transition-colors border-b-2 -mb-[2px]',
+              activeTab === 'settings'
+                ? 'border-white text-text'
+                : 'border-transparent text-text-tertiary hover:text-text-secondary'
+            )}
+          >
+            Settings
+          </button>
+        </HStack>
+      </div>
+
+      {activeTab === 'settings' ? (
+        <div className="flex-1 overflow-y-auto p-8">
+          <div className="max-w-2xl">
+            <h3 className="text-[14px] font-semibold text-text">Danger Zone</h3>
+            <p className="mt-1 text-[13px] text-text-tertiary">
+              Destructive actions for your application.
+            </p>
+
+            <div className="mt-6 rounded-lg border border-red-500/20 bg-red-500/5 p-6">
+              <div className="flex items-start justify-between gap-6">
+                <div>
+                  <h4 className="text-[13px] font-medium text-red-500">
+                    Delete this application
+                  </h4>
+                  <p className="mt-1 text-[12px] text-red-500/70">
+                    Once you delete an application, there is no going back.
+                    Please be certain.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="shrink-0 rounded-md bg-red-600 px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-red-500"
+                >
+                  Delete App
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <ConfirmationDialog
+            open={showDeleteConfirm}
+            onOpenChange={setShowDeleteConfirm}
+            title="Delete Application"
+            description={`Are you sure you want to delete ${app.name}? This action cannot be undone and will permanently delete all associated data.`}
+            confirmLabel="Delete Application"
+            onConfirm={() => {
+              deleteApp.mutate(app.slug, {
+                onSuccess: () => {
+                  navigate('/apps');
+                },
+              });
+            }}
+          />
+        </div>
+      ) : activeTab === 'deployments' ? (
+        <DeploymentsView appSlug={slug!} />
+      ) : !hasCommits ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <div className="rounded-full border border-border p-3">
             <GitBranch className="size-5 text-text-tertiary" />
