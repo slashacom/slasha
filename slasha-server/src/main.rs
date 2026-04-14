@@ -36,7 +36,7 @@ pub struct AppState {
     pub deployment_broadcaster: Arc<DeploymentBroadcaster>,
 }
 
-pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../models/migrations");
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../slasha-models/migrations");
 
 fn run_migrations(state: &AppState) -> anyhow::Result<()> {
     let mut conn = state
