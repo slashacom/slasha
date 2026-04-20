@@ -40,6 +40,7 @@ futures-util = "0.3.32"
 dashmap = "6.1.0"
 bytes = "1"
 file-rotate = "0.8.0"
+tempfile = "3.27.0"
 
 [features]
 bundle = ["rust-embed", "mime_guess"]

@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     AppState,
-    docker::pipeline::delete_deployment_container,
+    docker::run::delete_deployment_container,
     error::{Error, Result},
     extractors::auth::AuthUser,
     utils::slugify,

@@ -31,6 +31,9 @@ pub enum Error {
 
     #[error("IO Error: {0}")]
     IOError(#[from] std::io::Error),
+
+    #[error("Deployment error: {0}")]
+    Deployment(#[from] DeploymentError),
 }
 
 #[derive(Error, Debug)]
@@ -47,6 +50,57 @@ pub enum GitError {
     NotMember,
     #[error("Internal Server Error: {0}")]
     Internal(#[from] anyhow::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum DeploymentError {
+    #[error("DB pool error: {0}")]
+    PoolError(#[from] diesel::r2d2::PoolError),
+
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] diesel::result::Error),
+
+    #[error("git archive failed: {0}")]
+    GitArchiveFailed(String),
+
+    #[error("Git error: {0}")]
+    GitError(#[from] git2::Error),
+
+    #[error("Dockerfile is not valid UTF-8")]
+    DockerfileEncoding,
+
+    #[error("Build failed: {0}")]
+    BuildFailed(String),
+
+    #[error("railpack prepare failed with exit status {0}")]
+    RailpackPrepareFailed(std::process::ExitStatus),
+
+    #[error("docker buildx build failed with exit status {0}")]
+    BuildKitFailed(std::process::ExitStatus),
+
+    #[error("{phase} failed with exit status {status}")]
+    PhaseFailed {
+        phase: String,
+        status: std::process::ExitStatus,
+    },
+
+    #[error("Docker API error: {0}")]
+    DockerApi(#[from] bollard::errors::Error),
+
+    #[error("Port allocation failed: {0}")]
+    PortAllocationFailed(String),
+
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("spawn_blocking panicked")]
+    SpawnBlockingPanicked,
+
+    #[error("Temp directory error: {0}")]
+    TempDir(std::io::Error),
+
+    #[error("Path is not valid UTF-8")]
+    PathNotUtf8,
 }
 
 impl IntoResponse for Error {
@@ -70,6 +124,13 @@ impl IntoResponse for Error {
             Error::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
             Error::GitError(_) => unreachable!(),
             Error::IOError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+            Error::Deployment(e) => {
+                tracing::error!("Deployment pipeline error: {:?}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Deployment failed".to_string(),
+                )
+            }
         };
 
         let body = Json(json!({ "error": message }));
