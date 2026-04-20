@@ -18,7 +18,8 @@ use uuid::Uuid;
 
 use crate::{
     AppState,
-    docker::pipeline::{delete_deployment_container, run_deployment, stop_deployment_container},
+    docker::pipeline::run_deployment,
+    docker::run::{delete_deployment_container, stop_deployment_container},
     error::{Error, Result},
     extractors::auth::AuthUser,
 };
