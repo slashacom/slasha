@@ -12,7 +12,9 @@ use uuid::Uuid;
 
 use crate::{
     AppState,
-    docker::run::delete_deployment_container,
+    docker::{
+        network::{create_app_network, delete_app_network}, run::delete_deployment_container, services::delete_service,
+    },
     error::{Error, Result},
     extractors::auth::AuthUser,
     utils::slugify,
@@ -23,7 +25,8 @@ use super::utils::lookup_app_for_user;
 use models::{
     app::{App, AppMember, AppMemberRole},
     deployment::Deployment,
-    schema::{app_members, apps, deployments},
+    schema::{app_members, apps, deployments, services},
+    service::Service,
 };
 
 pub fn router() -> Router<AppState> {
@@ -125,6 +128,8 @@ async fn create_app(
         .values(&new_member)
         .execute(&mut conn)?;
 
+    create_app_network(&state.docker, &app_id).await?;
+
     Ok(Json(serde_json::json!({
         "app": new_app,
     })))
@@ -165,6 +170,16 @@ async fn delete_app(
         return Err(Error::BadRequest("Only app owners can delete apps".into()));
     }
 
+    let app_services: Vec<Service> = services::table
+        .filter(services::app_id.eq(&app.id))
+        .load(&mut conn)?;
+
+    for svc in app_services {
+        if let Err(e) = delete_service(&state.docker, &state.db_pool, &svc).await {
+            tracing::warn!("Failed to delete service {}: {}", svc.id, e);
+        }
+    }
+
     let deployments: Vec<Deployment> = deployments::table
         .filter(deployments::app_id.eq(&app.id))
         .load(&mut conn)?;
@@ -186,6 +201,8 @@ async fn delete_app(
             );
         }
     }
+
+    delete_app_network(&state.docker, &app.id).await?;
 
     diesel::delete(apps::table.filter(apps::id.eq(&app.id))).execute(&mut conn)?;
 

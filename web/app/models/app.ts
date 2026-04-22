@@ -2,6 +2,8 @@
 
 export type App = { id: string, slug: string, name: string, repo_path: string, default_branch: string, status: string, created_at: string, };
 
+export type AppEnvVar = { id: string, app_id: string, key: string, value: string, created_at: string, updated_at: string, };
+
 export type AppMember = { app_id: string, user_id: string, role: AppMemberRole, added_at: string, };
 
 export type AppMemberRole = "Owner" | "Admin" | "Member";

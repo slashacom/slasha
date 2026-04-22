@@ -2915,6 +2915,8 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "strum",
+ "strum_macros",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

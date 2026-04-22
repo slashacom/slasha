@@ -1,6 +1,6 @@
 import { queryOptions, useMutation } from '@tanstack/react-query';
-import { httpDelete, httpGet, httpPost } from '~/utils/http';
-import type { App } from '~/models/app';
+import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
+import type { App, AppEnvVar } from '~/models/app';
 
 export function getAppsOptions() {
   return queryOptions({
@@ -26,5 +26,24 @@ export function useCreateApp() {
 export function useDeleteApp() {
   return useMutation({
     mutationFn: (slug: string) => httpDelete(`apps/${slug}`),
+  });
+}
+
+export function getAppEnvVarsOptions(appSlug: string) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'env-vars'],
+    queryFn: () => httpGet<{ env_vars: AppEnvVar[] }>(`apps/${appSlug}/env`),
+  });
+}
+
+export function useUpdateAppEnvVars() {
+  return useMutation({
+    mutationFn: (data: {
+      appSlug: string;
+      vars: { key: string; value: string }[];
+    }) =>
+      httpPut<{ env_vars: AppEnvVar[] }>(`apps/${data.appSlug}/env`, {
+        vars: data.vars,
+      }),
   });
 }

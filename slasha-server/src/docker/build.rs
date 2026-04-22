@@ -21,20 +21,6 @@ pub enum BuildStrategy {
     Railpack,
 }
 
-pub async fn detect_build_strategy(repo_path: &Path, commit_sha: &str) -> Result<BuildStrategy> {
-    let repo_path = repo_path.to_path_buf();
-    let commit_sha = commit_sha.to_string();
-
-    tokio::task::spawn_blocking(move || -> Result<BuildStrategy> {
-        match read_dockerfile(&repo_path, &commit_sha)? {
-            Some(content) => Ok(BuildStrategy::Dockerfile { content }),
-            None => Ok(BuildStrategy::Railpack),
-        }
-    })
-    .await
-    .map_err(|_| Error::Deployment(DeploymentError::SpawnBlockingPanicked))?
-}
-
 fn image_name(app_slug: &str) -> String {
     format!("slasha/{}", app_slug)
 }
@@ -59,6 +45,20 @@ fn read_dockerfile(repo_path: &Path, commit_sha: &str) -> Result<Option<String>>
         Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
         Err(e) => Err(DeploymentError::GitError(e).into()),
     }
+}
+
+pub async fn detect_build_strategy(repo_path: &Path, commit_sha: &str) -> Result<BuildStrategy> {
+    let repo_path = repo_path.to_path_buf();
+    let commit_sha = commit_sha.to_string();
+
+    tokio::task::spawn_blocking(move || -> Result<BuildStrategy> {
+        match read_dockerfile(&repo_path, &commit_sha)? {
+            Some(content) => Ok(BuildStrategy::Dockerfile { content }),
+            None => Ok(BuildStrategy::Railpack),
+        }
+    })
+    .await
+    .map_err(|_| Error::Deployment(DeploymentError::SpawnBlockingPanicked))?
 }
 
 fn checkout_commit_to_dir(repo_path: &Path, commit_sha: &str, dest: &Path) -> Result<()> {

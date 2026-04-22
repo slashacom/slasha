@@ -1,6 +1,17 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    app_env_vars (id) {
+        id -> Text,
+        app_id -> Text,
+        key -> Text,
+        value -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     app_members (app_id, user_id) {
         app_id -> Text,
         user_id -> Text,
@@ -34,6 +45,30 @@ diesel::table! {
 }
 
 diesel::table! {
+    service_env_vars (id) {
+        id -> Text,
+        service_id -> Text,
+        key -> Text,
+        value -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    services (id) {
+        id -> Text,
+        app_id -> Text,
+        kind -> Text,
+        name -> Text,
+        version -> Text,
+        status -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     ssh_keys (id) {
         id -> Text,
         user_id -> Text,
@@ -54,9 +89,21 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(app_env_vars -> apps (app_id));
 diesel::joinable!(app_members -> apps (app_id));
 diesel::joinable!(app_members -> users (user_id));
 diesel::joinable!(deployments -> apps (app_id));
+diesel::joinable!(service_env_vars -> services (service_id));
+diesel::joinable!(services -> apps (app_id));
 diesel::joinable!(ssh_keys -> users (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(app_members, apps, deployments, ssh_keys, users,);
+diesel::allow_tables_to_appear_in_same_query!(
+    app_env_vars,
+    app_members,
+    apps,
+    deployments,
+    service_env_vars,
+    services,
+    ssh_keys,
+    users,
+);

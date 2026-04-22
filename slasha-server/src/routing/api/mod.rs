@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 pub mod apps;
 pub mod auth;
+pub mod services;
 pub mod ssh_keys;
 pub mod users;
 
@@ -14,6 +15,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/health", get(health_check))
         .nest("/auth", auth::router())
         .nest("/apps", apps::router())
+        .nest("/services", services::router())
         .nest("/ssh-keys", ssh_keys::router())
         .nest(
             "/users",
