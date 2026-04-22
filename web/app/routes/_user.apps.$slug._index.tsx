@@ -21,10 +21,13 @@ import { FileTree } from '~/components/apps/file-tree';
 import { CodeViewer } from '~/components/apps/code-viewer';
 import { FolderViewer } from '~/components/apps/folder-viewer';
 import { DeploymentsView } from '~/components/apps/deployments';
+import { ServicesView } from '~/components/apps/services';
+import { AppEnvEditor } from '~/components/apps/env-editor';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { cn } from '~/utils/classname';
 import { queryClient } from '~/utils/query-client';
 import { getDeploymentsOptions } from '~/queries/deployments';
+import { getAppServicesOptions } from '~/queries/services';
 import { HStack } from '~/components/interface/stacks';
 
 export async function clientLoader({ params }: { params: { slug: string } }) {
@@ -32,6 +35,7 @@ export async function clientLoader({ params }: { params: { slug: string } }) {
     queryClient.ensureQueryData(getAppOptions(params.slug)),
     queryClient.ensureQueryData(getFileTreeOptions(params.slug)),
     queryClient.ensureQueryData(getDeploymentsOptions(params.slug)),
+    queryClient.ensureQueryData(getAppServicesOptions(params.slug)),
   ]);
 }
 
@@ -148,7 +152,7 @@ export default function AppIndexPage() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<
-    'files' | 'deployments' | 'settings'
+    'files' | 'deployments' | 'services' | 'settings'
   >('files');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -250,7 +254,7 @@ export default function AppIndexPage() {
           >
             Files
           </button>
-          <button
+            <button
             onClick={() => setActiveTab('deployments')}
             className={cn(
               'h-10 text-[13px] font-medium transition-colors border-b-2 -mb-[2px]',
@@ -260,6 +264,17 @@ export default function AppIndexPage() {
             )}
           >
             Deployments
+          </button>
+          <button
+            onClick={() => setActiveTab('services')}
+            className={cn(
+              'h-10 text-[13px] font-medium transition-colors border-b-2 -mb-[2px]',
+              activeTab === 'services'
+                ? 'border-white text-text'
+                : 'border-transparent text-text-tertiary hover:text-text-secondary'
+            )}
+          >
+            Services
           </button>
           <button
             onClick={() => setActiveTab('settings')}
@@ -277,6 +292,9 @@ export default function AppIndexPage() {
 
       {activeTab === 'settings' ? (
         <div className="flex-1 overflow-y-auto p-8">
+          <div className="max-w-3xl mb-12">
+            <AppEnvEditor appSlug={slug!} />
+          </div>
           <div className="max-w-2xl">
             <h3 className="text-[14px] font-semibold text-text">Danger Zone</h3>
             <p className="mt-1 text-[13px] text-text-tertiary">
@@ -321,6 +339,8 @@ export default function AppIndexPage() {
         </div>
       ) : activeTab === 'deployments' ? (
         <DeploymentsView appSlug={slug!} />
+      ) : activeTab === 'services' ? (
+        <ServicesView appSlug={slug!} />
       ) : !hasCommits ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <div className="rounded-full border border-border p-3">

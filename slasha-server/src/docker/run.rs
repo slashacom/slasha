@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use bollard::Docker;
 use bollard::models::{
-    ContainerCreateBody, HostConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum,
+    ContainerCreateBody, EndpointSettings, HostConfig, NetworkingConfig, PortBinding,
+    RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
     CreateContainerOptions, LogsOptionsBuilder, RemoveContainerOptionsBuilder,
@@ -19,6 +20,7 @@ use models::deployment::{Deployment, DeploymentStatus};
 use models::schema::deployments;
 
 use super::broadcaster::DeploymentBroadcaster;
+use super::network::app_network_name;
 use super::port_pool::PortPool;
 use crate::error::{DeploymentError, Result};
 
@@ -46,7 +48,7 @@ pub fn update_deployment_status(
     Ok(())
 }
 
-async fn get_container_port(docker: &Docker, name: &str) -> Result<u16> {
+async fn get_container_host_port(docker: &Docker, name: &str) -> Result<u16> {
     let info = docker
         .inspect_container(name, None)
         .await
@@ -72,14 +74,14 @@ pub async fn phase_run(
     docker: &Docker,
     db_pool: &Pool<ConnectionManager<SqliteConnection>>,
     broadcaster: &Arc<DeploymentBroadcaster>,
-    pool: &Arc<PortPool>,
+    port_pool: &Arc<PortPool>,
     app: &App,
     deployment: &Deployment,
     container_port: u16,
-    extra_env: Option<HashMap<String, String>>,
+    env_map: HashMap<String, String>,
 ) -> Result<()> {
     let deployment_id = deployment.id.clone();
-    let host_port = pool.allocate().await?;
+    let host_port = port_pool.allocate().await?;
     let name = container_name(&app.id, &deployment_id);
     let image = format!("{}:{}", image_name(&app.slug), deployment.commit_sha);
 
@@ -88,7 +90,7 @@ pub async fn phase_run(
     port_bindings.insert(
         port_key,
         Some(vec![PortBinding {
-            host_ip: Some("0.0.0.0".to_string()),
+            host_ip: Some("127.0.0.1".to_string()),
             host_port: Some(host_port.to_string()),
         }]),
     );
@@ -109,16 +111,36 @@ pub async fn phase_run(
         ..Default::default()
     };
 
-    let env: Option<Vec<String>> = extra_env.map(|map| {
-        map.into_iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect()
-    });
+    let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
+
+    let env: Option<Vec<String>> = if env_map.is_empty() {
+        None
+    } else {
+        Some(
+            env_map
+                .into_iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect(),
+        )
+    };
+
+    let network_name = app_network_name(&app.id);
+    let mut endpoints_config = HashMap::new();
+    endpoints_config.insert(
+        network_name.clone(),
+        EndpointSettings {
+            network_id: Some(network_name),
+            ..Default::default()
+        },
+    );
 
     let container_config = ContainerCreateBody {
         image: Some(image),
         labels: Some(labels),
         host_config: Some(host_config),
+        networking_config: Some(NetworkingConfig {
+            endpoints_config: Some(endpoints_config),
+        }),
         env,
         ..Default::default()
     };
@@ -138,7 +160,6 @@ pub async fn phase_run(
         .await
         .map_err(DeploymentError::DockerApi)?;
 
-    let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
     update_deployment_status(&mut conn, &deployment_id, DeploymentStatus::Running)?;
 
     let started_msg = format!("Container {} started on host port {}", name, host_port);
@@ -224,7 +245,7 @@ pub async fn stop_deployment_container(
 ) -> Result<()> {
     let name = container_name(&app.id, &deployment.id);
 
-    let host_port = get_container_port(docker, &name).await?;
+    let host_port = get_container_host_port(docker, &name).await?;
 
     docker
         .stop_container(
@@ -252,8 +273,13 @@ pub async fn delete_deployment_container(
 ) -> Result<()> {
     let name = container_name(&app.id, &deployment.id);
 
+    // container does not exist, do nothing
+    if docker.inspect_container(&name, None).await.is_err() {
+        return Ok(());
+    }
+
     let host_port = if deployment.status != DeploymentStatus::Stopped {
-        Some(get_container_port(docker, &name).await?)
+        Some(get_container_host_port(docker, &name).await?)
     } else {
         None
     };

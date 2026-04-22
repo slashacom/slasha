@@ -87,6 +87,18 @@ pub enum DeploymentError {
     #[error("Docker API error: {0}")]
     DockerApi(#[from] bollard::errors::Error),
 
+    #[error("Service \"{0}\" not found")]
+    ServiceNotFound(String),
+
+    #[error("Service \"{0}\" is not running")]
+    ServiceNotRunning(String),
+
+    #[error("Service \"{0}\" does not export env key \"{1}\"")]
+    KeyNotExported(String, String),
+
+    #[error("Env resolve failed: {0}")]
+    EnvResolveFailed(String),
+
     #[error("Port allocation failed: {0}")]
     PortAllocationFailed(String),
 

@@ -3,7 +3,8 @@ use crate::error::{Error, Result};
 use diesel::prelude::*;
 use models::{
     app::{App, AppMember},
-    schema::{app_members, apps},
+    schema::{app_members, apps, services},
+    service::Service,
 };
 
 pub fn lookup_app_for_user(state: &AppState, slug: &str, user_id: &str) -> Result<App> {
@@ -30,4 +31,24 @@ pub fn lookup_app_for_user(state: &AppState, slug: &str, user_id: &str) -> Resul
     }
 
     Ok(app)
+}
+
+pub fn lookup_service_for_app(
+    state: &AppState,
+    app_id: &str,
+    service_id: &str,
+) -> Result<Service> {
+    let mut conn = state
+        .db_pool
+        .get()
+        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+
+    let svc = services::table
+        .filter(services::id.eq(service_id))
+        .filter(services::app_id.eq(app_id))
+        .first::<Service>(&mut conn)
+        .optional()?
+        .ok_or_else(|| Error::NotFound("Service not found".into()))?;
+
+    Ok(svc)
 }
