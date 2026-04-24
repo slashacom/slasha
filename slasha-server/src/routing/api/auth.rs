@@ -32,13 +32,13 @@ async fn status(State(state): State<AppState>) -> Result<impl IntoResponse> {
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let admin_count: i64 = users::table
         .filter(users::role.eq("admin"))
         .count()
         .get_result(&mut conn)
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Database error: {}", e)))?;
+        ?;
 
     Ok(Json(serde_json::json!({
         "has_admin": admin_count > 0,
@@ -58,7 +58,7 @@ async fn signup(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let admin_count: i64 = users::table
         .filter(users::role.eq("admin"))
@@ -111,7 +111,7 @@ async fn login(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let user = users::table
         .filter(users::email.eq(&payload.email))

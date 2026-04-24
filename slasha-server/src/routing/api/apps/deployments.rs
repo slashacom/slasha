@@ -84,7 +84,7 @@ async fn trigger_deploy(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     diesel::insert_into(deployments::table)
         .values(&deployment)
@@ -113,7 +113,7 @@ async fn list_deployments(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let deps: Vec<Deployment> = deployments::table
         .filter(deployments::app_id.eq(&app.id))
@@ -133,7 +133,7 @@ async fn get_deployment(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let deployment = deployments::table
         .filter(deployments::id.eq(&deployment_id))
@@ -155,7 +155,7 @@ async fn stop_deployment(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let deployment = deployments::table
         .filter(deployments::id.eq(&deployment_id))
@@ -205,7 +205,7 @@ async fn stream_logs(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     deployments::table
         .filter(deployments::id.eq(&deployment_id))
@@ -252,7 +252,7 @@ async fn delete_deployment(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let deployment = deployments::table
         .filter(deployments::id.eq(&deployment_id))

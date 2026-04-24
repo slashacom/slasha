@@ -10,7 +10,7 @@ use file_rotate::{
 };
 use tokio::sync::{Mutex, broadcast};
 
-use crate::error::Result;
+use super::DeploymentResult;
 
 const CHANNEL_CAPACITY: usize = 1024;
 
@@ -41,7 +41,7 @@ impl DeploymentBroadcaster {
         content.lines().map(|s| s.to_string()).collect()
     }
 
-    pub async fn delete_logs(&self, deployment_id: &str) -> Result<()> {
+    pub async fn delete_logs(&self, deployment_id: &str) -> DeploymentResult<()> {
         self.channels.remove(deployment_id);
         self.files.remove(deployment_id);
 
@@ -70,7 +70,7 @@ impl DeploymentBroadcaster {
         }
     }
 
-    pub async fn send(&self, deployment_id: &str, line: String) -> Result<()> {
+    pub async fn send(&self, deployment_id: &str, line: String) -> DeploymentResult<()> {
         if let Some(sender) = self.channels.get(deployment_id) {
             let _ = sender.send(line.clone()); // there may be no one listening 
         }

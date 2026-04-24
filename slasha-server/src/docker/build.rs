@@ -13,8 +13,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 
 use super::broadcaster::DeploymentBroadcaster;
-use crate::Error;
-use crate::error::{DeploymentError, Result};
+use crate::error::DeploymentError;
+use super::DeploymentResult;
 
 pub enum BuildStrategy {
     Dockerfile { content: String },
@@ -25,7 +25,7 @@ fn image_name(app_slug: &str) -> String {
     format!("slasha/{}", app_slug)
 }
 
-fn read_dockerfile(repo_path: &Path, commit_sha: &str) -> Result<Option<String>> {
+fn read_dockerfile(repo_path: &Path, commit_sha: &str) -> DeploymentResult<Option<String>> {
     let repo = git2::Repository::open(repo_path).map_err(DeploymentError::GitError)?;
     let obj = repo
         .revparse_single(commit_sha)
@@ -47,21 +47,21 @@ fn read_dockerfile(repo_path: &Path, commit_sha: &str) -> Result<Option<String>>
     }
 }
 
-pub async fn detect_build_strategy(repo_path: &Path, commit_sha: &str) -> Result<BuildStrategy> {
+pub async fn detect_build_strategy(repo_path: &Path, commit_sha: &str) -> DeploymentResult<BuildStrategy> {
     let repo_path = repo_path.to_path_buf();
     let commit_sha = commit_sha.to_string();
 
-    tokio::task::spawn_blocking(move || -> Result<BuildStrategy> {
+    tokio::task::spawn_blocking(move || -> DeploymentResult<BuildStrategy> {
         match read_dockerfile(&repo_path, &commit_sha)? {
             Some(content) => Ok(BuildStrategy::Dockerfile { content }),
             None => Ok(BuildStrategy::Railpack),
         }
     })
     .await
-    .map_err(|_| Error::Deployment(DeploymentError::SpawnBlockingPanicked))?
+    .map_err(|_| DeploymentError::SpawnBlockingPanicked)?
 }
 
-fn checkout_commit_to_dir(repo_path: &Path, commit_sha: &str, dest: &Path) -> Result<()> {
+fn checkout_commit_to_dir(repo_path: &Path, commit_sha: &str, dest: &Path) -> DeploymentResult<()> {
     let repo = git2::Repository::open(repo_path).map_err(DeploymentError::GitError)?;
     let obj = repo
         .revparse_single(commit_sha)
@@ -146,7 +146,7 @@ fn checkout_commit_to_dir(repo_path: &Path, commit_sha: &str, dest: &Path) -> Re
     Ok(())
 }
 
-async fn build_tar_context(repo_path: &Path, commit_sha: &str) -> Result<Bytes> {
+async fn build_tar_context(repo_path: &Path, commit_sha: &str) -> DeploymentResult<Bytes> {
     let out = TokioCommand::new("git")
         .args(["archive", "--format=tar", commit_sha])
         .current_dir(repo_path)
@@ -162,7 +162,7 @@ async fn build_tar_context(repo_path: &Path, commit_sha: &str) -> Result<Bytes> 
     Ok(Bytes::from(out.stdout))
 }
 
-async fn tag_image_latest(docker: &Docker, image_tag: &str, app_slug: &str) -> Result<()> {
+async fn tag_image_latest(docker: &Docker, image_tag: &str, app_slug: &str) -> DeploymentResult<()> {
     let latest_tag = image_name(app_slug);
     let tag_opts = TagImageOptionsBuilder::new()
         .repo(latest_tag.as_str())
@@ -180,7 +180,7 @@ async fn stream_command_output(
     broadcaster: &DeploymentBroadcaster,
     deployment_id: &str,
     phase_label: &str,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     let stdout = child.stdout.take().map(BufReader::new);
     let stderr = child.stderr.take().map(BufReader::new);
 
@@ -188,7 +188,7 @@ async fn stream_command_output(
         maybe_reader: Option<BufReader<tokio::process::ChildStdout>>,
         broadcaster: &DeploymentBroadcaster,
         deployment_id: &str,
-    ) -> Result<()> {
+    ) -> DeploymentResult<()> {
         if let Some(reader) = maybe_reader {
             let mut lines = reader.lines();
             while let Some(line) = lines.next_line().await.map_err(DeploymentError::Io)? {
@@ -202,7 +202,7 @@ async fn stream_command_output(
         maybe_reader: Option<BufReader<tokio::process::ChildStderr>>,
         broadcaster: &DeploymentBroadcaster,
         deployment_id: &str,
-    ) -> Result<()> {
+    ) -> DeploymentResult<()> {
         if let Some(reader) = maybe_reader {
             let mut lines = reader.lines();
             while let Some(line) = lines.next_line().await.map_err(DeploymentError::Io)? {
@@ -234,7 +234,7 @@ pub async fn phase_build_docker(
     broadcaster: &DeploymentBroadcaster,
     app: &App,
     deployment: &Deployment,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     let repo_path = Path::new(&app.repo_path);
     let commit_sha: String = deployment.commit_sha.clone();
     let deployment_id: String = deployment.id.clone();
@@ -295,7 +295,7 @@ pub async fn phase_build_railpack(
     broadcaster: &DeploymentBroadcaster,
     app: &App,
     deployment: &Deployment,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     let repo_path = Path::new(&app.repo_path);
     let commit_sha = &deployment.commit_sha;
     let deployment_id = &deployment.id;
@@ -319,7 +319,7 @@ pub async fn phase_build_railpack(
         checkout_commit_to_dir(&repo_path_owned, &commit_sha_owned, &tmp_path_owned)
     })
     .await
-    .map_err(|_| crate::error::Error::Deployment(DeploymentError::SpawnBlockingPanicked))??;
+    .map_err(|_| DeploymentError::SpawnBlockingPanicked)??;
 
     let plan_path = tmp_path.join("railpack-plan.json");
     let info_path = tmp_path.join("railpack-info.json");

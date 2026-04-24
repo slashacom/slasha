@@ -19,9 +19,10 @@ use models::app::App;
 use models::schema::{service_env_vars, services};
 use models::service::{Service, ServiceEnvVar, ServiceStatus};
 
-use crate::docker::env::{EnvRef, RefSource, parse_env_ref};
-use crate::docker::network::app_network_name;
-use crate::error::{DeploymentError, Result};
+use super::DeploymentResult;
+use super::env::{EnvRef, RefSource, parse_env_ref};
+use super::network::app_network_name;
+use crate::error::DeploymentError;
 
 pub fn service_container_name(service_id: &str) -> String {
     format!("slasha-svc-{}", service_id)
@@ -35,7 +36,7 @@ pub fn update_service_status(
     conn: &mut SqliteConnection,
     service_id: &str,
     status: ServiceStatus,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     diesel::update(services::table.filter(services::id.eq(service_id)))
         .set((
             services::status.eq(status.to_string()),
@@ -50,7 +51,7 @@ pub fn update_service_status(
 pub fn resolve_service_env(
     db_pool: &Pool<ConnectionManager<SqliteConnection>>,
     service: &Service,
-) -> Result<HashMap<String, String>> {
+) -> DeploymentResult<HashMap<String, String>> {
     let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
 
     let vars: Vec<ServiceEnvVar> = service_env_vars::table
@@ -100,7 +101,7 @@ pub async fn provision_service(
     app: &App,
     service: &Service,
     env_vars: HashMap<String, String>,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     let image_name = service.kind.docker_image(&service.version);
 
     let mut image_stream = docker.create_image(
@@ -225,7 +226,7 @@ pub async fn stop_service(
     docker: &Docker,
     db_pool: &Pool<ConnectionManager<SqliteConnection>>,
     service: &Service,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     let container_name = service_container_name(&service.id);
 
     docker
@@ -246,7 +247,7 @@ pub async fn delete_service(
     docker: &Docker,
     db_pool: &Pool<ConnectionManager<SqliteConnection>>,
     service: &Service,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     let container_name = service_container_name(&service.id);
     let volume_name = service_volume_name(&service.id);
 

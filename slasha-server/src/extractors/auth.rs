@@ -52,7 +52,7 @@ where
         let mut conn = state
             .db_pool
             .get()
-            .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+            ?;
 
         let user = users::table
             .filter(users::id.eq(&token_data.claims.id))

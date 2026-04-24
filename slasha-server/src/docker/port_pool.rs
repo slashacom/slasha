@@ -3,7 +3,8 @@ use std::collections::{BTreeSet, HashMap};
 use bollard::Docker;
 use tokio::sync::Mutex;
 
-use crate::error::Result;
+use crate::error::DeploymentError;
+use super::DeploymentResult;
 
 pub struct PortPool {
     range_start: u16,
@@ -12,7 +13,7 @@ pub struct PortPool {
 }
 
 impl PortPool {
-    pub async fn new(start: u16, end: u16, docker: &Docker) -> Result<Self> {
+    pub async fn new(start: u16, end: u16, docker: &Docker) -> DeploymentResult<Self> {
         let mut available: BTreeSet<u16> = (start..=end).collect();
 
         let mut filters: HashMap<String, Vec<String>> = HashMap::new();
@@ -26,7 +27,7 @@ impl PortPool {
         let containers = docker
             .list_containers(Some(opts))
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to list containers: {}", e))?;
+            .map_err(DeploymentError::DockerApi)?;
 
         for container in containers {
             if let Some(ports) = container.ports {
@@ -55,14 +56,13 @@ impl PortPool {
         })
     }
 
-    pub async fn allocate(&self) -> Result<u16> {
+    pub async fn allocate(&self) -> DeploymentResult<u16> {
         let mut available = self.available.lock().await;
         let &port = available.iter().next().ok_or_else(|| {
-            anyhow::anyhow!(
+            DeploymentError::PortAllocationFailed(format!(
                 "Port pool exhausted: no ports available in range {}-{}",
-                self.range_start,
-                self.range_end
-            )
+                self.range_start, self.range_end
+            ))
         })?;
         available.remove(&port);
         Ok(port)

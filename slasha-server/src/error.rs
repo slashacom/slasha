@@ -17,9 +17,6 @@ pub enum Error {
     #[error("Unauthorized")]
     Unauthorized,
 
-    #[error("DB Error: {0}")]
-    DBError(#[from] diesel::result::Error),
-
     #[error("Bad Request: {0}")]
     BadRequest(String),
 
@@ -29,11 +26,26 @@ pub enum Error {
     #[error("Git Error: {0}")]
     GitError(#[from] GitError),
 
-    #[error("IO Error: {0}")]
-    IOError(#[from] std::io::Error),
-
     #[error("Deployment error: {0}")]
     Deployment(#[from] DeploymentError),
+}
+
+impl From<diesel::result::Error> for Error {
+    fn from(e: diesel::result::Error) -> Self {
+        Error::Internal(anyhow::anyhow!(e))
+    }
+}
+
+impl From<diesel::r2d2::PoolError> for Error {
+    fn from(e: diesel::r2d2::PoolError) -> Self {
+        Error::Internal(anyhow::anyhow!(e))
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::Internal(anyhow::anyhow!(e))
+    }
 }
 
 #[derive(Error, Debug)]
@@ -131,18 +143,27 @@ impl IntoResponse for Error {
             }
             Error::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
-            Error::DBError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
             Error::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             Error::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
             Error::GitError(_) => unreachable!(),
-            Error::IOError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-            Error::Deployment(e) => {
-                tracing::error!("Deployment pipeline error: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Deployment failed".to_string(),
-                )
-            }
+            Error::Deployment(e) => match e {
+                DeploymentError::ServiceNotFound(name) => (StatusCode::NOT_FOUND, name),
+                DeploymentError::ServiceNotRunning(name) => (
+                    StatusCode::BAD_REQUEST,
+                    format!("Service {} is not running", name),
+                ),
+                DeploymentError::KeyNotExported(svc, key) => (
+                    StatusCode::BAD_REQUEST,
+                    format!("Service {} does not export key {}", svc, key),
+                ),
+                _ => {
+                    tracing::error!("Deployment pipeline error: {:?}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Deployment failed".to_string(),
+                    )
+                }
+            },
         };
 
         let body = Json(json!({ "error": message }));

@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     AppState,
-    error::{Error, Result},
+    error::Result,
     extractors::auth::AuthUser,
 };
 
@@ -41,7 +41,7 @@ async fn get_env_vars(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let vars: Vec<AppEnvVar> = app_env_vars::table
         .filter(app_env_vars::app_id.eq(&app.id))
@@ -66,7 +66,7 @@ async fn update_env_vars(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let now = Utc::now().naive_utc();
     let new_vars: Vec<AppEnvVar> = payload

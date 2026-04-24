@@ -11,7 +11,7 @@ pub fn lookup_app_for_user(state: &AppState, slug: &str, user_id: &str) -> Resul
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let app = apps::table
         .filter(apps::slug.eq(slug))
@@ -37,7 +37,7 @@ pub fn lookup_service_for_app(state: &AppState, app_id: &str, service_id: &str) 
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let svc = services::table
         .filter(services::id.eq(service_id))

@@ -33,7 +33,7 @@ async fn get_user(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let user = users::table
         .filter(users::id.eq(&id))
@@ -50,7 +50,7 @@ async fn list_users(State(state): State<AppState>) -> Result<impl IntoResponse> 
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let all_users = users::table
         .order(users::created_at.desc())
@@ -75,7 +75,7 @@ async fn create_user(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let hashed = hash_password(&payload.password)?;
     let new_user = User {
@@ -110,7 +110,7 @@ async fn update_user(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let updated_at = Utc::now().naive_utc();
 
@@ -142,7 +142,7 @@ async fn delete_user(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let user = users::table
         .filter(users::id.eq(&id))
