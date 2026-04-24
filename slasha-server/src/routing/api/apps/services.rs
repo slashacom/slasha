@@ -47,10 +47,7 @@ async fn list_services(
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let app_services: Vec<Service> = services::table
         .filter(services::app_id.eq(&app.id))
@@ -81,10 +78,7 @@ async fn create_service(
         )));
     }
 
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let now = Utc::now().naive_utc();
     let service_id = Uuid::new_v4().to_string();
@@ -141,10 +135,7 @@ async fn stop_service_handler(
     Path((slug, id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let svc = services::table
         .filter(services::id.eq(&id))
@@ -170,10 +161,7 @@ async fn delete_service_handler(
     Path((slug, id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let svc = services::table
         .filter(services::id.eq(&id))

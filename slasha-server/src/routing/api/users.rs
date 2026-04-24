@@ -30,10 +30,7 @@ async fn get_user(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let user = users::table
         .filter(users::id.eq(&id))
@@ -47,10 +44,7 @@ async fn get_user(
 }
 
 async fn list_users(State(state): State<AppState>) -> Result<impl IntoResponse> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let all_users = users::table
         .order(users::created_at.desc())
@@ -72,10 +66,7 @@ async fn create_user(
     State(state): State<AppState>,
     Json(payload): Json<CreateUserReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let hashed = hash_password(&payload.password)?;
     let new_user = User {
@@ -107,10 +98,7 @@ async fn update_user(
     Path(id): Path<String>,
     Json(payload): Json<UpdateUserReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let updated_at = Utc::now().naive_utc();
 
@@ -139,10 +127,7 @@ async fn delete_user(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let user = users::table
         .filter(users::id.eq(&id))

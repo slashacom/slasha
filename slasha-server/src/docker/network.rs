@@ -1,8 +1,8 @@
 use bollard::Docker;
 use bollard::models::NetworkCreateRequest;
 
-use crate::error::DeploymentError;
 use super::DeploymentResult;
+use crate::error::DeploymentError;
 
 pub fn app_network_name(app_id: &str) -> String {
     format!("slasha-{}", app_id)

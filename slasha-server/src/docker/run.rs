@@ -19,11 +19,11 @@ use models::app::App;
 use models::deployment::{Deployment, DeploymentStatus};
 use models::schema::deployments;
 
+use super::DeploymentResult;
 use super::broadcaster::DeploymentBroadcaster;
 use super::network::app_network_name;
 use super::port_pool::PortPool;
 use crate::error::DeploymentError;
-use super::DeploymentResult;
 
 pub fn app_container_name(app_id: &str, deployment_id: &str) -> String {
     format!("slasha-{}-{}", app_id, deployment_id)

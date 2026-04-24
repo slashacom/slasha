@@ -12,9 +12,9 @@ use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 
+use super::DeploymentResult;
 use super::broadcaster::DeploymentBroadcaster;
 use crate::error::DeploymentError;
-use super::DeploymentResult;
 
 pub enum BuildStrategy {
     Dockerfile { content: String },
@@ -47,7 +47,10 @@ fn read_dockerfile(repo_path: &Path, commit_sha: &str) -> DeploymentResult<Optio
     }
 }
 
-pub async fn detect_build_strategy(repo_path: &Path, commit_sha: &str) -> DeploymentResult<BuildStrategy> {
+pub async fn detect_build_strategy(
+    repo_path: &Path,
+    commit_sha: &str,
+) -> DeploymentResult<BuildStrategy> {
     let repo_path = repo_path.to_path_buf();
     let commit_sha = commit_sha.to_string();
 
@@ -162,7 +165,11 @@ async fn build_tar_context(repo_path: &Path, commit_sha: &str) -> DeploymentResu
     Ok(Bytes::from(out.stdout))
 }
 
-async fn tag_image_latest(docker: &Docker, image_tag: &str, app_slug: &str) -> DeploymentResult<()> {
+async fn tag_image_latest(
+    docker: &Docker,
+    image_tag: &str,
+    app_slug: &str,
+) -> DeploymentResult<()> {
     let latest_tag = image_name(app_slug);
     let tag_opts = TagImageOptionsBuilder::new()
         .repo(latest_tag.as_str())

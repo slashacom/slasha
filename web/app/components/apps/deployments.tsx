@@ -22,6 +22,7 @@ import {
   useTriggerDeploy,
   useStopDeployment,
   useDeleteDeployment,
+  useRestartDeployment,
 } from '~/queries/deployments';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
@@ -184,6 +185,7 @@ function DeploymentRow({
   const queryClient = useQueryClient();
   const stopDeployment = useStopDeployment();
   const deleteDeployment = useDeleteDeployment();
+  const restartDeployment = useRestartDeployment();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleStop = async (e: React.MouseEvent) => {
@@ -197,6 +199,22 @@ function DeploymentRow({
         queryKey: ['apps', appSlug, 'deployments'],
       });
     } catch {}
+  };
+
+  const handleRestart = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await restartDeployment.mutateAsync({
+        appSlug,
+        deploymentId: deployment.id,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['apps', appSlug, 'deployments'],
+      });
+      toast.success('Deployment restart triggered');
+    } catch (e) {
+      toast.error('Failed to restart deployment: ' + e);
+    }
   };
 
   const handleDelete = async () => {
@@ -253,6 +271,18 @@ function DeploymentRow({
               isLoading={stopDeployment.isPending}
             />
           )}
+          {deployment.status === 'Stopped' ||
+            (deployment.status === 'Failed' && (
+              <Button
+                label="Restart"
+                icon={<RotateCcw className="size-3.5" />}
+                variant="ghost"
+                size="sm"
+                color="neutral"
+                onClick={handleRestart}
+                isLoading={restartDeployment.isPending}
+              />
+            ))}
           <Button
             label="Delete"
             icon={<Trash2 className="size-3.5" />}

@@ -3,8 +3,8 @@ use std::collections::{BTreeSet, HashMap};
 use bollard::Docker;
 use tokio::sync::Mutex;
 
-use crate::error::DeploymentError;
 use super::DeploymentResult;
+use crate::error::DeploymentError;
 
 pub struct PortPool {
     range_start: u16,

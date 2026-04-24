@@ -47,3 +47,13 @@ export function useDeleteDeployment() {
       ),
   });
 }
+
+export function useRestartDeployment() {
+  return useMutation({
+    mutationFn: (data: { appSlug: string; deploymentId: string }) =>
+      httpPost<{ deployment: Deployment }>(
+        `apps/${data.appSlug}/deployments/${data.deploymentId}/restart`,
+        {}
+      ),
+  });
+}

@@ -7,6 +7,7 @@ use diesel::sqlite::SqliteConnection;
 use models::app::App;
 use models::deployment::{Deployment, DeploymentStatus};
 
+use super::DeploymentResult;
 use super::broadcaster::DeploymentBroadcaster;
 use super::build::{
     BuildStrategy, detect_build_strategy, phase_build_docker, phase_build_railpack,
@@ -15,7 +16,6 @@ use super::port_pool::PortPool;
 use super::run::{phase_run, update_deployment_status};
 use crate::docker::env::{EnvRef, RefSource, parse_env_ref};
 use crate::error::DeploymentError;
-use super::DeploymentResult;
 
 use std::collections::HashMap;
 
@@ -120,7 +120,7 @@ pub fn parse_expose(dockerfile_content: &str) -> u16 {
 }
 
 pub async fn run_deployment(
-    docker: Arc<Docker>,
+    docker: Docker,
     pool: Arc<PortPool>,
     broadcaster: Arc<DeploymentBroadcaster>,
     db_pool: Pool<ConnectionManager<SqliteConnection>>,
@@ -147,7 +147,7 @@ pub async fn run_deployment(
 }
 
 async fn run_deployment_inner(
-    docker: &Arc<Docker>,
+    docker: &Docker,
     pool: &Arc<PortPool>,
     broadcaster: &Arc<DeploymentBroadcaster>,
     db_pool: &Pool<ConnectionManager<SqliteConnection>>,
