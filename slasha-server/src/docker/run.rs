@@ -12,7 +12,6 @@ use bollard::query_parameters::{
 };
 use chrono::Utc;
 use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::sqlite::SqliteConnection;
 use futures_util::StreamExt;
 use models::app::App;
@@ -22,8 +21,9 @@ use models::schema::deployments;
 use super::DeploymentResult;
 use super::broadcaster::DeploymentBroadcaster;
 use super::network::app_network_name;
-use super::port_pool::PortPool;
+use crate::AppState;
 use crate::error::DeploymentError;
+use crate::proxy;
 
 pub fn app_container_name(app_id: &str, deployment_id: &str) -> String {
     format!("slasha-{}-{}", app_id, deployment_id)
@@ -72,15 +72,17 @@ async fn get_container_host_port(docker: &Docker, name: &str) -> DeploymentResul
 }
 
 pub async fn phase_run(
-    docker: &Docker,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
-    broadcaster: &Arc<DeploymentBroadcaster>,
-    port_pool: &Arc<PortPool>,
+    state: &AppState,
     app: &App,
     deployment: &Deployment,
     container_port: u16,
     env_map: HashMap<String, String>,
 ) -> DeploymentResult<()> {
+    let docker = &state.docker;
+    let db_pool = &state.db_pool;
+    let broadcaster = &state.deployment_broadcaster;
+    let port_pool = &state.port_pool;
+
     let deployment_id = deployment.id.clone();
     let host_port = port_pool.allocate().await?;
     let name = app_container_name(&app.id, &deployment_id);
@@ -163,6 +165,8 @@ pub async fn phase_run(
 
     update_deployment_status(&mut conn, &deployment_id, DeploymentStatus::Running)?;
 
+    proxy::reconcile(state).await?;
+
     let started_msg = format!("Container {} started on host port {}", name, host_port);
     broadcaster.send(&deployment_id, started_msg).await?;
 
@@ -237,13 +241,15 @@ async fn stream_runtime_logs(
 }
 
 pub async fn stop_deployment_container(
-    docker: &Docker,
-    pool: &PortPool,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
-    broadcaster: &DeploymentBroadcaster,
+    state: &AppState,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
+    let docker = &state.docker;
+    let pool = &state.port_pool;
+    let db_pool = &state.db_pool;
+    let broadcaster = &state.deployment_broadcaster;
+
     let name = app_container_name(&app.id, &deployment.id);
 
     let host_port = get_container_host_port(docker, &name).await?;
@@ -262,16 +268,20 @@ pub async fn stop_deployment_container(
     let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
     update_deployment_status(&mut conn, &deployment.id, DeploymentStatus::Stopped)?;
 
+    proxy::reconcile(state).await?;
+
     Ok(())
 }
 
 pub async fn delete_deployment_container(
-    docker: &Docker,
-    pool: &PortPool,
-    broadcaster: &DeploymentBroadcaster,
+    state: &AppState,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
+    let docker = &state.docker;
+    let pool = &state.port_pool;
+    let broadcaster = &state.deployment_broadcaster;
+
     let name = app_container_name(&app.id, &deployment.id);
 
     // container does not exist, do nothing
@@ -298,6 +308,8 @@ pub async fn delete_deployment_container(
     }
 
     broadcaster.delete_logs(&deployment.id).await?;
+
+    proxy::reconcile(state).await?;
 
     Ok(())
 }

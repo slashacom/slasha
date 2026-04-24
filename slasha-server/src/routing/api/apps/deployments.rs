@@ -98,10 +98,7 @@ async fn trigger_deploy(
         .execute(&mut conn)?;
 
     tokio::spawn(run_deployment(
-        state.docker.clone(),
-        state.port_pool.clone(),
-        state.deployment_broadcaster.clone(),
-        state.db_pool.clone(),
+        state.clone(),
         app,
         deployment.clone(),
     ));
@@ -174,10 +171,7 @@ async fn stop_deployment(
     drop(conn);
 
     stop_deployment_container(
-        &state.docker,
-        &state.port_pool,
-        &state.db_pool,
-        &state.deployment_broadcaster,
+        &state,
         &app,
         &deployment,
     )
@@ -207,9 +201,7 @@ async fn restart_deployment(
         .ok_or_else(|| Error::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
 
     delete_deployment_container(
-        &state.docker,
-        &state.port_pool,
-        &state.deployment_broadcaster,
+        &state,
         &app,
         &deployment,
     )
@@ -229,10 +221,7 @@ async fn restart_deployment(
     updated_deployment.updated_at = now;
 
     tokio::spawn(run_deployment(
-        state.docker.clone(),
-        state.port_pool.clone(),
-        state.deployment_broadcaster.clone(),
-        state.db_pool.clone(),
+        state.clone(),
         app,
         updated_deployment.clone(),
     ));
@@ -305,9 +294,7 @@ async fn delete_deployment(
         .ok_or_else(|| Error::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
 
     delete_deployment_container(
-        &state.docker,
-        &state.port_pool,
-        &state.deployment_broadcaster,
+        &state,
         &app,
         &deployment,
     )

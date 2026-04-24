@@ -1,32 +1,22 @@
 use std::path::Path;
-use std::sync::Arc;
-
-use bollard::Docker;
+use std::collections::HashMap;
+use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::sqlite::SqliteConnection;
-use models::app::App;
+use models::app::{App, AppEnvVar};
 use models::deployment::{Deployment, DeploymentStatus};
-
-use super::DeploymentResult;
-use super::broadcaster::DeploymentBroadcaster;
-use super::build::{
-    BuildStrategy, detect_build_strategy, phase_build_docker, phase_build_railpack,
-};
-use super::port_pool::PortPool;
-use super::run::{phase_run, update_deployment_status};
-use crate::docker::env::{EnvRef, RefSource, parse_env_ref};
-use crate::error::DeploymentError;
-
-use std::collections::HashMap;
-
-use diesel::prelude::*;
-
-use models::app::AppEnvVar;
 use models::schema::{app_env_vars, service_env_vars, services};
 use models::service::{Service, ServiceStatus};
 
+use super::DeploymentResult;
+use super::build::{
+    BuildStrategy, detect_build_strategy, phase_build_docker, phase_build_railpack,
+};
+use super::run::{phase_run, update_deployment_status, app_container_name};
 use super::network::app_network_name;
-use super::run::app_container_name;
+use crate::AppState;
+use crate::docker::env::{EnvRef, RefSource, parse_env_ref};
+use crate::error::DeploymentError;
 
 const DEFAULT_RAILPACK_CONTAINER_PORT: u16 = 8080;
 
@@ -120,25 +110,22 @@ pub fn parse_expose(dockerfile_content: &str) -> u16 {
 }
 
 pub async fn run_deployment(
-    docker: Docker,
-    pool: Arc<PortPool>,
-    broadcaster: Arc<DeploymentBroadcaster>,
-    db_pool: Pool<ConnectionManager<SqliteConnection>>,
+    state: AppState,
     app: App,
     deployment: Deployment,
 ) -> DeploymentResult<()> {
     if let Err(e) =
-        run_deployment_inner(&docker, &pool, &broadcaster, &db_pool, &app, &deployment).await
+        run_deployment_inner(&state, &app, &deployment).await
     {
         tracing::error!("Deployment {} failed: {:?}", deployment.id, e);
 
-        broadcaster
+        state.deployment_broadcaster
             .send(&deployment.id, format!("Deployment failed: {}", e))
             .await?;
 
-        broadcaster.remove(&deployment.id);
+        state.deployment_broadcaster.remove(&deployment.id);
 
-        if let Ok(mut conn) = db_pool.get() {
+        if let Ok(mut conn) = state.db_pool.get() {
             let _ = update_deployment_status(&mut conn, &deployment.id, DeploymentStatus::Failed);
         }
     }
@@ -147,13 +134,13 @@ pub async fn run_deployment(
 }
 
 async fn run_deployment_inner(
-    docker: &Docker,
-    pool: &Arc<PortPool>,
-    broadcaster: &Arc<DeploymentBroadcaster>,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    state: &AppState,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
+    let docker = &state.docker;
+    let broadcaster = &state.deployment_broadcaster;
+    let db_pool = &state.db_pool;
     let deployment_id = &deployment.id;
     let repo_path = Path::new(&app.repo_path);
 
@@ -198,10 +185,7 @@ async fn run_deployment_inner(
             phase_build_docker(docker, broadcaster, app, deployment).await?;
 
             phase_run(
-                docker,
-                db_pool,
-                broadcaster,
-                pool,
+                state,
                 app,
                 deployment,
                 container_port,
@@ -224,10 +208,7 @@ async fn run_deployment_inner(
             phase_build_railpack(docker, broadcaster, app, deployment).await?;
 
             phase_run(
-                docker,
-                db_pool,
-                broadcaster,
-                pool,
+                state,
                 app,
                 deployment,
                 container_port,
