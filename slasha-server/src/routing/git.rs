@@ -1,7 +1,6 @@
 use axum::{
     Router,
     body::Body,
-    extract::State,
     http::{Request, header},
     response::IntoResponse,
     routing::{get, post},
@@ -18,7 +17,6 @@ use crate::{
     error::{GitError, Result},
     extractors::git::GitAuth,
 };
-use models::app::App;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -96,21 +94,8 @@ async fn upload_pack(auth: GitAuth, req: Request<Body>) -> Result<impl IntoRespo
     handle_git_service("upload-pack", auth, req).await
 }
 
-async fn receive_pack(
-    State(state): State<AppState>,
-    auth: GitAuth,
-    req: Request<Body>,
-) -> Result<impl IntoResponse> {
-    let app = auth.app.clone();
-    let res = handle_git_service("receive-pack", auth, req).await?;
-
-    tokio::spawn(async move {
-        if let Err(e) = trigger_build(state, app).await {
-            tracing::error!("Failed to trigger build: {}", e);
-        }
-    });
-
-    Ok(res)
+async fn receive_pack(auth: GitAuth, req: Request<Body>) -> Result<impl IntoResponse> {
+    handle_git_service("receive-pack", auth, req).await
 }
 
 async fn handle_git_service(
@@ -183,11 +168,4 @@ async fn handle_git_service(
         ],
         body,
     ))
-}
-
-async fn trigger_build(_state: AppState, app: App) -> anyhow::Result<()> {
-    // TODO
-    tracing::info!("Triggering build for app: {} ({})", app.name, app.slug);
-
-    Ok(())
 }

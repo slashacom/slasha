@@ -125,6 +125,30 @@ pub enum DeploymentError {
 
     #[error("Path is not valid UTF-8")]
     PathNotUtf8,
+
+    #[error("Proxy error: {0}")]
+    Proxy(#[from] crate::error::ProxyError),
+}
+
+#[derive(Debug, Error)]
+pub enum ProxyError {
+    #[error("Docker API error: {0}")]
+    DockerApi(#[from] bollard::errors::Error),
+
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] diesel::result::Error),
+
+    #[error("DB pool error: {0}")]
+    PoolError(#[from] diesel::r2d2::PoolError),
+
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
+
+    #[error("Caddy error: {0}")]
+    Caddy(String),
+
+    #[error("Timeout: {0}")]
+    Timeout(String),
 }
 
 impl IntoResponse for Error {
@@ -145,7 +169,6 @@ impl IntoResponse for Error {
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
             Error::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             Error::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
-            Error::GitError(_) => unreachable!(),
             Error::Deployment(e) => match e {
                 DeploymentError::ServiceNotFound(name) => (StatusCode::NOT_FOUND, name),
                 DeploymentError::ServiceNotRunning(name) => (
@@ -164,6 +187,8 @@ impl IntoResponse for Error {
                     )
                 }
             },
+
+            _ => unreachable!()
         };
 
         let body = Json(json!({ "error": message }));

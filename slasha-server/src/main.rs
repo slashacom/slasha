@@ -5,6 +5,7 @@ pub mod docker;
 pub mod error;
 pub mod extractors;
 pub mod middleware;
+pub mod proxy;
 pub mod routing;
 pub mod ssh;
 pub mod utils;
@@ -17,6 +18,7 @@ use tracing::info;
 
 use docker::broadcaster::DeploymentBroadcaster;
 use docker::port_pool::PortPool;
+use proxy::CaddyClient;
 
 pub use error::{Error, Result};
 
@@ -26,6 +28,9 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenv::dotenv;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use crate::proxy::container::{ensure_caddy_running, ensure_caddy_volumes};
+use crate::proxy::reconcile;
+
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: Pool<ConnectionManager<SqliteConnection>>,
@@ -34,6 +39,9 @@ pub struct AppState {
     pub docker: bollard::Docker,
     pub port_pool: Arc<PortPool>,
     pub deployment_broadcaster: Arc<DeploymentBroadcaster>,
+    pub caddy_client: Arc<CaddyClient>,
+    pub reconcile_lock: Arc<tokio::sync::Mutex<()>>,
+    pub platform_domain: Option<String>,
 }
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../slasha-models/migrations");
@@ -84,6 +92,9 @@ async fn main() -> anyhow::Result<()> {
     let docker =
         bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");
 
+    ensure_caddy_volumes(&docker).await?;
+    ensure_caddy_running(&docker).await?;
+
     let state = AppState {
         db_pool: Pool::builder()
             .build(ConnectionManager::<SqliteConnection>::new(
@@ -101,9 +112,14 @@ async fn main() -> anyhow::Result<()> {
         deployment_broadcaster: Arc::new(DeploymentBroadcaster::new(utils::ensure_dir(
             &logs_dir.join("deployments"),
         ))),
+        caddy_client: Arc::new(CaddyClient::new()),
+        reconcile_lock: Arc::new(tokio::sync::Mutex::new(())),
+        platform_domain: std::env::var("SLASHA_PLATFORM_DOMAIN").ok(),
     };
 
     run_migrations(&state)?;
+
+    reconcile(&state).await?;
 
     run_server(Some("0.0.0.0:3000".parse().unwrap()), state).await?;
 

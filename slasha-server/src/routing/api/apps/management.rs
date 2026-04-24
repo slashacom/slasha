@@ -181,15 +181,7 @@ async fn delete_app(
         .load(&mut conn)?;
 
     for dep in deployments {
-        if let Err(e) = delete_deployment_container(
-            &state.docker,
-            &state.port_pool,
-            &state.deployment_broadcaster,
-            &app,
-            &dep,
-        )
-        .await
-        {
+        if let Err(e) = delete_deployment_container(&state, &app, &dep).await {
             tracing::warn!(
                 "Failed to delete container for deployment {}: {}",
                 dep.id,
