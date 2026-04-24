@@ -1,13 +1,14 @@
 use bollard::Docker;
 use bollard::models::NetworkCreateRequest;
 
-use crate::error::{DeploymentError, Result};
+use crate::error::DeploymentError;
+use super::DeploymentResult;
 
 pub fn app_network_name(app_id: &str) -> String {
     format!("slasha-{}", app_id)
 }
 
-pub async fn create_app_network(docker: &Docker, app_id: &str) -> Result<()> {
+pub async fn create_app_network(docker: &Docker, app_id: &str) -> DeploymentResult<()> {
     let network_name = app_network_name(app_id);
 
     let config = NetworkCreateRequest {
@@ -22,7 +23,7 @@ pub async fn create_app_network(docker: &Docker, app_id: &str) -> Result<()> {
     }
 }
 
-pub async fn delete_app_network(docker: &Docker, app_id: &str) -> Result<()> {
+pub async fn delete_app_network(docker: &Docker, app_id: &str) -> DeploymentResult<()> {
     let network_name = app_network_name(app_id);
 
     match docker.remove_network(&network_name).await {

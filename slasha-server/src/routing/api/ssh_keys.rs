@@ -34,12 +34,12 @@ async fn list_ssh_keys(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let keys = ssh_keys::table
         .filter(ssh_keys::user_id.eq(&auth.0.id))
         .load::<SshKey>(&mut conn)
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Database error: {}", e)))?;
+        ?;
 
     Ok(Json(ListSshKeysResponse { keys }))
 }
@@ -58,7 +58,7 @@ async fn create_ssh_key(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let now = chrono::Utc::now().naive_utc();
     let new_key = SshKey {
@@ -72,7 +72,7 @@ async fn create_ssh_key(
     diesel::insert_into(ssh_keys::table)
         .values(&new_key)
         .execute(&mut conn)
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Database error: {}", e)))?;
+        ?;
 
     regenerate_authorized_keys(&state)?;
 
@@ -87,7 +87,7 @@ async fn delete_ssh_key(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let deleted_rows = diesel::delete(
         ssh_keys::table
@@ -95,7 +95,7 @@ async fn delete_ssh_key(
             .filter(ssh_keys::user_id.eq(&auth.0.id)),
     )
     .execute(&mut conn)
-    .map_err(|e| Error::Internal(anyhow::anyhow!("Database error: {}", e)))?;
+    ?;
 
     if deleted_rows == 0 {
         return Err(Error::NotFound("SSH key not found".into()));

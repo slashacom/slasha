@@ -64,7 +64,7 @@ async fn create_app(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let existing = apps::table
         .filter(apps::slug.eq(&slug))
@@ -157,7 +157,7 @@ async fn delete_app(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
@@ -225,7 +225,7 @@ async fn list_apps(State(state): State<AppState>, auth: AuthUser) -> Result<impl
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let user_app_ids: Vec<String> = app_members::table
         .filter(app_members::user_id.eq(&auth.0.id))

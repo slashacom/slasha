@@ -11,11 +11,11 @@ pub fn regenerate_authorized_keys(state: &AppState) -> Result<()> {
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let keys = ssh_keys::table
         .load::<SshKey>(&mut conn)
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Database error: {}", e)))?;
+        ?;
 
     let handler_path = "slasha-git-ssh-handler";
     let mut content = String::new();

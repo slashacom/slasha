@@ -22,7 +22,8 @@ use models::schema::deployments;
 use super::broadcaster::DeploymentBroadcaster;
 use super::network::app_network_name;
 use super::port_pool::PortPool;
-use crate::error::{DeploymentError, Result};
+use crate::error::DeploymentError;
+use super::DeploymentResult;
 
 pub fn app_container_name(app_id: &str, deployment_id: &str) -> String {
     format!("slasha-{}-{}", app_id, deployment_id)
@@ -36,7 +37,7 @@ pub fn update_deployment_status(
     conn: &mut SqliteConnection,
     deployment_id: &str,
     status: DeploymentStatus,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     diesel::update(deployments::table.filter(deployments::id.eq(deployment_id)))
         .set((
             deployments::status.eq(status.to_string()),
@@ -48,7 +49,7 @@ pub fn update_deployment_status(
     Ok(())
 }
 
-async fn get_container_host_port(docker: &Docker, name: &str) -> Result<u16> {
+async fn get_container_host_port(docker: &Docker, name: &str) -> DeploymentResult<u16> {
     let info = docker
         .inspect_container(name, None)
         .await
@@ -79,7 +80,7 @@ pub async fn phase_run(
     deployment: &Deployment,
     container_port: u16,
     env_map: HashMap<String, String>,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     let deployment_id = deployment.id.clone();
     let host_port = port_pool.allocate().await?;
     let name = app_container_name(&app.id, &deployment_id);
@@ -191,7 +192,7 @@ async fn stream_runtime_logs(
     broadcaster: Arc<DeploymentBroadcaster>,
     deployment_id: String,
     container: String,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     let opts = LogsOptionsBuilder::new()
         .follow(true)
         .stdout(true)
@@ -242,7 +243,7 @@ pub async fn stop_deployment_container(
     broadcaster: &DeploymentBroadcaster,
     app: &App,
     deployment: &Deployment,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     let name = app_container_name(&app.id, &deployment.id);
 
     let host_port = get_container_host_port(docker, &name).await?;
@@ -270,7 +271,7 @@ pub async fn delete_deployment_container(
     broadcaster: &DeploymentBroadcaster,
     app: &App,
     deployment: &Deployment,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     let name = app_container_name(&app.id, &deployment.id);
 
     // container does not exist, do nothing

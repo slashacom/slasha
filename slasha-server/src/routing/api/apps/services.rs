@@ -50,7 +50,7 @@ async fn list_services(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let app_services: Vec<Service> = services::table
         .filter(services::app_id.eq(&app.id))
@@ -84,7 +84,7 @@ async fn create_service(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let now = Utc::now().naive_utc();
     let service_id = Uuid::new_v4().to_string();
@@ -144,7 +144,7 @@ async fn stop_service_handler(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let svc = services::table
         .filter(services::id.eq(&id))
@@ -173,7 +173,7 @@ async fn delete_service_handler(
     let mut conn = state
         .db_pool
         .get()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("DB pool error: {}", e)))?;
+        ?;
 
     let svc = services::table
         .filter(services::id.eq(&id))

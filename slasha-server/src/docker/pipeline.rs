@@ -14,7 +14,8 @@ use super::build::{
 use super::port_pool::PortPool;
 use super::run::{phase_run, update_deployment_status};
 use crate::docker::env::{EnvRef, RefSource, parse_env_ref};
-use crate::error::{DeploymentError, Result};
+use crate::error::DeploymentError;
+use super::DeploymentResult;
 
 use std::collections::HashMap;
 
@@ -33,7 +34,7 @@ pub fn resolve_app_env(
     db_pool: &Pool<ConnectionManager<SqliteConnection>>,
     app: &App,
     deployment: &Deployment,
-) -> Result<HashMap<String, String>> {
+) -> DeploymentResult<HashMap<String, String>> {
     let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
 
     let vars: Vec<AppEnvVar> = app_env_vars::table
@@ -125,7 +126,7 @@ pub async fn run_deployment(
     db_pool: Pool<ConnectionManager<SqliteConnection>>,
     app: App,
     deployment: Deployment,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     if let Err(e) =
         run_deployment_inner(&docker, &pool, &broadcaster, &db_pool, &app, &deployment).await
     {
@@ -152,7 +153,7 @@ async fn run_deployment_inner(
     db_pool: &Pool<ConnectionManager<SqliteConnection>>,
     app: &App,
     deployment: &Deployment,
-) -> Result<()> {
+) -> DeploymentResult<()> {
     let deployment_id = &deployment.id;
     let repo_path = Path::new(&app.repo_path);
 
