@@ -50,6 +50,19 @@ async fn trigger_deploy(
     Path(slug): Path<String>,
     Json(payload): Json<TriggerDeployReq>,
 ) -> Result<impl IntoResponse> {
+    let mut conn = state.db_pool.get()?;
+
+    let is_running: bool = diesel::select(diesel::dsl::exists(
+        deployments::table.filter(deployments::status.eq(DeploymentStatus::Running)),
+    ))
+    .get_result(&mut conn)?;
+
+    if is_running {
+        return Err(Error::BadRequest(
+            "A deployment is already running".to_string(),
+        ));
+    }
+
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
     let (commit_sha, commit_message) = match payload.commit_sha {
@@ -79,8 +92,6 @@ async fn trigger_deploy(
         created_at: now,
         updated_at: now,
     };
-
-    let mut conn = state.db_pool.get()?;
 
     diesel::insert_into(deployments::table)
         .values(&deployment)
