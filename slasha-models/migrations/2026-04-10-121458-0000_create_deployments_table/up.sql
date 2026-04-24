@@ -10,3 +10,5 @@ CREATE TABLE deployments (
 );
 
 CREATE INDEX idx_deployments_app_id ON deployments(app_id);
+CREATE UNIQUE INDEX idx_deployments_one_running_per_app
+    ON deployments(app_id) WHERE status = 'running';
