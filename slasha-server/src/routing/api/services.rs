@@ -14,6 +14,7 @@ async fn get_service_kinds() -> Result<Json<serde_json::Value>> {
             serde_json::json!({
                 "name": kind.to_string(),
                 "supported_versions": kind.supported_versions(),
+                "default_env_vars": kind.default_env_vars(),
             })
         })
         .collect();

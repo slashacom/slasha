@@ -39,7 +39,6 @@ pub struct AppEnvVar {
     pub updated_at: chrono::NaiveDateTime,
 }
 
-
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
 #[diesel(table_name = crate::schema::app_members)]
 #[ts(export, export_to = "./app.ts")]

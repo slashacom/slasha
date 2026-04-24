@@ -68,31 +68,18 @@ impl ServiceKind {
         }
     }
 
-    pub fn default_env_vars(&self, container_hostname: &str) -> HashMap<String, String> {
+    pub fn default_env_vars(&self) -> HashMap<String, String> {
         match self {
-            ServiceKind::PostgreSQL => {
-                let user = "postgres";
-                let password = "postgres";
-                let db = "postgres";
-                let port = "5432";
-
-                let mut map = HashMap::from([
-                    ("POSTGRES_USER".to_string(), user.to_string()),
-                    ("POSTGRES_PASSWORD".to_string(), password.to_string()),
-                    ("POSTGRES_DB".to_string(), db.to_string()),
-                    ("PORT".to_string(), port.to_string()),
-                ]);
-
-                map.insert(
+            ServiceKind::PostgreSQL => HashMap::from([
+                ("POSTGRES_USER".to_string(), "postgres".to_string()),
+                ("POSTGRES_PASSWORD".to_string(), "postgres".to_string()),
+                ("POSTGRES_DB".to_string(), "postgres".to_string()),
+                ("PORT".to_string(), "5432".to_string()),
+                (
                     "DATABASE_URL".to_string(),
-                    format!(
-                        "postgres://{}:{}@{}:{}/{}",
-                        user, password, container_hostname, port, db
-                    ),
-                );
-
-                map
-            }
+                    "postgres://${{ POSTGRES_USER }}:${{ POSTGRES_PASSWORD }}@${{ SLASHA.service_container_name }}:${{ PORT }}/${{ POSTGRES_DB }}".to_string(),
+                ),
+            ]),
         }
     }
 

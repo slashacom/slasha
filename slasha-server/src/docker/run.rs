@@ -24,7 +24,7 @@ use super::network::app_network_name;
 use super::port_pool::PortPool;
 use crate::error::{DeploymentError, Result};
 
-fn container_name(app_id: &str, deployment_id: &str) -> String {
+pub fn app_container_name(app_id: &str, deployment_id: &str) -> String {
     format!("slasha-{}-{}", app_id, deployment_id)
 }
 
@@ -82,7 +82,7 @@ pub async fn phase_run(
 ) -> Result<()> {
     let deployment_id = deployment.id.clone();
     let host_port = port_pool.allocate().await?;
-    let name = container_name(&app.id, &deployment_id);
+    let name = app_container_name(&app.id, &deployment_id);
     let image = format!("{}:{}", image_name(&app.slug), deployment.commit_sha);
 
     let port_key = format!("{}/tcp", container_port);
@@ -243,7 +243,7 @@ pub async fn stop_deployment_container(
     app: &App,
     deployment: &Deployment,
 ) -> Result<()> {
-    let name = container_name(&app.id, &deployment.id);
+    let name = app_container_name(&app.id, &deployment.id);
 
     let host_port = get_container_host_port(docker, &name).await?;
 
@@ -271,7 +271,7 @@ pub async fn delete_deployment_container(
     app: &App,
     deployment: &Deployment,
 ) -> Result<()> {
-    let name = container_name(&app.id, &deployment.id);
+    let name = app_container_name(&app.id, &deployment.id);
 
     // container does not exist, do nothing
     if docker.inspect_container(&name, None).await.is_err() {

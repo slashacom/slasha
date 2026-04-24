@@ -13,7 +13,9 @@ use uuid::Uuid;
 use crate::{
     AppState,
     docker::{
-        network::{create_app_network, delete_app_network}, run::delete_deployment_container, services::delete_service,
+        network::{create_app_network, delete_app_network},
+        run::delete_deployment_container,
+        services::delete_service,
     },
     error::{Error, Result},
     extractors::auth::AuthUser,

@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use axum::{
+    Json, Router,
     extract::{Path, State},
     response::IntoResponse,
     routing::{delete, get, post},
-    Json, Router,
 };
 use chrono::Utc;
 use diesel::prelude::*;
@@ -10,10 +12,10 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
+    AppState,
     docker::services::{delete_service, provision_service, stop_service},
     error::{Error, Result},
     extractors::auth::AuthUser,
-    AppState,
 };
 
 use super::utils::lookup_app_for_user;
@@ -36,6 +38,7 @@ struct CreateServiceReq {
     kind: ServiceKind,
     name: String,
     version: String,
+    env_vars: HashMap<String, String>,
 }
 
 async fn list_services(
@@ -67,7 +70,11 @@ async fn create_service(
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
-    if !payload.kind.supported_versions().contains(&payload.version.as_str()) {
+    if !payload
+        .kind
+        .supported_versions()
+        .contains(&payload.version.as_str())
+    {
         return Err(Error::BadRequest(format!(
             "Version {} is not supported for {:?}",
             payload.version, payload.kind
@@ -100,6 +107,7 @@ async fn create_service(
     let state_clone = state.clone();
     let app_clone = app.clone();
     let service_clone = new_service.clone();
+    let env_vars_clone = payload.env_vars.clone();
 
     tokio::spawn(async move {
         if let Err(e) = provision_service(
@@ -107,6 +115,7 @@ async fn create_service(
             &state_clone.db_pool,
             &app_clone,
             &service_clone,
+            env_vars_clone,
         )
         .await
         {
@@ -148,9 +157,9 @@ async fn stop_service_handler(
         return Err(Error::BadRequest("Service is not running".into()));
     }
 
-    stop_service(&state.docker, &state.db_pool, &svc).await.map_err(|e| {
-        Error::Internal(anyhow::anyhow!("Failed to stop service: {}", e))
-    })?;
+    stop_service(&state.docker, &state.db_pool, &svc)
+        .await
+        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to stop service: {}", e)))?;
 
     Ok(Json(serde_json::json!({ "stopped": true })))
 }
@@ -174,12 +183,14 @@ async fn delete_service_handler(
         .ok_or_else(|| Error::NotFound("Service not found".into()))?;
 
     if svc.status != ServiceStatus::Stopped && svc.status != ServiceStatus::Failed {
-        return Err(Error::BadRequest("Cannot delete a running or provisioning service. Please stop it first.".into()));
+        return Err(Error::BadRequest(
+            "Cannot delete a running or provisioning service. Please stop it first.".into(),
+        ));
     }
 
-    delete_service(&state.docker, &state.db_pool, &svc).await.map_err(|e| {
-        Error::Internal(anyhow::anyhow!("Failed to delete service: {}", e))
-    })?;
+    delete_service(&state.docker, &state.db_pool, &svc)
+        .await
+        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to delete service: {}", e)))?;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
 }

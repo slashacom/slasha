@@ -32,18 +32,19 @@ export function useDeleteApp() {
 export function getAppEnvVarsOptions(appSlug: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'env-vars'],
-    queryFn: () => httpGet<{ env_vars: AppEnvVar[] }>(`apps/${appSlug}/env`),
+    queryFn: () =>
+      httpGet<{ env_vars: Record<string, string> }>(`apps/${appSlug}/env`),
   });
 }
 
 export function useUpdateAppEnvVars() {
   return useMutation({
-    mutationFn: (data: {
-      appSlug: string;
-      vars: { key: string; value: string }[];
-    }) =>
-      httpPut<{ env_vars: AppEnvVar[] }>(`apps/${data.appSlug}/env`, {
-        vars: data.vars,
-      }),
+    mutationFn: (data: { appSlug: string; vars: Record<string, string> }) =>
+      httpPut<{ env_vars: Record<string, string> }>(
+        `apps/${data.appSlug}/env`,
+        {
+          vars: data.vars,
+        }
+      ),
   });
 }

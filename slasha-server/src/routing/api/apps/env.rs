@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use axum::{
     Json, Router,
@@ -28,14 +28,8 @@ pub fn router() -> Router<AppState> {
 }
 
 #[derive(Deserialize)]
-struct EnvVarItem {
-    key: String,
-    value: String,
-}
-
-#[derive(Deserialize)]
 struct UpdateEnvVarsReq {
-    vars: Vec<EnvVarItem>,
+    vars: HashMap<String, String>,
 }
 
 async fn get_env_vars(
@@ -54,8 +48,10 @@ async fn get_env_vars(
         .order(app_env_vars::key.asc())
         .load(&mut conn)?;
 
+    let env_map: HashMap<String, String> = vars.into_iter().map(|v| (v.key, v.value)).collect();
+
     Ok(Json(serde_json::json!({
-        "env_vars": vars,
+        "env_vars": env_map,
     })))
 }
 
@@ -67,16 +63,6 @@ async fn update_env_vars(
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
-    let mut seen_keys = HashSet::new();
-    for item in &payload.vars {
-        if !seen_keys.insert(&item.key) {
-            return Err(Error::BadRequest(format!(
-                "Duplicate key found in request: {}",
-                item.key
-            )));
-        }
-    }
-
     let mut conn = state
         .db_pool
         .get()
@@ -86,11 +72,11 @@ async fn update_env_vars(
     let new_vars: Vec<AppEnvVar> = payload
         .vars
         .into_iter()
-        .map(|item| AppEnvVar {
+        .map(|(key, value)| AppEnvVar {
             id: Uuid::new_v4().to_string(),
             app_id: app.id.clone(),
-            key: item.key,
-            value: item.value,
+            key,
+            value,
             created_at: now,
             updated_at: now,
         })
@@ -109,7 +95,12 @@ async fn update_env_vars(
         Ok(())
     })?;
 
+    let env_map: std::collections::HashMap<String, String> = new_vars
+        .iter()
+        .map(|v| (v.key.clone(), v.value.clone()))
+        .collect();
+
     Ok(Json(serde_json::json!({
-        "env_vars": new_vars,
+        "env_vars": env_map,
     })))
 }
