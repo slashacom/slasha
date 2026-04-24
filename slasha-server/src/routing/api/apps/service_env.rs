@@ -9,11 +9,7 @@ use diesel::prelude::*;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{
-    AppState,
-    error::Result,
-    extractors::auth::AuthUser,
-};
+use crate::{AppState, error::Result, extractors::auth::AuthUser};
 
 use super::utils::{lookup_app_for_user, lookup_service_for_app};
 
@@ -39,10 +35,7 @@ async fn get_env_vars(
 
     lookup_service_for_app(&state, &app.id, &service_id)?;
 
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let vars: Vec<ServiceEnvVar> = service_env_vars::table
         .filter(service_env_vars::service_id.eq(&service_id))
@@ -67,10 +60,7 @@ async fn update_env_vars(
 
     lookup_service_for_app(&state, &app.id, &service_id)?;
 
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let now = Utc::now().naive_utc();
     let new_vars: Vec<ServiceEnvVar> = payload

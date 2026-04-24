@@ -11,11 +11,7 @@ use diesel::prelude::*;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{
-    AppState,
-    error::Result,
-    extractors::auth::AuthUser,
-};
+use crate::{AppState, error::Result, extractors::auth::AuthUser};
 
 use super::utils::lookup_app_for_user;
 
@@ -38,10 +34,7 @@ async fn get_env_vars(
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let vars: Vec<AppEnvVar> = app_env_vars::table
         .filter(app_env_vars::app_id.eq(&app.id))
@@ -63,10 +56,7 @@ async fn update_env_vars(
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let now = Utc::now().naive_utc();
     let new_vars: Vec<AppEnvVar> = payload

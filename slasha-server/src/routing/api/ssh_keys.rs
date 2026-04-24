@@ -31,15 +31,11 @@ async fn list_ssh_keys(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<ListSshKeysResponse>> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let keys = ssh_keys::table
         .filter(ssh_keys::user_id.eq(&auth.0.id))
-        .load::<SshKey>(&mut conn)
-        ?;
+        .load::<SshKey>(&mut conn)?;
 
     Ok(Json(ListSshKeysResponse { keys }))
 }
@@ -55,10 +51,7 @@ async fn create_ssh_key(
     auth: AuthUser,
     Json(payload): Json<CreateSshKeyRequest>,
 ) -> Result<Json<SshKey>> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let now = chrono::Utc::now().naive_utc();
     let new_key = SshKey {
@@ -71,8 +64,7 @@ async fn create_ssh_key(
 
     diesel::insert_into(ssh_keys::table)
         .values(&new_key)
-        .execute(&mut conn)
-        ?;
+        .execute(&mut conn)?;
 
     regenerate_authorized_keys(&state)?;
 
@@ -84,18 +76,14 @@ async fn delete_ssh_key(
     auth: AuthUser,
     Path(id): Path<String>,
 ) -> Result<Json<Value>> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let deleted_rows = diesel::delete(
         ssh_keys::table
             .filter(ssh_keys::id.eq(&id))
             .filter(ssh_keys::user_id.eq(&auth.0.id)),
     )
-    .execute(&mut conn)
-    ?;
+    .execute(&mut conn)?;
 
     if deleted_rows == 0 {
         return Err(Error::NotFound("SSH key not found".into()));

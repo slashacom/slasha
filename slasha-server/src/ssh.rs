@@ -8,14 +8,9 @@ use models::schema::ssh_keys;
 use models::ssh_keys::SshKey;
 
 pub fn regenerate_authorized_keys(state: &AppState) -> Result<()> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
-    let keys = ssh_keys::table
-        .load::<SshKey>(&mut conn)
-        ?;
+    let keys = ssh_keys::table.load::<SshKey>(&mut conn)?;
 
     let handler_path = "slasha-git-ssh-handler";
     let mut content = String::new();

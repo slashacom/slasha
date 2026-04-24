@@ -11,6 +11,15 @@ export type Service = {
   updated_at: string;
 };
 
-export type ServiceKind = 'Postgres';
+export type ServiceEnvVar = {
+  id: string;
+  service_id: string;
+  key: string;
+  value: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ServiceKind = 'PostgreSQL';
 
 export type ServiceStatus = 'Provisioning' | 'Running' | 'Stopped' | 'Failed';

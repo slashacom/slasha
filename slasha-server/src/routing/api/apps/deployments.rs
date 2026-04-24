@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -37,6 +35,7 @@ pub fn router() -> Router<AppState> {
         .route("/{deployment_id}", get(get_deployment))
         .route("/{deployment_id}/logs", get(stream_logs))
         .route("/{deployment_id}/stop", post(stop_deployment))
+        .route("/{deployment_id}/restart", post(restart_deployment))
         .route("/{deployment_id}", delete(delete_deployment))
 }
 
@@ -81,18 +80,14 @@ async fn trigger_deploy(
         updated_at: now,
     };
 
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     diesel::insert_into(deployments::table)
         .values(&deployment)
         .execute(&mut conn)?;
 
-    let docker = Arc::new(state.docker.clone());
     tokio::spawn(run_deployment(
-        docker,
+        state.docker.clone(),
         state.port_pool.clone(),
         state.deployment_broadcaster.clone(),
         state.db_pool.clone(),
@@ -110,10 +105,7 @@ async fn list_deployments(
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let deps: Vec<Deployment> = deployments::table
         .filter(deployments::app_id.eq(&app.id))
@@ -130,10 +122,7 @@ async fn get_deployment(
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let deployment = deployments::table
         .filter(deployments::id.eq(&deployment_id))
@@ -152,10 +141,7 @@ async fn stop_deployment(
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let deployment = deployments::table
         .filter(deployments::id.eq(&deployment_id))
@@ -193,6 +179,58 @@ async fn stop_deployment(
     })))
 }
 
+async fn restart_deployment(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path((slug, deployment_id)): Path<(String, String)>,
+) -> Result<impl IntoResponse> {
+    let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
+
+    let mut conn = state.db_pool.get()?;
+
+    let deployment = deployments::table
+        .filter(deployments::id.eq(&deployment_id))
+        .filter(deployments::app_id.eq(&app.id))
+        .first::<Deployment>(&mut conn)
+        .optional()?
+        .ok_or_else(|| Error::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
+
+    delete_deployment_container(
+        &state.docker,
+        &state.port_pool,
+        &state.deployment_broadcaster,
+        &app,
+        &deployment,
+    )
+    .await
+    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to clean up container: {}", e)))?;
+
+    let now = Utc::now().naive_utc();
+    diesel::update(deployments::table.filter(deployments::id.eq(&deployment.id)))
+        .set((
+            deployments::status.eq(DeploymentStatus::Pending.to_string()),
+            deployments::updated_at.eq(now),
+        ))
+        .execute(&mut conn)?;
+
+    let mut updated_deployment = deployment.clone();
+    updated_deployment.status = DeploymentStatus::Pending;
+    updated_deployment.updated_at = now;
+
+    tokio::spawn(run_deployment(
+        state.docker.clone(),
+        state.port_pool.clone(),
+        state.deployment_broadcaster.clone(),
+        state.db_pool.clone(),
+        app,
+        updated_deployment.clone(),
+    ));
+
+    Ok(Json(
+        serde_json::json!({ "deployment": updated_deployment }),
+    ))
+}
+
 async fn stream_logs(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -202,10 +240,7 @@ async fn stream_logs(
 > {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     deployments::table
         .filter(deployments::id.eq(&deployment_id))
@@ -249,10 +284,7 @@ async fn delete_deployment(
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
 
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let deployment = deployments::table
         .filter(deployments::id.eq(&deployment_id))

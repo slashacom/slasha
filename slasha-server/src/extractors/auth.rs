@@ -49,10 +49,7 @@ where
         let token_data = decode::<TokenPayload>(&token, &decoding_key, &validation)
             .map_err(|_| Error::Unauthorized)?;
 
-        let mut conn = state
-            .db_pool
-            .get()
-            ?;
+        let mut conn = state.db_pool.get()?;
 
         let user = users::table
             .filter(users::id.eq(&token_data.claims.id))

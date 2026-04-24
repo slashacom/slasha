@@ -29,16 +29,12 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn status(State(state): State<AppState>) -> Result<impl IntoResponse> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let admin_count: i64 = users::table
         .filter(users::role.eq("admin"))
         .count()
-        .get_result(&mut conn)
-        ?;
+        .get_result(&mut conn)?;
 
     Ok(Json(serde_json::json!({
         "has_admin": admin_count > 0,
@@ -55,10 +51,7 @@ async fn signup(
     State(state): State<AppState>,
     Json(payload): Json<SignupReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let admin_count: i64 = users::table
         .filter(users::role.eq("admin"))
@@ -108,10 +101,7 @@ async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state
-        .db_pool
-        .get()
-        ?;
+    let mut conn = state.db_pool.get()?;
 
     let user = users::table
         .filter(users::email.eq(&payload.email))
