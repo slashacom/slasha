@@ -1,10 +1,8 @@
-use std::collections::HashSet;
-
 use axum::{
+    Json, Router,
     extract::{Path, State},
     response::IntoResponse,
     routing::{get, put},
-    Json, Router,
 };
 use chrono::Utc;
 use diesel::prelude::*;
@@ -12,9 +10,9 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
+    AppState,
     error::{Error, Result},
     extractors::auth::AuthUser,
-    AppState,
 };
 
 use super::utils::{lookup_app_for_user, lookup_service_for_app};
@@ -28,14 +26,8 @@ pub fn router() -> Router<AppState> {
 }
 
 #[derive(Deserialize)]
-struct EnvVarItem {
-    key: String,
-    value: String,
-}
-
-#[derive(Deserialize)]
 struct UpdateEnvVarsReq {
-    vars: Vec<EnvVarItem>,
+    vars: std::collections::HashMap<String, String>,
 }
 
 async fn get_env_vars(
@@ -57,8 +49,11 @@ async fn get_env_vars(
         .order(service_env_vars::key.asc())
         .load(&mut conn)?;
 
+    let env_map: std::collections::HashMap<String, String> =
+        vars.into_iter().map(|v| (v.key, v.value)).collect();
+
     Ok(Json(serde_json::json!({
-        "env_vars": vars,
+        "env_vars": env_map,
     })))
 }
 
@@ -69,16 +64,6 @@ async fn update_env_vars(
     Json(payload): Json<UpdateEnvVarsReq>,
 ) -> Result<impl IntoResponse> {
     let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
-
-    let mut seen_keys = HashSet::new();
-    for item in &payload.vars {
-        if !seen_keys.insert(&item.key) {
-            return Err(Error::BadRequest(format!(
-                "Duplicate key found in request: {}",
-                item.key
-            )));
-        }
-    }
 
     lookup_service_for_app(&state, &app.id, &service_id)?;
 
@@ -91,19 +76,21 @@ async fn update_env_vars(
     let new_vars: Vec<ServiceEnvVar> = payload
         .vars
         .into_iter()
-        .map(|item| ServiceEnvVar {
+        .map(|(key, value)| ServiceEnvVar {
             id: Uuid::new_v4().to_string(),
             service_id: service_id.clone(),
-            key: item.key,
-            value: item.value,
+            key,
+            value,
             created_at: now,
             updated_at: now,
         })
         .collect();
 
     conn.transaction::<_, diesel::result::Error, _>(|conn| {
-        diesel::delete(service_env_vars::table.filter(service_env_vars::service_id.eq(&service_id)))
-            .execute(conn)?;
+        diesel::delete(
+            service_env_vars::table.filter(service_env_vars::service_id.eq(&service_id)),
+        )
+        .execute(conn)?;
 
         if !new_vars.is_empty() {
             diesel::insert_into(service_env_vars::table)
@@ -114,7 +101,12 @@ async fn update_env_vars(
         Ok(())
     })?;
 
+    let env_map: std::collections::HashMap<String, String> = new_vars
+        .iter()
+        .map(|v| (v.key.clone(), v.value.clone()))
+        .collect();
+
     Ok(Json(serde_json::json!({
-        "env_vars": new_vars,
+        "env_vars": env_map,
     })))
 }

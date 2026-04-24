@@ -13,7 +13,7 @@ use super::build::{
 };
 use super::port_pool::PortPool;
 use super::run::{phase_run, update_deployment_status};
-use crate::Error;
+use crate::docker::env::{EnvRef, RefSource, parse_env_ref};
 use crate::error::{DeploymentError, Result};
 
 use std::collections::HashMap;
@@ -21,78 +21,89 @@ use std::collections::HashMap;
 use diesel::prelude::*;
 
 use models::app::AppEnvVar;
-use models::schema::{app_env_vars, services, service_env_vars};
+use models::schema::{app_env_vars, service_env_vars, services};
 use models::service::{Service, ServiceStatus};
+
+use super::network::app_network_name;
+use super::run::app_container_name;
 
 const DEFAULT_RAILPACK_CONTAINER_PORT: u16 = 8080;
 
-fn parse_service_ref(value: &str) -> Option<(String, String)> {
-    let trimmed = value.trim();
-    let inner = trimmed
-        .strip_prefix("${{")
-        .and_then(|s| s.strip_suffix("}}"))?
-        .trim();
-
-    let (service_name, env_key) = inner.split_once('.')?;
-    Some((service_name.trim().to_string(), env_key.trim().to_string()))
-}
-
 pub fn resolve_app_env(
     db_pool: &Pool<ConnectionManager<SqliteConnection>>,
-    app_id: &str,
+    app: &App,
+    deployment: &Deployment,
 ) -> Result<HashMap<String, String>> {
     let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
 
     let vars: Vec<AppEnvVar> = app_env_vars::table
-        .filter(app_env_vars::app_id.eq(app_id))
+        .filter(app_env_vars::app_id.eq(&app.id))
         .order(app_env_vars::key.asc())
         .load(&mut conn)?;
 
     let app_services: Vec<Service> = services::table
-        .filter(services::app_id.eq(app_id))
+        .filter(services::app_id.eq(&app.id))
         .load(&mut conn)?;
+
+    let raw_app_env: HashMap<String, String> = vars
+        .iter()
+        .map(|v| (v.key.clone(), v.value.clone()))
+        .collect();
 
     let mut resolved: HashMap<String, String> = HashMap::with_capacity(vars.len());
 
-    for var in vars {
-        let value = if let Some((svc_name, env_key)) = parse_service_ref(&var.value) {
-            let svc = app_services
-                .iter()
-                .find(|s| s.name == svc_name)
-                .ok_or_else(|| DeploymentError::ServiceNotFound(svc_name.clone()))?;
+    for var in &vars {
+        let value = match parse_env_ref(&var.value) {
+            EnvRef::Literal => var.value.clone(),
 
-            if svc.status != ServiceStatus::Running {
-                return Err(Error::Deployment(DeploymentError::ServiceNotRunning(
-                    svc_name,
-                )));
+            EnvRef::Ref(RefSource::Own, key) => raw_app_env
+                .get(&key)
+                .cloned()
+                .ok_or_else(|| DeploymentError::EnvResolveFailed(key))?,
+
+            EnvRef::Ref(RefSource::System, key) => match key.as_str() {
+                "app_container_name" => app_container_name(&app.id, &deployment.id),
+                "app_id" => app.id.clone(),
+                "app_name" => app.name.clone(),
+                "app_slug" => app.slug.clone(),
+                "network_name" => app_network_name(&app.id),
+                _ => {
+                    return Err(DeploymentError::EnvResolveFailed(format!(
+                        "Unknown system key: {}",
+                        key
+                    ))
+                    .into());
+                }
+            },
+
+            EnvRef::Ref(RefSource::Service(svc_name), env_key) => {
+                let svc = app_services
+                    .iter()
+                    .find(|s| s.name == svc_name)
+                    .ok_or_else(|| DeploymentError::ServiceNotFound(svc_name.clone()))?;
+
+                if svc.status != ServiceStatus::Running {
+                    return Err(DeploymentError::ServiceNotRunning(svc_name).into());
+                }
+
+                service_env_vars::table
+                    .filter(service_env_vars::service_id.eq(&svc.id))
+                    .filter(service_env_vars::key.eq(&env_key))
+                    .select(service_env_vars::value)
+                    .first::<String>(&mut conn)
+                    .optional()
+                    .map_err(DeploymentError::DatabaseError)?
+                    .ok_or_else(|| DeploymentError::KeyNotExported(svc_name, env_key))?
             }
-
-            let svc_env: Option<String> = service_env_vars::table
-                .filter(service_env_vars::service_id.eq(&svc.id))
-                .filter(service_env_vars::key.eq(&env_key))
-                .select(service_env_vars::value)
-                .first::<String>(&mut conn)
-                .optional()
-                .map_err(|e| DeploymentError::DatabaseError(e))?;
-
-            if let Some(val) = svc_env {
-                val
-            } else {
-                return Err(Error::Deployment(DeploymentError::KeyNotExported(
-                    svc_name, env_key,
-                )));
-            }
-        } else {
-            var.value.clone()
         };
 
-        resolved.insert(var.key, value);
+        resolved.insert(var.key.clone(), value);
     }
 
     Ok(resolved)
 }
 
-pub fn detect_container_port(dockerfile_content: &str) -> u16 {
+pub fn parse_expose(dockerfile_content: &str) -> u16 {
     for line in dockerfile_content.lines() {
         let trimmed = line.trim();
         if trimmed.to_uppercase().starts_with("EXPOSE ") {
@@ -152,15 +163,14 @@ async fn run_deployment_inner(
         update_deployment_status(&mut conn, deployment_id, DeploymentStatus::Building)?;
     }
 
-    let mut env_map = resolve_app_env(db_pool, &app.id)
-        .map_err(|e| DeploymentError::EnvResolveFailed(e.to_string()))?;
+    let mut env_map = resolve_app_env(db_pool, app, deployment)?;
 
     let container_port = match env_map.get("PORT") {
         Some(port_str) => port_str
             .parse::<u16>()
             .map_err(|e| DeploymentError::EnvResolveFailed(e.to_string()))?,
         None => match &strategy {
-            BuildStrategy::Dockerfile { content } => detect_container_port(content),
+            BuildStrategy::Dockerfile { content } => parse_expose(content),
 
             BuildStrategy::Railpack => {
                 env_map.insert(

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Database,
@@ -16,8 +16,8 @@ import {
 } from 'lucide-react';
 import type { Service, ServiceStatus, ServiceKind } from '~/models/service';
 import {
-  getAppServicesOptions,
   getServiceKindsOptions,
+  getAppServicesOptions,
   useProvisionService,
   useStopService,
   useDeleteService,
@@ -36,7 +36,7 @@ import {
   DialogFooter,
 } from '~/components/interface/dialog';
 import { TextInput } from '~/components/interface/text-input';
-import { ServiceEnvEditor } from '~/components/apps/env-editor';
+import { EnvEditor, ServiceEnvEditor } from '~/components/apps/env-editor';
 
 export function ServicesView({ appSlug }: { appSlug: string }) {
   const { data, isLoading } = useQuery(getAppServicesOptions(appSlug));
@@ -186,7 +186,9 @@ function ServiceRow({
       queryClient.invalidateQueries({
         queryKey: ['apps', appSlug, 'services'],
       });
-    } catch {}
+    } catch (err) {
+      toast.error('Failed to stop service: ' + err);
+    }
   };
 
   const handleDelete = async () => {
@@ -301,16 +303,26 @@ function ProvisionServiceModal({
   const [name, setName] = useState('');
   const [kindName, setKindName] = useState<ServiceKind | ''>('');
   const [version, setVersion] = useState<string>('');
+  const [envVars, setEnvVars] = useState<Record<string, string>>({});
 
   const selectedKind = useMemo(() => {
     return kinds.find((k) => k.name === kindName);
   }, [kinds, kindName]);
 
-  // default selection when kinds load
-  if (kinds.length > 0 && !kindName) {
-    setKindName(kinds[0].name);
-    setVersion(kinds[0].supported_versions[0]);
-  }
+  const handleKindChange = (newKind: ServiceKind) => {
+    setKindName(newKind);
+    const kindMeta = kinds.find((k) => k.name === newKind);
+    if (kindMeta) {
+      setVersion(kindMeta.supported_versions[0]);
+      setEnvVars(kindMeta.default_env_vars);
+    }
+  };
+
+  useEffect(() => {
+    if (kinds.length > 0 && !kindName) {
+      handleKindChange(kinds[0].name);
+    }
+  }, [kinds, kindName]);
 
   const handleProvision = async () => {
     if (!name.trim() || !kindName || !version) {
@@ -323,6 +335,7 @@ function ProvisionServiceModal({
         kind: kindName,
         name: name.trim(),
         version,
+        envVars,
       });
       queryClient.invalidateQueries({
         queryKey: ['apps', appSlug, 'services'],
@@ -358,14 +371,9 @@ function ProvisionServiceModal({
               </label>
               <select
                 value={kindName}
-                onChange={(e) => {
-                  const newKind = e.target.value as ServiceKind;
-                  setKindName(newKind);
-                  const kindMeta = kinds.find((k) => k.name === newKind);
-                  if (kindMeta) {
-                    setVersion(kindMeta.supported_versions[0]);
-                  }
-                }}
+                onChange={(e) =>
+                  handleKindChange(e.target.value as ServiceKind)
+                }
                 className="flex w-full cursor-pointer items-center rounded-lg border border-gray-300 px-3 py-[9px] text-sm focus-within:border-gray-400/90 outline-none bg-transparent"
               >
                 {kinds.map((k) => (
@@ -393,6 +401,22 @@ function ProvisionServiceModal({
               </select>
             </VStack>
           </HStack>
+
+          <VStack space={1.5} className="mt-4">
+            <label className="text-xs font-medium text-text-secondary">
+              Environment Configuration
+            </label>
+            <div className="max-h-[400px] overflow-auto rounded-lg border border-border bg-surface/30 custom-scrollbar">
+              <EnvEditor
+                key={kindName}
+                initialVars={envVars}
+                isLoading={false}
+                isSaving={false}
+                onChange={setEnvVars}
+                variant="embedded"
+              />
+            </div>
+          </VStack>
         </VStack>
         <DialogFooter className="mt-6">
           <Button label="Cancel" variant="ghost" onClick={onClose} />
@@ -424,7 +448,7 @@ function ServiceConfigModal({
           appSlug={appSlug}
           serviceId={service.id}
           serviceName={service.name}
-          onSaveSuccess={onClose}
+          readOnly={true}
           onCancel={onClose}
         />
       </DialogContent>

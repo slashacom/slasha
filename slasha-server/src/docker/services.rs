@@ -19,6 +19,7 @@ use models::app::App;
 use models::schema::{service_env_vars, services};
 use models::service::{Service, ServiceEnvVar, ServiceStatus};
 
+use crate::docker::env::{EnvRef, RefSource, parse_env_ref};
 use crate::docker::network::app_network_name;
 use crate::error::{DeploymentError, Result};
 
@@ -46,11 +47,59 @@ pub fn update_service_status(
     Ok(())
 }
 
+pub fn resolve_service_env(
+    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    service: &Service,
+) -> Result<HashMap<String, String>> {
+    let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
+
+    let vars: Vec<ServiceEnvVar> = service_env_vars::table
+        .filter(service_env_vars::service_id.eq(&service.id))
+        .order(service_env_vars::key.asc())
+        .load(&mut conn)?;
+
+    let raw_env: HashMap<String, String> = vars
+        .iter()
+        .map(|v| (v.key.clone(), v.value.clone()))
+        .collect();
+
+    let mut resolved = HashMap::with_capacity(vars.len());
+
+    for var in &vars {
+        let value = match parse_env_ref(&var.value) {
+            EnvRef::Literal => var.value.clone(),
+            EnvRef::Ref(RefSource::Own, key) => raw_env
+                .get(&key)
+                .cloned()
+                .ok_or_else(|| DeploymentError::EnvResolveFailed(key))?,
+            EnvRef::Ref(RefSource::System, key) => match key.as_str() {
+                "service_container_name" => service_container_name(&service.id),
+                "service_id" => service.id.clone(),
+                "service_name" => service.name.clone(),
+                "app_id" => service.app_id.clone(),
+                "network_name" => app_network_name(&service.app_id),
+                _ => {
+                    return Err(DeploymentError::EnvResolveFailed(format!(
+                        "Unknown system key: {}",
+                        key
+                    ))
+                    .into());
+                }
+            },
+            _ => var.value.clone(),
+        };
+        resolved.insert(var.key.clone(), value);
+    }
+
+    Ok(resolved)
+}
+
 pub async fn provision_service(
     docker: &Docker,
     db_pool: &Pool<ConnectionManager<SqliteConnection>>,
     app: &App,
     service: &Service,
+    env_vars: HashMap<String, String>,
 ) -> Result<()> {
     let image_name = service.kind.docker_image(&service.version);
 
@@ -96,32 +145,29 @@ pub async fn provision_service(
 
     let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
 
-    let env_vars = {
-        let defaults = service.kind.default_env_vars(&container_name);
-        let now = Utc::now().naive_utc();
-        let new_vars: Vec<ServiceEnvVar> = defaults
-            .into_iter()
-            .map(|(key, value)| ServiceEnvVar {
-                id: uuid::Uuid::new_v4().to_string(),
-                service_id: service.id.clone(),
-                key,
-                value,
-                created_at: now,
-                updated_at: now,
-            })
-            .collect();
+    let now = Utc::now().naive_utc();
+    let new_vars: Vec<ServiceEnvVar> = env_vars
+        .into_iter()
+        .map(|(key, value)| ServiceEnvVar {
+            id: uuid::Uuid::new_v4().to_string(),
+            service_id: service.id.clone(),
+            key,
+            value,
+            created_at: now,
+            updated_at: now,
+        })
+        .collect();
 
-        diesel::insert_into(service_env_vars::table)
-            .values(&new_vars)
-            .execute(&mut conn)
-            .map_err(DeploymentError::DatabaseError)?;
+    diesel::insert_into(service_env_vars::table)
+        .values(&new_vars)
+        .execute(&mut conn)
+        .map_err(DeploymentError::DatabaseError)?;
 
-        new_vars
-    };
+    let env_vars = resolve_service_env(db_pool, service)?;
 
     let internal_env: Vec<String> = env_vars
         .into_iter()
-        .map(|v| format!("{}={}", v.key, v.value))
+        .map(|(k, v)| format!("{}={}", k, v))
         .collect();
 
     let mount_target = service.kind.volume_mount_path();

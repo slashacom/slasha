@@ -254,7 +254,7 @@ export default function AppIndexPage() {
           >
             Files
           </button>
-            <button
+          <button
             onClick={() => setActiveTab('deployments')}
             className={cn(
               'h-10 text-[13px] font-medium transition-colors border-b-2 -mb-[2px]',

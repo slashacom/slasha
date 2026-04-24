@@ -33,11 +33,7 @@ pub fn lookup_app_for_user(state: &AppState, slug: &str, user_id: &str) -> Resul
     Ok(app)
 }
 
-pub fn lookup_service_for_app(
-    state: &AppState,
-    app_id: &str,
-    service_id: &str,
-) -> Result<Service> {
+pub fn lookup_service_for_app(state: &AppState, app_id: &str, service_id: &str) -> Result<Service> {
     let mut conn = state
         .db_pool
         .get()

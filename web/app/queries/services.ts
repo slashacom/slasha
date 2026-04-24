@@ -5,6 +5,7 @@ import type { Service, ServiceKind } from '~/models/service';
 export interface ServiceKindMeta {
   name: ServiceKind;
   supported_versions: string[];
+  default_env_vars: Record<string, string>;
 }
 
 export function getServiceKindsOptions() {
@@ -28,11 +29,13 @@ export function useProvisionService() {
       kind: ServiceKind;
       name: string;
       version: string;
+      envVars: Record<string, string>;
     }) =>
       httpPost<{ service: Service }>(`apps/${data.appSlug}/services`, {
         kind: data.kind,
         name: data.name,
         version: data.version,
+        env_vars: data.envVars,
       }),
   });
 }
@@ -60,7 +63,7 @@ export function getServiceEnvVarsOptions(appSlug: string, serviceId: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'services', serviceId, 'env-vars'],
     queryFn: () =>
-      httpGet<{ env_vars: Array<{ key: string; value: string }> }>(
+      httpGet<{ env_vars: Record<string, string> }>(
         `apps/${appSlug}/services/${serviceId}/env`
       ),
   });
@@ -71,9 +74,9 @@ export function useUpdateServiceEnvVars() {
     mutationFn: (data: {
       appSlug: string;
       serviceId: string;
-      vars: Array<{ key: string; value: string }>;
+      vars: Record<string, string>;
     }) =>
-      httpPut<{ env_vars: Array<{ key: string; value: string }> }>(
+      httpPut<{ env_vars: Record<string, string> }>(
         `apps/${data.appSlug}/services/${data.serviceId}/env`,
         { vars: data.vars }
       ),
