@@ -13,7 +13,7 @@ pub struct PortPool {
 }
 
 impl PortPool {
-    pub async fn new(start: u16, end: u16, docker: &Docker) -> DeploymentResult<Self> {
+    pub async fn new(start: u16, end: u16, docker_client: &Docker) -> DeploymentResult<Self> {
         let mut available: BTreeSet<u16> = (start..=end).collect();
 
         let mut filters: HashMap<String, Vec<String>> = HashMap::new();
@@ -24,7 +24,7 @@ impl PortPool {
             .filters(&filters)
             .build();
 
-        let containers = docker
+        let containers = docker_client
             .list_containers(Some(opts))
             .await
             .map_err(DeploymentError::DockerApi)?;
@@ -33,7 +33,7 @@ impl PortPool {
             if let Some(ports) = container.ports {
                 for port in ports {
                     if let Some(public_port) = port.public_port {
-                        let p = public_port as u16;
+                        let p = public_port;
                         if p >= start && p <= end {
                             available.remove(&p);
                         }

@@ -63,7 +63,7 @@ where
 
 impl FromSql<Text, Sqlite> for DeploymentStatus {
     fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
-        Ok(<String as FromSql<Text, Sqlite>>::from_sql(bytes)
-            .map(|s| DeploymentStatus::from_str(&s).unwrap())?)
+        <String as FromSql<Text, Sqlite>>::from_sql(bytes)
+            .map(|s| DeploymentStatus::from_str(&s).unwrap())
     }
 }

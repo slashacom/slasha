@@ -1,13 +1,13 @@
-use super::config::build_config;
 use super::{ProxyResult, RouteEntry};
-use crate::AppState;
+use crate::state::{Clients, Config};
 use bollard::query_parameters::ListContainersOptionsBuilder;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Notify;
+use tokio::time::{Duration, sleep};
 
-pub async fn reconcile(state: &AppState) -> ProxyResult<()> {
-    let _guard = state.reconcile_lock.lock().await;
-
-    let platform_domain = match &state.platform_domain {
+pub async fn reconcile(clients: &Clients, config: &Config) -> ProxyResult<()> {
+    let platform_domain = match &config.platform_domain {
         Some(d) => d,
         None => {
             tracing::warn!("SLASHA_PLATFORM_DOMAIN not set, skipping proxy reconciliation");
@@ -24,8 +24,7 @@ pub async fn reconcile(state: &AppState) -> ProxyResult<()> {
         .filters(&filters)
         .build();
 
-    let containers = state.docker.list_containers(Some(opts)).await?;
-
+    let containers = clients.docker.list_containers(Some(opts)).await?;
     let mut routes = Vec::new();
 
     for container in containers {
@@ -34,7 +33,6 @@ pub async fn reconcile(state: &AppState) -> ProxyResult<()> {
             None => continue,
         };
 
-        // skip proxy container
         if labels.get("slasha.role").map(|v| v.as_str()) == Some("proxy") {
             continue;
         }
@@ -55,11 +53,34 @@ pub async fn reconcile(state: &AppState) -> ProxyResult<()> {
         });
     }
 
-    let config = build_config(&routes);
-    state.caddy_client.load(&config).await?;
+    clients.caddy.sync_routes(&routes).await?;
 
     tracing::info!("Reconciled {} proxy routes", routes.len());
-    tracing::info!("Config: {:#?}", config);
 
     Ok(())
+}
+
+pub fn spawn_reconciler(clients: Clients, config: Config) -> Arc<Notify> {
+    let notify = Arc::new(Notify::new());
+    let notify_clone = notify.clone();
+
+    tokio::spawn(async move {
+        loop {
+            notify_clone.notified().await;
+
+            loop {
+                tokio::select! {
+                    _ = sleep(Duration::from_millis(500)) => {
+                        if let Err(e) = reconcile(&clients, &config).await {
+                            tracing::error!("Proxy reconciliation failed: {:?}", e);
+                        }
+                        break;
+                    }
+                    _ = notify_clone.notified() => {}
+                }
+            }
+        }
+    });
+
+    notify
 }

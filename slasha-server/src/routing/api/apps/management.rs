@@ -11,7 +11,6 @@ use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::{
-    AppState,
     docker::{
         network::{create_app_network, delete_app_network},
         run::delete_deployment_container,
@@ -19,6 +18,7 @@ use crate::{
     },
     error::{Error, Result},
     extractors::auth::AuthUser,
+    state::{AppState, Clients, Runtime, Storage},
     utils::slugify,
 };
 
@@ -45,8 +45,9 @@ struct CreateAppReq {
 }
 
 async fn create_app(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(clients): State<Clients>,
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
     Json(payload): Json<CreateAppReq>,
 ) -> Result<impl IntoResponse> {
     let name = payload.name.trim().to_string();
@@ -61,7 +62,7 @@ async fn create_app(
         ));
     }
 
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
     let existing = apps::table
         .filter(apps::slug.eq(&slug))
@@ -75,7 +76,7 @@ async fn create_app(
         )));
     }
 
-    let repo_path = state
+    let repo_path = storage
         .repos_dir
         .join(format!("{}.git", slug))
         .to_str()
@@ -114,7 +115,7 @@ async fn create_app(
 
     let new_member = AppMember {
         app_id: app_id.clone(),
-        user_id: auth.0.id.clone(),
+        user_id: user.id.clone(),
         role: AppMemberRole::Owner,
         added_at: now,
     };
@@ -127,7 +128,7 @@ async fn create_app(
         .values(&new_member)
         .execute(&mut conn)?;
 
-    create_app_network(&state.docker, &app_id).await?;
+    create_app_network(&clients.docker, &app_id).await?;
 
     Ok(Json(serde_json::json!({
         "app": new_app,
@@ -135,11 +136,11 @@ async fn create_app(
 }
 
 async fn get_app(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
+    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
 
     Ok(Json(serde_json::json!({
         "app": app,
@@ -147,17 +148,19 @@ async fn get_app(
 }
 
 async fn delete_app(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(clients): State<Clients>,
+    State(storage): State<Storage>,
+    State(runtime): State<Runtime>,
+    AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
-    let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
+    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
 
     let membership = app_members::table
         .filter(app_members::app_id.eq(&app.id))
-        .filter(app_members::user_id.eq(&auth.0.id))
+        .filter(app_members::user_id.eq(&user.id))
         .first::<AppMember>(&mut conn)
         .optional()?
         .ok_or_else(|| Error::NotFound(format!("App '{}' not found", slug)))?;
@@ -171,7 +174,7 @@ async fn delete_app(
         .load(&mut conn)?;
 
     for svc in app_services {
-        if let Err(e) = delete_service(&state.docker, &state.db_pool, &svc).await {
+        if let Err(e) = delete_service(&clients.docker, &storage, &svc).await {
             tracing::warn!("Failed to delete service {}: {}", svc.id, e);
         }
     }
@@ -181,7 +184,7 @@ async fn delete_app(
         .load(&mut conn)?;
 
     for dep in deployments {
-        if let Err(e) = delete_deployment_container(&state, &app, &dep).await {
+        if let Err(e) = delete_deployment_container(&clients.docker, &runtime, &app, &dep).await {
             tracing::warn!(
                 "Failed to delete container for deployment {}: {}",
                 dep.id,
@@ -190,7 +193,7 @@ async fn delete_app(
         }
     }
 
-    delete_app_network(&state.docker, &app.id).await?;
+    delete_app_network(&clients.docker, &app.id).await?;
 
     diesel::delete(apps::table.filter(apps::id.eq(&app.id))).execute(&mut conn)?;
 
@@ -207,11 +210,14 @@ async fn delete_app(
     })))
 }
 
-async fn list_apps(State(state): State<AppState>, auth: AuthUser) -> Result<impl IntoResponse> {
-    let mut conn = state.db_pool.get()?;
+async fn list_apps(
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
+) -> Result<impl IntoResponse> {
+    let mut conn = storage.db_pool.get()?;
 
     let user_app_ids: Vec<String> = app_members::table
-        .filter(app_members::user_id.eq(&auth.0.id))
+        .filter(app_members::user_id.eq(&user.id))
         .select(app_members::app_id)
         .load(&mut conn)?;
 

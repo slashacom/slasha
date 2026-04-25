@@ -43,7 +43,7 @@ fn read_dockerfile(repo_path: &Path, commit_sha: &str) -> DeploymentResult<Optio
             Ok(Some(content))
         }
         Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
-        Err(e) => Err(DeploymentError::GitError(e).into()),
+        Err(e) => Err(DeploymentError::GitError(e)),
     }
 }
 
@@ -84,11 +84,11 @@ fn checkout_commit_to_dir(repo_path: &Path, commit_sha: &str, dest: &Path) -> De
 
         let abs_path = dest.join(&rel_path);
 
-        if let Some(parent) = abs_path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                tracing::error!("checkout_commit_to_dir: create_dir_all {:?}: {}", parent, e);
-                return git2::TreeWalkResult::Abort;
-            }
+        if let Some(parent) = abs_path.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            tracing::error!("checkout_commit_to_dir: create_dir_all {:?}: {}", parent, e);
+            return git2::TreeWalkResult::Abort;
         }
 
         let blob = match repo.find_blob(entry.id()) {
@@ -159,14 +159,14 @@ async fn build_tar_context(repo_path: &Path, commit_sha: &str) -> DeploymentResu
 
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        return Err(DeploymentError::GitArchiveFailed(stderr).into());
+        return Err(DeploymentError::GitArchiveFailed(stderr));
     }
 
     Ok(Bytes::from(out.stdout))
 }
 
 async fn tag_image_latest(
-    docker: &Docker,
+    docker_client: &Docker,
     image_tag: &str,
     app_slug: &str,
 ) -> DeploymentResult<()> {
@@ -175,7 +175,7 @@ async fn tag_image_latest(
         .repo(latest_tag.as_str())
         .tag("latest")
         .build();
-    docker
+    docker_client
         .tag_image(image_tag, Some(tag_opts))
         .await
         .map_err(DeploymentError::DockerApi)?;
@@ -229,15 +229,14 @@ async fn stream_command_output(
         return Err(DeploymentError::PhaseFailed {
             phase: phase_label.to_string(),
             status,
-        }
-        .into());
+        });
     }
 
     Ok(())
 }
 
 pub async fn phase_build_docker(
-    docker: &Docker,
+    docker_client: &Docker,
     broadcaster: &DeploymentBroadcaster,
     app: &App,
     deployment: &Deployment,
@@ -256,7 +255,7 @@ pub async fn phase_build_docker(
         .forcerm(true)
         .build();
 
-    let mut build_stream = docker.build_image(build_opts, None, Some(tar_body_stream));
+    let mut build_stream = docker_client.build_image(build_opts, None, Some(tar_body_stream));
 
     while let Some(item) = build_stream.next().await {
         match item {
@@ -267,25 +266,25 @@ pub async fn phase_build_docker(
                         broadcaster.send(&deployment_id, line).await?;
                     }
                 }
-                if let Some(detail) = info.error_detail {
-                    if let Some(msg_text) = detail.message {
-                        let msg = msg_text.trim().to_string();
-                        broadcaster
-                            .send(&deployment_id, format!("Build error: {}", msg))
-                            .await?;
-                        return Err(DeploymentError::BuildFailed(msg).into());
-                    }
+                if let Some(detail) = info.error_detail
+                    && let Some(msg_text) = detail.message
+                {
+                    let msg = msg_text.trim().to_string();
+                    broadcaster
+                        .send(&deployment_id, format!("Build error: {}", msg))
+                        .await?;
+                    return Err(DeploymentError::BuildFailed(msg));
                 }
             }
             Err(e) => {
                 let msg = format!("Docker error during build: {}", e);
                 broadcaster.send(&deployment_id, msg).await?;
-                return Err(DeploymentError::DockerApi(e).into());
+                return Err(DeploymentError::DockerApi(e));
             }
         }
     }
 
-    tag_image_latest(docker, &image_tag, &app.slug).await?;
+    tag_image_latest(docker_client, &image_tag, &app.slug).await?;
 
     broadcaster
         .send(
@@ -298,7 +297,7 @@ pub async fn phase_build_docker(
 }
 
 pub async fn phase_build_railpack(
-    docker: &Docker,
+    docker_client: &Docker,
     broadcaster: &DeploymentBroadcaster,
     app: &App,
     deployment: &Deployment,
@@ -385,7 +384,7 @@ pub async fn phase_build_railpack(
     )
     .await?;
 
-    tag_image_latest(docker, &image_tag, &app.slug).await?;
+    tag_image_latest(docker_client, &image_tag, &app.slug).await?;
 
     broadcaster
         .send(
