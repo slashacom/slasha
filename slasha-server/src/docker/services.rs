@@ -23,6 +23,7 @@ use super::DeploymentResult;
 use super::env::{EnvRef, RefSource, parse_env_ref};
 use super::network::app_network_name;
 use crate::error::DeploymentError;
+use crate::state::Storage;
 
 pub fn service_container_name(service_id: &str) -> String {
     format!("slasha-svc-{}", service_id)
@@ -83,8 +84,7 @@ pub fn resolve_service_env(
                     return Err(DeploymentError::EnvResolveFailed(format!(
                         "Unknown system key: {}",
                         key
-                    ))
-                    .into());
+                    )));
                 }
             },
             _ => var.value.clone(),
@@ -96,15 +96,16 @@ pub fn resolve_service_env(
 }
 
 pub async fn provision_service(
-    docker: &Docker,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    docker_client: &Docker,
+    storage: &Storage,
     app: &App,
     service: &Service,
     env_vars: HashMap<String, String>,
 ) -> DeploymentResult<()> {
+    let db_pool = &storage.db_pool;
     let image_name = service.kind.docker_image(&service.version);
 
-    let mut image_stream = docker.create_image(
+    let mut image_stream = docker_client.create_image(
         Some(CreateImageOptions {
             from_image: Some(image_name.clone()),
             ..Default::default()
@@ -113,8 +114,8 @@ pub async fn provision_service(
         None,
     );
 
-    while let Some(msg) = image_stream.next().await {
-        let _ = msg.map_err(DeploymentError::DockerApi)?;
+    while let Some(result) = image_stream.next().await {
+        let _ = result.map_err(DeploymentError::DockerApi)?;
     }
 
     let volume_name = service_volume_name(&service.id);
@@ -122,7 +123,7 @@ pub async fn provision_service(
         name: Some(volume_name.clone()),
         ..Default::default()
     };
-    docker
+    docker_client
         .create_volume(vol_config)
         .await
         .map_err(DeploymentError::DockerApi)?;
@@ -204,12 +205,12 @@ pub async fn provision_service(
         ..Default::default()
     };
 
-    docker
+    docker_client
         .create_container(Some(create_opts), config)
         .await
         .map_err(DeploymentError::DockerApi)?;
 
-    docker
+    docker_client
         .start_container(
             &container_name,
             Some(StartContainerOptionsBuilder::new().build()),
@@ -223,13 +224,14 @@ pub async fn provision_service(
 }
 
 pub async fn stop_service(
-    docker: &Docker,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    docker_client: &Docker,
+    storage: &Storage,
     service: &Service,
 ) -> DeploymentResult<()> {
+    let db_pool = &storage.db_pool;
     let container_name = service_container_name(&service.id);
 
-    docker
+    docker_client
         .stop_container(
             &container_name,
             Some(StopContainerOptionsBuilder::new().t(10).build()),
@@ -244,31 +246,32 @@ pub async fn stop_service(
 }
 
 pub async fn delete_service(
-    docker: &Docker,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    docker_client: &Docker,
+    storage: &Storage,
     service: &Service,
 ) -> DeploymentResult<()> {
+    let db_pool = &storage.db_pool;
     let container_name = service_container_name(&service.id);
     let volume_name = service_volume_name(&service.id);
 
-    if let Err(e) = docker
+    if let Err(e) = docker_client
         .remove_container(
             &container_name,
             Some(RemoveContainerOptionsBuilder::new().force(true).build()),
         )
         .await
     {
-        return Err(DeploymentError::DockerApi(e).into());
+        return Err(DeploymentError::DockerApi(e));
     }
 
-    if let Err(e) = docker
+    if let Err(e) = docker_client
         .remove_volume(
             &volume_name,
             None::<bollard::query_parameters::RemoveVolumeOptions>,
         )
         .await
     {
-        return Err(DeploymentError::DockerApi(e).into());
+        return Err(DeploymentError::DockerApi(e));
     }
 
     let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;

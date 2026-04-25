@@ -10,9 +10,9 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
-    AppState,
     auth::hash_password,
     error::{Error, Result},
+    state::{AppState, Storage},
 };
 
 use models::{schema::users, user::User};
@@ -27,10 +27,10 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn get_user(
-    State(state): State<AppState>,
+    State(storage): State<Storage>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
     let user = users::table
         .filter(users::id.eq(&id))
@@ -43,8 +43,8 @@ async fn get_user(
     })))
 }
 
-async fn list_users(State(state): State<AppState>) -> Result<impl IntoResponse> {
-    let mut conn = state.db_pool.get()?;
+async fn list_users(State(storage): State<Storage>) -> Result<impl IntoResponse> {
+    let mut conn = storage.db_pool.get()?;
 
     let all_users = users::table
         .order(users::created_at.desc())
@@ -63,10 +63,10 @@ struct CreateUserReq {
 }
 
 async fn create_user(
-    State(state): State<AppState>,
+    State(storage): State<Storage>,
     Json(payload): Json<CreateUserReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
     let hashed = hash_password(&payload.password)?;
     let new_user = User {
@@ -94,11 +94,11 @@ struct UpdateUserReq {
 }
 
 async fn update_user(
-    State(state): State<AppState>,
+    State(storage): State<Storage>,
     Path(id): Path<String>,
     Json(payload): Json<UpdateUserReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
     let updated_at = Utc::now().naive_utc();
 
@@ -124,10 +124,10 @@ async fn update_user(
 }
 
 async fn delete_user(
-    State(state): State<AppState>,
+    State(storage): State<Storage>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
     let user = users::table
         .filter(users::id.eq(&id))

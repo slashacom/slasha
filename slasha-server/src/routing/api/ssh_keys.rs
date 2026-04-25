@@ -1,8 +1,8 @@
 use crate::{
-    AppState,
     error::{Error, Result},
     extractors::auth::AuthUser,
     ssh::regenerate_authorized_keys,
+    state::{AppState, Storage},
 };
 use axum::{
     Json, Router,
@@ -28,13 +28,13 @@ pub struct ListSshKeysResponse {
 }
 
 async fn list_ssh_keys(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
 ) -> Result<Json<ListSshKeysResponse>> {
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
     let keys = ssh_keys::table
-        .filter(ssh_keys::user_id.eq(&auth.0.id))
+        .filter(ssh_keys::user_id.eq(&user.id))
         .load::<SshKey>(&mut conn)?;
 
     Ok(Json(ListSshKeysResponse { keys }))
@@ -47,16 +47,16 @@ pub struct CreateSshKeyRequest {
 }
 
 async fn create_ssh_key(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
     Json(payload): Json<CreateSshKeyRequest>,
 ) -> Result<Json<SshKey>> {
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
     let now = chrono::Utc::now().naive_utc();
     let new_key = SshKey {
         id: Uuid::new_v4().to_string(),
-        user_id: auth.0.id.clone(),
+        user_id: user.id.clone(),
         title: payload.title,
         public_key: payload.public_key,
         created_at: now,
@@ -66,22 +66,22 @@ async fn create_ssh_key(
         .values(&new_key)
         .execute(&mut conn)?;
 
-    regenerate_authorized_keys(&state)?;
+    regenerate_authorized_keys(&storage)?;
 
     Ok(Json(new_key))
 }
 
 async fn delete_ssh_key(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
     Path(id): Path<String>,
 ) -> Result<Json<Value>> {
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
     let deleted_rows = diesel::delete(
         ssh_keys::table
             .filter(ssh_keys::id.eq(&id))
-            .filter(ssh_keys::user_id.eq(&auth.0.id)),
+            .filter(ssh_keys::user_id.eq(&user.id)),
     )
     .execute(&mut conn)?;
 
@@ -89,7 +89,7 @@ async fn delete_ssh_key(
         return Err(Error::NotFound("SSH key not found".into()));
     }
 
-    regenerate_authorized_keys(&state)?;
+    regenerate_authorized_keys(&storage)?;
 
     Ok(Json(json!({ "status": "ok" })))
 }

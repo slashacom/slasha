@@ -2,13 +2,14 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
-use crate::{AppState, Error, Result};
+use crate::state::Storage;
+use crate::{Error, Result};
 use diesel::prelude::*;
 use models::schema::ssh_keys;
 use models::ssh_keys::SshKey;
 
-pub fn regenerate_authorized_keys(state: &AppState) -> Result<()> {
-    let mut conn = state.db_pool.get()?;
+pub fn regenerate_authorized_keys(storage: &Storage) -> Result<()> {
+    let mut conn = storage.db_pool.get()?;
 
     let keys = ssh_keys::table.load::<SshKey>(&mut conn)?;
 

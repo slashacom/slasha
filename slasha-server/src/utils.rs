@@ -18,6 +18,6 @@ pub fn slugify(name: &str) -> String {
 }
 
 pub fn ensure_dir(path: &PathBuf) -> PathBuf {
-    std::fs::create_dir_all(path).expect(&format!("Failed to create {:?}", path));
+    std::fs::create_dir_all(path).unwrap_or_else(|_| panic!("Failed to create {:?}", path));
     path.to_owned()
 }

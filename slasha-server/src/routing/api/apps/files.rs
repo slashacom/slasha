@@ -8,9 +8,9 @@ use git2::ObjectType;
 use serde::Serialize;
 
 use crate::{
-    AppState,
     error::{Error, Result},
     extractors::auth::AuthUser,
+    state::{AppState, Storage},
 };
 
 use super::utils::lookup_app_for_user;
@@ -146,11 +146,11 @@ fn build_tree_recursive(
 }
 
 async fn get_file_tree(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
+    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
 
     let repo = git2::Repository::open_bare(&app.repo_path)
         .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to open repository: {}", e)))?;
@@ -175,13 +175,13 @@ async fn get_file_tree(
 }
 
 async fn get_file_content(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
     Path((slug, file_path)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
     tracing::info!("File content: {:#?}", file_path);
 
-    let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
+    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
 
     let repo = git2::Repository::open_bare(&app.repo_path)
         .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to open repository: {}", e)))?;

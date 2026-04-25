@@ -8,7 +8,7 @@ pub fn app_network_name(app_id: &str) -> String {
     format!("slasha-{}", app_id)
 }
 
-pub async fn create_app_network(docker: &Docker, app_id: &str) -> DeploymentResult<()> {
+pub async fn create_app_network(docker_client: &Docker, app_id: &str) -> DeploymentResult<()> {
     let network_name = app_network_name(app_id);
 
     let config = NetworkCreateRequest {
@@ -17,17 +17,17 @@ pub async fn create_app_network(docker: &Docker, app_id: &str) -> DeploymentResu
         ..Default::default()
     };
 
-    match docker.create_network(config).await {
+    match docker_client.create_network(config).await {
         Ok(_) => Ok(()),
-        Err(e) => Err(DeploymentError::DockerApi(e).into()),
+        Err(e) => Err(DeploymentError::DockerApi(e)),
     }
 }
 
-pub async fn delete_app_network(docker: &Docker, app_id: &str) -> DeploymentResult<()> {
+pub async fn delete_app_network(docker_client: &Docker, app_id: &str) -> DeploymentResult<()> {
     let network_name = app_network_name(app_id);
 
-    match docker.remove_network(&network_name).await {
+    match docker_client.remove_network(&network_name).await {
         Ok(_) => Ok(()),
-        Err(e) => Err(DeploymentError::DockerApi(e).into()),
+        Err(e) => Err(DeploymentError::DockerApi(e)),
     }
 }

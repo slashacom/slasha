@@ -188,7 +188,7 @@ impl IntoResponse for Error {
                 }
             },
 
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         let body = Json(json!({ "error": message }));

@@ -8,61 +8,61 @@ pub mod middleware;
 pub mod proxy;
 pub mod routing;
 pub mod ssh;
+pub mod state;
 pub mod utils;
 
-use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::net::TcpListener;
-use tracing::info;
-
-use docker::broadcaster::DeploymentBroadcaster;
-use docker::port_pool::PortPool;
-use proxy::CaddyClient;
-
 pub use error::{Error, Result};
+pub use state::AppState;
 
-use diesel::r2d2::{ConnectionManager, Pool};
-use diesel::sqlite::SqliteConnection;
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenv::dotenv;
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
+use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::proxy::container::{ensure_caddy_running, ensure_caddy_volumes};
-use crate::proxy::reconcile;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub db_pool: Pool<ConnectionManager<SqliteConnection>>,
-    pub jwt_secret: String,
-    pub repos_dir: PathBuf,
-    pub docker: bollard::Docker,
-    pub port_pool: Arc<PortPool>,
-    pub deployment_broadcaster: Arc<DeploymentBroadcaster>,
-    pub caddy_client: Arc<CaddyClient>,
-    pub reconcile_lock: Arc<tokio::sync::Mutex<()>>,
-    pub platform_domain: Option<String>,
-}
+use crate::proxy::container::ensure_caddy_ready;
+use crate::state::{Clients, Config, Runtime, Storage};
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../slasha-models/migrations");
 
-fn run_migrations(state: &AppState) -> anyhow::Result<()> {
-    let mut conn = state
+fn setup_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "debug".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+}
+
+fn setup_dirs() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+    let data_dir = dirs::home_dir()
+        .expect("Failed to get home directory")
+        .join(".slasha");
+
+    let db_path = utils::ensure_dir(&data_dir).join("slasha.db");
+    let repos_dir = utils::ensure_dir(&data_dir.join("repos"));
+    let logs_dir = utils::ensure_dir(&data_dir.join("logs"));
+
+    (db_path, repos_dir, logs_dir)
+}
+
+fn run_migrations(storage: &Storage) {
+    let mut conn = storage
         .db_pool
         .get()
         .expect("Failed to get DB connection from pool");
+
     conn.run_pending_migrations(MIGRATIONS)
         .expect("Failed to run migrations");
-    Ok(())
 }
 
 pub async fn run_server(address: Option<SocketAddr>, state: AppState) -> anyhow::Result<()> {
-    let app = routing::router(state.clone()).with_state(state);
-
     let address = address.unwrap_or_else(|| "0.0.0.0:3000".parse().unwrap());
-
     info!("🚀 Slasha server starting on http://{}", address);
 
+    let app = routing::router(state.clone()).with_state(state);
     let listener = TcpListener::bind(address).await?;
     axum::serve(listener, app).await?;
 
@@ -72,54 +72,31 @@ pub async fn run_server(address: Option<SocketAddr>, state: AppState) -> anyhow:
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
+    setup_tracing();
 
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    let (db_path, repos_dir, logs_dir) = setup_dirs();
 
-    let data_dir = dirs::home_dir()
-        .expect("Failed to get home directory")
-        .join(".slasha");
-
-    let db_path = utils::ensure_dir(&data_dir).join("slasha.db");
-    let repos_dir = utils::ensure_dir(&data_dir.join("repos"));
-    let logs_dir = utils::ensure_dir(&data_dir.join("logs"));
+    let config = Config::new(
+        std::env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
+        std::env::var("SLASHA_PLATFORM_DOMAIN").ok(),
+        logs_dir.clone(),
+    );
 
     let docker =
         bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");
 
-    ensure_caddy_volumes(&docker).await?;
-    ensure_caddy_running(&docker).await?;
+    ensure_caddy_ready(&docker).await?;
 
-    let state = AppState {
-        db_pool: Pool::builder()
-            .build(ConnectionManager::<SqliteConnection>::new(
-                db_path.to_str().unwrap(),
-            ))
-            .expect("Failed to create DB pool"),
-        jwt_secret: std::env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
-        repos_dir,
-        port_pool: Arc::new(
-            PortPool::new(4000, 5000, &docker)
-                .await
-                .expect("Failed to initialise port pool"),
-        ),
-        docker,
-        deployment_broadcaster: Arc::new(DeploymentBroadcaster::new(utils::ensure_dir(
-            &logs_dir.join("deployments"),
-        ))),
-        caddy_client: Arc::new(CaddyClient::new()),
-        reconcile_lock: Arc::new(tokio::sync::Mutex::new(())),
-        platform_domain: std::env::var("SLASHA_PLATFORM_DOMAIN").ok(),
-    };
+    let clients = Clients::new(docker.clone());
+    let storage = Storage::new(&db_path, repos_dir);
 
-    run_migrations(&state)?;
+    run_migrations(&storage);
 
-    reconcile(&state).await?;
+    let proxy_reconcile = proxy::spawn_reconciler(clients.clone(), config.clone());
+    let runtime = Runtime::new(4000, 5000, &docker, &logs_dir, proxy_reconcile).await?;
+    let state = AppState::new(config, clients, storage, runtime);
+
+    state.runtime.proxy_reconcile.notify_one();
 
     run_server(Some("0.0.0.0:3000".parse().unwrap()), state).await?;
 

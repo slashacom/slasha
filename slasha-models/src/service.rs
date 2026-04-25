@@ -114,8 +114,8 @@ where
 
 impl FromSql<Text, Sqlite> for ServiceKind {
     fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
-        Ok(<String as FromSql<Text, Sqlite>>::from_sql(bytes)
-            .map(|s| ServiceKind::from_str(&s).unwrap())?)
+        <String as FromSql<Text, Sqlite>>::from_sql(bytes)
+            .map(|s| ServiceKind::from_str(&s).unwrap())
     }
 }
 
@@ -154,7 +154,7 @@ where
 
 impl FromSql<Text, Sqlite> for ServiceStatus {
     fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
-        Ok(<String as FromSql<Text, Sqlite>>::from_sql(bytes)
-            .map(|s| ServiceStatus::from_str(&s).unwrap())?)
+        <String as FromSql<Text, Sqlite>>::from_sql(bytes)
+            .map(|s| ServiceStatus::from_str(&s).unwrap())
     }
 }

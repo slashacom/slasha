@@ -29,8 +29,7 @@ where
         let path = parts.uri.path();
         let slug = path
             .split('/')
-            .filter(|s| !s.is_empty())
-            .next()
+            .find(|s| !s.is_empty())
             .ok_or_else(|| GitError::BadRequest("Missing slug".into()))?
             .trim_end_matches(".git");
 
@@ -53,6 +52,7 @@ where
         tracing::info!("Git auth: {} {}", email, password);
 
         let mut conn = state
+            .storage
             .db_pool
             .get()
             .map_err(|e| GitError::Internal(e.into()))?;

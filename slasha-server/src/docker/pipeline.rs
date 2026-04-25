@@ -1,5 +1,4 @@
-use std::path::Path;
-use std::collections::HashMap;
+use bollard::Docker;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::sqlite::SqliteConnection;
@@ -7,16 +6,18 @@ use models::app::{App, AppEnvVar};
 use models::deployment::{Deployment, DeploymentStatus};
 use models::schema::{app_env_vars, service_env_vars, services};
 use models::service::{Service, ServiceStatus};
+use std::collections::HashMap;
+use std::path::Path;
 
 use super::DeploymentResult;
 use super::build::{
     BuildStrategy, detect_build_strategy, phase_build_docker, phase_build_railpack,
 };
-use super::run::{phase_run, update_deployment_status, app_container_name};
 use super::network::app_network_name;
-use crate::AppState;
+use super::run::{app_container_name, phase_run, update_deployment_status};
 use crate::docker::env::{EnvRef, RefSource, parse_env_ref};
 use crate::error::DeploymentError;
+use crate::state::{Runtime, Storage};
 
 const DEFAULT_RAILPACK_CONTAINER_PORT: u16 = 8080;
 
@@ -62,8 +63,7 @@ pub fn resolve_app_env(
                     return Err(DeploymentError::EnvResolveFailed(format!(
                         "Unknown system key: {}",
                         key
-                    ))
-                    .into());
+                    )));
                 }
             },
 
@@ -74,7 +74,7 @@ pub fn resolve_app_env(
                     .ok_or_else(|| DeploymentError::ServiceNotFound(svc_name.clone()))?;
 
                 if svc.status != ServiceStatus::Running {
-                    return Err(DeploymentError::ServiceNotRunning(svc_name).into());
+                    return Err(DeploymentError::ServiceNotRunning(svc_name));
                 }
 
                 service_env_vars::table
@@ -110,22 +110,25 @@ pub fn parse_expose(dockerfile_content: &str) -> u16 {
 }
 
 pub async fn run_deployment(
-    state: AppState,
+    docker_client: Docker,
+    storage: Storage,
+    runtime: Runtime,
     app: App,
     deployment: Deployment,
 ) -> DeploymentResult<()> {
     if let Err(e) =
-        run_deployment_inner(&state, &app, &deployment).await
+        run_deployment_inner(&docker_client, &storage, &runtime, &app, &deployment).await
     {
         tracing::error!("Deployment {} failed: {:?}", deployment.id, e);
 
-        state.deployment_broadcaster
+        runtime
+            .deployment_broadcaster
             .send(&deployment.id, format!("Deployment failed: {}", e))
             .await?;
 
-        state.deployment_broadcaster.remove(&deployment.id);
+        runtime.deployment_broadcaster.remove(&deployment.id);
 
-        if let Ok(mut conn) = state.db_pool.get() {
+        if let Ok(mut conn) = storage.db_pool.get() {
             let _ = update_deployment_status(&mut conn, &deployment.id, DeploymentStatus::Failed);
         }
     }
@@ -134,13 +137,14 @@ pub async fn run_deployment(
 }
 
 async fn run_deployment_inner(
-    state: &AppState,
+    docker_client: &Docker,
+    storage: &Storage,
+    runtime: &Runtime,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
-    let docker = &state.docker;
-    let broadcaster = &state.deployment_broadcaster;
-    let db_pool = &state.db_pool;
+    let broadcaster = &runtime.deployment_broadcaster;
+    let db_pool = &storage.db_pool;
     let deployment_id = &deployment.id;
     let repo_path = Path::new(&app.repo_path);
 
@@ -182,10 +186,12 @@ async fn run_deployment_inner(
                 )
                 .await?;
 
-            phase_build_docker(docker, broadcaster, app, deployment).await?;
+            phase_build_docker(docker_client, broadcaster, app, deployment).await?;
 
             phase_run(
-                state,
+                docker_client,
+                storage,
+                runtime,
                 app,
                 deployment,
                 container_port,
@@ -205,10 +211,12 @@ async fn run_deployment_inner(
                 )
                 .await?;
 
-            phase_build_railpack(docker, broadcaster, app, deployment).await?;
+            phase_build_railpack(docker_client, broadcaster, app, deployment).await?;
 
             phase_run(
-                state,
+                docker_client,
+                storage,
+                runtime,
                 app,
                 deployment,
                 container_port,

@@ -1,5 +1,5 @@
-use crate::AppState;
 use crate::error::{Error, Result};
+use crate::state::Storage;
 use diesel::prelude::*;
 use models::{
     app::{App, AppMember},
@@ -7,8 +7,8 @@ use models::{
     service::Service,
 };
 
-pub fn lookup_app_for_user(state: &AppState, slug: &str, user_id: &str) -> Result<App> {
-    let mut conn = state.db_pool.get()?;
+pub fn lookup_app_for_user(storage: &Storage, slug: &str, user_id: &str) -> Result<App> {
+    let mut conn = storage.db_pool.get()?;
 
     let app = apps::table
         .filter(apps::slug.eq(slug))
@@ -30,8 +30,12 @@ pub fn lookup_app_for_user(state: &AppState, slug: &str, user_id: &str) -> Resul
     Ok(app)
 }
 
-pub fn lookup_service_for_app(state: &AppState, app_id: &str, service_id: &str) -> Result<Service> {
-    let mut conn = state.db_pool.get()?;
+pub fn lookup_service_for_app(
+    storage: &Storage,
+    app_id: &str,
+    service_id: &str,
+) -> Result<Service> {
+    let mut conn = storage.db_pool.get()?;
 
     let svc = services::table
         .filter(services::id.eq(service_id))

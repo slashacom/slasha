@@ -12,10 +12,10 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
-    AppState,
     docker::services::{delete_service, provision_service, stop_service},
     error::{Error, Result},
     extractors::auth::AuthUser,
+    state::{AppState, Clients, Storage},
 };
 
 use super::utils::lookup_app_for_user;
@@ -42,12 +42,12 @@ struct CreateServiceReq {
 }
 
 async fn list_services(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
-    let mut conn = state.db_pool.get()?;
+    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let mut conn = storage.db_pool.get()?;
 
     let app_services: Vec<Service> = services::table
         .filter(services::app_id.eq(&app.id))
@@ -60,12 +60,13 @@ async fn list_services(
 }
 
 async fn create_service(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(clients): State<Clients>,
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
     Path(slug): Path<String>,
     Json(payload): Json<CreateServiceReq>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
+    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
 
     if !payload
         .kind
@@ -78,7 +79,7 @@ async fn create_service(
         )));
     }
 
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
     let now = Utc::now().naive_utc();
     let service_id = Uuid::new_v4().to_string();
@@ -98,15 +99,16 @@ async fn create_service(
         .values(&new_service)
         .execute(&mut conn)?;
 
-    let state_clone = state.clone();
+    let clients_clone = clients.clone();
+    let storage_clone = storage.clone();
     let app_clone = app.clone();
     let service_clone = new_service.clone();
     let env_vars_clone = payload.env_vars.clone();
 
     tokio::spawn(async move {
         if let Err(e) = provision_service(
-            &state_clone.docker,
-            &state_clone.db_pool,
+            &clients_clone.docker,
+            &storage_clone,
             &app_clone,
             &service_clone,
             env_vars_clone,
@@ -114,7 +116,7 @@ async fn create_service(
         .await
         {
             tracing::error!("Failed to provision service {}: {}", service_clone.id, e);
-            if let Ok(mut conn) = state_clone.db_pool.get() {
+            if let Ok(mut conn) = storage_clone.db_pool.get() {
                 let _ = crate::docker::services::update_service_status(
                     &mut conn,
                     &service_clone.id,
@@ -130,12 +132,13 @@ async fn create_service(
 }
 
 async fn stop_service_handler(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(clients): State<Clients>,
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
-    let mut conn = state.db_pool.get()?;
+    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let mut conn = storage.db_pool.get()?;
 
     let svc = services::table
         .filter(services::id.eq(&id))
@@ -148,7 +151,7 @@ async fn stop_service_handler(
         return Err(Error::BadRequest("Service is not running".into()));
     }
 
-    stop_service(&state.docker, &state.db_pool, &svc)
+    stop_service(&clients.docker, &storage, &svc)
         .await
         .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to stop service: {}", e)))?;
 
@@ -156,12 +159,13 @@ async fn stop_service_handler(
 }
 
 async fn delete_service_handler(
-    State(state): State<AppState>,
-    auth: AuthUser,
+    State(clients): State<Clients>,
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&state, &slug, &auth.0.id)?;
-    let mut conn = state.db_pool.get()?;
+    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let mut conn = storage.db_pool.get()?;
 
     let svc = services::table
         .filter(services::id.eq(&id))
@@ -176,7 +180,7 @@ async fn delete_service_handler(
         ));
     }
 
-    delete_service(&state.docker, &state.db_pool, &svc)
+    delete_service(&clients.docker, &storage, &svc)
         .await
         .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to delete service: {}", e)))?;
 

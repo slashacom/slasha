@@ -10,10 +10,10 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
-    AppState,
     auth::{TokenPayload, create_jwt, hash_password, verify_password},
     error::{Error, Result},
     extractors::auth::AuthUser,
+    state::{AppState, Config, Storage},
 };
 
 use models::{schema::users, user::User};
@@ -28,8 +28,8 @@ pub fn router() -> Router<AppState> {
         .route("/status", get(status))
 }
 
-async fn status(State(state): State<AppState>) -> Result<impl IntoResponse> {
-    let mut conn = state.db_pool.get()?;
+async fn status(State(storage): State<Storage>) -> Result<impl IntoResponse> {
+    let mut conn = storage.db_pool.get()?;
 
     let admin_count: i64 = users::table
         .filter(users::role.eq("admin"))
@@ -48,10 +48,11 @@ pub struct SignupReq {
 }
 
 async fn signup(
-    State(state): State<AppState>,
+    State(storage): State<Storage>,
+    State(config): State<Config>,
     Json(payload): Json<SignupReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
     let admin_count: i64 = users::table
         .filter(users::role.eq("admin"))
@@ -83,7 +84,7 @@ async fn signup(
         exp,
     };
 
-    let token = create_jwt(&token_payload, &state.jwt_secret)?;
+    let token = create_jwt(&token_payload, &config.jwt_secret)?;
 
     Ok(Json(serde_json::json!({
         "token": token,
@@ -98,10 +99,11 @@ pub struct LoginReq {
 }
 
 async fn login(
-    State(state): State<AppState>,
+    State(storage): State<Storage>,
+    State(config): State<Config>,
     Json(payload): Json<LoginReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = state.db_pool.get()?;
+    let mut conn = storage.db_pool.get()?;
 
     let user = users::table
         .filter(users::email.eq(&payload.email))
@@ -125,7 +127,7 @@ async fn login(
         exp,
     };
 
-    let token = create_jwt(&token_payload, &state.jwt_secret)?;
+    let token = create_jwt(&token_payload, &config.jwt_secret)?;
 
     Ok(Json(serde_json::json!({
         "token": token,
@@ -133,8 +135,8 @@ async fn login(
     })))
 }
 
-async fn me(auth: AuthUser) -> Result<impl IntoResponse> {
+async fn me(AuthUser(user): AuthUser) -> Result<impl IntoResponse> {
     Ok(Json(serde_json::json!({
-        "user": auth.0
+        "user": user
     })))
 }

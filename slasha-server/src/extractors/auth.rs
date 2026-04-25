@@ -42,14 +42,14 @@ where
             return Err(Error::Unauthorized);
         };
 
-        let decoding_key = DecodingKey::from_secret(state.jwt_secret.as_bytes());
+        let decoding_key = DecodingKey::from_secret(state.config.jwt_secret.as_bytes());
         let mut validation = Validation::default();
         validation.validate_exp = true;
 
         let token_data = decode::<TokenPayload>(&token, &decoding_key, &validation)
             .map_err(|_| Error::Unauthorized)?;
 
-        let mut conn = state.db_pool.get()?;
+        let mut conn = state.storage.db_pool.get()?;
 
         let user = users::table
             .filter(users::id.eq(&token_data.claims.id))
