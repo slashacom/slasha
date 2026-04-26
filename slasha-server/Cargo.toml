@@ -44,6 +44,7 @@ tempfile = "3.27.0"
 strum = "0.28"
 strum_macros = "0.28"
 reqwest = { version = "0.13.2", features = ["json"] }
+tokio-stream = { version = "0.1.18", features = ["sync"] }
 
 [features]
 bundle = ["rust-embed", "mime_guess"]

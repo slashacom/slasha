@@ -11,7 +11,7 @@ use chrono::Utc;
 use diesel::prelude::*;
 use futures_util::{StreamExt, stream};
 use serde::Deserialize;
-use tokio::sync::broadcast;
+use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
 use crate::{
@@ -22,12 +22,28 @@ use crate::{
     state::{AppState, Clients, Runtime, Storage},
 };
 use models::{
-    app::App,
     deployment::{Deployment, DeploymentStatus},
     schema::deployments,
 };
 
 use super::utils::lookup_app_for_user;
+
+fn resolve_commit_message(repo_path: &str, sha: &str) -> anyhow::Result<String> {
+    let repo = git2::Repository::open(repo_path)?;
+    let commit = repo.find_commit(git2::Oid::from_str(sha)?)?;
+    Ok(commit.summary().unwrap_or("").to_string())
+}
+
+fn resolve_head_commit(repo_path: &str, branch: &str) -> anyhow::Result<(String, String)> {
+    let repo = git2::Repository::open(repo_path)?;
+    let branch = repo.find_branch(branch, git2::BranchType::Local)?;
+    let commit = branch.get().peel_to_commit()?;
+
+    Ok((
+        commit.id().to_string(),
+        commit.summary().unwrap_or("").to_string(),
+    ))
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -70,18 +86,15 @@ async fn trigger_deploy(
     let (commit_sha, commit_message) = match payload.commit_sha {
         Some(sha) => {
             let msg = resolve_commit_message(&app.repo_path, &sha)
-                .await
                 .map_err(|e| Error::BadRequest(format!("Invalid commit SHA: {}", e)))?;
             (sha, msg)
         }
-        None => resolve_head_commit(&app, &app.default_branch)
-            .await
-            .map_err(|e| {
-                Error::BadRequest(format!(
-                    "Failed to resolve HEAD of '{}': {}",
-                    app.default_branch, e
-                ))
-            })?,
+        None => resolve_head_commit(&app.repo_path, &app.default_branch).map_err(|e| {
+            Error::BadRequest(format!(
+                "Failed to resolve HEAD of '{}': {}",
+                app.default_branch, e
+            ))
+        })?,
     };
 
     let now = Utc::now().naive_utc();
@@ -263,16 +276,10 @@ async fn stream_logs(
             .map(|log| Ok(Event::default().data(log))),
     );
 
-    let live_rx = runtime.deployment_broadcaster.subscribe(&deployment_id);
-
-    let live_stream = futures_util::stream::unfold(live_rx, move |mut rx| async move {
-        match rx.recv().await {
-            Ok(msg) => Some((Ok(Event::default().data(msg)), rx)),
-            Err(broadcast::error::RecvError::Lagged(_)) => {
-                Some((Ok(Event::default().data("lagged")), rx))
-            }
-            Err(broadcast::error::RecvError::Closed) => None,
-        }
+    let rx = runtime.deployment_broadcaster.subscribe(&deployment_id);
+    let live_stream = BroadcastStream::new(rx).map(|res| match res {
+        Ok(msg) => Ok(Event::default().data(msg)),
+        Err(e) => Ok(Event::default().event("error").data(e.to_string())),
     });
 
     let combined = historical_stream.chain(live_stream);
@@ -309,37 +316,4 @@ async fn delete_deployment(
         "deleted": true,
         "deployment_id": deployment_id
     })))
-}
-
-async fn resolve_commit_message(repo_path: &str, sha: &str) -> anyhow::Result<String> {
-    let out = tokio::process::Command::new("git")
-        .args(["log", "-1", "--format=%s", sha])
-        .current_dir(repo_path)
-        .output()
-        .await?;
-
-    if !out.status.success() {
-        anyhow::bail!("{}", String::from_utf8_lossy(&out.stderr));
-    }
-
-    Ok(String::from_utf8(out.stdout)?.trim().to_string())
-}
-
-async fn resolve_head_commit(app: &App, branch: &str) -> anyhow::Result<(String, String)> {
-    let out = tokio::process::Command::new("git")
-        .args(["log", "-1", "--format=%H|%s", branch])
-        .current_dir(&app.repo_path)
-        .output()
-        .await?;
-
-    if !out.status.success() {
-        anyhow::bail!("{}", String::from_utf8_lossy(&out.stderr));
-    }
-
-    let raw = String::from_utf8(out.stdout)?.trim().to_string();
-    let (sha, msg) = raw
-        .split_once('|')
-        .ok_or_else(|| anyhow::anyhow!("Unexpected git log output: {}", raw))?;
-
-    Ok((sha.to_string(), msg.to_string()))
 }
