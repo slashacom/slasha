@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 
 use bollard::Docker;
@@ -26,17 +26,13 @@ fn image_name(app_slug: &str) -> String {
 }
 
 fn read_dockerfile(repo_path: &Path, commit_sha: &str) -> DeploymentResult<Option<String>> {
-    let repo = git2::Repository::open(repo_path).map_err(DeploymentError::GitError)?;
-    let obj = repo
-        .revparse_single(commit_sha)
-        .map_err(DeploymentError::GitError)?;
-    let tree = obj.peel_to_tree().map_err(DeploymentError::GitError)?;
+    let repo = git2::Repository::open(repo_path)?;
+    let obj = repo.find_commit(git2::Oid::from_str(commit_sha)?)?;
+    let tree = obj.tree()?;
 
     match tree.get_path(Path::new("Dockerfile")) {
         Ok(entry) => {
-            let blob = repo
-                .find_blob(entry.id())
-                .map_err(DeploymentError::GitError)?;
+            let blob = repo.find_blob(entry.id())?;
             let content = std::str::from_utf8(blob.content())
                 .map_err(|_| DeploymentError::DockerfileEncoding)?
                 .to_string();
@@ -64,87 +60,29 @@ pub async fn detect_build_strategy(
     .map_err(|_| DeploymentError::SpawnBlockingPanicked)?
 }
 
-fn checkout_commit_to_dir(repo_path: &Path, commit_sha: &str, dest: &Path) -> DeploymentResult<()> {
-    let repo = git2::Repository::open(repo_path).map_err(DeploymentError::GitError)?;
-    let obj = repo
-        .revparse_single(commit_sha)
-        .map_err(DeploymentError::GitError)?;
-    let tree = obj.peel_to_tree().map_err(DeploymentError::GitError)?;
+async fn checkout_commit_to_dir(
+    repo_path: &Path,
+    commit_sha: &str,
+    dest: &Path,
+) -> DeploymentResult<()> {
+    let out = TokioCommand::new("git")
+        .args([
+            "--work-tree",
+            dest.to_str().unwrap(),
+            "restore",
+            "--source",
+            commit_sha,
+            "--",
+            ".",
+        ])
+        .current_dir(repo_path)
+        .output()
+        .await?;
 
-    tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-        if entry.kind() != Some(git2::ObjectType::Blob) {
-            return git2::TreeWalkResult::Ok;
-        }
-
-        let rel_path: PathBuf = if root.is_empty() {
-            PathBuf::from(entry.name().unwrap_or(""))
-        } else {
-            PathBuf::from(root).join(entry.name().unwrap_or(""))
-        };
-
-        let abs_path = dest.join(&rel_path);
-
-        if let Some(parent) = abs_path.parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
-        {
-            tracing::error!("checkout_commit_to_dir: create_dir_all {:?}: {}", parent, e);
-            return git2::TreeWalkResult::Abort;
-        }
-
-        let blob = match repo.find_blob(entry.id()) {
-            Ok(b) => b,
-            Err(e) => {
-                tracing::error!("checkout_commit_to_dir: find_blob {:?}: {}", entry.id(), e);
-                let _ = e;
-                return git2::TreeWalkResult::Abort;
-            }
-        };
-
-        let filemode = entry.filemode();
-
-        if filemode == 0o120000 {
-            let target = match std::str::from_utf8(blob.content()) {
-                Ok(s) => PathBuf::from(s),
-                Err(_) => {
-                    tracing::error!("checkout_commit_to_dir: symlink target not UTF-8");
-                    return git2::TreeWalkResult::Abort;
-                }
-            };
-            #[cfg(unix)]
-            if let Err(e) = std::os::unix::fs::symlink(&target, &abs_path) {
-                tracing::error!(
-                    "checkout_commit_to_dir: symlink {:?} -> {:?}: {}",
-                    abs_path,
-                    target,
-                    e
-                );
-                return git2::TreeWalkResult::Abort;
-            }
-            return git2::TreeWalkResult::Ok;
-        }
-
-        if let Err(e) = std::fs::write(&abs_path, blob.content()) {
-            tracing::error!("checkout_commit_to_dir: write {:?}: {}", abs_path, e);
-            let _ = e;
-            return git2::TreeWalkResult::Abort;
-        }
-
-        #[cfg(unix)]
-        if filemode == 0o100755 {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o755);
-            if let Err(e) = std::fs::set_permissions(&abs_path, perms) {
-                tracing::warn!(
-                    "checkout_commit_to_dir: set_permissions {:?}: {}",
-                    abs_path,
-                    e
-                );
-            }
-        }
-
-        git2::TreeWalkResult::Ok
-    })
-    .map_err(DeploymentError::GitError)?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        return Err(DeploymentError::GitArchiveFailed(stderr));
+    }
 
     Ok(())
 }
@@ -317,15 +255,7 @@ pub async fn phase_build_railpack(
         )
         .await?;
 
-    let repo_path_owned = repo_path.to_path_buf();
-    let commit_sha_owned = commit_sha.to_string();
-    let tmp_path_owned = tmp_path.to_path_buf();
-
-    tokio::task::spawn_blocking(move || {
-        checkout_commit_to_dir(&repo_path_owned, &commit_sha_owned, &tmp_path_owned)
-    })
-    .await
-    .map_err(|_| DeploymentError::SpawnBlockingPanicked)??;
+    checkout_commit_to_dir(&repo_path, &commit_sha, &tmp_path).await?;
 
     let plan_path = tmp_path.join("railpack-plan.json");
     let info_path = tmp_path.join("railpack-info.json");

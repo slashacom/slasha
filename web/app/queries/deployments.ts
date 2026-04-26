@@ -2,6 +2,18 @@ import { queryOptions, useMutation } from '@tanstack/react-query';
 import { httpGet, httpPost, httpDelete } from '~/utils/http';
 import type { Deployment } from '~/models/deployment';
 
+export type CommitInfo = {
+  sha: string;
+  message: string;
+};
+
+export function getCommitsOptions(appSlug: string) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'commits'],
+    queryFn: () => httpGet<{ commits: CommitInfo[] }>(`apps/${appSlug}/commits`),
+  });
+}
+
 export function getDeploymentsOptions(appSlug: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'deployments'],

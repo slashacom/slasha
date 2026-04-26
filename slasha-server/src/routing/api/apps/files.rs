@@ -15,7 +15,7 @@ use crate::{
 
 use super::utils::lookup_app_for_user;
 
-const MAX_FILE_SIZE: u64 = 1_024 * 1_024;
+const MAX_FILE_SIZE: usize = 1024 * 1024;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -31,7 +31,6 @@ enum NodeType {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
 struct FileTreeNode {
     name: String,
     path: String,
@@ -43,18 +42,16 @@ struct FileTreeNode {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
 struct FileTreeResponse {
     tree: Vec<FileTreeNode>,
     has_commits: bool,
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
 struct FileContentResponse {
     path: String,
     name: String,
-    size: u64,
+    size: usize,
     is_binary: bool,
     is_truncated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -74,20 +71,16 @@ fn resolve_head_tree(repo: &git2::Repository) -> Result<Option<git2::Tree<'_>>> 
         }
     };
 
-    let commit = head
-        .peel_to_commit()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to peel HEAD to commit: {}", e)))?;
-
-    let tree = commit
-        .tree()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to get tree from commit: {}", e)))?;
+    let tree = head
+        .peel_to_tree()
+        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to peel HEAD to tree: {}", e)))?;
 
     Ok(Some(tree))
 }
 
 fn build_tree_recursive(
     repo: &git2::Repository,
-    tree: &git2::Tree<'_>,
+    tree: &git2::Tree,
     prefix: &str,
 ) -> Result<Vec<FileTreeNode>> {
     let mut nodes = Vec::new();
@@ -106,9 +99,7 @@ fn build_tree_recursive(
 
         match entry.kind() {
             Some(ObjectType::Tree) => {
-                let subtree = repo.find_tree(entry.id()).map_err(|e| {
-                    Error::Internal(anyhow::anyhow!("Failed to find subtree: {}", e))
-                })?;
+                let subtree = entry.to_object(repo).unwrap().into_tree().unwrap();
                 let children = build_tree_recursive(repo, &subtree, &path)?;
                 nodes.push(FileTreeNode {
                     name,
@@ -119,9 +110,7 @@ fn build_tree_recursive(
                 });
             }
             Some(ObjectType::Blob) => {
-                let blob = repo
-                    .find_blob(entry.id())
-                    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to find blob: {}", e)))?;
+                let blob = entry.to_object(repo).unwrap().into_blob().unwrap();
                 nodes.push(FileTreeNode {
                     name,
                     path,
@@ -201,7 +190,7 @@ async fn get_file_content(
         .find_blob(entry.id())
         .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to read file blob: {}", e)))?;
 
-    let size = blob.size() as u64;
+    let size = blob.size();
     let raw = blob.content();
 
     // detect binary: check if the content is valid UTF-8, and also look for null bytes in the first 8 KB
@@ -227,7 +216,7 @@ async fn get_file_content(
 
     let is_truncated = size > MAX_FILE_SIZE;
     let content_bytes = if is_truncated {
-        &raw[..MAX_FILE_SIZE as usize]
+        &raw[..MAX_FILE_SIZE]
     } else {
         raw
     };

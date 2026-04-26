@@ -55,15 +55,12 @@ impl DeploymentBroadcaster {
     }
 
     pub fn subscribe(&self, deployment_id: &str) -> broadcast::Receiver<String> {
-        if let Some(sender) = self.channels.get(deployment_id) {
-            return sender.subscribe();
-        }
+        let entry = self.channels.entry(deployment_id.to_string());
 
-        let (tx, rx) = broadcast::channel(CHANNEL_CAPACITY);
-
-        match self.channels.entry(deployment_id.to_string()) {
+        match entry {
             dashmap::Entry::Occupied(e) => e.get().subscribe(),
             dashmap::Entry::Vacant(e) => {
+                let (tx, rx) = broadcast::channel(CHANNEL_CAPACITY);
                 e.insert(tx);
                 rx
             }
