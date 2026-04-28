@@ -5,9 +5,9 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.102"
-diesel = { version = "2.2.0", features = ["sqlite", "chrono"] }
+tokio = { version = "1.50.0", features = ["full"] }
 dirs = "6.0.0"
-models = { path = "../../slasha-models" }
+slasha-db = { path = "../../slasha-db" }
 
 [[bin]]
 name = "slasha-git-ssh-handler"   
