@@ -1,7 +1,7 @@
 use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
 
-use crate::{AppState, error::Result};
+use crate::{AppState, error::HttpResult};
 
 pub mod apps;
 pub mod auth;
@@ -27,7 +27,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
 }
 
-async fn health_check() -> Result<Json<Value>> {
+async fn health_check() -> HttpResult<Json<Value>> {
     Ok(Json(
         json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }),
     ))

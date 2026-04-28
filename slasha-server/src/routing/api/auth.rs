@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     auth::{TokenPayload, create_jwt, hash_password, verify_password},
-    error::{Error, Result},
+    error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
     state::{AppState, Config, Storage},
 };
@@ -26,7 +26,7 @@ pub fn router() -> Router<AppState> {
         .route("/status", get(status))
 }
 
-async fn status(State(storage): State<Storage>) -> Result<impl IntoResponse> {
+async fn status(State(storage): State<Storage>) -> HttpResult<impl IntoResponse> {
     let admin_count = UserRepo::admin_count(&storage.db_pool).await?;
 
     Ok(Json(serde_json::json!({
@@ -44,11 +44,11 @@ async fn signup(
     State(storage): State<Storage>,
     State(config): State<Config>,
     Json(payload): Json<SignupReq>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let admin_count = UserRepo::admin_count(&storage.db_pool).await?;
 
     if admin_count > 0 {
-        return Err(Error::BadRequest("An admin already exists".into()));
+        return Err(HttpError::bad_request("An admin already exists"));
     }
 
     let hashed = hash_password(&payload.password)?;
@@ -88,17 +88,17 @@ async fn login(
     State(storage): State<Storage>,
     State(config): State<Config>,
     Json(payload): Json<LoginReq>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let user = UserRepo::find_by_email(&storage.db_pool, &payload.email).await?;
 
     let user = match user {
         Some(u) => u,
-        None => return Err(Error::BadRequest("Invalid email or password".into())),
+        None => return Err(HttpError::bad_request("Invalid email or password")),
     };
 
     let is_valid = verify_password(&payload.password, &user.password_hash)?;
     if !is_valid {
-        return Err(Error::BadRequest("Invalid email or password".into()));
+        return Err(HttpError::bad_request("Invalid email or password"));
     }
 
     let exp = Utc::now().timestamp() as usize + EXP_TIME;
@@ -116,7 +116,7 @@ async fn login(
     })))
 }
 
-async fn me(AuthUser(user): AuthUser) -> Result<impl IntoResponse> {
+async fn me(AuthUser(user): AuthUser) -> HttpResult<impl IntoResponse> {
     Ok(Json(serde_json::json!({
         "user": user
     })))

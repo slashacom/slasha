@@ -15,7 +15,7 @@ use slasha_db::repos::app::AppRepo;
 
 use crate::{
     AppState,
-    error::{Error, Result},
+    error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
     state::Storage,
 };
@@ -51,11 +51,11 @@ async fn list_commits(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let commits = get_all_commits(&app.repo_path, &app.default_branch)
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to fetch commits: {}", e)))?;
+        .map_err(|e| HttpError::internal(anyhow::anyhow!("Failed to fetch commits: {}", e)))?;
 
     Ok(Json(serde_json::json!({ "commits": commits })))
 }

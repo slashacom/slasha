@@ -1099,7 +1099,7 @@ dependencies = [
  "anyhow",
  "diesel",
  "dirs",
- "models",
+ "slasha-db",
 ]
 
 [[package]]
@@ -1861,18 +1861,6 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "models"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "diesel",
- "serde",
- "strum",
- "strum_macros",
- "ts-rs",
 ]
 
 [[package]]

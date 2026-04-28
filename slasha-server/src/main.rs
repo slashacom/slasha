@@ -15,7 +15,7 @@ use std::net::SocketAddr;
 
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenv::dotenv;
-pub use error::{Error, Result};
+pub use error::{HttpError, HttpResult};
 pub use state::AppState;
 use tokio::net::TcpListener;
 use tracing::info;

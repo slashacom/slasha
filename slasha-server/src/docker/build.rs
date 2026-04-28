@@ -13,8 +13,7 @@ use tokio::{
     process::Command as TokioCommand,
 };
 
-use super::{DeploymentResult, logs::Log};
-use crate::error::DeploymentError;
+use super::{DeploymentError, DeploymentResult, logs::Log};
 
 pub enum BuildStrategy {
     Dockerfile { content: String },
@@ -39,7 +38,7 @@ fn read_dockerfile(repo_path: &Path, commit_sha: &str) -> DeploymentResult<Optio
             Ok(Some(content))
         }
         Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
-        Err(e) => Err(DeploymentError::GitError(e)),
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -92,8 +91,7 @@ async fn build_tar_context(repo_path: &Path, commit_sha: &str) -> DeploymentResu
         .args(["archive", "--format=tar", commit_sha])
         .current_dir(repo_path)
         .output()
-        .await
-        .map_err(DeploymentError::Io)?;
+        .await?;
 
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
@@ -115,8 +113,7 @@ async fn tag_image_latest(
         .build();
     docker_client
         .tag_image(image_tag, Some(tag_opts))
-        .await
-        .map_err(DeploymentError::DockerApi)?;
+        .await?;
     Ok(())
 }
 
@@ -134,7 +131,7 @@ async fn stream_command_output(
     ) -> DeploymentResult<()> {
         if let Some(reader) = maybe_reader {
             let mut lines = reader.lines();
-            while let Some(line) = lines.next_line().await.map_err(DeploymentError::Io)? {
+            while let Some(line) = lines.next_line().await? {
                 log.send(line).await?;
             }
         }
@@ -147,7 +144,7 @@ async fn stream_command_output(
     ) -> DeploymentResult<()> {
         if let Some(reader) = maybe_reader {
             let mut lines = reader.lines();
-            while let Some(line) = lines.next_line().await.map_err(DeploymentError::Io)? {
+            while let Some(line) = lines.next_line().await? {
                 log.send(line).await?;
             }
         }
@@ -156,7 +153,7 @@ async fn stream_command_output(
 
     tokio::try_join!(drain_stdout(stdout, log), drain_stderr(stderr, log),)?;
 
-    let status = child.wait().await.map_err(DeploymentError::Io)?;
+    let status = child.wait().await?;
     if !status.success() {
         return Err(DeploymentError::PhaseFailed {
             phase: phase_label.to_string(),
@@ -208,7 +205,7 @@ pub async fn phase_build_docker(
             Err(e) => {
                 let msg = format!("Docker error during build: {}", e);
                 log.send(msg).await?;
-                return Err(DeploymentError::DockerApi(e));
+                return Err(e.into());
             }
         }
     }
@@ -234,7 +231,7 @@ pub async fn phase_build_railpack(
     let commit_sha = &deployment.commit_sha;
     let image_tag = format!("{}:{}", image_name(&app.slug), commit_sha);
 
-    let tmp = TempDir::new().map_err(DeploymentError::TempDir)?;
+    let tmp = TempDir::new()?;
     let tmp_path = tmp.path();
 
     log.send(format!("Checking out commit {} to temp dir", commit_sha))
@@ -256,8 +253,7 @@ pub async fn phase_build_railpack(
         .arg(&info_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .map_err(DeploymentError::Io)?;
+        .spawn()?;
 
     stream_command_output(prepare_child, log, "railpack prepare").await?;
 
@@ -276,8 +272,7 @@ pub async fn phase_build_railpack(
         .arg(format!("type=docker,name={}", image_tag))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .map_err(DeploymentError::Io)?;
+        .spawn()?;
 
     stream_command_output(buildx_child, log, "docker buildx build").await?;
 
