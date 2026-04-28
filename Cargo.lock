@@ -1097,9 +1097,9 @@ name = "git-ssh-handler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "diesel",
  "dirs",
  "slasha-db",
+ "tokio",
 ]
 
 [[package]]
