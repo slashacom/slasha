@@ -1,8 +1,10 @@
-use super::ProxyResult;
-use crate::error::ProxyError;
+use std::sync::Arc;
+
 use reqwest::Client;
 use serde_json::{Value, json};
-use std::sync::Arc;
+
+use super::ProxyResult;
+use crate::error::ProxyError;
 
 #[derive(Clone)]
 pub struct CaddyClient {

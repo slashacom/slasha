@@ -1,10 +1,13 @@
+use std::{collections::HashMap, sync::Arc};
+
+use bollard::query_parameters::ListContainersOptionsBuilder;
+use tokio::{
+    sync::Notify,
+    time::{Duration, sleep},
+};
+
 use super::{ProxyResult, RouteEntry};
 use crate::state::{Clients, Config};
-use bollard::query_parameters::ListContainersOptionsBuilder;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Notify;
-use tokio::time::{Duration, sleep};
 
 pub async fn reconcile(clients: &Clients, config: &Config) -> ProxyResult<()> {
     let platform_domain = match &config.platform_domain {

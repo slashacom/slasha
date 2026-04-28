@@ -1,8 +1,10 @@
-use crate::config::Config;
+use std::sync::OnceLock;
+
 use anyhow::Context;
 use reqwest::{Client, RequestBuilder, Response};
 use serde::Serialize;
-use std::sync::OnceLock;
+
+use crate::config::Config;
 
 static HTTP: OnceLock<ApiClient> = OnceLock::new();
 

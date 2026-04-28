@@ -1,5 +1,4 @@
-use bollard::Docker;
-use bollard::models::NetworkCreateRequest;
+use bollard::{Docker, models::NetworkCreateRequest};
 
 use super::DeploymentResult;
 use crate::error::DeploymentError;

@@ -1,14 +1,14 @@
-use bollard::Docker;
-use bollard::models::{
-    ContainerCreateBody, HostConfig, Mount, MountTypeEnum, RestartPolicy, RestartPolicyNameEnum,
-    VolumeCreateRequest,
-};
-use bollard::query_parameters::{
-    CreateContainerOptions, CreateImageOptions, StartContainerOptionsBuilder,
+use std::{collections::HashMap, time::Duration};
+
+use bollard::{
+    Docker,
+    models::{
+        ContainerCreateBody, HostConfig, Mount, MountTypeEnum, RestartPolicy,
+        RestartPolicyNameEnum, VolumeCreateRequest,
+    },
+    query_parameters::{CreateContainerOptions, CreateImageOptions, StartContainerOptionsBuilder},
 };
 use futures_util::StreamExt;
-use std::collections::HashMap;
-use std::time::Duration;
 use tokio::time::sleep;
 
 use super::ProxyResult;

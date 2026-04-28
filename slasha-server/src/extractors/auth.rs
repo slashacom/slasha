@@ -6,16 +6,15 @@ use axum_extra::{
     TypedHeader,
     headers::{Authorization, authorization::Bearer},
 };
-use diesel::prelude::*;
 use jsonwebtoken::{DecodingKey, Validation, decode};
 use serde::Deserialize;
+use slasha_db::{repos::user::UserRepo, user::User};
 
 use crate::{
     AppState,
     auth::TokenPayload,
     error::{Error, Result},
 };
-use models::{schema::users, user::User};
 
 #[derive(Deserialize)]
 struct AuthQuery {
@@ -49,13 +48,9 @@ where
         let token_data = decode::<TokenPayload>(&token, &decoding_key, &validation)
             .map_err(|_| Error::Unauthorized)?;
 
-        let mut conn = state.storage.db_pool.get()?;
-
-        let user = users::table
-            .filter(users::id.eq(&token_data.claims.id))
-            .first::<User>(&mut conn)
-            .optional()?
-            .ok_or(Error::Unauthorized)?;
+        let user = UserRepo::find_by_id(&state.storage.db_pool, &token_data.claims.id)
+            .await
+            .map_err(|_| Error::Unauthorized)?;
 
         Ok(AuthUser(user))
     }

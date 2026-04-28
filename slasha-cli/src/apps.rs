@@ -1,7 +1,8 @@
-use crate::{config::Config, http::client};
 use anyhow::{Context, Result};
-use models::app::App;
 use serde_json::json;
+use slasha_db::app::App;
+
+use crate::{config::Config, http::client};
 
 fn build_git_remote_url(slug: &str) -> String {
     let config = Config::load().unwrap();

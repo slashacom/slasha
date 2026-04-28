@@ -1,15 +1,18 @@
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
 use axum::extract::FromRef;
 use bollard::Docker;
-use diesel::r2d2::{ConnectionManager, Pool};
-use diesel::sqlite::SqliteConnection;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use slasha_db::DbPool;
 use tokio::sync::Notify;
 
-use crate::docker::logs::LogManager;
-use crate::docker::port_pool::PortPool;
-use crate::proxy::CaddyClient;
-use crate::utils;
+use crate::{
+    docker::{logs::LogManager, port_pool::PortPool},
+    proxy::CaddyClient,
+    utils,
+};
 
 #[derive(Clone)]
 pub struct Clients {
@@ -28,18 +31,17 @@ impl Clients {
 
 #[derive(Clone)]
 pub struct Storage {
-    pub db_pool: Pool<ConnectionManager<SqliteConnection>>,
+    pub db_pool: DbPool,
     pub repos_dir: PathBuf,
 }
 
 impl Storage {
-    pub fn new(db_path: &std::path::Path, repos_dir: PathBuf) -> Self {
-        let manager = ConnectionManager::<SqliteConnection>::new(db_path.to_str().unwrap());
-        let db_pool = Pool::builder()
-            .build(manager)
-            .expect("Failed to create DB pool");
-
-        Self { db_pool, repos_dir }
+    pub fn new(db_path: &std::path::Path, repos_dir: PathBuf) -> anyhow::Result<Self> {
+        let db_str = db_path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid DB path"))?;
+        let db_pool = slasha_db::create_pool(db_str)?;
+        Ok(Self { db_pool, repos_dir })
     }
 }
 

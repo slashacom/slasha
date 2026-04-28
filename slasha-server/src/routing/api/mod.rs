@@ -1,6 +1,7 @@
-use crate::{AppState, error::Result};
 use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
+
+use crate::{AppState, error::Result};
 
 pub mod apps;
 pub mod auth;

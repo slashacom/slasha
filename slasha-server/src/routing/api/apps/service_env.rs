@@ -5,8 +5,11 @@ use axum::{
     routing::{get, put},
 };
 use chrono::Utc;
-use diesel::prelude::*;
 use serde::Deserialize;
+use slasha_db::{
+    repos::{app::AppRepo, service::ServiceRepo},
+    service::ServiceEnvVar,
+};
 use uuid::Uuid;
 
 use crate::{
@@ -14,10 +17,6 @@ use crate::{
     extractors::auth::AuthUser,
     state::{AppState, Storage},
 };
-
-use super::utils::{lookup_app_for_user, lookup_service_for_app};
-
-use models::{schema::service_env_vars, service::ServiceEnvVar};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -35,16 +34,11 @@ async fn get_env_vars(
     AuthUser(user): AuthUser,
     Path((slug, service_id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    lookup_service_for_app(&storage, &app.id, &service_id)?;
+    ServiceRepo::find(&storage.db_pool, &service_id, &app.id).await?;
 
-    let mut conn = storage.db_pool.get()?;
-
-    let vars: Vec<ServiceEnvVar> = service_env_vars::table
-        .filter(service_env_vars::service_id.eq(&service_id))
-        .order(service_env_vars::key.asc())
-        .load(&mut conn)?;
+    let vars = ServiceRepo::get_env_vars(&storage.db_pool, &service_id).await?;
 
     let env_map: std::collections::HashMap<String, String> =
         vars.into_iter().map(|v| (v.key, v.value)).collect();
@@ -60,11 +54,9 @@ async fn update_env_vars(
     Path((slug, service_id)): Path<(String, String)>,
     Json(payload): Json<UpdateEnvVarsReq>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    lookup_service_for_app(&storage, &app.id, &service_id)?;
-
-    let mut conn = storage.db_pool.get()?;
+    ServiceRepo::find(&storage.db_pool, &service_id, &app.id).await?;
 
     let now = Utc::now().naive_utc();
     let new_vars: Vec<ServiceEnvVar> = payload
@@ -80,20 +72,7 @@ async fn update_env_vars(
         })
         .collect();
 
-    conn.transaction::<_, diesel::result::Error, _>(|conn| {
-        diesel::delete(
-            service_env_vars::table.filter(service_env_vars::service_id.eq(&service_id)),
-        )
-        .execute(conn)?;
-
-        if !new_vars.is_empty() {
-            diesel::insert_into(service_env_vars::table)
-                .values(&new_vars)
-                .execute(conn)?;
-        }
-
-        Ok(())
-    })?;
+    let new_vars = ServiceRepo::set_env_vars(&storage.db_pool, &service_id, new_vars).await?;
 
     let env_map: std::collections::HashMap<String, String> = new_vars
         .iter()

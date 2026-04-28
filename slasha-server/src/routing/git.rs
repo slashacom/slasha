@@ -1,3 +1,5 @@
+use std::{io::Read, process::Stdio};
+
 use axum::{
     Router,
     body::Body,
@@ -6,10 +8,10 @@ use axum::{
     routing::{get, post},
 };
 use flate2::read::GzDecoder;
-use std::io::Read;
-use std::process::Stdio;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::Command;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    process::Command,
+};
 use tokio_util::io::ReaderStream;
 
 use crate::{

@@ -1,9 +1,10 @@
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::{io::Write, path::Path};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use bollard::Docker;
-use bollard::query_parameters::LogsOptionsBuilder;
+use bollard::{Docker, query_parameters::LogsOptionsBuilder};
 use dashmap::DashMap;
 use file_rotate::{
     ContentLimit, FileRotate,
@@ -13,9 +14,8 @@ use file_rotate::{
 use futures_util::StreamExt;
 use tokio::sync::{Mutex, broadcast};
 
-use crate::error::DeploymentError;
-
 use super::DeploymentResult;
+use crate::error::DeploymentError;
 
 const CHANNEL_CAPACITY: usize = 1024;
 

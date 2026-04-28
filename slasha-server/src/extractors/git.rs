@@ -1,17 +1,18 @@
-use axum::extract::FromRequestParts;
-use axum::http::header;
-use axum::http::request::Parts;
+use axum::{
+    extract::FromRequestParts,
+    http::{header, request::Parts},
+};
 use base64::prelude::*;
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
+use slasha_db::{
+    app::App,
+    repos::{app::AppRepo, user::UserRepo},
+    user::User,
+};
 
 use crate::{
     AppState,
     auth::verify_password,
     error::{Error, GitError, Result},
-};
-use models::{
-    app::{App, AppMember},
-    user::User,
 };
 
 pub struct GitAuth {
@@ -51,38 +52,18 @@ where
 
         tracing::info!("Git auth: {} {}", email, password);
 
-        let mut conn = state
-            .storage
-            .db_pool
-            .get()
-            .map_err(|e| GitError::Internal(e.into()))?;
-
-        let user = models::schema::users::table
-            .filter(models::schema::users::email.eq(email))
-            .first::<User>(&mut conn)
-            .optional()?
+        let user = UserRepo::find_by_email(&state.storage.db_pool, email)
+            .await
+            .map_err(|_| GitError::Internal(anyhow::anyhow!("DB error")))?
             .ok_or(GitError::InvalidCredentials)?;
 
         if !verify_password(password, &user.password_hash)? {
             return Err(GitError::InvalidCredentials.into());
         }
 
-        let app = models::schema::apps::table
-            .filter(models::schema::apps::slug.eq(slug))
-            .first::<App>(&mut conn)
-            .optional()?
-            .ok_or(GitError::RepoNotFound)?;
-
-        let is_member = models::schema::app_members::table
-            .filter(models::schema::app_members::app_id.eq(&app.id))
-            .filter(models::schema::app_members::user_id.eq(&user.id))
-            .first::<AppMember>(&mut conn)
-            .optional()?
-            .is_some();
-
-        if !is_member {
-            return Err(GitError::NotMember.into());
-        }
+        let app = AppRepo::find_by_slug_for_user(&state.storage.db_pool, slug, &user.id)
+            .await
+            .map_err(|_| GitError::RepoNotFound)?;
 
         tracing::info!("verified user");
 

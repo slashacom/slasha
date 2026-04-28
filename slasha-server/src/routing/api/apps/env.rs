@@ -7,8 +7,8 @@ use axum::{
     routing::{get, put},
 };
 use chrono::Utc;
-use diesel::prelude::*;
 use serde::Deserialize;
+use slasha_db::{app::AppEnvVar, repos::app::AppRepo};
 use uuid::Uuid;
 
 use crate::{
@@ -16,10 +16,6 @@ use crate::{
     extractors::auth::AuthUser,
     state::{AppState, Storage},
 };
-
-use super::utils::lookup_app_for_user;
-
-use models::{app::AppEnvVar, schema::app_env_vars};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -37,13 +33,9 @@ async fn get_env_vars(
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
-    let mut conn = storage.db_pool.get()?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let vars: Vec<AppEnvVar> = app_env_vars::table
-        .filter(app_env_vars::app_id.eq(&app.id))
-        .order(app_env_vars::key.asc())
-        .load(&mut conn)?;
+    let vars = AppRepo::get_env_vars(&storage.db_pool, &app.id).await?;
 
     let env_map: HashMap<String, String> = vars.into_iter().map(|v| (v.key, v.value)).collect();
 
@@ -58,9 +50,7 @@ async fn update_env_vars(
     Path(slug): Path<String>,
     Json(payload): Json<UpdateEnvVarsReq>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
-
-    let mut conn = storage.db_pool.get()?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let now = Utc::now().naive_utc();
     let new_vars: Vec<AppEnvVar> = payload
@@ -76,18 +66,7 @@ async fn update_env_vars(
         })
         .collect();
 
-    conn.transaction::<_, diesel::result::Error, _>(|conn| {
-        diesel::delete(app_env_vars::table.filter(app_env_vars::app_id.eq(&app.id)))
-            .execute(conn)?;
-
-        if !new_vars.is_empty() {
-            diesel::insert_into(app_env_vars::table)
-                .values(&new_vars)
-                .execute(conn)?;
-        }
-
-        Ok(())
-    })?;
+    let new_vars = AppRepo::set_env_vars(&storage.db_pool, &app.id, new_vars).await?;
 
     let env_map: std::collections::HashMap<String, String> = new_vars
         .iter()

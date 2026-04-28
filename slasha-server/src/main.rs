@@ -11,20 +11,22 @@ pub mod ssh;
 pub mod state;
 pub mod utils;
 
-pub use error::{Error, Result};
-pub use state::AppState;
+use std::net::SocketAddr;
 
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenv::dotenv;
-use std::net::SocketAddr;
+pub use error::{Error, Result};
+pub use state::AppState;
 use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::proxy::container::ensure_caddy_ready;
-use crate::state::{Clients, Config, Runtime, Storage};
+use crate::{
+    proxy::container::ensure_caddy_ready,
+    state::{Clients, Config, Runtime, Storage},
+};
 
-pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../slasha-models/migrations");
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../slasha-db/migrations");
 
 fn setup_tracing() {
     tracing_subscriber::registry()
@@ -88,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
     ensure_caddy_ready(&docker).await?;
 
     let clients = Clients::new(docker.clone());
-    let storage = Storage::new(&db_path, repos_dir);
+    let storage = Storage::new(&db_path, repos_dir)?;
 
     run_migrations(&storage);
 

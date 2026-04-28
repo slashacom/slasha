@@ -30,15 +30,15 @@ pub enum Error {
     Deployment(#[from] DeploymentError),
 }
 
-impl From<diesel::result::Error> for Error {
-    fn from(e: diesel::result::Error) -> Self {
-        Error::Internal(anyhow::anyhow!(e))
-    }
-}
-
-impl From<diesel::r2d2::PoolError> for Error {
-    fn from(e: diesel::r2d2::PoolError) -> Self {
-        Error::Internal(anyhow::anyhow!(e))
+impl From<slasha_db::DbError> for Error {
+    fn from(e: slasha_db::DbError) -> Self {
+        match e {
+            slasha_db::DbError::NotFound(msg) => Error::NotFound(msg),
+            slasha_db::DbError::PreconditionFailed(msg) | slasha_db::DbError::Conflict(msg) => {
+                Error::BadRequest(msg)
+            }
+            _ => Error::Internal(anyhow::anyhow!(e)),
+        }
     }
 }
 
@@ -66,11 +66,8 @@ pub enum GitError {
 
 #[derive(Debug, Error)]
 pub enum DeploymentError {
-    #[error("DB pool error: {0}")]
-    PoolError(#[from] diesel::r2d2::PoolError),
-
     #[error("Database error: {0}")]
-    DatabaseError(#[from] diesel::result::Error),
+    Db(#[from] slasha_db::DbError),
 
     #[error("git archive failed: {0}")]
     GitArchiveFailed(String),
@@ -136,10 +133,7 @@ pub enum ProxyError {
     DockerApi(#[from] bollard::errors::Error),
 
     #[error("Database error: {0}")]
-    DatabaseError(#[from] diesel::result::Error),
-
-    #[error("DB pool error: {0}")]
-    PoolError(#[from] diesel::r2d2::PoolError),
+    Db(#[from] slasha_db::DbError),
 
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),

@@ -1,17 +1,11 @@
-use std::fs;
-use std::io::Write;
-use std::path::Path;
+use std::{fs, io::Write, path::Path};
 
-use crate::state::Storage;
-use crate::{Error, Result};
-use diesel::prelude::*;
-use models::schema::ssh_keys;
-use models::ssh_keys::SshKey;
+use slasha_db::repos::ssh_key::SshKeyRepo;
 
-pub fn regenerate_authorized_keys(storage: &Storage) -> Result<()> {
-    let mut conn = storage.db_pool.get()?;
+use crate::{Error, Result, state::Storage};
 
-    let keys = ssh_keys::table.load::<SshKey>(&mut conn)?;
+pub async fn regenerate_authorized_keys(storage: &Storage) -> Result<()> {
+    let keys = SshKeyRepo::list_all(&storage.db_pool).await?;
 
     let handler_path = "slasha-git-ssh-handler";
     let mut content = String::new();

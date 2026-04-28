@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use crate::deployment::deserialize::FromSqlRow;
 use diesel::{
     backend::Backend,
     deserialize::{self, FromSql},
@@ -13,6 +12,8 @@ use diesel::{
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
 use ts_rs::TS;
+
+use crate::deployment::deserialize::FromSqlRow;
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
 #[diesel(table_name = crate::schema::deployments)]
