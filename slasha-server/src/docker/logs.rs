@@ -14,8 +14,7 @@ use file_rotate::{
 use futures_util::StreamExt;
 use tokio::sync::{Mutex, broadcast};
 
-use super::DeploymentResult;
-use crate::error::DeploymentError;
+use super::{DeploymentError, DeploymentResult};
 
 const CHANNEL_CAPACITY: usize = 1024;
 

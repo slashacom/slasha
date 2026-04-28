@@ -13,11 +13,12 @@ use tokio::{
     process::Command,
 };
 use tokio_util::io::ReaderStream;
+use anyhow::Context;
 
 use crate::{
     AppState,
-    error::{GitError, Result},
-    extractors::git::GitAuth,
+    error::HttpResult,
+    extractors::git::{GitAuth, GitError},
 };
 
 pub fn router() -> Router<AppState> {
@@ -27,7 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/{slug}/git-receive-pack", post(receive_pack))
 }
 
-async fn info_refs(auth: GitAuth, req: Request<Body>) -> Result<impl IntoResponse> {
+async fn info_refs(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoResponse> {
     let query = req.uri().query().unwrap_or("");
     let service = if query == "service=git-upload-pack" {
         "git-upload-pack"
@@ -59,14 +60,14 @@ async fn info_refs(auth: GitAuth, req: Request<Body>) -> Result<impl IntoRespons
     let mut child = cmd
         .stdout(Stdio::piped())
         .spawn()
-        .map_err(|e| GitError::Internal(anyhow::anyhow!("Failed to spawn git: {}", e)))?;
+        .context("Failed to spawn git")?;
 
     let mut stdout = child.stdout.take().unwrap();
     let mut output = Vec::new();
     stdout
         .read_to_end(&mut output)
         .await
-        .map_err(|e| GitError::Internal(anyhow::anyhow!("Failed to read git output: {}", e)))?;
+        .context("Failed to read git output")?;
 
     let len = service.len() + 15;
     let content_type = if service == "git-upload-pack" {
@@ -92,11 +93,11 @@ async fn info_refs(auth: GitAuth, req: Request<Body>) -> Result<impl IntoRespons
     ))
 }
 
-async fn upload_pack(auth: GitAuth, req: Request<Body>) -> Result<impl IntoResponse> {
+async fn upload_pack(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoResponse> {
     handle_git_service("upload-pack", auth, req).await
 }
 
-async fn receive_pack(auth: GitAuth, req: Request<Body>) -> Result<impl IntoResponse> {
+async fn receive_pack(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoResponse> {
     handle_git_service("receive-pack", auth, req).await
 }
 
@@ -104,7 +105,7 @@ async fn handle_git_service(
     service: &str,
     auth: GitAuth,
     req: Request<Body>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let git_protocol = req
         .headers()
         .get("Git-Protocol")
@@ -130,23 +131,21 @@ async fn handle_git_service(
         cmd.env("GIT_PROTOCOL", git_protocol);
     }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| GitError::Internal(anyhow::anyhow!("Failed to spawn git: {}", e)))?;
+    let mut child = cmd.spawn().context("Failed to spawn git")?;
 
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
 
-    let body_bytes = axum::body::to_bytes(req.into_body(), 100 * 1024 * 1024) // 100MB limit
+    let body_bytes = axum::body::to_bytes(req.into_body(), 100 * 1024 * 1024)
         .await
-        .map_err(|e| GitError::Internal(anyhow::anyhow!("Failed to read request body: {}", e)))?;
+        .context("Failed to read request body")?;
 
     let final_body = if encoding.contains("gzip") {
         let mut decoder = GzDecoder::new(&body_bytes[..]);
         let mut decoded = Vec::new();
         decoder
             .read_to_end(&mut decoded)
-            .map_err(|e| GitError::Internal(anyhow::anyhow!("Failed to decompress body: {}", e)))?;
+            .context("Failed to decompress body")?;
         decoded
     } else {
         body_bytes.to_vec()
@@ -155,7 +154,7 @@ async fn handle_git_service(
     stdin
         .write_all(&final_body)
         .await
-        .map_err(|e| GitError::Internal(anyhow::anyhow!("Failed to write to git stdin: {}", e)))?;
+        .context("Failed to write to git stdin")?;
     drop(stdin);
 
     let stream = ReaderStream::new(stdout);

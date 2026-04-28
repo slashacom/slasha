@@ -12,6 +12,7 @@ use slasha_db::{
 };
 use tokio::process::Command;
 use uuid::Uuid;
+use anyhow::Context;
 
 use crate::{
     docker::{
@@ -19,7 +20,7 @@ use crate::{
         run::delete_deployment_container,
         services::delete_service,
     },
-    error::{Error, Result},
+    error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
     state::{AppState, Clients, Runtime, Storage},
     utils::slugify,
@@ -43,21 +44,21 @@ async fn create_app(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Json(payload): Json<CreateAppReq>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let name = payload.name.trim().to_string();
     if name.is_empty() {
-        return Err(Error::BadRequest("App name cannot be empty".into()));
+        return Err(HttpError::bad_request("App name cannot be empty"));
     }
 
     let slug = slugify(&name);
     if slug.is_empty() {
-        return Err(Error::BadRequest(
-            "App name must contain alphanumeric characters".into(),
+        return Err(HttpError::bad_request(
+            "App name must contain alphanumeric characters",
         ));
     }
 
     if AppRepo::slug_exists(&storage.db_pool, &slug).await? {
-        return Err(Error::BadRequest(format!(
+        return Err(HttpError::bad_request(format!(
             "An app with the slug '{}' already exists",
             slug
         )));
@@ -67,7 +68,7 @@ async fn create_app(
         .repos_dir
         .join(format!("{}.git", slug))
         .to_str()
-        .ok_or_else(|| Error::Internal(anyhow::anyhow!("Invalid repo path")))?
+        .ok_or_else(|| HttpError::internal(anyhow::anyhow!("Invalid repo path")))?
         .to_string();
 
     let git_status = Command::new("git")
@@ -77,14 +78,11 @@ async fn create_app(
         .arg(&repo_path)
         .output()
         .await
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to init bare repo: {}", e)))?;
+        .context("Failed to init bare repo")?;
 
     if !git_status.status.success() {
         let stderr = String::from_utf8_lossy(&git_status.stderr);
-        return Err(Error::Internal(anyhow::anyhow!(
-            "git init --bare failed: {}",
-            stderr
-        )));
+        return Err(anyhow::anyhow!("git init --bare failed: {}", stderr).into());
     }
 
     let now = Utc::now().naive_utc();
@@ -120,7 +118,7 @@ async fn get_app(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     Ok(Json(serde_json::json!({
@@ -134,11 +132,11 @@ async fn delete_app(
     State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     if !AppRepo::is_owner(&storage.db_pool, &app.id, &user.id).await? {
-        return Err(Error::BadRequest("Only app owners can delete apps".into()));
+        return Err(HttpError::bad_request("Only app owners can delete apps"));
     }
 
     let app_services = ServiceRepo::list_for_app(&storage.db_pool, &app.id).await?;
@@ -184,7 +182,7 @@ async fn delete_app(
     if repo_path.exists() {
         tokio::fs::remove_dir_all(repo_path)
             .await
-            .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to remove repo: {}", e)))?;
+            .context("Failed to remove repo")?;
     }
 
     Ok(Json(serde_json::json!({
@@ -196,7 +194,7 @@ async fn delete_app(
 async fn list_apps(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let user_apps = AppRepo::list_for_user(&storage.db_pool, &user.id).await?;
 
     Ok(Json(serde_json::json!({

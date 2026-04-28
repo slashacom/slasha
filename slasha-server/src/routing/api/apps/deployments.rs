@@ -23,7 +23,7 @@ use crate::{
         pipeline::run_deployment,
         run::{delete_deployment_container, stop_deployment_container},
     },
-    error::{Error, Result},
+    error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
     state::{AppState, Clients, Runtime, Storage},
 };
@@ -67,25 +67,23 @@ async fn trigger_deploy(
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
     Json(payload): Json<TriggerDeployReq>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let is_running = DeploymentRepo::any_running(&storage.db_pool, &app.id).await?;
 
     if is_running {
-        return Err(Error::BadRequest(
-            "A deployment is already running".to_string(),
-        ));
+        return Err(HttpError::bad_request("A deployment is already running"));
     }
 
     let (commit_sha, commit_message) = match payload.commit_sha {
         Some(sha) => {
             let msg = resolve_commit_message(&app.repo_path, &sha)
-                .map_err(|e| Error::BadRequest(format!("Invalid commit SHA: {}", e)))?;
+                .map_err(|e| HttpError::bad_request(format!("Invalid commit SHA: {}", e)))?;
             (sha, msg)
         }
         None => resolve_head_commit(&app.repo_path, &app.default_branch).map_err(|e| {
-            Error::BadRequest(format!(
+            HttpError::bad_request(format!(
                 "Failed to resolve HEAD of '{}': {}",
                 app.default_branch, e
             ))
@@ -120,7 +118,7 @@ async fn list_deployments(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let deps = DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
@@ -132,7 +130,7 @@ async fn get_deployment(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
@@ -146,7 +144,7 @@ async fn stop_deployment(
     State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
@@ -155,7 +153,7 @@ async fn stop_deployment(
         deployment.status,
         DeploymentStatus::Running | DeploymentStatus::Building
     ) {
-        return Err(Error::BadRequest(format!(
+        return Err(HttpError::bad_request(format!(
             "Deployment is already in state '{}'",
             deployment.status
         )));
@@ -170,8 +168,7 @@ async fn stop_deployment(
         &app,
         &deployment,
     )
-    .await
-    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to stop deployment: {}", e)))?;
+    .await?;
 
     Ok(Json(serde_json::json!({
         "stopped": true,
@@ -185,7 +182,7 @@ async fn restart_deployment(
     State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
@@ -198,8 +195,7 @@ async fn restart_deployment(
         &app,
         &deployment,
     )
-    .await
-    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to clean up container: {}", e)))?;
+    .await?;
 
     let now = Utc::now().naive_utc();
     let updated_deployment =
@@ -223,7 +219,7 @@ async fn stream_logs(
     State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
-) -> Result<
+) -> HttpResult<
     Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
 > {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
@@ -237,7 +233,7 @@ async fn stream_logs(
             deployment_id,
         })
         .await
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to get logger: {}", e)))?;
+        .map_err(HttpError::internal)?;
 
     let historical = log.get_historical().await?;
 
@@ -264,7 +260,7 @@ async fn delete_deployment(
     State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
@@ -277,8 +273,7 @@ async fn delete_deployment(
         &app,
         &deployment,
     )
-    .await
-    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to clean up container: {}", e)))?;
+    .await?;
 
     DeploymentRepo::delete(&storage.db_pool, &deployment.id, &app.id).await?;
 

@@ -9,7 +9,7 @@ use slasha_db::{repos::ssh_key::SshKeyRepo, ssh_keys::SshKey};
 use uuid::Uuid;
 
 use crate::{
-    error::Result,
+    error::HttpResult,
     extractors::auth::AuthUser,
     ssh::regenerate_authorized_keys,
     state::{AppState, Storage},
@@ -30,7 +30,7 @@ pub struct ListSshKeysResponse {
 async fn list_ssh_keys(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
-) -> Result<Json<ListSshKeysResponse>> {
+) -> HttpResult<Json<ListSshKeysResponse>> {
     let keys = SshKeyRepo::list_for_user(&storage.db_pool, &user.id).await?;
 
     Ok(Json(ListSshKeysResponse { keys }))
@@ -46,7 +46,7 @@ async fn create_ssh_key(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Json(payload): Json<CreateSshKeyRequest>,
-) -> Result<Json<SshKey>> {
+) -> HttpResult<Json<SshKey>> {
     let now = chrono::Utc::now().naive_utc();
     let new_key = SshKey {
         id: Uuid::new_v4().to_string(),
@@ -67,7 +67,7 @@ async fn delete_ssh_key(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Path(id): Path<String>,
-) -> Result<Json<Value>> {
+) -> HttpResult<Json<Value>> {
     SshKeyRepo::delete(&storage.db_pool, &id, &user.id).await?;
 
     regenerate_authorized_keys(&storage).await?;

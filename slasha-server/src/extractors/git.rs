@@ -8,12 +8,43 @@ use slasha_db::{
     repos::{app::AppRepo, user::UserRepo},
     user::User,
 };
+use thiserror::Error;
 
 use crate::{
     AppState,
     auth::verify_password,
-    error::{Error, GitError, Result},
+    error::{HttpError, HttpResult},
 };
+
+#[derive(Error, Debug)]
+pub enum GitError {
+    #[error("Unauthorized")]
+    Unauthorized,
+    #[error("Invalid Credentials")]
+    InvalidCredentials,
+    #[error("Repository Not Found")]
+    RepoNotFound,
+    #[error("Not a member")]
+    NotMember,
+    #[error("Bad Request: {0}")]
+    BadRequest(String),
+    #[error("Internal Server Error: {0}")]
+    Internal(#[from] anyhow::Error),
+}
+
+impl From<GitError> for HttpError {
+    fn from(e: GitError) -> Self {
+        match e {
+            GitError::Unauthorized | GitError::InvalidCredentials => {
+                HttpError::unauthorized().with_git_auth_challenge()
+            }
+            GitError::RepoNotFound => HttpError::not_found("Repository not found"),
+            GitError::NotMember => HttpError::forbidden("Not a member"),
+            GitError::BadRequest(msg) => HttpError::bad_request(msg),
+            GitError::Internal(e) => HttpError::internal(e),
+        }
+    }
+}
 
 pub struct GitAuth {
     pub user: User,
@@ -24,9 +55,9 @@ impl FromRequestParts<AppState> for GitAuth
 where
     AppState: Send + Sync,
 {
-    type Rejection = Error;
+    type Rejection = HttpError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self> {
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> HttpResult<Self> {
         let path = parts.uri.path();
         let slug = path
             .split('/')
@@ -53,11 +84,10 @@ where
         tracing::info!("Git auth: {} {}", email, password);
 
         let user = UserRepo::find_by_email(&state.storage.db_pool, email)
-            .await
-            .map_err(|_| GitError::Internal(anyhow::anyhow!("DB error")))?
+            .await?
             .ok_or(GitError::InvalidCredentials)?;
 
-        if !verify_password(password, &user.password_hash)? {
+        if !verify_password(password, &user.password_hash).map_err(HttpError::internal)? {
             return Err(GitError::InvalidCredentials.into());
         }
 

@@ -1,217 +1,111 @@
 use axum::{
     Json,
-    http::StatusCode,
+    http::{HeaderName, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde_json::json;
-use thiserror::Error;
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("Internal Server Error: {0}")]
-    Internal(#[from] anyhow::Error),
-
-    #[error("Not Found: {0}")]
-    NotFound(String),
-
-    #[error("Unauthorized")]
-    Unauthorized,
-
-    #[error("Bad Request: {0}")]
-    BadRequest(String),
-
-    #[error("Forbidden: {0}")]
-    Forbidden(String),
-
-    #[error("Git Error: {0}")]
-    GitError(#[from] GitError),
-
-    #[error("Deployment error: {0}")]
-    Deployment(#[from] DeploymentError),
+pub struct HttpError {
+    pub status: StatusCode,
+    pub message: String,
+    pub cause: Option<Box<dyn std::error::Error + Send + Sync>>,
+    pub extra_headers: Vec<(HeaderName, String)>,
 }
 
-impl From<slasha_db::DbError> for Error {
+impl std::fmt::Debug for HttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpError")
+            .field("status", &self.status)
+            .field("message", &self.message)
+            .field("cause", &self.cause)
+            .finish()
+    }
+}
+
+impl HttpError {
+    pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            message: message.into(),
+            cause: None,
+            extra_headers: Vec::new(),
+        }
+    }
+
+    pub fn internal(e: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "Internal Server Error".to_string(),
+            cause: Some(e.into()),
+            extra_headers: Vec::new(),
+        }
+    }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::NOT_FOUND, message)
+    }
+
+    pub fn bad_request(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, message)
+    }
+
+    pub fn unauthorized() -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, "Unauthorized")
+    }
+
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, message)
+    }
+
+    pub fn with_git_auth_challenge(mut self) -> Self {
+        self.extra_headers
+            .push((header::WWW_AUTHENTICATE, "Basic realm=\"Git\"".to_string()));
+        self
+    }
+}
+
+impl IntoResponse for HttpError {
+    fn into_response(self) -> Response {
+        if self.status.is_server_error()
+            && let Some(cause) = &self.cause
+        {
+            tracing::error!("Internal server error: {:?}", cause);
+        }
+
+        let mut res = (self.status, Json(json!({ "error": self.message }))).into_response();
+
+        for (name, value) in self.extra_headers {
+            if let Ok(value) = value.parse() {
+                res.headers_mut().insert(name, value);
+            }
+        }
+
+        res
+    }
+}
+
+impl From<slasha_db::DbError> for HttpError {
     fn from(e: slasha_db::DbError) -> Self {
         match e {
-            slasha_db::DbError::NotFound(msg) => Error::NotFound(msg),
+            slasha_db::DbError::NotFound(msg) => HttpError::not_found(msg),
             slasha_db::DbError::PreconditionFailed(msg) | slasha_db::DbError::Conflict(msg) => {
-                Error::BadRequest(msg)
+                HttpError::bad_request(msg)
             }
-            _ => Error::Internal(anyhow::anyhow!(e)),
+            _ => HttpError::internal(anyhow::anyhow!(e)),
         }
     }
 }
 
-impl From<std::io::Error> for Error {
+impl From<anyhow::Error> for HttpError {
+    fn from(e: anyhow::Error) -> Self {
+        HttpError::internal(e)
+    }
+}
+
+impl From<std::io::Error> for HttpError {
     fn from(e: std::io::Error) -> Self {
-        Error::Internal(anyhow::anyhow!(e))
+        HttpError::internal(e)
     }
 }
 
-#[derive(Error, Debug)]
-pub enum GitError {
-    #[error("Unauthorized")]
-    Unauthorized,
-    #[error("Bad Request: {0}")]
-    BadRequest(String),
-    #[error("Repository Not Found")]
-    RepoNotFound,
-    #[error("Invalid Credentials")]
-    InvalidCredentials,
-    #[error("Not a member")]
-    NotMember,
-    #[error("Internal Server Error: {0}")]
-    Internal(#[from] anyhow::Error),
-}
-
-#[derive(Debug, Error)]
-pub enum DeploymentError {
-    #[error("Database error: {0}")]
-    Db(#[from] slasha_db::DbError),
-
-    #[error("git archive failed: {0}")]
-    GitArchiveFailed(String),
-
-    #[error("Git error: {0}")]
-    GitError(#[from] git2::Error),
-
-    #[error("Dockerfile is not valid UTF-8")]
-    DockerfileEncoding,
-
-    #[error("Build failed: {0}")]
-    BuildFailed(String),
-
-    #[error("railpack prepare failed with exit status {0}")]
-    RailpackPrepareFailed(std::process::ExitStatus),
-
-    #[error("docker buildx build failed with exit status {0}")]
-    BuildKitFailed(std::process::ExitStatus),
-
-    #[error("{phase} failed with exit status {status}")]
-    PhaseFailed {
-        phase: String,
-        status: std::process::ExitStatus,
-    },
-
-    #[error("Docker API error: {0}")]
-    DockerApi(#[from] bollard::errors::Error),
-
-    #[error("Service \"{0}\" not found")]
-    ServiceNotFound(String),
-
-    #[error("Service \"{0}\" is not running")]
-    ServiceNotRunning(String),
-
-    #[error("Service \"{0}\" does not export env key \"{1}\"")]
-    KeyNotExported(String, String),
-
-    #[error("Env resolve failed: {0}")]
-    EnvResolveFailed(String),
-
-    #[error("Port allocation failed: {0}")]
-    PortAllocationFailed(String),
-
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("spawn_blocking panicked")]
-    SpawnBlockingPanicked,
-
-    #[error("Temp directory error: {0}")]
-    TempDir(std::io::Error),
-
-    #[error("Path is not valid UTF-8")]
-    PathNotUtf8,
-
-    #[error("Proxy error: {0}")]
-    Proxy(#[from] crate::error::ProxyError),
-}
-
-#[derive(Debug, Error)]
-pub enum ProxyError {
-    #[error("Docker API error: {0}")]
-    DockerApi(#[from] bollard::errors::Error),
-
-    #[error("Database error: {0}")]
-    Db(#[from] slasha_db::DbError),
-
-    #[error("HTTP error: {0}")]
-    Http(#[from] reqwest::Error),
-
-    #[error("Caddy error: {0}")]
-    Caddy(String),
-
-    #[error("Timeout: {0}")]
-    Timeout(String),
-}
-
-impl IntoResponse for Error {
-    fn into_response(self) -> Response {
-        if let Error::GitError(e) = self {
-            return e.into_response();
-        }
-
-        let (status, message) = match self {
-            Error::Internal(e) => {
-                tracing::error!("Internal server error: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal Server Error".to_string(),
-                )
-            }
-            Error::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
-            Error::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
-            Error::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            Error::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
-            Error::Deployment(e) => match e {
-                DeploymentError::ServiceNotFound(name) => (StatusCode::NOT_FOUND, name),
-                DeploymentError::ServiceNotRunning(name) => (
-                    StatusCode::BAD_REQUEST,
-                    format!("Service {} is not running", name),
-                ),
-                DeploymentError::KeyNotExported(svc, key) => (
-                    StatusCode::BAD_REQUEST,
-                    format!("Service {} does not export key {}", svc, key),
-                ),
-                _ => {
-                    tracing::error!("Deployment pipeline error: {:?}", e);
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Deployment failed".to_string(),
-                    )
-                }
-            },
-
-            _ => unreachable!(),
-        };
-
-        let body = Json(json!({ "error": message }));
-        (status, body).into_response()
-    }
-}
-
-impl IntoResponse for GitError {
-    fn into_response(self) -> Response {
-        match self {
-            GitError::Unauthorized => (
-                StatusCode::UNAUTHORIZED,
-                [(axum::http::header::WWW_AUTHENTICATE, "Basic realm=\"Git\"")],
-                "Unauthorized",
-            )
-                .into_response(),
-            GitError::RepoNotFound => {
-                (StatusCode::NOT_FOUND, "Repository Not Found").into_response()
-            }
-            GitError::InvalidCredentials => {
-                (StatusCode::UNAUTHORIZED, "Invalid Credentials").into_response()
-            }
-            GitError::NotMember => (StatusCode::FORBIDDEN, "Not a member").into_response(),
-            GitError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg).into_response(),
-            GitError::Internal(msg) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, msg.to_string()).into_response()
-            }
-        }
-    }
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
+pub type HttpResult<T> = std::result::Result<T, HttpError>;

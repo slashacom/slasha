@@ -11,7 +11,7 @@ use slasha_db::{
 use tokio::sync::Notify;
 
 use super::{
-    DeploymentResult,
+    DeploymentError, DeploymentResult,
     build::{BuildStrategy, detect_build_strategy, phase_build_docker, phase_build_railpack},
     network::app_network_name,
     run::{app_container_name, phase_run},
@@ -23,7 +23,6 @@ use crate::{
         port_pool::PortPool,
         services::service_container_name,
     },
-    error::DeploymentError,
     state::{Runtime, Storage},
 };
 

@@ -24,7 +24,7 @@ use crate::{
         logs::LogKey,
         services::{delete_service, provision_service, stop_service},
     },
-    error::{Error, Result},
+    error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
     state::{AppState, Clients, Runtime, Storage},
 };
@@ -50,7 +50,7 @@ async fn list_services(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let app_services = ServiceRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
@@ -66,7 +66,7 @@ async fn create_service(
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
     Json(payload): Json<CreateServiceReq>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     if !payload
@@ -74,7 +74,7 @@ async fn create_service(
         .supported_versions()
         .contains(&payload.version.as_str())
     {
-        return Err(Error::BadRequest(format!(
+        return Err(HttpError::bad_request(format!(
             "Version {} is not supported for {:?}",
             payload.version, payload.kind
         )));
@@ -135,12 +135,12 @@ async fn stop_service_handler(
     State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let svc = ServiceRepo::find(&storage.db_pool, &id, &app.id).await?;
 
     if svc.status != ServiceStatus::Running {
-        return Err(Error::BadRequest("Service is not running".into()));
+        return Err(HttpError::bad_request("Service is not running"));
     }
 
     stop_service(
@@ -150,8 +150,7 @@ async fn stop_service_handler(
         &app,
         &svc,
     )
-    .await
-    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to stop service: {}", e)))?;
+    .await?;
 
     Ok(Json(serde_json::json!({ "stopped": true })))
 }
@@ -162,13 +161,13 @@ async fn delete_service_handler(
     State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let svc = ServiceRepo::find(&storage.db_pool, &id, &app.id).await?;
 
     if svc.status != ServiceStatus::Stopped && svc.status != ServiceStatus::Failed {
-        return Err(Error::BadRequest(
-            "Cannot delete a running or provisioning service. Please stop it first.".into(),
+        return Err(HttpError::bad_request(
+            "Cannot delete a running or provisioning service. Please stop it first.",
         ));
     }
 
@@ -179,8 +178,7 @@ async fn delete_service_handler(
         &app,
         &svc,
     )
-    .await
-    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to delete service: {}", e)))?;
+    .await?;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
@@ -190,7 +188,7 @@ async fn stream_logs(
     State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
-) -> Result<
+) -> HttpResult<
     Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
 > {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
@@ -203,7 +201,7 @@ async fn stream_logs(
             service_name: svc.name.clone(),
         })
         .await
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to get logger: {}", e)))?;
+        .map_err(HttpError::internal)?;
 
     let historical = log.get_historical().await?;
 

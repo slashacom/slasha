@@ -1,3 +1,4 @@
+use anyhow::Context;
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -9,7 +10,7 @@ use serde::Serialize;
 use slasha_db::repos::app::AppRepo;
 
 use crate::{
-    error::{Error, Result},
+    error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
     state::{AppState, Storage},
 };
@@ -57,37 +58,30 @@ struct FileContentResponse {
     content: Option<String>,
 }
 
-fn resolve_head_tree(repo: &git2::Repository) -> Result<Option<git2::Tree<'_>>> {
+fn resolve_head_tree(repo: &git2::Repository) -> anyhow::Result<Option<git2::Tree<'_>>> {
     let head = match repo.head() {
         Ok(h) => h,
         Err(e) if e.code() == git2::ErrorCode::UnbornBranch => return Ok(None),
         Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(None),
-        Err(e) => {
-            return Err(Error::Internal(anyhow::anyhow!(
-                "Failed to resolve HEAD: {}",
-                e
-            )));
-        }
+        Err(e) => return Err(anyhow::anyhow!(e).context("Failed to resolve HEAD")),
     };
 
-    let tree = head
-        .peel_to_tree()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to peel HEAD to tree: {}", e)))?;
-
-    Ok(Some(tree))
+    Ok(Some(
+        head.peel_to_tree().context("Failed to peel HEAD to tree")?,
+    ))
 }
 
 fn build_tree_recursive(
     repo: &git2::Repository,
     tree: &git2::Tree,
     prefix: &str,
-) -> Result<Vec<FileTreeNode>> {
+) -> anyhow::Result<Vec<FileTreeNode>> {
     let mut nodes = Vec::new();
 
     for entry in tree.iter() {
         let name = entry
             .name()
-            .ok_or_else(|| Error::Internal(anyhow::anyhow!("Non-UTF-8 filename in tree")))?
+            .context("Non-UTF-8 filename in tree")?
             .to_string();
 
         let path = if prefix.is_empty() {
@@ -137,11 +131,10 @@ async fn get_file_tree(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let repo = git2::Repository::open_bare(&app.repo_path)
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to open repository: {}", e)))?;
+    let repo = git2::Repository::open_bare(&app.repo_path).context("Failed to open repository")?;
 
     let tree = resolve_head_tree(&repo)?;
 
@@ -166,28 +159,30 @@ async fn get_file_content(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Path((slug, file_path)): Path<(String, String)>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     tracing::info!("File content: {:#?}", file_path);
 
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let repo = git2::Repository::open_bare(&app.repo_path)
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to open repository: {}", e)))?;
+    let repo = git2::Repository::open_bare(&app.repo_path).context("Failed to open repository")?;
 
     let tree = resolve_head_tree(&repo)?
-        .ok_or_else(|| Error::NotFound("Repository has no commits yet".into()))?;
+        .ok_or_else(|| HttpError::not_found("Repository has no commits yet"))?;
 
     let entry = tree
         .get_path(std::path::Path::new(&file_path))
-        .map_err(|_| Error::NotFound(format!("File '{}' not found", file_path)))?;
+        .map_err(|_| HttpError::not_found(format!("File '{}' not found", file_path)))?;
 
     if entry.kind() != Some(ObjectType::Blob) {
-        return Err(Error::BadRequest(format!("'{}' is not a file", file_path)));
+        return Err(HttpError::bad_request(format!(
+            "'{}' is not a file",
+            file_path
+        )));
     }
 
     let blob = repo
         .find_blob(entry.id())
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to read file blob: {}", e)))?;
+        .context("Failed to read file blob")?;
 
     let size = blob.size();
     let raw = blob.content();

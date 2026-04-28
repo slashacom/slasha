@@ -20,12 +20,12 @@ use slasha_db::{
 use tokio::sync::Notify;
 
 use super::{
-    DeploymentResult,
+    DeploymentError, DeploymentResult,
     logs::{Log, LogManager},
     network::app_network_name,
     port_pool::PortPool,
 };
-use crate::{docker::logs::LogKey, error::DeploymentError};
+use crate::docker::logs::LogKey;
 
 pub fn app_container_name(app_id: &str, deployment_id: &str) -> String {
     format!("slasha-{}-{}", app_id, deployment_id)
@@ -38,8 +38,7 @@ fn image_name(app_slug: &str) -> String {
 async fn get_container_host_port(docker_client: &Docker, name: &str) -> DeploymentResult<u16> {
     let info = docker_client
         .inspect_container(name, None)
-        .await
-        .map_err(DeploymentError::DockerApi)?;
+        .await?;
 
     info.network_settings
         .and_then(|ns| ns.ports)
@@ -137,13 +136,11 @@ pub async fn phase_run(
 
     docker_client
         .create_container(Some(create_opts), container_config)
-        .await
-        .map_err(DeploymentError::DockerApi)?;
+        .await?;
 
     docker_client
         .start_container(&name, Some(StartContainerOptionsBuilder::new().build()))
-        .await
-        .map_err(DeploymentError::DockerApi)?;
+        .await?;
 
     DeploymentRepo::update_status(db_pool, &deployment_id, DeploymentStatus::Running).await?;
 
@@ -193,8 +190,7 @@ pub async fn stop_deployment_container(
             &name,
             Some(StopContainerOptionsBuilder::new().t(10).build()),
         )
-        .await
-        .map_err(DeploymentError::DockerApi)?;
+        .await?;
 
     port_pool.release(host_port).await;
 
@@ -236,8 +232,7 @@ pub async fn delete_deployment_container(
             &name,
             Some(RemoveContainerOptionsBuilder::new().force(true).build()),
         )
-        .await
-        .map_err(DeploymentError::DockerApi)?;
+        .await?;
 
     if let Some(port) = host_port {
         port_pool.release(port).await;

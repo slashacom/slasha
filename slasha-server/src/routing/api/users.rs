@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     auth::hash_password,
-    error::{Error, Result},
+    error::{HttpError, HttpResult},
     state::{AppState, Storage},
 };
 
@@ -27,7 +27,7 @@ pub fn router() -> Router<AppState> {
 async fn get_user(
     State(storage): State<Storage>,
     Path(id): Path<String>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let user = UserRepo::find_by_id(&storage.db_pool, &id).await?;
 
     Ok(Json(serde_json::json!({
@@ -35,7 +35,7 @@ async fn get_user(
     })))
 }
 
-async fn list_users(State(storage): State<Storage>) -> Result<impl IntoResponse> {
+async fn list_users(State(storage): State<Storage>) -> HttpResult<impl IntoResponse> {
     let all_users = UserRepo::list(&storage.db_pool).await?;
 
     Ok(Json(serde_json::json!({
@@ -53,7 +53,7 @@ struct CreateUserReq {
 async fn create_user(
     State(storage): State<Storage>,
     Json(payload): Json<CreateUserReq>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let hashed = hash_password(&payload.password)?;
     let new_user = User {
         id: Uuid::new_v4().to_string(),
@@ -81,7 +81,7 @@ async fn update_user(
     State(storage): State<Storage>,
     Path(id): Path<String>,
     Json(payload): Json<UpdateUserReq>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let updated_user = UserRepo::update(&storage.db_pool, &id, payload.email, payload.role).await?;
 
     Ok(Json(serde_json::json!({
@@ -92,14 +92,14 @@ async fn update_user(
 async fn delete_user(
     State(storage): State<Storage>,
     Path(id): Path<String>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let user = UserRepo::find_by_id(&storage.db_pool, &id).await?;
 
     let admin_count = UserRepo::admin_count(&storage.db_pool).await?;
 
     if user.role == "admin" && admin_count == 1 {
-        return Err(Error::BadRequest(
-            "There needs to be at least one admin user!".into(),
+        return Err(HttpError::bad_request(
+            "There needs to be at least one admin user!",
         ));
     }
 

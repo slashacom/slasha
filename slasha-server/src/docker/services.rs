@@ -21,15 +21,12 @@ use slasha_db::{
 };
 
 use super::{
-    DeploymentResult,
+    DeploymentError, DeploymentResult,
     env::RefSource,
     logs::{LogKey, LogManager, stream_container_logs},
     network::app_network_name,
 };
-use crate::{
-    docker::env::{resolve_env_value, topo_sort_vars},
-    error::DeploymentError,
-};
+use crate::docker::env::{resolve_env_value, topo_sort_vars};
 
 pub fn service_container_name(service_id: &str) -> String {
     format!("slasha-svc-{}", service_id)
@@ -93,7 +90,7 @@ pub async fn provision_service(
     );
 
     while let Some(result) = image_stream.next().await {
-        let _ = result.map_err(DeploymentError::DockerApi)?;
+        result?;
     }
 
     let volume_name = service_volume_name(&service.id);
@@ -103,8 +100,7 @@ pub async fn provision_service(
     };
     docker_client
         .create_volume(vol_config)
-        .await
-        .map_err(DeploymentError::DockerApi)?;
+        .await?;
 
     let container_name = service_container_name(&service.id);
     let network_name = app_network_name(&app.id);
@@ -181,16 +177,14 @@ pub async fn provision_service(
 
     docker_client
         .create_container(Some(create_opts), config)
-        .await
-        .map_err(DeploymentError::DockerApi)?;
+        .await?;
 
     docker_client
         .start_container(
             &container_name,
             Some(StartContainerOptionsBuilder::new().build()),
         )
-        .await
-        .map_err(DeploymentError::DockerApi)?;
+        .await?;
 
     ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Running).await?;
 
@@ -225,8 +219,7 @@ pub async fn stop_service(
             &container_name,
             Some(StopContainerOptionsBuilder::new().t(10).build()),
         )
-        .await
-        .map_err(DeploymentError::DockerApi)?;
+        .await?;
 
     ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Stopped).await?;
 
@@ -248,25 +241,19 @@ pub async fn delete_service(
     let container_name = service_container_name(&service.id);
     let volume_name = service_volume_name(&service.id);
 
-    if let Err(e) = docker_client
+    docker_client
         .remove_container(
             &container_name,
             Some(RemoveContainerOptionsBuilder::new().force(true).build()),
         )
-        .await
-    {
-        return Err(DeploymentError::DockerApi(e));
-    }
+        .await?;
 
-    if let Err(e) = docker_client
+    docker_client
         .remove_volume(
             &volume_name,
             None::<bollard::query_parameters::RemoveVolumeOptions>,
         )
-        .await
-    {
-        return Err(DeploymentError::DockerApi(e));
-    }
+        .await?;
 
     ServiceRepo::delete(db_pool, &service.id).await?;
 

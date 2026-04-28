@@ -1,10 +1,11 @@
 use std::{fs, io::Write, path::Path};
+use anyhow::Context;
 
 use slasha_db::repos::ssh_key::SshKeyRepo;
 
-use crate::{Error, Result, state::Storage};
+use crate::state::Storage;
 
-pub async fn regenerate_authorized_keys(storage: &Storage) -> Result<()> {
+pub async fn regenerate_authorized_keys(storage: &Storage) -> anyhow::Result<()> {
     let keys = SshKeyRepo::list_all(&storage.db_pool).await?;
 
     let handler_path = "slasha-git-ssh-handler";
@@ -19,15 +20,13 @@ pub async fn regenerate_authorized_keys(storage: &Storage) -> Result<()> {
     }
 
     let ssh_dir = dirs::home_dir()
-        .ok_or_else(|| Error::Internal(anyhow::anyhow!("Failed to get home directory")))?
+        .context("Failed to get home directory")?
         .join(".ssh");
 
     tracing::info!("SSH directory: {}", ssh_dir.display());
 
     if !ssh_dir.exists() {
-        fs::create_dir_all(&ssh_dir).map_err(|e| {
-            Error::Internal(anyhow::anyhow!("Failed to create .ssh directory: {}", e))
-        })?;
+        fs::create_dir_all(&ssh_dir).context("Failed to create .ssh directory")?;
     }
 
     let auth_keys_path = ssh_dir.join("authorized_keys");
@@ -37,15 +36,11 @@ pub async fn regenerate_authorized_keys(storage: &Storage) -> Result<()> {
     Ok(())
 }
 
-fn atomic_write(path: &Path, content: &str) -> Result<()> {
+fn atomic_write(path: &Path, content: &str) -> anyhow::Result<()> {
     let temp_path = path.with_extension("tmp");
-    let mut file = fs::File::create(&temp_path)
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to create temp file: {}", e)))?;
-    file.write_all(content.as_bytes())
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to write to temp file: {}", e)))?;
-    file.sync_all()
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to sync temp file: {}", e)))?;
-    fs::rename(temp_path, path)
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to rename temp file: {}", e)))?;
+    let mut file = fs::File::create(&temp_path).context("Failed to create temp file")?;
+    file.write_all(content.as_bytes()).context("Failed to write to temp file")?;
+    file.sync_all().context("Failed to sync temp file")?;
+    fs::rename(temp_path, path).context("Failed to rename temp file")?;
     Ok(())
 }

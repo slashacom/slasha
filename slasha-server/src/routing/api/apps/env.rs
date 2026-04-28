@@ -12,7 +12,7 @@ use slasha_db::{app::AppEnvVar, repos::app::AppRepo};
 use uuid::Uuid;
 
 use crate::{
-    error::Result,
+    error::HttpResult,
     extractors::auth::AuthUser,
     state::{AppState, Storage},
 };
@@ -32,7 +32,7 @@ async fn get_env_vars(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let vars = AppRepo::get_env_vars(&storage.db_pool, &app.id).await?;
@@ -49,7 +49,7 @@ async fn update_env_vars(
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
     Json(payload): Json<UpdateEnvVarsReq>,
-) -> Result<impl IntoResponse> {
+) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let now = Utc::now().naive_utc();

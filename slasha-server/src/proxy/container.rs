@@ -11,8 +11,7 @@ use bollard::{
 use futures_util::StreamExt;
 use tokio::time::sleep;
 
-use super::ProxyResult;
-use crate::error::ProxyError;
+use super::{ProxyError, ProxyResult};
 
 const CONTAINER_NAME: &str = "slasha-proxy";
 const IMAGE: &str = "caddy:latest";

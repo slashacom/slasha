@@ -1,10 +1,9 @@
 use std::collections::{BTreeSet, HashMap};
 
-use bollard::Docker;
+use bollard::{Docker, query_parameters::ListContainersOptionsBuilder};
 use tokio::sync::Mutex;
 
-use super::DeploymentResult;
-use crate::error::DeploymentError;
+use super::{DeploymentError, DeploymentResult};
 
 pub struct PortPool {
     range_start: u16,
@@ -19,15 +18,14 @@ impl PortPool {
         let mut filters: HashMap<String, Vec<String>> = HashMap::new();
         filters.insert("label".to_string(), vec!["slasha.managed=true".to_string()]);
 
-        let opts = bollard::query_parameters::ListContainersOptionsBuilder::new()
+        let opts = ListContainersOptionsBuilder::new()
             .all(true)
             .filters(&filters)
             .build();
 
         let containers = docker_client
             .list_containers(Some(opts))
-            .await
-            .map_err(DeploymentError::DockerApi)?;
+            .await?;
 
         for container in containers {
             if let Some(ports) = container.ports {
