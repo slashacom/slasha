@@ -1,11 +1,13 @@
-use crate::{config::Config, http::client};
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use inquire::{Password, PasswordDisplayMode, Text};
-use models::user::User;
 use serde::Deserialize;
 use serde_json::json;
-use std::time::Duration;
+use slasha_db::user::User;
+
+use crate::{config::Config, http::client};
 
 #[derive(Deserialize)]
 struct AuthResponse {

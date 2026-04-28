@@ -1,5 +1,5 @@
 use axum::{Json, Router, routing::get};
-use models::service::ServiceKind;
+use slasha_db::service::ServiceKind;
 use strum::IntoEnumIterator;
 
 use crate::{AppState, error::Result};

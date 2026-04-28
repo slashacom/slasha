@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
-use crate::service::deserialize::FromSqlRow;
 use diesel::{
     backend::Backend,
     deserialize::{self, FromSql},
@@ -14,6 +12,8 @@ use diesel::{
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, EnumString};
 use ts_rs::TS;
+
+use crate::service::deserialize::FromSqlRow;
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
 #[diesel(table_name = crate::schema::services)]

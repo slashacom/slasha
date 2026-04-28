@@ -10,9 +10,12 @@ use axum::{
     routing::{delete, get, post},
 };
 use chrono::Utc;
-use diesel::prelude::*;
 use futures_util::{StreamExt, stream};
 use serde::Deserialize;
+use slasha_db::{
+    repos::{app::AppRepo, service::ServiceRepo},
+    service::{Service, ServiceKind, ServiceStatus},
+};
 use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
@@ -24,13 +27,6 @@ use crate::{
     error::{Error, Result},
     extractors::auth::AuthUser,
     state::{AppState, Clients, Runtime, Storage},
-};
-
-use super::utils::lookup_app_for_user;
-
-use models::{
-    schema::services,
-    service::{Service, ServiceKind, ServiceStatus},
 };
 
 pub fn router() -> Router<AppState> {
@@ -55,13 +51,8 @@ async fn list_services(
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
-    let mut conn = storage.db_pool.get()?;
-
-    let app_services: Vec<Service> = services::table
-        .filter(services::app_id.eq(&app.id))
-        .order(services::created_at.desc())
-        .load(&mut conn)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let app_services = ServiceRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({
         "services": app_services,
@@ -76,7 +67,7 @@ async fn create_service(
     Path(slug): Path<String>,
     Json(payload): Json<CreateServiceReq>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     if !payload
         .kind
@@ -88,8 +79,6 @@ async fn create_service(
             payload.version, payload.kind
         )));
     }
-
-    let mut conn = storage.db_pool.get()?;
 
     let now = Utc::now().naive_utc();
     let service_id = Uuid::new_v4().to_string();
@@ -105,9 +94,7 @@ async fn create_service(
         updated_at: now,
     };
 
-    diesel::insert_into(services::table)
-        .values(&new_service)
-        .execute(&mut conn)?;
+    let new_service = ServiceRepo::create(&storage.db_pool, new_service).await?;
 
     let clients_clone = clients.clone();
     let storage_clone = storage.clone();
@@ -128,13 +115,12 @@ async fn create_service(
         .await
         {
             tracing::error!("Failed to provision service {}: {}", service_clone.id, e);
-            if let Ok(mut conn) = storage_clone.db_pool.get() {
-                let _ = crate::docker::services::update_service_status(
-                    &mut conn,
-                    &service_clone.id,
-                    ServiceStatus::Failed,
-                );
-            }
+            let _ = ServiceRepo::update_status(
+                &storage_clone.db_pool,
+                &service_clone.id,
+                ServiceStatus::Failed,
+            )
+            .await;
         }
     });
 
@@ -150,15 +136,8 @@ async fn stop_service_handler(
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
-    let mut conn = storage.db_pool.get()?;
-
-    let svc = services::table
-        .filter(services::id.eq(&id))
-        .filter(services::app_id.eq(&app.id))
-        .first::<Service>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound("Service not found".into()))?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let svc = ServiceRepo::find(&storage.db_pool, &id, &app.id).await?;
 
     if svc.status != ServiceStatus::Running {
         return Err(Error::BadRequest("Service is not running".into()));
@@ -184,15 +163,8 @@ async fn delete_service_handler(
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
-    let mut conn = storage.db_pool.get()?;
-
-    let svc = services::table
-        .filter(services::id.eq(&id))
-        .filter(services::app_id.eq(&app.id))
-        .first::<Service>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound("Service not found".into()))?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let svc = ServiceRepo::find(&storage.db_pool, &id, &app.id).await?;
 
     if svc.status != ServiceStatus::Stopped && svc.status != ServiceStatus::Failed {
         return Err(Error::BadRequest(
@@ -221,16 +193,8 @@ async fn stream_logs(
 ) -> Result<
     Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
 > {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
-
-    let mut conn = storage.db_pool.get()?;
-
-    let svc = services::table
-        .filter(services::id.eq(&id))
-        .filter(services::app_id.eq(&app.id))
-        .first::<Service>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound(format!("Service '{}' not found", id)))?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let svc = ServiceRepo::find(&storage.db_pool, &id, &app.id).await?;
 
     let log = runtime
         .log_manager

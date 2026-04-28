@@ -5,8 +5,8 @@ use axum::{
     routing::{get, post},
 };
 use chrono::Utc;
-use diesel::prelude::*;
 use serde::Deserialize;
+use slasha_db::{repos::user::UserRepo, user::User};
 use uuid::Uuid;
 
 use crate::{
@@ -15,8 +15,6 @@ use crate::{
     extractors::auth::AuthUser,
     state::{AppState, Config, Storage},
 };
-
-use models::{schema::users, user::User};
 
 const EXP_TIME: usize = 30 * 24 * 60 * 60;
 
@@ -29,12 +27,7 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn status(State(storage): State<Storage>) -> Result<impl IntoResponse> {
-    let mut conn = storage.db_pool.get()?;
-
-    let admin_count: i64 = users::table
-        .filter(users::role.eq("admin"))
-        .count()
-        .get_result(&mut conn)?;
+    let admin_count = UserRepo::admin_count(&storage.db_pool).await?;
 
     Ok(Json(serde_json::json!({
         "has_admin": admin_count > 0,
@@ -52,12 +45,7 @@ async fn signup(
     State(config): State<Config>,
     Json(payload): Json<SignupReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = storage.db_pool.get()?;
-
-    let admin_count: i64 = users::table
-        .filter(users::role.eq("admin"))
-        .count()
-        .get_result(&mut conn)?;
+    let admin_count = UserRepo::admin_count(&storage.db_pool).await?;
 
     if admin_count > 0 {
         return Err(Error::BadRequest("An admin already exists".into()));
@@ -73,9 +61,7 @@ async fn signup(
         updated_at: Utc::now().naive_utc(),
     };
 
-    diesel::insert_into(users::table)
-        .values(&new_user)
-        .execute(&mut conn)?;
+    UserRepo::create(&storage.db_pool, new_user.clone()).await?;
 
     let exp = Utc::now().timestamp() as usize + EXP_TIME;
     let token_payload = TokenPayload {
@@ -103,12 +89,7 @@ async fn login(
     State(config): State<Config>,
     Json(payload): Json<LoginReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = storage.db_pool.get()?;
-
-    let user = users::table
-        .filter(users::email.eq(&payload.email))
-        .first::<User>(&mut conn)
-        .optional()?;
+    let user = UserRepo::find_by_email(&storage.db_pool, &payload.email).await?;
 
     let user = match user {
         Some(u) => u,

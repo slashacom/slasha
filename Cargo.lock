@@ -2890,13 +2890,28 @@ dependencies = [
  "dirs",
  "indicatif",
  "inquire",
- "models",
  "reqwest",
  "serde",
  "serde_json",
+ "slasha-db",
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "slasha-db"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "diesel",
+ "serde",
+ "strum",
+ "strum_macros",
+ "thiserror 2.0.18",
+ "tokio",
+ "ts-rs",
+ "uuid",
 ]
 
 [[package]]
@@ -2922,7 +2937,6 @@ dependencies = [
  "git2",
  "jsonwebtoken",
  "mime_guess",
- "models",
  "once_cell",
  "rand_core 0.10.0",
  "regex",
@@ -2930,6 +2944,7 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "slasha-db",
  "strum",
  "strum_macros",
  "tempfile",

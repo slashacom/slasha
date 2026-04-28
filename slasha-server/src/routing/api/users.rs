@@ -5,8 +5,8 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use chrono::Utc;
-use diesel::prelude::*;
 use serde::Deserialize;
+use slasha_db::{repos::user::UserRepo, user::User};
 use uuid::Uuid;
 
 use crate::{
@@ -14,8 +14,6 @@ use crate::{
     error::{Error, Result},
     state::{AppState, Storage},
 };
-
-use models::{schema::users, user::User};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -30,13 +28,7 @@ async fn get_user(
     State(storage): State<Storage>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = storage.db_pool.get()?;
-
-    let user = users::table
-        .filter(users::id.eq(&id))
-        .first::<User>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound("User not found".into()))?;
+    let user = UserRepo::find_by_id(&storage.db_pool, &id).await?;
 
     Ok(Json(serde_json::json!({
         "user": user,
@@ -44,11 +36,7 @@ async fn get_user(
 }
 
 async fn list_users(State(storage): State<Storage>) -> Result<impl IntoResponse> {
-    let mut conn = storage.db_pool.get()?;
-
-    let all_users = users::table
-        .order(users::created_at.desc())
-        .load::<User>(&mut conn)?;
+    let all_users = UserRepo::list(&storage.db_pool).await?;
 
     Ok(Json(serde_json::json!({
         "users": all_users,
@@ -66,8 +54,6 @@ async fn create_user(
     State(storage): State<Storage>,
     Json(payload): Json<CreateUserReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = storage.db_pool.get()?;
-
     let hashed = hash_password(&payload.password)?;
     let new_user = User {
         id: Uuid::new_v4().to_string(),
@@ -78,9 +64,7 @@ async fn create_user(
         updated_at: Utc::now().naive_utc(),
     };
 
-    diesel::insert_into(users::table)
-        .values(&new_user)
-        .execute(&mut conn)?;
+    let new_user = UserRepo::create(&storage.db_pool, new_user).await?;
 
     Ok(Json(serde_json::json!({
         "user": new_user,
@@ -98,25 +82,7 @@ async fn update_user(
     Path(id): Path<String>,
     Json(payload): Json<UpdateUserReq>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = storage.db_pool.get()?;
-
-    let updated_at = Utc::now().naive_utc();
-
-    if let Some(email) = payload.email {
-        diesel::update(users::table.filter(users::id.eq(&id)))
-            .set((users::email.eq(email), users::updated_at.eq(updated_at)))
-            .execute(&mut conn)?;
-    }
-
-    if let Some(role) = payload.role {
-        diesel::update(users::table.filter(users::id.eq(&id)))
-            .set((users::role.eq(role), users::updated_at.eq(updated_at)))
-            .execute(&mut conn)?;
-    }
-
-    let updated_user = users::table
-        .filter(users::id.eq(&id))
-        .first::<User>(&mut conn)?;
+    let updated_user = UserRepo::update(&storage.db_pool, &id, payload.email, payload.role).await?;
 
     Ok(Json(serde_json::json!({
         "user": updated_user,
@@ -127,26 +93,17 @@ async fn delete_user(
     State(storage): State<Storage>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = storage.db_pool.get()?;
+    let user = UserRepo::find_by_id(&storage.db_pool, &id).await?;
 
-    let user = users::table
-        .filter(users::id.eq(&id))
-        .first::<User>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound("User not found".into()))?;
-
-    let admin_count = users::table
-        .filter(users::role.eq("admin"))
-        .count()
-        .get_result::<i64>(&mut conn)?;
+    let admin_count = UserRepo::admin_count(&storage.db_pool).await?;
 
     if user.role == "admin" && admin_count == 1 {
-        return Err(Error::Internal(anyhow::anyhow!(
-            "There needs to be at least one admin user!"
-        )));
+        return Err(Error::BadRequest(
+            "There needs to be at least one admin user!".into(),
+        ));
     }
 
-    diesel::delete(users::table.filter(users::id.eq(&id))).execute(&mut conn)?;
+    UserRepo::delete(&storage.db_pool, &id).await?;
 
     Ok(Json(serde_json::json!({
         "deleted": true,

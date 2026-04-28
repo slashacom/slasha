@@ -1,11 +1,14 @@
-use std::env;
-use std::process::{Command, Stdio};
+use std::{
+    env,
+    process::{Command, Stdio},
+};
 
 use anyhow::{Context, Result};
-use diesel::prelude::*;
-use diesel::sqlite::SqliteConnection;
-use models::app::{App, AppMember};
-use models::user::User;
+use diesel::{prelude::*, sqlite::SqliteConnection};
+use models::{
+    app::{App, AppMember},
+    user::User,
+};
 
 fn main() -> Result<()> {
     let user_id = env::args().nth(1).context("No user ID provided")?;

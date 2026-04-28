@@ -8,9 +8,12 @@ use axum::{
     routing::{delete, get, post},
 };
 use chrono::Utc;
-use diesel::prelude::*;
 use futures_util::{StreamExt, stream};
 use serde::Deserialize;
+use slasha_db::{
+    deployment::{Deployment, DeploymentStatus},
+    repos::{app::AppRepo, deployment::DeploymentRepo},
+};
 use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
@@ -24,12 +27,6 @@ use crate::{
     extractors::auth::AuthUser,
     state::{AppState, Clients, Runtime, Storage},
 };
-use models::{
-    deployment::{Deployment, DeploymentStatus},
-    schema::deployments,
-};
-
-use super::utils::lookup_app_for_user;
 
 fn resolve_commit_message(repo_path: &str, sha: &str) -> anyhow::Result<String> {
     let repo = git2::Repository::open(repo_path)?;
@@ -71,16 +68,9 @@ async fn trigger_deploy(
     Path(slug): Path<String>,
     Json(payload): Json<TriggerDeployReq>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let mut conn = storage.db_pool.get()?;
-
-    let is_running: bool = diesel::select(diesel::dsl::exists(
-        deployments::table
-            .filter(deployments::app_id.eq(&app.id))
-            .filter(deployments::status.eq(DeploymentStatus::Running)),
-    ))
-    .get_result(&mut conn)?;
+    let is_running = DeploymentRepo::any_running(&storage.db_pool, &app.id).await?;
 
     if is_running {
         return Err(Error::BadRequest(
@@ -113,9 +103,7 @@ async fn trigger_deploy(
         updated_at: now,
     };
 
-    diesel::insert_into(deployments::table)
-        .values(&deployment)
-        .execute(&mut conn)?;
+    let deployment = DeploymentRepo::create(&storage.db_pool, deployment).await?;
 
     tokio::spawn(run_deployment(
         clients.docker.clone(),
@@ -133,14 +121,9 @@ async fn list_deployments(
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let mut conn = storage.db_pool.get()?;
-
-    let deps: Vec<Deployment> = deployments::table
-        .filter(deployments::app_id.eq(&app.id))
-        .order(deployments::created_at.desc())
-        .load(&mut conn)?;
+    let deps = DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({ "deployments": deps })))
 }
@@ -150,16 +133,9 @@ async fn get_deployment(
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let mut conn = storage.db_pool.get()?;
-
-    let deployment = deployments::table
-        .filter(deployments::id.eq(&deployment_id))
-        .filter(deployments::app_id.eq(&app.id))
-        .first::<Deployment>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
+    let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
 
     Ok(Json(serde_json::json!({ "deployment": deployment })))
 }
@@ -171,16 +147,9 @@ async fn stop_deployment(
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let mut conn = storage.db_pool.get()?;
-
-    let deployment = deployments::table
-        .filter(deployments::id.eq(&deployment_id))
-        .filter(deployments::app_id.eq(&app.id))
-        .first::<Deployment>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
+    let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
 
     if !matches!(
         deployment.status,
@@ -191,8 +160,6 @@ async fn stop_deployment(
             deployment.status
         )));
     }
-
-    drop(conn);
 
     stop_deployment_container(
         &clients.docker,
@@ -219,16 +186,9 @@ async fn restart_deployment(
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let mut conn = storage.db_pool.get()?;
-
-    let deployment = deployments::table
-        .filter(deployments::id.eq(&deployment_id))
-        .filter(deployments::app_id.eq(&app.id))
-        .first::<Deployment>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
+    let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
 
     delete_deployment_container(
         &clients.docker,
@@ -242,16 +202,8 @@ async fn restart_deployment(
     .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to clean up container: {}", e)))?;
 
     let now = Utc::now().naive_utc();
-    diesel::update(deployments::table.filter(deployments::id.eq(&deployment.id)))
-        .set((
-            deployments::status.eq(DeploymentStatus::Pending.to_string()),
-            deployments::updated_at.eq(now),
-        ))
-        .execute(&mut conn)?;
-
-    let mut updated_deployment = deployment.clone();
-    updated_deployment.status = DeploymentStatus::Pending;
-    updated_deployment.updated_at = now;
+    let updated_deployment =
+        DeploymentRepo::reset_to_pending(&storage.db_pool, &deployment.id, now).await?;
 
     tokio::spawn(run_deployment(
         clients.docker.clone(),
@@ -274,16 +226,9 @@ async fn stream_logs(
 ) -> Result<
     Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
 > {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let mut conn = storage.db_pool.get()?;
-
-    deployments::table
-        .filter(deployments::id.eq(&deployment_id))
-        .filter(deployments::app_id.eq(&app.id))
-        .first::<Deployment>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
+    DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
 
     let log = runtime
         .log_manager
@@ -320,16 +265,9 @@ async fn delete_deployment(
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let mut conn = storage.db_pool.get()?;
-
-    let deployment = deployments::table
-        .filter(deployments::id.eq(&deployment_id))
-        .filter(deployments::app_id.eq(&app.id))
-        .first::<Deployment>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
+    let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
 
     delete_deployment_container(
         &clients.docker,
@@ -342,8 +280,7 @@ async fn delete_deployment(
     .await
     .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to clean up container: {}", e)))?;
 
-    diesel::delete(deployments::table.filter(deployments::id.eq(&deployment.id)))
-        .execute(&mut conn)?;
+    DeploymentRepo::delete(&storage.db_pool, &deployment.id, &app.id).await?;
 
     Ok(Json(serde_json::json!({
         "deleted": true,

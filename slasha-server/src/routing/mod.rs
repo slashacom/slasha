@@ -1,14 +1,14 @@
 pub mod api;
 pub mod git;
 
-#[cfg(feature = "bundle")]
-use crate::assets::static_handler;
+use axum::Router;
 #[cfg(feature = "bundle")]
 use axum::routing::get;
+use tower_http::trace::TraceLayer;
 
 use crate::AppState;
-use axum::Router;
-use tower_http::trace::TraceLayer;
+#[cfg(feature = "bundle")]
+use crate::assets::static_handler;
 
 pub fn router(state: AppState) -> Router<AppState> {
     let router = Router::new()

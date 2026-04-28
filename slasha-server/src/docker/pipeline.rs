@@ -1,50 +1,42 @@
-use bollard::Docker;
-use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager, Pool};
-use diesel::sqlite::SqliteConnection;
-use models::app::{App, AppEnvVar};
-use models::deployment::{Deployment, DeploymentStatus};
-use models::schema::{app_env_vars, service_env_vars, services};
-use models::service::{Service, ServiceStatus};
-use std::collections::HashMap;
-use std::path::Path;
+use std::{collections::HashMap, path::Path, sync::Arc};
 
-use super::DeploymentResult;
-use super::build::{
-    BuildStrategy, detect_build_strategy, phase_build_docker, phase_build_railpack,
+use bollard::Docker;
+use slasha_db::{
+    DbPool,
+    app::{App, AppEnvVar},
+    deployment::{Deployment, DeploymentStatus},
+    repos::{app::AppRepo, deployment::DeploymentRepo, service::ServiceRepo},
+    service::{Service, ServiceStatus},
 };
-use super::network::app_network_name;
-use super::run::{app_container_name, phase_run, update_deployment_status};
-use crate::docker::env::{RefSource, resolve_env_value, topo_sort_vars};
-use crate::docker::logs::{Log, LogKey};
-use crate::docker::port_pool::PortPool;
-use crate::docker::services::service_container_name;
-use crate::error::DeploymentError;
-use crate::state::{Runtime, Storage};
-use std::sync::Arc;
 use tokio::sync::Notify;
+
+use super::{
+    DeploymentResult,
+    build::{BuildStrategy, detect_build_strategy, phase_build_docker, phase_build_railpack},
+    network::app_network_name,
+    run::{app_container_name, phase_run},
+};
+use crate::{
+    docker::{
+        env::{RefSource, resolve_env_value, topo_sort_vars},
+        logs::{Log, LogKey},
+        port_pool::PortPool,
+        services::service_container_name,
+    },
+    error::DeploymentError,
+    state::{Runtime, Storage},
+};
 
 const DEFAULT_RAILPACK_CONTAINER_PORT: u16 = 8080;
 
-pub fn resolve_app_env(
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+pub async fn resolve_app_env(
+    db_pool: &DbPool,
     app: &App,
     deployment: &Deployment,
+    app_vars: Vec<AppEnvVar>,
+    app_services: Vec<Service>,
 ) -> DeploymentResult<HashMap<String, String>> {
-    let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
-
-    let sorted_vars = topo_sort_vars(
-        app_env_vars::table
-            .filter(app_env_vars::app_id.eq(&app.id))
-            .order(app_env_vars::key.asc())
-            .load::<AppEnvVar>(&mut conn)?,
-        |v| &v.key,
-        |v| &v.value,
-    )?;
-
-    let app_services: Vec<Service> = services::table
-        .filter(services::app_id.eq(&app.id))
-        .load(&mut conn)?;
+    let sorted_vars = topo_sort_vars(app_vars, |v| &v.key, |v| &v.value)?;
 
     let mut resolved: HashMap<String, String> = HashMap::with_capacity(sorted_vars.len());
 
@@ -76,16 +68,16 @@ pub fn resolve_app_env(
 
                 match key {
                     "service_container_name" => Ok(service_container_name(&svc.id)),
-                    _ => service_env_vars::table
-                        .filter(service_env_vars::service_id.eq(&svc.id))
-                        .filter(service_env_vars::key.eq(key))
-                        .select(service_env_vars::value)
-                        .first::<String>(&mut conn)
-                        .optional()
-                        .map_err(DeploymentError::DatabaseError)?
-                        .ok_or_else(|| {
+                    _ => {
+                        let val = tokio::task::block_in_place(|| {
+                            tokio::runtime::Handle::current().block_on(async {
+                                ServiceRepo::get_env_var_value(db_pool, &svc.id, key).await
+                            })
+                        })?;
+                        val.ok_or_else(|| {
                             DeploymentError::KeyNotExported(svc_name.clone(), key.to_string())
-                        }),
+                        })
+                    }
                 }
             }
         })?;
@@ -140,9 +132,12 @@ pub async fn run_deployment(
         log.send(format!("Deployment failed: {}", e)).await?;
         runtime.log_manager.remove(&log_key);
 
-        if let Ok(mut conn) = storage.db_pool.get() {
-            let _ = update_deployment_status(&mut conn, &deployment.id, DeploymentStatus::Failed);
-        }
+        DeploymentRepo::update_status(
+            &storage.db_pool,
+            &deployment.id,
+            DeploymentStatus::Failed,
+        )
+        .await?;
     }
 
     Ok(())
@@ -150,7 +145,7 @@ pub async fn run_deployment(
 
 async fn run_deployment_inner(
     docker_client: &Docker,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    db_pool: &DbPool,
     port_pool: &Arc<PortPool>,
     proxy_reconcile: &Arc<Notify>,
     app: &App,
@@ -161,12 +156,12 @@ async fn run_deployment_inner(
 
     let strategy = detect_build_strategy(repo_path, &deployment.commit_sha).await?;
 
-    {
-        let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
-        update_deployment_status(&mut conn, &deployment.id, DeploymentStatus::Building)?;
-    }
+    DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Building).await?;
 
-    let mut env_map = resolve_app_env(db_pool, app, deployment)?;
+    let app_vars = AppRepo::get_env_vars(db_pool, &app.id).await?;
+    let app_services = ServiceRepo::list_for_app(db_pool, &app.id).await?;
+
+    let mut env_map = resolve_app_env(db_pool, app, deployment, app_vars, app_services).await?;
 
     let container_port = match env_map.get("PORT") {
         Some(port_str) => port_str

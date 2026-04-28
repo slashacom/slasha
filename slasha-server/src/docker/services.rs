@@ -1,30 +1,35 @@
-use bollard::Docker;
-use bollard::models::{
-    ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountTypeEnum, NetworkingConfig,
-    RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
-};
-use bollard::query_parameters::CreateImageOptions;
-use bollard::query_parameters::{
-    CreateContainerOptions, RemoveContainerOptionsBuilder, StartContainerOptionsBuilder,
-    StopContainerOptionsBuilder,
-};
-use chrono::Utc;
-use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager, Pool};
-use diesel::sqlite::SqliteConnection;
-use futures_util::StreamExt;
 use std::collections::HashMap;
 
-use models::app::App;
-use models::schema::{service_env_vars, services};
-use models::service::{Service, ServiceEnvVar, ServiceStatus};
+use bollard::{
+    Docker,
+    models::{
+        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountTypeEnum, NetworkingConfig,
+        RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
+    },
+    query_parameters::{
+        CreateContainerOptions, CreateImageOptions, RemoveContainerOptionsBuilder,
+        StartContainerOptionsBuilder, StopContainerOptionsBuilder,
+    },
+};
+use chrono::Utc;
+use futures_util::StreamExt;
+use slasha_db::{
+    DbPool,
+    app::App,
+    repos::service::ServiceRepo,
+    service::{Service, ServiceEnvVar, ServiceStatus},
+};
 
-use super::DeploymentResult;
-use super::env::RefSource;
-use super::logs::{LogKey, LogManager, stream_container_logs};
-use super::network::app_network_name;
-use crate::docker::env::{resolve_env_value, topo_sort_vars};
-use crate::error::DeploymentError;
+use super::{
+    DeploymentResult,
+    env::RefSource,
+    logs::{LogKey, LogManager, stream_container_logs},
+    network::app_network_name,
+};
+use crate::{
+    docker::env::{resolve_env_value, topo_sort_vars},
+    error::DeploymentError,
+};
 
 pub fn service_container_name(service_id: &str) -> String {
     format!("slasha-svc-{}", service_id)
@@ -34,36 +39,11 @@ fn service_volume_name(service_id: &str) -> String {
     format!("slasha-vol-{}", service_id)
 }
 
-pub fn update_service_status(
-    conn: &mut SqliteConnection,
-    service_id: &str,
-    status: ServiceStatus,
-) -> DeploymentResult<()> {
-    diesel::update(services::table.filter(services::id.eq(service_id)))
-        .set((
-            services::status.eq(status.to_string()),
-            services::updated_at.eq(Utc::now().naive_utc()),
-        ))
-        .execute(conn)
-        .map_err(DeploymentError::DatabaseError)?;
-
-    Ok(())
-}
-
 pub fn resolve_service_env(
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    service_vars: Vec<ServiceEnvVar>,
     service: &Service,
 ) -> DeploymentResult<HashMap<String, String>> {
-    let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
-
-    let sorted_vars: Vec<ServiceEnvVar> = topo_sort_vars(
-        service_env_vars::table
-            .filter(service_env_vars::service_id.eq(&service.id))
-            .order(service_env_vars::key.asc())
-            .load::<ServiceEnvVar>(&mut conn)?,
-        |v| &v.key,
-        |v| &v.value,
-    )?;
+    let sorted_vars: Vec<ServiceEnvVar> = topo_sort_vars(service_vars, |v| &v.key, |v| &v.value)?;
 
     let mut resolved: HashMap<String, String> = HashMap::with_capacity(sorted_vars.len());
 
@@ -95,7 +75,7 @@ pub fn resolve_service_env(
 
 pub async fn provision_service(
     docker_client: &Docker,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    db_pool: &DbPool,
     log_manager: &LogManager,
     app: &App,
     service: &Service,
@@ -143,8 +123,6 @@ pub async fn provision_service(
     labels.insert("slasha.app_id".to_string(), app.id.clone());
     labels.insert("slasha.service_id".to_string(), service.id.clone());
 
-    let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
-
     let now = Utc::now().naive_utc();
     let new_vars: Vec<ServiceEnvVar> = env_vars
         .into_iter()
@@ -158,12 +136,10 @@ pub async fn provision_service(
         })
         .collect();
 
-    diesel::insert_into(service_env_vars::table)
-        .values(&new_vars)
-        .execute(&mut conn)
-        .map_err(DeploymentError::DatabaseError)?;
+    ServiceRepo::insert_env_vars(db_pool, new_vars).await?;
 
-    let env_vars = resolve_service_env(db_pool, service)?;
+    let service_vars = ServiceRepo::get_env_vars(db_pool, &service.id).await?;
+    let env_vars = resolve_service_env(service_vars, service)?;
 
     let internal_env: Vec<String> = env_vars
         .into_iter()
@@ -216,7 +192,7 @@ pub async fn provision_service(
         .await
         .map_err(DeploymentError::DockerApi)?;
 
-    update_service_status(&mut conn, &service.id, ServiceStatus::Running)?;
+    ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Running).await?;
 
     let log_key = LogKey::Service {
         app_slug: app.slug.clone(),
@@ -237,7 +213,7 @@ pub async fn provision_service(
 
 pub async fn stop_service(
     docker_client: &Docker,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    db_pool: &DbPool,
     log_manager: &LogManager,
     app: &App,
     service: &Service,
@@ -252,8 +228,7 @@ pub async fn stop_service(
         .await
         .map_err(DeploymentError::DockerApi)?;
 
-    let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
-    update_service_status(&mut conn, &service.id, ServiceStatus::Stopped)?;
+    ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Stopped).await?;
 
     log_manager.remove(&LogKey::Service {
         app_slug: app.slug.clone(),
@@ -265,7 +240,7 @@ pub async fn stop_service(
 
 pub async fn delete_service(
     docker_client: &Docker,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    db_pool: &DbPool,
     log_manager: &LogManager,
     app: &App,
     service: &Service,
@@ -293,10 +268,7 @@ pub async fn delete_service(
         return Err(DeploymentError::DockerApi(e));
     }
 
-    let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
-    diesel::delete(services::table.filter(services::id.eq(&service.id)))
-        .execute(&mut conn)
-        .map_err(DeploymentError::DatabaseError)?;
+    ServiceRepo::delete(db_pool, &service.id).await?;
 
     log_manager.remove(&LogKey::Service {
         app_slug: app.slug.clone(),

@@ -1,6 +1,7 @@
+use std::collections::{HashMap, HashSet, VecDeque};
+
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::{DeploymentError, DeploymentResult};
 
@@ -34,7 +35,7 @@ fn parse_single_ref(s: &str) -> EnvToken {
     }
 }
 
-fn collect_own_refs<'a>(value: &'a str) -> Vec<&'a str> {
+fn collect_own_refs(value: &str) -> Vec<&str> {
     let mut refs = Vec::new();
 
     for cap in ENV_REF_RE.captures_iter(value) {
@@ -96,10 +97,10 @@ pub fn topo_sort_vars<V: Clone>(
     }
 
     if sorted.len() != vars.len() {
-        let resolved_keys: HashSet<&str> = sorted.iter().map(|v| key_fn(v)).collect();
+        let resolved_keys: HashSet<&str> = sorted.iter().map(&key_fn).collect();
         let cycle_keys: Vec<&str> = vars
             .iter()
-            .map(|v| key_fn(v))
+            .map(key_fn)
             .filter(|k| !resolved_keys.contains(k))
             .collect();
 

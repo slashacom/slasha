@@ -1,19 +1,19 @@
-use std::path::Path;
-use std::process::Stdio;
+use std::{path::Path, process::Stdio};
 
-use bollard::Docker;
-use bollard::body_stream;
-use bollard::query_parameters::{BuildImageOptionsBuilder, TagImageOptionsBuilder};
+use bollard::{
+    Docker, body_stream,
+    query_parameters::{BuildImageOptionsBuilder, TagImageOptionsBuilder},
+};
 use bytes::Bytes;
 use futures_util::{StreamExt, stream};
-use models::app::App;
-use models::deployment::Deployment;
+use slasha_db::{app::App, deployment::Deployment};
 use tempfile::TempDir;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command as TokioCommand;
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    process::Command as TokioCommand,
+};
 
-use super::DeploymentResult;
-use super::logs::Log;
+use super::{DeploymentResult, logs::Log};
 use crate::error::DeploymentError;
 
 pub enum BuildStrategy {

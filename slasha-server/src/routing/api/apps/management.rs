@@ -5,8 +5,11 @@ use axum::{
     routing::{delete, get, post},
 };
 use chrono::Utc;
-use diesel::prelude::*;
 use serde::Deserialize;
+use slasha_db::{
+    app::{App, AppMember, AppMemberRole},
+    repos::{app::AppRepo, service::ServiceRepo},
+};
 use tokio::process::Command;
 use uuid::Uuid;
 
@@ -20,15 +23,6 @@ use crate::{
     extractors::auth::AuthUser,
     state::{AppState, Clients, Runtime, Storage},
     utils::slugify,
-};
-
-use super::utils::lookup_app_for_user;
-
-use models::{
-    app::{App, AppMember, AppMemberRole},
-    deployment::Deployment,
-    schema::{app_members, apps, deployments, services},
-    service::Service,
 };
 
 pub fn router() -> Router<AppState> {
@@ -62,14 +56,7 @@ async fn create_app(
         ));
     }
 
-    let mut conn = storage.db_pool.get()?;
-
-    let existing = apps::table
-        .filter(apps::slug.eq(&slug))
-        .first::<App>(&mut conn)
-        .optional()?;
-
-    if existing.is_some() {
+    if AppRepo::slug_exists(&storage.db_pool, &slug).await? {
         return Err(Error::BadRequest(format!(
             "An app with the slug '{}' already exists",
             slug
@@ -120,13 +107,7 @@ async fn create_app(
         added_at: now,
     };
 
-    diesel::insert_into(apps::table)
-        .values(&new_app)
-        .execute(&mut conn)?;
-
-    diesel::insert_into(app_members::table)
-        .values(&new_member)
-        .execute(&mut conn)?;
+    let new_app = AppRepo::create(&storage.db_pool, new_app, new_member).await?;
 
     create_app_network(&clients.docker, &app_id).await?;
 
@@ -140,7 +121,7 @@ async fn get_app(
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     Ok(Json(serde_json::json!({
         "app": app,
@@ -154,24 +135,13 @@ async fn delete_app(
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let mut conn = storage.db_pool.get()?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
-
-    let membership = app_members::table
-        .filter(app_members::app_id.eq(&app.id))
-        .filter(app_members::user_id.eq(&user.id))
-        .first::<AppMember>(&mut conn)
-        .optional()?
-        .ok_or_else(|| Error::NotFound(format!("App '{}' not found", slug)))?;
-
-    if membership.role != AppMemberRole::Owner {
+    if !AppRepo::is_owner(&storage.db_pool, &app.id, &user.id).await? {
         return Err(Error::BadRequest("Only app owners can delete apps".into()));
     }
 
-    let app_services: Vec<Service> = services::table
-        .filter(services::app_id.eq(&app.id))
-        .load(&mut conn)?;
+    let app_services = ServiceRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
     for svc in app_services {
         if let Err(e) = delete_service(
@@ -187,9 +157,7 @@ async fn delete_app(
         }
     }
 
-    let deployments: Vec<Deployment> = deployments::table
-        .filter(deployments::app_id.eq(&app.id))
-        .load(&mut conn)?;
+    let deployments = AppRepo::delete(&storage.db_pool, &app.id).await?;
 
     for dep in deployments {
         if let Err(e) = delete_deployment_container(
@@ -212,8 +180,6 @@ async fn delete_app(
 
     delete_app_network(&clients.docker, &app.id).await?;
 
-    diesel::delete(apps::table.filter(apps::id.eq(&app.id))).execute(&mut conn)?;
-
     let repo_path = std::path::Path::new(&app.repo_path);
     if repo_path.exists() {
         tokio::fs::remove_dir_all(repo_path)
@@ -231,17 +197,7 @@ async fn list_apps(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
 ) -> Result<impl IntoResponse> {
-    let mut conn = storage.db_pool.get()?;
-
-    let user_app_ids: Vec<String> = app_members::table
-        .filter(app_members::user_id.eq(&user.id))
-        .select(app_members::app_id)
-        .load(&mut conn)?;
-
-    let user_apps: Vec<App> = apps::table
-        .filter(apps::id.eq_any(&user_app_ids))
-        .order(apps::created_at.desc())
-        .load(&mut conn)?;
+    let user_apps = AppRepo::list_for_user(&storage.db_pool, &user.id).await?;
 
     Ok(Json(serde_json::json!({
         "apps": user_apps,

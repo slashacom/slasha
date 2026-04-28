@@ -1,19 +1,19 @@
-use crate::{
-    error::{Error, Result},
-    extractors::auth::AuthUser,
-    ssh::regenerate_authorized_keys,
-    state::{AppState, Storage},
-};
 use axum::{
     Json, Router,
     extract::{Path, State},
     routing::{delete, get, post},
 };
-use diesel::prelude::*;
-use models::{schema::ssh_keys, ssh_keys::SshKey};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use slasha_db::{repos::ssh_key::SshKeyRepo, ssh_keys::SshKey};
 use uuid::Uuid;
+
+use crate::{
+    error::Result,
+    extractors::auth::AuthUser,
+    ssh::regenerate_authorized_keys,
+    state::{AppState, Storage},
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -31,11 +31,7 @@ async fn list_ssh_keys(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
 ) -> Result<Json<ListSshKeysResponse>> {
-    let mut conn = storage.db_pool.get()?;
-
-    let keys = ssh_keys::table
-        .filter(ssh_keys::user_id.eq(&user.id))
-        .load::<SshKey>(&mut conn)?;
+    let keys = SshKeyRepo::list_for_user(&storage.db_pool, &user.id).await?;
 
     Ok(Json(ListSshKeysResponse { keys }))
 }
@@ -51,8 +47,6 @@ async fn create_ssh_key(
     AuthUser(user): AuthUser,
     Json(payload): Json<CreateSshKeyRequest>,
 ) -> Result<Json<SshKey>> {
-    let mut conn = storage.db_pool.get()?;
-
     let now = chrono::Utc::now().naive_utc();
     let new_key = SshKey {
         id: Uuid::new_v4().to_string(),
@@ -62,11 +56,9 @@ async fn create_ssh_key(
         created_at: now,
     };
 
-    diesel::insert_into(ssh_keys::table)
-        .values(&new_key)
-        .execute(&mut conn)?;
+    let new_key = SshKeyRepo::create(&storage.db_pool, new_key).await?;
 
-    regenerate_authorized_keys(&storage)?;
+    regenerate_authorized_keys(&storage).await?;
 
     Ok(Json(new_key))
 }
@@ -76,20 +68,9 @@ async fn delete_ssh_key(
     AuthUser(user): AuthUser,
     Path(id): Path<String>,
 ) -> Result<Json<Value>> {
-    let mut conn = storage.db_pool.get()?;
+    SshKeyRepo::delete(&storage.db_pool, &id, &user.id).await?;
 
-    let deleted_rows = diesel::delete(
-        ssh_keys::table
-            .filter(ssh_keys::id.eq(&id))
-            .filter(ssh_keys::user_id.eq(&user.id)),
-    )
-    .execute(&mut conn)?;
-
-    if deleted_rows == 0 {
-        return Err(Error::NotFound("SSH key not found".into()));
-    }
-
-    regenerate_authorized_keys(&storage)?;
+    regenerate_authorized_keys(&storage).await?;
 
     Ok(Json(json!({ "status": "ok" })))
 }

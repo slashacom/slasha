@@ -6,14 +6,13 @@ use axum::{
 };
 use git2::ObjectType;
 use serde::Serialize;
+use slasha_db::repos::app::AppRepo;
 
 use crate::{
     error::{Error, Result},
     extractors::auth::AuthUser,
     state::{AppState, Storage},
 };
-
-use super::utils::lookup_app_for_user;
 
 const MAX_FILE_SIZE: usize = 1024 * 1024;
 
@@ -139,7 +138,7 @@ async fn get_file_tree(
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let repo = git2::Repository::open_bare(&app.repo_path)
         .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to open repository: {}", e)))?;
@@ -170,7 +169,7 @@ async fn get_file_content(
 ) -> Result<impl IntoResponse> {
     tracing::info!("File content: {:#?}", file_path);
 
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let repo = git2::Repository::open_bare(&app.repo_path)
         .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to open repository: {}", e)))?;

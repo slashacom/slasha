@@ -1,30 +1,31 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use bollard::Docker;
-use bollard::models::{
-    ContainerCreateBody, EndpointSettings, HostConfig, NetworkingConfig, PortBinding,
-    RestartPolicy, RestartPolicyNameEnum,
+use bollard::{
+    Docker,
+    models::{
+        ContainerCreateBody, EndpointSettings, HostConfig, NetworkingConfig, PortBinding,
+        RestartPolicy, RestartPolicyNameEnum,
+    },
+    query_parameters::{
+        CreateContainerOptions, RemoveContainerOptionsBuilder, StartContainerOptionsBuilder,
+        StopContainerOptionsBuilder,
+    },
 };
-use bollard::query_parameters::{
-    CreateContainerOptions, RemoveContainerOptionsBuilder, StartContainerOptionsBuilder,
-    StopContainerOptionsBuilder,
+use slasha_db::{
+    DbPool,
+    app::App,
+    deployment::{Deployment, DeploymentStatus},
+    repos::deployment::DeploymentRepo,
 };
-use chrono::Utc;
-use diesel::prelude::*;
-use diesel::sqlite::SqliteConnection;
-use models::app::App;
-use models::deployment::{Deployment, DeploymentStatus};
-use models::schema::deployments;
-
-use super::DeploymentResult;
-use super::logs::{Log, LogManager};
-use super::network::app_network_name;
-use super::port_pool::PortPool;
-use crate::docker::logs::LogKey;
-use crate::error::DeploymentError;
-use diesel::r2d2::{ConnectionManager, Pool};
 use tokio::sync::Notify;
+
+use super::{
+    DeploymentResult,
+    logs::{Log, LogManager},
+    network::app_network_name,
+    port_pool::PortPool,
+};
+use crate::{docker::logs::LogKey, error::DeploymentError};
 
 pub fn app_container_name(app_id: &str, deployment_id: &str) -> String {
     format!("slasha-{}-{}", app_id, deployment_id)
@@ -32,22 +33,6 @@ pub fn app_container_name(app_id: &str, deployment_id: &str) -> String {
 
 fn image_name(app_slug: &str) -> String {
     format!("slasha/{}", app_slug)
-}
-
-pub fn update_deployment_status(
-    conn: &mut SqliteConnection,
-    deployment_id: &str,
-    status: DeploymentStatus,
-) -> DeploymentResult<()> {
-    diesel::update(deployments::table.filter(deployments::id.eq(deployment_id)))
-        .set((
-            deployments::status.eq(status.to_string()),
-            deployments::updated_at.eq(Utc::now().naive_utc()),
-        ))
-        .execute(conn)
-        .map_err(DeploymentError::DatabaseError)?;
-
-    Ok(())
 }
 
 async fn get_container_host_port(docker_client: &Docker, name: &str) -> DeploymentResult<u16> {
@@ -73,7 +58,7 @@ async fn get_container_host_port(docker_client: &Docker, name: &str) -> Deployme
 
 pub async fn phase_run(
     docker_client: &Docker,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    db_pool: &DbPool,
     port_pool: &Arc<PortPool>,
     proxy_reconcile: &Arc<Notify>,
     log: &Log,
@@ -112,8 +97,6 @@ pub async fn phase_run(
         }),
         ..Default::default()
     };
-
-    let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
 
     let env: Option<Vec<String>> = if env_map.is_empty() {
         None
@@ -162,7 +145,7 @@ pub async fn phase_run(
         .await
         .map_err(DeploymentError::DockerApi)?;
 
-    update_deployment_status(&mut conn, &deployment_id, DeploymentStatus::Running)?;
+    DeploymentRepo::update_status(db_pool, &deployment_id, DeploymentStatus::Running).await?;
 
     proxy_reconcile.notify_one();
 
@@ -189,7 +172,7 @@ pub async fn phase_run(
 
 pub async fn stop_deployment_container(
     docker_client: &Docker,
-    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    db_pool: &DbPool,
     port_pool: &Arc<PortPool>,
     proxy_reconcile: &Arc<Notify>,
     log_manager: &LogManager,
@@ -220,8 +203,7 @@ pub async fn stop_deployment_container(
         deployment_id: deployment.id.clone(),
     });
 
-    let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
-    update_deployment_status(&mut conn, &deployment.id, DeploymentStatus::Stopped)?;
+    DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Stopped).await?;
 
     proxy_reconcile.notify_one();
 

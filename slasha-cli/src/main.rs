@@ -4,12 +4,13 @@ mod clap_app;
 pub mod config;
 pub mod http;
 
+use clap::Parser;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
 use crate::{
     clap_app::{AppsCommand, ClapApp, Command},
     config::Config,
 };
-use clap::Parser;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
