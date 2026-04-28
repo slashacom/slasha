@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Database,
@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   XCircle,
   CircleDashed,
+  Terminal,
   Trash2,
   Server,
   Plus,
@@ -27,6 +28,7 @@ import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
 import { formatRelativeTime } from '~/utils/format';
+import { getAuthToken } from '~/utils/jwt';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -41,6 +43,10 @@ import { EnvEditor, ServiceEnvEditor } from '~/components/apps/env-editor';
 export function ServicesView({ appSlug }: { appSlug: string }) {
   const { data, isLoading } = useQuery(getAppServicesOptions(appSlug));
   const [isProvisionModalOpen, setProvisionModalOpen] = useState(false);
+  const [activeLogsId, setActiveLogsId] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const services = data?.services ?? [];
 
@@ -106,6 +112,9 @@ export function ServicesView({ appSlug }: { appSlug: string }) {
                 key={service.id}
                 service={service}
                 appSlug={appSlug}
+                onShowLogs={() =>
+                  setActiveLogsId({ id: service.id, name: service.name })
+                }
               />
             ))}
           </div>
@@ -116,6 +125,14 @@ export function ServicesView({ appSlug }: { appSlug: string }) {
         <ProvisionServiceModal
           appSlug={appSlug}
           onClose={() => setProvisionModalOpen(false)}
+        />
+      )}
+      {activeLogsId && (
+        <ServiceLogModal
+          serviceId={activeLogsId.id}
+          serviceName={activeLogsId.name}
+          appSlug={appSlug}
+          onClose={() => setActiveLogsId(null)}
         />
       )}
     </div>
@@ -166,9 +183,11 @@ function StatusBadge({ status }: { status: ServiceStatus }) {
 function ServiceRow({
   service,
   appSlug,
+  onShowLogs,
 }: {
   service: Service;
   appSlug: string;
+  onShowLogs: () => void;
 }) {
   const queryClient = useQueryClient();
   const stopService = useStopService();
@@ -230,6 +249,14 @@ function ServiceRow({
         </VStack>
 
         <HStack space={2}>
+          <Button
+            label="Logs"
+            icon={<Terminal className="size-3.5" />}
+            variant="ghost"
+            size="sm"
+            color="neutral"
+            onClick={onShowLogs}
+          />
           {(service.status === 'Running' ||
             service.status === 'Provisioning') && (
             <Button
@@ -453,5 +480,104 @@ function ServiceConfigModal({
         />
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ServiceLogModal({
+  serviceId,
+  serviceName,
+  appSlug,
+  onClose,
+}: {
+  serviceId: string;
+  serviceName: string;
+  appSlug: string;
+  onClose: () => void;
+}) {
+  const [logs, setLogs] = useState<string[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const token = getAuthToken();
+    const url = `/api/apps/${appSlug}/services/${serviceId}/logs?token=${token}`;
+    const es = new EventSource(url);
+
+    es.onmessage = (event) => {
+      const data = event.data;
+      if (data) {
+        setLogs((prev) => [...prev, data]);
+      }
+    };
+
+    es.onerror = (e) => {
+      console.error('SSE Stream error:', e);
+    };
+
+    return () => {
+      es.close();
+    };
+  }, [appSlug, serviceId]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [logs]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-8 backdrop-blur-sm">
+      <div
+        ref={containerRef}
+        className="flex h-full w-full max-w-4xl flex-col rounded-lg border border-border bg-bg shadow-2xl"
+      >
+        <HStack
+          justifyContent="between"
+          className="shrink-0 border-b border-border p-4"
+        >
+          <HStack space={3}>
+            <Terminal className="size-4 text-text-tertiary" />
+            <h3 className="text-sm font-semibold text-text">
+              Service Logs — {serviceName}
+            </h3>
+          </HStack>
+          <Button label="Close" variant="ghost" size="sm" onClick={onClose} />
+        </HStack>
+
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-auto bg-black/40 p-6 font-mono text-[13px] leading-relaxed selection:bg-white/10"
+        >
+          {logs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-text-tertiary">
+              <CircleDashed className="size-5 animate-spin" />
+              <p>Establishing log stream...</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {logs.map((log, i) => (
+                <div
+                  key={i}
+                  className="text-text-secondary whitespace-pre-wrap break-all"
+                >
+                  <span className="text-text-tertiary mr-3 select-none">
+                    {i + 1}
+                  </span>
+                  {log}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

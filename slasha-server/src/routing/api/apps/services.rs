@@ -3,19 +3,27 @@ use std::collections::HashMap;
 use axum::{
     Json, Router,
     extract::{Path, State},
-    response::IntoResponse,
+    response::{
+        IntoResponse,
+        sse::{Event, KeepAlive, Sse},
+    },
     routing::{delete, get, post},
 };
 use chrono::Utc;
 use diesel::prelude::*;
+use futures_util::{StreamExt, stream};
 use serde::Deserialize;
+use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
 use crate::{
-    docker::services::{delete_service, provision_service, stop_service},
+    docker::{
+        logs::LogKey,
+        services::{delete_service, provision_service, stop_service},
+    },
     error::{Error, Result},
     extractors::auth::AuthUser,
-    state::{AppState, Clients, Storage},
+    state::{AppState, Clients, Runtime, Storage},
 };
 
 use super::utils::lookup_app_for_user;
@@ -29,6 +37,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_services))
         .route("/", post(create_service))
+        .route("/{id}/logs", get(stream_logs))
         .route("/{id}/stop", post(stop_service_handler))
         .route("/{id}", delete(delete_service_handler))
 }
@@ -62,6 +71,7 @@ async fn list_services(
 async fn create_service(
     State(clients): State<Clients>,
     State(storage): State<Storage>,
+    State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
     Json(payload): Json<CreateServiceReq>,
@@ -101,6 +111,7 @@ async fn create_service(
 
     let clients_clone = clients.clone();
     let storage_clone = storage.clone();
+    let runtime_clone = runtime.clone();
     let app_clone = app.clone();
     let service_clone = new_service.clone();
     let env_vars_clone = payload.env_vars.clone();
@@ -108,7 +119,8 @@ async fn create_service(
     tokio::spawn(async move {
         if let Err(e) = provision_service(
             &clients_clone.docker,
-            &storage_clone,
+            &storage_clone.db_pool,
+            &runtime_clone.log_manager,
             &app_clone,
             &service_clone,
             env_vars_clone,
@@ -134,6 +146,7 @@ async fn create_service(
 async fn stop_service_handler(
     State(clients): State<Clients>,
     State(storage): State<Storage>,
+    State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
@@ -151,9 +164,15 @@ async fn stop_service_handler(
         return Err(Error::BadRequest("Service is not running".into()));
     }
 
-    stop_service(&clients.docker, &storage, &svc)
-        .await
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to stop service: {}", e)))?;
+    stop_service(
+        &clients.docker,
+        &storage.db_pool,
+        &runtime.log_manager,
+        &app,
+        &svc,
+    )
+    .await
+    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to stop service: {}", e)))?;
 
     Ok(Json(serde_json::json!({ "stopped": true })))
 }
@@ -161,6 +180,7 @@ async fn stop_service_handler(
 async fn delete_service_handler(
     State(clients): State<Clients>,
     State(storage): State<Storage>,
+    State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse> {
@@ -180,9 +200,62 @@ async fn delete_service_handler(
         ));
     }
 
-    delete_service(&clients.docker, &storage, &svc)
-        .await
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to delete service: {}", e)))?;
+    delete_service(
+        &clients.docker,
+        &storage.db_pool,
+        &runtime.log_manager,
+        &app,
+        &svc,
+    )
+    .await
+    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to delete service: {}", e)))?;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+async fn stream_logs(
+    State(storage): State<Storage>,
+    State(runtime): State<Runtime>,
+    AuthUser(user): AuthUser,
+    Path((slug, id)): Path<(String, String)>,
+) -> Result<
+    Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
+> {
+    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+
+    let mut conn = storage.db_pool.get()?;
+
+    let svc = services::table
+        .filter(services::id.eq(&id))
+        .filter(services::app_id.eq(&app.id))
+        .first::<Service>(&mut conn)
+        .optional()?
+        .ok_or_else(|| Error::NotFound(format!("Service '{}' not found", id)))?;
+
+    let log = runtime
+        .log_manager
+        .get_logger(&LogKey::Service {
+            app_slug: app.slug.clone(),
+            service_name: svc.name.clone(),
+        })
+        .await
+        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to get logger: {}", e)))?;
+
+    let historical = log.get_historical().await?;
+
+    let historical_stream = stream::iter(
+        historical
+            .into_iter()
+            .map(|msg| Ok(Event::default().data(msg))),
+    );
+
+    let rx = log.subscribe();
+    let live_stream = BroadcastStream::new(rx).map(|res| match res {
+        Ok(msg) => Ok(Event::default().data(msg)),
+        Err(e) => Ok(Event::default().event("error").data(e.to_string())),
+    });
+
+    let combined = historical_stream.chain(live_stream);
+
+    Ok(Sse::new(combined).keep_alive(KeepAlive::default()))
 }

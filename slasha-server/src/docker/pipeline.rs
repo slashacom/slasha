@@ -15,9 +15,14 @@ use super::build::{
 };
 use super::network::app_network_name;
 use super::run::{app_container_name, phase_run, update_deployment_status};
-use crate::docker::env::{EnvRef, RefSource, parse_env_ref};
+use crate::docker::env::{RefSource, resolve_env_value, topo_sort_vars};
+use crate::docker::logs::{Log, LogKey};
+use crate::docker::port_pool::PortPool;
+use crate::docker::services::service_container_name;
 use crate::error::DeploymentError;
 use crate::state::{Runtime, Storage};
+use std::sync::Arc;
+use tokio::sync::Notify;
 
 const DEFAULT_RAILPACK_CONTAINER_PORT: u16 = 8080;
 
@@ -28,65 +33,62 @@ pub fn resolve_app_env(
 ) -> DeploymentResult<HashMap<String, String>> {
     let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
 
-    let vars: Vec<AppEnvVar> = app_env_vars::table
-        .filter(app_env_vars::app_id.eq(&app.id))
-        .order(app_env_vars::key.asc())
-        .load(&mut conn)?;
+    let sorted_vars = topo_sort_vars(
+        app_env_vars::table
+            .filter(app_env_vars::app_id.eq(&app.id))
+            .order(app_env_vars::key.asc())
+            .load::<AppEnvVar>(&mut conn)?,
+        |v| &v.key,
+        |v| &v.value,
+    )?;
 
     let app_services: Vec<Service> = services::table
         .filter(services::app_id.eq(&app.id))
         .load(&mut conn)?;
 
-    let raw_app_env: HashMap<String, String> = vars
-        .iter()
-        .map(|v| (v.key.clone(), v.value.clone()))
-        .collect();
+    let mut resolved: HashMap<String, String> = HashMap::with_capacity(sorted_vars.len());
 
-    let mut resolved: HashMap<String, String> = HashMap::with_capacity(vars.len());
+    for var in sorted_vars {
+        let value = resolve_env_value(&var.value, |source, key| match source {
+            RefSource::Own => Ok(resolved.get(key).unwrap().clone()),
 
-    for var in &vars {
-        let value = match parse_env_ref(&var.value) {
-            EnvRef::Literal => var.value.clone(),
-
-            EnvRef::Ref(RefSource::Own, key) => raw_app_env
-                .get(&key)
-                .cloned()
-                .ok_or_else(|| DeploymentError::EnvResolveFailed(key))?,
-
-            EnvRef::Ref(RefSource::System, key) => match key.as_str() {
-                "app_container_name" => app_container_name(&app.id, &deployment.id),
-                "app_id" => app.id.clone(),
-                "app_name" => app.name.clone(),
-                "app_slug" => app.slug.clone(),
-                "network_name" => app_network_name(&app.id),
-                _ => {
-                    return Err(DeploymentError::EnvResolveFailed(format!(
-                        "Unknown system key: {}",
-                        key
-                    )));
-                }
+            RefSource::System => match key {
+                "app_container_name" => Ok(app_container_name(&app.id, &deployment.id)),
+                "app_id" => Ok(app.id.clone()),
+                "app_name" => Ok(app.name.clone()),
+                "app_slug" => Ok(app.slug.clone()),
+                "network_name" => Ok(app_network_name(&app.id)),
+                _ => Err(DeploymentError::EnvResolveFailed(format!(
+                    "Unknown system key: {}",
+                    key
+                ))),
             },
 
-            EnvRef::Ref(RefSource::Service(svc_name), env_key) => {
+            RefSource::Service(svc_name) => {
                 let svc = app_services
                     .iter()
-                    .find(|s| s.name == svc_name)
+                    .find(|s| &s.name == svc_name)
                     .ok_or_else(|| DeploymentError::ServiceNotFound(svc_name.clone()))?;
 
                 if svc.status != ServiceStatus::Running {
-                    return Err(DeploymentError::ServiceNotRunning(svc_name));
+                    return Err(DeploymentError::ServiceNotRunning(svc_name.clone()));
                 }
 
-                service_env_vars::table
-                    .filter(service_env_vars::service_id.eq(&svc.id))
-                    .filter(service_env_vars::key.eq(&env_key))
-                    .select(service_env_vars::value)
-                    .first::<String>(&mut conn)
-                    .optional()
-                    .map_err(DeploymentError::DatabaseError)?
-                    .ok_or_else(|| DeploymentError::KeyNotExported(svc_name, env_key))?
+                match key {
+                    "service_container_name" => Ok(service_container_name(&svc.id)),
+                    _ => service_env_vars::table
+                        .filter(service_env_vars::service_id.eq(&svc.id))
+                        .filter(service_env_vars::key.eq(key))
+                        .select(service_env_vars::value)
+                        .first::<String>(&mut conn)
+                        .optional()
+                        .map_err(DeploymentError::DatabaseError)?
+                        .ok_or_else(|| {
+                            DeploymentError::KeyNotExported(svc_name.clone(), key.to_string())
+                        }),
+                }
             }
-        };
+        })?;
 
         resolved.insert(var.key.clone(), value);
     }
@@ -116,17 +118,27 @@ pub async fn run_deployment(
     app: App,
     deployment: Deployment,
 ) -> DeploymentResult<()> {
-    if let Err(e) =
-        run_deployment_inner(&docker_client, &storage, &runtime, &app, &deployment).await
+    let log_key = LogKey::Deployment {
+        app_slug: app.slug.clone(),
+        deployment_id: deployment.id.clone(),
+    };
+
+    let log = runtime.log_manager.get_logger(&log_key).await?;
+
+    if let Err(e) = run_deployment_inner(
+        &docker_client,
+        &storage.db_pool,
+        &runtime.port_pool,
+        &runtime.proxy_reconcile,
+        &app,
+        &deployment,
+        &log,
+    )
+    .await
     {
         tracing::error!("Deployment {} failed: {:?}", deployment.id, e);
-
-        runtime
-            .deployment_broadcaster
-            .send(&deployment.id, format!("Deployment failed: {}", e))
-            .await?;
-
-        runtime.deployment_broadcaster.remove(&deployment.id);
+        log.send(format!("Deployment failed: {}", e)).await?;
+        runtime.log_manager.remove(&log_key);
 
         if let Ok(mut conn) = storage.db_pool.get() {
             let _ = update_deployment_status(&mut conn, &deployment.id, DeploymentStatus::Failed);
@@ -138,21 +150,20 @@ pub async fn run_deployment(
 
 async fn run_deployment_inner(
     docker_client: &Docker,
-    storage: &Storage,
-    runtime: &Runtime,
+    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    port_pool: &Arc<PortPool>,
+    proxy_reconcile: &Arc<Notify>,
     app: &App,
     deployment: &Deployment,
+    log: &Log,
 ) -> DeploymentResult<()> {
-    let broadcaster = &runtime.deployment_broadcaster;
-    let db_pool = &storage.db_pool;
-    let deployment_id = &deployment.id;
     let repo_path = Path::new(&app.repo_path);
 
     let strategy = detect_build_strategy(repo_path, &deployment.commit_sha).await?;
 
     {
         let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
-        update_deployment_status(&mut conn, deployment_id, DeploymentStatus::Building)?;
+        update_deployment_status(&mut conn, &deployment.id, DeploymentStatus::Building)?;
     }
 
     let mut env_map = resolve_app_env(db_pool, app, deployment)?;
@@ -176,22 +187,20 @@ async fn run_deployment_inner(
 
     match strategy {
         BuildStrategy::Dockerfile { content: _ } => {
-            broadcaster
-                .send(
-                    deployment_id,
-                    format!(
-                        "Building image slasha/{}:{} (Dockerfile)",
-                        app.slug, deployment.commit_sha
-                    ),
-                )
-                .await?;
+            log.send(format!(
+                "Building image slasha/{}:{} (Dockerfile)",
+                app.slug, deployment.commit_sha
+            ))
+            .await?;
 
-            phase_build_docker(docker_client, broadcaster, app, deployment).await?;
+            phase_build_docker(docker_client, log, app, deployment).await?;
 
             phase_run(
                 docker_client,
-                storage,
-                runtime,
+                db_pool,
+                port_pool,
+                proxy_reconcile,
+                log,
                 app,
                 deployment,
                 container_port,
@@ -201,22 +210,20 @@ async fn run_deployment_inner(
         }
 
         BuildStrategy::Railpack => {
-            broadcaster
-                .send(
-                    deployment_id,
-                    format!(
-                        "Building image slasha/{}:{} (Railpack)",
-                        app.slug, deployment.commit_sha
-                    ),
-                )
-                .await?;
+            log.send(format!(
+                "Building image slasha/{}:{} (Railpack)",
+                app.slug, deployment.commit_sha
+            ))
+            .await?;
 
-            phase_build_railpack(docker_client, broadcaster, app, deployment).await?;
+            phase_build_railpack(docker_client, log, app, deployment).await?;
 
             phase_run(
                 docker_client,
-                storage,
-                runtime,
+                db_pool,
+                port_pool,
+                proxy_reconcile,
+                log,
                 app,
                 deployment,
                 container_port,

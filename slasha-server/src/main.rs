@@ -42,8 +42,8 @@ fn setup_dirs() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) 
         .join(".slasha");
 
     let db_path = utils::ensure_dir(&data_dir).join("slasha.db");
-    let repos_dir = utils::ensure_dir(&data_dir.join("repos"));
-    let logs_dir = utils::ensure_dir(&data_dir.join("logs"));
+    let repos_dir = utils::ensure_dir(data_dir.join("repos"));
+    let logs_dir = utils::ensure_dir(data_dir.join("logs"));
 
     (db_path, repos_dir, logs_dir)
 }

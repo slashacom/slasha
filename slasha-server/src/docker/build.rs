@@ -13,7 +13,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 
 use super::DeploymentResult;
-use super::broadcaster::DeploymentBroadcaster;
+use super::logs::Log;
 use crate::error::DeploymentError;
 
 pub enum BuildStrategy {
@@ -122,8 +122,7 @@ async fn tag_image_latest(
 
 async fn stream_command_output(
     mut child: tokio::process::Child,
-    broadcaster: &DeploymentBroadcaster,
-    deployment_id: &str,
+    log: &Log,
     phase_label: &str,
 ) -> DeploymentResult<()> {
     let stdout = child.stdout.take().map(BufReader::new);
@@ -131,13 +130,12 @@ async fn stream_command_output(
 
     async fn drain_stdout(
         maybe_reader: Option<BufReader<tokio::process::ChildStdout>>,
-        broadcaster: &DeploymentBroadcaster,
-        deployment_id: &str,
+        log: &Log,
     ) -> DeploymentResult<()> {
         if let Some(reader) = maybe_reader {
             let mut lines = reader.lines();
             while let Some(line) = lines.next_line().await.map_err(DeploymentError::Io)? {
-                broadcaster.send(deployment_id, line).await?;
+                log.send(line).await?;
             }
         }
         Ok(())
@@ -145,22 +143,18 @@ async fn stream_command_output(
 
     async fn drain_stderr(
         maybe_reader: Option<BufReader<tokio::process::ChildStderr>>,
-        broadcaster: &DeploymentBroadcaster,
-        deployment_id: &str,
+        log: &Log,
     ) -> DeploymentResult<()> {
         if let Some(reader) = maybe_reader {
             let mut lines = reader.lines();
             while let Some(line) = lines.next_line().await.map_err(DeploymentError::Io)? {
-                broadcaster.send(deployment_id, line).await?;
+                log.send(line).await?;
             }
         }
         Ok(())
     }
 
-    tokio::try_join!(
-        drain_stdout(stdout, broadcaster, deployment_id),
-        drain_stderr(stderr, broadcaster, deployment_id),
-    )?;
+    tokio::try_join!(drain_stdout(stdout, log), drain_stderr(stderr, log),)?;
 
     let status = child.wait().await.map_err(DeploymentError::Io)?;
     if !status.success() {
@@ -175,13 +169,12 @@ async fn stream_command_output(
 
 pub async fn phase_build_docker(
     docker_client: &Docker,
-    broadcaster: &DeploymentBroadcaster,
+    log: &Log,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
     let repo_path = Path::new(&app.repo_path);
     let commit_sha: String = deployment.commit_sha.clone();
-    let deployment_id: String = deployment.id.clone();
     let image_tag = format!("{}:{}", image_name(&app.slug), commit_sha);
 
     let tar_bytes = build_tar_context(repo_path, &commit_sha).await?;
@@ -201,22 +194,20 @@ pub async fn phase_build_docker(
                 if let Some(line) = info.stream {
                     let line = line.trim_end_matches('\n').to_string();
                     if !line.is_empty() {
-                        broadcaster.send(&deployment_id, line).await?;
+                        log.send(line).await?;
                     }
                 }
                 if let Some(detail) = info.error_detail
                     && let Some(msg_text) = detail.message
                 {
                     let msg = msg_text.trim().to_string();
-                    broadcaster
-                        .send(&deployment_id, format!("Build error: {}", msg))
-                        .await?;
+                    log.send(format!("Build error: {}", msg)).await?;
                     return Err(DeploymentError::BuildFailed(msg));
                 }
             }
             Err(e) => {
                 let msg = format!("Docker error during build: {}", e);
-                broadcaster.send(&deployment_id, msg).await?;
+                log.send(msg).await?;
                 return Err(DeploymentError::DockerApi(e));
             }
         }
@@ -224,45 +215,37 @@ pub async fn phase_build_docker(
 
     tag_image_latest(docker_client, &image_tag, &app.slug).await?;
 
-    broadcaster
-        .send(
-            &deployment_id,
-            format!("Image built and tagged as {}:latest", image_name(&app.slug)),
-        )
-        .await?;
+    log.send(format!(
+        "Image built and tagged as {}:latest",
+        image_name(&app.slug)
+    ))
+    .await?;
 
     Ok(())
 }
 
 pub async fn phase_build_railpack(
     docker_client: &Docker,
-    broadcaster: &DeploymentBroadcaster,
+    log: &Log,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
     let repo_path = Path::new(&app.repo_path);
     let commit_sha = &deployment.commit_sha;
-    let deployment_id = &deployment.id;
     let image_tag = format!("{}:{}", image_name(&app.slug), commit_sha);
 
     let tmp = TempDir::new().map_err(DeploymentError::TempDir)?;
     let tmp_path = tmp.path();
 
-    broadcaster
-        .send(
-            deployment_id,
-            format!("Checking out commit {} to temp dir", commit_sha),
-        )
+    log.send(format!("Checking out commit {} to temp dir", commit_sha))
         .await?;
 
-    checkout_commit_to_dir(&repo_path, &commit_sha, &tmp_path).await?;
+    checkout_commit_to_dir(repo_path, commit_sha, tmp_path).await?;
 
     let plan_path = tmp_path.join("railpack-plan.json");
     let info_path = tmp_path.join("railpack-info.json");
 
-    broadcaster
-        .send(deployment_id, "Running railpack prepare…".to_string())
-        .await?;
+    log.send("Running railpack prepare…").await?;
 
     let prepare_child = TokioCommand::new("railpack")
         .arg("prepare")
@@ -276,19 +259,9 @@ pub async fn phase_build_railpack(
         .spawn()
         .map_err(DeploymentError::Io)?;
 
-    stream_command_output(
-        prepare_child,
-        broadcaster,
-        deployment_id,
-        "railpack prepare",
-    )
-    .await?;
+    stream_command_output(prepare_child, log, "railpack prepare").await?;
 
-    broadcaster
-        .send(
-            deployment_id,
-            "Prepare complete, starting BuildKit build…".to_string(),
-        )
+    log.send("Prepare complete, starting BuildKit build…")
         .await?;
 
     let buildx_child = TokioCommand::new("docker")
@@ -306,22 +279,15 @@ pub async fn phase_build_railpack(
         .spawn()
         .map_err(DeploymentError::Io)?;
 
-    stream_command_output(
-        buildx_child,
-        broadcaster,
-        deployment_id,
-        "docker buildx build",
-    )
-    .await?;
+    stream_command_output(buildx_child, log, "docker buildx build").await?;
 
     tag_image_latest(docker_client, &image_tag, &app.slug).await?;
 
-    broadcaster
-        .send(
-            deployment_id,
-            format!("Image built and tagged as {}:latest", image_name(&app.slug)),
-        )
-        .await?;
+    log.send(format!(
+        "Image built and tagged as {}:latest",
+        image_name(&app.slug)
+    ))
+    .await?;
 
     Ok(())
 }

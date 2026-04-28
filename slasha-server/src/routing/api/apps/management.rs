@@ -174,7 +174,15 @@ async fn delete_app(
         .load(&mut conn)?;
 
     for svc in app_services {
-        if let Err(e) = delete_service(&clients.docker, &storage, &svc).await {
+        if let Err(e) = delete_service(
+            &clients.docker,
+            &storage.db_pool,
+            &runtime.log_manager,
+            &app,
+            &svc,
+        )
+        .await
+        {
             tracing::warn!("Failed to delete service {}: {}", svc.id, e);
         }
     }
@@ -184,7 +192,16 @@ async fn delete_app(
         .load(&mut conn)?;
 
     for dep in deployments {
-        if let Err(e) = delete_deployment_container(&clients.docker, &runtime, &app, &dep).await {
+        if let Err(e) = delete_deployment_container(
+            &clients.docker,
+            &runtime.port_pool,
+            &runtime.proxy_reconcile,
+            &runtime.log_manager,
+            &app,
+            &dep,
+        )
+        .await
+        {
             tracing::warn!(
                 "Failed to delete container for deployment {}: {}",
                 dep.id,
