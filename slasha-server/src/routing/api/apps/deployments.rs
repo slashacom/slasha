@@ -15,8 +15,11 @@ use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
 use crate::{
-    docker::pipeline::run_deployment,
-    docker::run::{delete_deployment_container, stop_deployment_container},
+    docker::{
+        logs::LogKey,
+        pipeline::run_deployment,
+        run::{delete_deployment_container, stop_deployment_container},
+    },
     error::{Error, Result},
     extractors::auth::AuthUser,
     state::{AppState, Clients, Runtime, Storage},
@@ -68,10 +71,14 @@ async fn trigger_deploy(
     Path(slug): Path<String>,
     Json(payload): Json<TriggerDeployReq>,
 ) -> Result<impl IntoResponse> {
+    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
+
     let mut conn = storage.db_pool.get()?;
 
     let is_running: bool = diesel::select(diesel::dsl::exists(
-        deployments::table.filter(deployments::status.eq(DeploymentStatus::Running)),
+        deployments::table
+            .filter(deployments::app_id.eq(&app.id))
+            .filter(deployments::status.eq(DeploymentStatus::Running)),
     ))
     .get_result(&mut conn)?;
 
@@ -80,8 +87,6 @@ async fn trigger_deploy(
             "A deployment is already running".to_string(),
         ));
     }
-
-    let app = lookup_app_for_user(&storage, &slug, &user.id)?;
 
     let (commit_sha, commit_message) = match payload.commit_sha {
         Some(sha) => {
@@ -189,9 +194,17 @@ async fn stop_deployment(
 
     drop(conn);
 
-    stop_deployment_container(&clients.docker, &storage, &runtime, &app, &deployment)
-        .await
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to stop deployment: {}", e)))?;
+    stop_deployment_container(
+        &clients.docker,
+        &storage.db_pool,
+        &runtime.port_pool,
+        &runtime.proxy_reconcile,
+        &runtime.log_manager,
+        &app,
+        &deployment,
+    )
+    .await
+    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to stop deployment: {}", e)))?;
 
     Ok(Json(serde_json::json!({
         "stopped": true,
@@ -217,9 +230,16 @@ async fn restart_deployment(
         .optional()?
         .ok_or_else(|| Error::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
 
-    delete_deployment_container(&clients.docker, &runtime, &app, &deployment)
-        .await
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to clean up container: {}", e)))?;
+    delete_deployment_container(
+        &clients.docker,
+        &runtime.port_pool,
+        &runtime.proxy_reconcile,
+        &runtime.log_manager,
+        &app,
+        &deployment,
+    )
+    .await
+    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to clean up container: {}", e)))?;
 
     let now = Utc::now().naive_utc();
     diesel::update(deployments::table.filter(deployments::id.eq(&deployment.id)))
@@ -265,18 +285,24 @@ async fn stream_logs(
         .optional()?
         .ok_or_else(|| Error::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
 
-    let historical = runtime
-        .deployment_broadcaster
-        .get_historical(&deployment_id)
-        .await;
+    let log = runtime
+        .log_manager
+        .get_logger(&LogKey::Deployment {
+            app_slug: app.slug.clone(),
+            deployment_id,
+        })
+        .await
+        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to get logger: {}", e)))?;
+
+    let historical = log.get_historical().await?;
 
     let historical_stream = stream::iter(
         historical
             .into_iter()
-            .map(|log| Ok(Event::default().data(log))),
+            .map(|msg| Ok(Event::default().data(msg))),
     );
 
-    let rx = runtime.deployment_broadcaster.subscribe(&deployment_id);
+    let rx = log.subscribe();
     let live_stream = BroadcastStream::new(rx).map(|res| match res {
         Ok(msg) => Ok(Event::default().data(msg)),
         Err(e) => Ok(Event::default().event("error").data(e.to_string())),
@@ -305,9 +331,16 @@ async fn delete_deployment(
         .optional()?
         .ok_or_else(|| Error::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
 
-    delete_deployment_container(&clients.docker, &runtime, &app, &deployment)
-        .await
-        .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to clean up container: {}", e)))?;
+    delete_deployment_container(
+        &clients.docker,
+        &runtime.port_pool,
+        &runtime.proxy_reconcile,
+        &runtime.log_manager,
+        &app,
+        &deployment,
+    )
+    .await
+    .map_err(|e| Error::Internal(anyhow::anyhow!("Failed to clean up container: {}", e)))?;
 
     diesel::delete(deployments::table.filter(deployments::id.eq(&deployment.id)))
         .execute(&mut conn)?;

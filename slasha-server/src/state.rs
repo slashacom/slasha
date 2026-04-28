@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Notify;
 
-use crate::docker::broadcaster::DeploymentBroadcaster;
+use crate::docker::logs::LogManager;
 use crate::docker::port_pool::PortPool;
 use crate::proxy::CaddyClient;
 use crate::utils;
@@ -46,7 +46,7 @@ impl Storage {
 #[derive(Clone)]
 pub struct Runtime {
     pub port_pool: Arc<PortPool>,
-    pub deployment_broadcaster: Arc<DeploymentBroadcaster>,
+    pub log_manager: Arc<LogManager>,
     pub proxy_reconcile: Arc<Notify>,
 }
 
@@ -60,9 +60,7 @@ impl Runtime {
     ) -> anyhow::Result<Self> {
         Ok(Self {
             port_pool: Arc::new(PortPool::new(port_start, port_end, docker_client).await?),
-            deployment_broadcaster: Arc::new(DeploymentBroadcaster::new(utils::ensure_dir(
-                &logs_dir.join("deployments"),
-            ))),
+            log_manager: Arc::new(LogManager::new(utils::ensure_dir(logs_dir))),
             proxy_reconcile,
         })
     }

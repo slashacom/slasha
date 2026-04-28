@@ -20,10 +20,11 @@ use models::schema::{service_env_vars, services};
 use models::service::{Service, ServiceEnvVar, ServiceStatus};
 
 use super::DeploymentResult;
-use super::env::{EnvRef, RefSource, parse_env_ref};
+use super::env::RefSource;
+use super::logs::{LogKey, LogManager, stream_container_logs};
 use super::network::app_network_name;
+use crate::docker::env::{resolve_env_value, topo_sort_vars};
 use crate::error::DeploymentError;
-use crate::state::Storage;
 
 pub fn service_container_name(service_id: &str) -> String {
     format!("slasha-svc-{}", service_id)
@@ -55,54 +56,51 @@ pub fn resolve_service_env(
 ) -> DeploymentResult<HashMap<String, String>> {
     let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
 
-    let vars: Vec<ServiceEnvVar> = service_env_vars::table
-        .filter(service_env_vars::service_id.eq(&service.id))
-        .order(service_env_vars::key.asc())
-        .load(&mut conn)?;
+    let sorted_vars: Vec<ServiceEnvVar> = topo_sort_vars(
+        service_env_vars::table
+            .filter(service_env_vars::service_id.eq(&service.id))
+            .order(service_env_vars::key.asc())
+            .load::<ServiceEnvVar>(&mut conn)?,
+        |v| &v.key,
+        |v| &v.value,
+    )?;
 
-    let raw_env: HashMap<String, String> = vars
-        .iter()
-        .map(|v| (v.key.clone(), v.value.clone()))
-        .collect();
+    let mut resolved: HashMap<String, String> = HashMap::with_capacity(sorted_vars.len());
 
-    let mut resolved = HashMap::with_capacity(vars.len());
+    for var in sorted_vars {
+        let value = resolve_env_value(&var.value, |source, key| match source {
+            RefSource::Own => Ok(resolved.get(key).unwrap().clone()),
 
-    for var in &vars {
-        let value = match parse_env_ref(&var.value) {
-            EnvRef::Literal => var.value.clone(),
-            EnvRef::Ref(RefSource::Own, key) => raw_env
-                .get(&key)
-                .cloned()
-                .ok_or_else(|| DeploymentError::EnvResolveFailed(key))?,
-            EnvRef::Ref(RefSource::System, key) => match key.as_str() {
-                "service_container_name" => service_container_name(&service.id),
-                "service_id" => service.id.clone(),
-                "service_name" => service.name.clone(),
-                "app_id" => service.app_id.clone(),
-                "network_name" => app_network_name(&service.app_id),
-                _ => {
-                    return Err(DeploymentError::EnvResolveFailed(format!(
-                        "Unknown system key: {}",
-                        key
-                    )));
-                }
+            RefSource::System => match key {
+                "service_container_name" => Ok(service_container_name(&service.id)),
+                "service_id" => Ok(service.id.clone()),
+                "service_name" => Ok(service.name.clone()),
+                "app_id" => Ok(service.app_id.clone()),
+                "network_name" => Ok(app_network_name(&service.app_id)),
+                _ => Err(DeploymentError::EnvResolveFailed(format!(
+                    "Unknown system key: {}",
+                    key
+                ))),
             },
-            _ => var.value.clone(),
-        };
+
+            RefSource::Service(_) => Err(DeploymentError::EnvResolveFailed(
+                "Service references not supported in this context".to_string(),
+            )),
+        })?;
+
         resolved.insert(var.key.clone(), value);
     }
-
     Ok(resolved)
 }
 
 pub async fn provision_service(
     docker_client: &Docker,
-    storage: &Storage,
+    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    log_manager: &LogManager,
     app: &App,
     service: &Service,
     env_vars: HashMap<String, String>,
 ) -> DeploymentResult<()> {
-    let db_pool = &storage.db_pool;
     let image_name = service.kind.docker_image(&service.version);
 
     let mut image_stream = docker_client.create_image(
@@ -220,15 +218,30 @@ pub async fn provision_service(
 
     update_service_status(&mut conn, &service.id, ServiceStatus::Running)?;
 
+    let log_key = LogKey::Service {
+        app_slug: app.slug.clone(),
+        service_name: service.name.clone(),
+    };
+    let log = log_manager.get_logger(&log_key).await?;
+    let docker_clone = docker_client.clone();
+    let container_name_clone = container_name.clone();
+
+    tokio::spawn(async move {
+        if let Err(e) = stream_container_logs(docker_clone, log, container_name_clone).await {
+            tracing::warn!("service log stream ended with error: {:?}", e);
+        }
+    });
+
     Ok(())
 }
 
 pub async fn stop_service(
     docker_client: &Docker,
-    storage: &Storage,
+    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    log_manager: &LogManager,
+    app: &App,
     service: &Service,
 ) -> DeploymentResult<()> {
-    let db_pool = &storage.db_pool;
     let container_name = service_container_name(&service.id);
 
     docker_client
@@ -242,15 +255,21 @@ pub async fn stop_service(
     let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
     update_service_status(&mut conn, &service.id, ServiceStatus::Stopped)?;
 
+    log_manager.remove(&LogKey::Service {
+        app_slug: app.slug.clone(),
+        service_name: service.name.clone(),
+    });
+
     Ok(())
 }
 
 pub async fn delete_service(
     docker_client: &Docker,
-    storage: &Storage,
+    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    log_manager: &LogManager,
+    app: &App,
     service: &Service,
 ) -> DeploymentResult<()> {
-    let db_pool = &storage.db_pool;
     let container_name = service_container_name(&service.id);
     let volume_name = service_volume_name(&service.id);
 
@@ -278,6 +297,11 @@ pub async fn delete_service(
     diesel::delete(services::table.filter(services::id.eq(&service.id)))
         .execute(&mut conn)
         .map_err(DeploymentError::DatabaseError)?;
+
+    log_manager.remove(&LogKey::Service {
+        app_slug: app.slug.clone(),
+        service_name: service.name.clone(),
+    });
 
     Ok(())
 }

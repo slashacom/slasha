@@ -499,9 +499,7 @@ function LogModal({
         >
           <HStack space={3}>
             <Terminal className="size-4 text-text-tertiary" />
-            <h3 className="text-sm font-semibold text-text">
-              Logs — {deploymentId.slice(0, 8)}
-            </h3>
+            <h3 className="text-sm font-semibold text-text">Logs</h3>
           </HStack>
           <Button label="Close" variant="ghost" size="sm" onClick={onClose} />
         </HStack>

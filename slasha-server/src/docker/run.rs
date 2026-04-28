@@ -7,22 +7,24 @@ use bollard::models::{
     RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
-    CreateContainerOptions, LogsOptionsBuilder, RemoveContainerOptionsBuilder,
-    StartContainerOptionsBuilder, StopContainerOptionsBuilder,
+    CreateContainerOptions, RemoveContainerOptionsBuilder, StartContainerOptionsBuilder,
+    StopContainerOptionsBuilder,
 };
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
-use futures_util::StreamExt;
 use models::app::App;
 use models::deployment::{Deployment, DeploymentStatus};
 use models::schema::deployments;
 
 use super::DeploymentResult;
-use super::broadcaster::DeploymentBroadcaster;
+use super::logs::{Log, LogManager};
 use super::network::app_network_name;
+use super::port_pool::PortPool;
+use crate::docker::logs::LogKey;
 use crate::error::DeploymentError;
-use crate::state::{Runtime, Storage};
+use diesel::r2d2::{ConnectionManager, Pool};
+use tokio::sync::Notify;
 
 pub fn app_container_name(app_id: &str, deployment_id: &str) -> String {
     format!("slasha-{}-{}", app_id, deployment_id)
@@ -71,17 +73,15 @@ async fn get_container_host_port(docker_client: &Docker, name: &str) -> Deployme
 
 pub async fn phase_run(
     docker_client: &Docker,
-    storage: &Storage,
-    runtime: &Runtime,
+    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    port_pool: &Arc<PortPool>,
+    proxy_reconcile: &Arc<Notify>,
+    log: &Log,
     app: &App,
     deployment: &Deployment,
     container_port: u16,
     env_map: HashMap<String, String>,
 ) -> DeploymentResult<()> {
-    let db_pool = &storage.db_pool;
-    let broadcaster = &runtime.deployment_broadcaster;
-    let port_pool = &runtime.port_pool;
-
     let deployment_id = deployment.id.clone();
     let host_port = port_pool.allocate().await?;
     let name = app_container_name(&app.id, &deployment_id);
@@ -164,24 +164,21 @@ pub async fn phase_run(
 
     update_deployment_status(&mut conn, &deployment_id, DeploymentStatus::Running)?;
 
-    runtime.proxy_reconcile.notify_one();
+    proxy_reconcile.notify_one();
 
-    let started_msg = format!("Container {} started on host port {}", name, host_port);
-    broadcaster.send(&deployment_id, started_msg).await?;
+    log.send(format!(
+        "Container {} started on host port {}",
+        name, host_port
+    ))
+    .await?;
 
     let docker_clone = docker_client.clone();
-    let broadcaster_clone = broadcaster.clone();
-    let deployment_id_clone = deployment_id.clone();
+    let log_clone = log.clone();
     let name_clone = name.clone();
 
     tokio::spawn(async move {
-        if let Err(e) = stream_runtime_logs(
-            docker_clone,
-            broadcaster_clone,
-            deployment_id_clone,
-            name_clone,
-        )
-        .await
+        if let Err(e) =
+            super::logs::stream_container_logs(docker_clone, log_clone, name_clone).await
         {
             tracing::warn!("log stream ended with error: {:?}", e);
         }
@@ -190,67 +187,21 @@ pub async fn phase_run(
     Ok(())
 }
 
-async fn stream_runtime_logs(
-    docker_client: Docker,
-    broadcaster: Arc<DeploymentBroadcaster>,
-    deployment_id: String,
-    container: String,
-) -> DeploymentResult<()> {
-    let opts = LogsOptionsBuilder::new()
-        .follow(true)
-        .stdout(true)
-        .stderr(true)
-        .build();
-
-    let mut log_stream = docker_client.logs(&container, Some(opts));
-    let mut buffer = String::new();
-
-    while let Some(item) = log_stream.next().await {
-        match item {
-            Ok(output) => {
-                let chunk = output.to_string();
-                buffer.push_str(&chunk);
-
-                while let Some(pos) = buffer.find('\n') {
-                    let line = buffer[..pos].to_string();
-                    buffer.drain(..=pos);
-                    broadcaster.send(&deployment_id, line).await?;
-                }
-            }
-            Err(e) => {
-                let msg = format!(
-                    "Runtime log stream error for deployment {}: {}",
-                    deployment_id, e
-                );
-                tracing::warn!("{}", msg);
-                broadcaster.send(&deployment_id, msg).await?;
-                break;
-            }
-        }
-    }
-
-    if !buffer.is_empty() {
-        broadcaster.send(&deployment_id, buffer).await?;
-    }
-
-    tracing::info!("Runtime log stream ended for deployment {}", deployment_id);
-    broadcaster.remove(&deployment_id);
-
-    Ok(())
-}
-
 pub async fn stop_deployment_container(
     docker_client: &Docker,
-    storage: &Storage,
-    runtime: &Runtime,
+    db_pool: &Pool<ConnectionManager<SqliteConnection>>,
+    port_pool: &Arc<PortPool>,
+    proxy_reconcile: &Arc<Notify>,
+    log_manager: &LogManager,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
-    let pool = &runtime.port_pool;
-    let db_pool = &storage.db_pool;
-    let broadcaster = &runtime.deployment_broadcaster;
-
     let name = app_container_name(&app.id, &deployment.id);
+
+    // container does not exist, do nothing
+    if docker_client.inspect_container(&name, None).await.is_err() {
+        return Ok(());
+    }
 
     let host_port = get_container_host_port(docker_client, &name).await?;
 
@@ -262,26 +213,29 @@ pub async fn stop_deployment_container(
         .await
         .map_err(DeploymentError::DockerApi)?;
 
-    pool.release(host_port).await;
-    broadcaster.remove(&deployment.id);
+    port_pool.release(host_port).await;
+
+    log_manager.remove(&LogKey::Deployment {
+        app_slug: app.slug.clone(),
+        deployment_id: deployment.id.clone(),
+    });
 
     let mut conn = db_pool.get().map_err(DeploymentError::PoolError)?;
     update_deployment_status(&mut conn, &deployment.id, DeploymentStatus::Stopped)?;
 
-    runtime.proxy_reconcile.notify_one();
+    proxy_reconcile.notify_one();
 
     Ok(())
 }
 
 pub async fn delete_deployment_container(
     docker_client: &Docker,
-    runtime: &Runtime,
+    port_pool: &Arc<PortPool>,
+    proxy_reconcile: &Arc<Notify>,
+    log_manager: &LogManager,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
-    let pool = &runtime.port_pool;
-    let broadcaster = &runtime.deployment_broadcaster;
-
     let name = app_container_name(&app.id, &deployment.id);
 
     // container does not exist, do nothing
@@ -304,12 +258,15 @@ pub async fn delete_deployment_container(
         .map_err(DeploymentError::DockerApi)?;
 
     if let Some(port) = host_port {
-        pool.release(port).await;
+        port_pool.release(port).await;
     }
 
-    broadcaster.delete_logs(&deployment.id).await?;
+    log_manager.remove(&LogKey::Deployment {
+        app_slug: app.slug.clone(),
+        deployment_id: deployment.id.clone(),
+    });
 
-    runtime.proxy_reconcile.notify_one();
+    proxy_reconcile.notify_one();
 
     Ok(())
 }
