@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use axum::{
-    Json, Router,
+    Json, Router, middleware,
     extract::State,
     response::IntoResponse,
     routing::{get, post},
@@ -13,15 +15,40 @@ use crate::{
     auth::{TokenPayload, create_jwt, hash_password, verify_password},
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
+    middleware::rate_limit::{RateLimit, RateLimiter, rate_limit_middleware},
     state::{AppState, Config, Storage},
 };
 
 const EXP_TIME: usize = 30 * 24 * 60 * 60;
 
 pub fn router() -> Router<AppState> {
+    let login_limiter = RateLimiter::new(RateLimit {
+        max_requests: 10,
+        window: Duration::from_secs(60),
+    });
+    let signup_limiter = RateLimiter::new(RateLimit {
+        max_requests: 3,
+        window: Duration::from_secs(60),
+    });
+
+    let limited = Router::new()
+        .route(
+            "/signup",
+            post(signup).layer(middleware::from_fn_with_state(
+                signup_limiter,
+                rate_limit_middleware,
+            )),
+        )
+        .route(
+            "/login",
+            post(login).layer(middleware::from_fn_with_state(
+                login_limiter,
+                rate_limit_middleware,
+            )),
+        );
+
     Router::new()
-        .route("/signup", post(signup))
-        .route("/login", post(login))
+        .merge(limited)
         .route("/me", get(me))
         .route("/status", get(status))
 }
