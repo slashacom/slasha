@@ -23,7 +23,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
     proxy::container::ensure_caddy_ready,
-    state::{Clients, Config, Runtime, Storage},
+    state::{Clients, Config, Env, Runtime, Storage},
 };
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../slasha-db/migrations");
@@ -78,7 +78,12 @@ async fn main() -> anyhow::Result<()> {
 
     let (db_path, repos_dir, logs_dir) = setup_dirs();
 
+    let env = Env::from_str_or_default(
+        &std::env::var("SLASHA_ENV").unwrap_or_else(|_| "development".to_string()),
+    );
+
     let config = Config::new(
+        env,
         std::env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
         std::env::var("SLASHA_PLATFORM_DOMAIN").ok(),
         logs_dir.clone(),

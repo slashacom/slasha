@@ -28,7 +28,10 @@ pub async fn reconcile(clients: &Clients, config: &Config) -> ProxyResult<()> {
         .build();
 
     let containers = clients.docker.list_containers(Some(opts)).await?;
-    let mut routes = Vec::new();
+    let mut routes = vec![RouteEntry {
+        domain: platform_domain.clone(),
+        upstream_port: 3000,
+    }];
 
     for container in containers {
         let labels = match &container.labels {
@@ -56,7 +59,7 @@ pub async fn reconcile(clients: &Clients, config: &Config) -> ProxyResult<()> {
         });
     }
 
-    clients.caddy.sync_routes(&routes).await?;
+    clients.caddy.sync_routes(&routes, config.env).await?;
 
     tracing::info!("Reconciled {} proxy routes", routes.len());
 
