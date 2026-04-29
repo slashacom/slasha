@@ -17,7 +17,7 @@ use anyhow::Context;
 use crate::{
     docker::{
         network::{create_app_network, delete_app_network},
-        run::delete_deployment_container,
+        run::{delete_app_volumes, delete_deployment_container},
         services::delete_service,
     },
     error::{HttpError, HttpResult},
@@ -177,6 +177,10 @@ async fn delete_app(
     }
 
     delete_app_network(&clients.docker, &app.id).await?;
+
+    if let Err(e) = delete_app_volumes(&clients.docker, &app.id).await {
+        tracing::warn!("Failed to clean up volumes for app {}: {:?}", app.id, e);
+    }
 
     let repo_path = std::path::Path::new(&app.repo_path);
     if repo_path.exists() {

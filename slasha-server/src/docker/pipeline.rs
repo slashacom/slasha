@@ -102,6 +102,72 @@ pub fn parse_expose(dockerfile_content: &str) -> u16 {
     8080
 }
 
+/// Parse `VOLUME` directives from the **final stage** of a Dockerfile.
+/// Returns each declared mount path as a normalized absolute path.
+///
+/// Handles both syntaxes:
+///   shell form  →  `VOLUME /a /b`
+///   exec form   →  `VOLUME ["/a", "/b"]`
+///
+/// Multi-stage builds: only directives appearing after the last `FROM` are
+/// returned — anything declared in a builder stage doesn't affect the
+/// runtime image and shouldn't be treated as a runtime disk.
+pub fn parse_volumes(dockerfile_content: &str) -> Vec<String> {
+    // Find all VOLUME entries grouped by stage; keep only the final stage.
+    let mut current_stage: Vec<String> = Vec::new();
+
+    for raw in dockerfile_content.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let upper = line.to_uppercase();
+
+        if upper.starts_with("FROM ") {
+            current_stage.clear();
+            continue;
+        }
+
+        if !upper.starts_with("VOLUME") {
+            continue;
+        }
+
+        // Strip the "VOLUME" keyword (handle "VOLUME ", "VOLUME[", "VOLUME\t...")
+        let rest = line["VOLUME".len()..].trim_start();
+
+        let paths = if rest.starts_with('[') {
+            parse_volume_exec_form(rest)
+        } else {
+            parse_volume_shell_form(rest)
+        };
+
+        for p in paths {
+            let p = p.trim().to_string();
+            if !p.is_empty() && !current_stage.contains(&p) {
+                current_stage.push(p);
+            }
+        }
+    }
+
+    current_stage
+}
+
+fn parse_volume_exec_form(s: &str) -> Vec<String> {
+    // VOLUME ["/a", "/b"]  → strip [], split on commas, strip quotes/spaces.
+    let inner = s.trim_start_matches('[').trim_end_matches(']');
+    inner
+        .split(',')
+        .map(|part| part.trim().trim_matches(|c| c == '"' || c == '\'').to_string())
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
+fn parse_volume_shell_form(s: &str) -> Vec<String> {
+    // VOLUME /a /b  → split on whitespace.
+    s.split_whitespace().map(str::to_string).collect()
+}
+
 pub async fn run_deployment(
     docker_client: Docker,
     storage: Storage,
@@ -179,6 +245,11 @@ async fn run_deployment_inner(
         },
     };
 
+    let volume_paths = match &strategy {
+        BuildStrategy::Dockerfile { content } => parse_volumes(content),
+        BuildStrategy::Railpack => Vec::new(),
+    };
+
     match strategy {
         BuildStrategy::Dockerfile { content: _ } => {
             log.send(format!(
@@ -199,6 +270,7 @@ async fn run_deployment_inner(
                 deployment,
                 container_port,
                 env_map,
+                volume_paths,
             )
             .await?;
         }
@@ -222,10 +294,81 @@ async fn run_deployment_inner(
                 deployment,
                 container_port,
                 env_map,
+                volume_paths,
             )
             .await?;
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_volumes_shell_form() {
+        let dockerfile = "FROM alpine\nVOLUME /data /cache\n";
+        assert_eq!(parse_volumes(dockerfile), vec!["/data", "/cache"]);
+    }
+
+    #[test]
+    fn parse_volumes_exec_form() {
+        let dockerfile = "FROM alpine\nVOLUME [\"/data\", \"/cache\"]\n";
+        assert_eq!(parse_volumes(dockerfile), vec!["/data", "/cache"]);
+    }
+
+    #[test]
+    fn parse_volumes_multiple_directives() {
+        let dockerfile = "FROM alpine\nVOLUME /data\nVOLUME /cache\n";
+        assert_eq!(parse_volumes(dockerfile), vec!["/data", "/cache"]);
+    }
+
+    #[test]
+    fn parse_volumes_only_final_stage() {
+        // Volumes from the builder stage shouldn't leak into the runtime image.
+        let dockerfile = "\
+FROM alpine AS builder
+VOLUME /build-cache
+FROM alpine AS runtime
+VOLUME /data
+";
+        assert_eq!(parse_volumes(dockerfile), vec!["/data"]);
+    }
+
+    #[test]
+    fn parse_volumes_dedupes_within_stage() {
+        let dockerfile = "FROM alpine\nVOLUME /data\nVOLUME /data\n";
+        assert_eq!(parse_volumes(dockerfile), vec!["/data"]);
+    }
+
+    #[test]
+    fn parse_volumes_no_volumes() {
+        let dockerfile = "FROM alpine\nEXPOSE 8080\n";
+        assert!(parse_volumes(dockerfile).is_empty());
+    }
+
+    #[test]
+    fn parse_volumes_skips_comments_and_blanks() {
+        let dockerfile = "\
+FROM alpine
+# VOLUME /should-not-be-parsed
+VOLUME /data
+";
+        assert_eq!(parse_volumes(dockerfile), vec!["/data"]);
+    }
+
+    #[test]
+    fn parse_volumes_handles_road_to_style() {
+        // Mirrors ~/Vibecode/road-to/Dockerfile.
+        let dockerfile = "\
+FROM golang:1.25-alpine AS server-build
+FROM node:20-alpine AS web-build
+FROM golang:1.25-alpine AS runtime
+EXPOSE 8080 3000
+VOLUME [\"/app/data\"]
+";
+        assert_eq!(parse_volumes(dockerfile), vec!["/app/data"]);
+    }
 }

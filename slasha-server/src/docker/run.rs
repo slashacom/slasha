@@ -3,14 +3,15 @@ use std::{collections::HashMap, sync::Arc};
 use bollard::{
     Docker,
     models::{
-        ContainerCreateBody, EndpointSettings, HostConfig, NetworkingConfig, PortBinding,
-        RestartPolicy, RestartPolicyNameEnum,
+        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountTypeEnum, NetworkingConfig,
+        PortBinding, RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
     },
     query_parameters::{
-        CreateContainerOptions, RemoveContainerOptionsBuilder, StartContainerOptionsBuilder,
-        StopContainerOptionsBuilder,
+        CreateContainerOptions, ListVolumesOptions, RemoveContainerOptionsBuilder,
+        RemoveVolumeOptions, StartContainerOptionsBuilder, StopContainerOptionsBuilder,
     },
 };
+use sha2::{Digest, Sha256};
 use slasha_db::{
     DbPool,
     app::App,
@@ -33,6 +34,21 @@ pub fn app_container_name(app_id: &str, deployment_id: &str) -> String {
 
 fn image_name(app_slug: &str) -> String {
     format!("slasha/{}", app_slug)
+}
+
+/// Prefix for every volume managed on behalf of an app. Used by both
+/// `app_volume_name` (allocate) and `delete_app_volumes` (cleanup).
+pub fn app_volume_prefix(app_id: &str) -> String {
+    format!("slasha-app-vol-{}-", app_id)
+}
+
+/// Deterministic volume name for `(app_id, mount_path)`. Same path on the
+/// next deploy → same name → Docker reuses the existing volume → state
+/// persists across redeploys.
+fn app_volume_name(app_id: &str, mount_path: &str) -> String {
+    let digest = Sha256::digest(mount_path.as_bytes());
+    let short: String = digest.iter().take(4).map(|b| format!("{:02x}", b)).collect();
+    format!("{}{}", app_volume_prefix(app_id), short)
 }
 
 async fn get_container_host_port(docker_client: &Docker, name: &str) -> DeploymentResult<u16> {
@@ -65,6 +81,7 @@ pub async fn phase_run(
     deployment: &Deployment,
     container_port: u16,
     env_map: HashMap<String, String>,
+    volume_paths: Vec<String>,
 ) -> DeploymentResult<()> {
     let deployment_id = deployment.id.clone();
     let host_port = port_pool.allocate().await?;
@@ -88,12 +105,40 @@ pub async fn phase_run(
     labels.insert("slasha.app_slug".into(), app.slug.clone());
     labels.insert("slasha.host_port".into(), host_port.to_string());
 
+    // Persistent disks: one Docker volume per VOLUME directive in the
+    // Dockerfile. Names are derived deterministically from (app_id,
+    // mount_path) so the same path on the next deploy reuses the same
+    // volume — state survives redeploys.
+    let mut mounts: Vec<Mount> = Vec::with_capacity(volume_paths.len());
+    for path in &volume_paths {
+        let volume_name = app_volume_name(&app.id, path);
+
+        // create_volume is idempotent — Docker no-ops when the named
+        // volume already exists.
+        docker_client
+            .create_volume(VolumeCreateRequest {
+                name: Some(volume_name.clone()),
+                ..Default::default()
+            })
+            .await?;
+
+        mounts.push(Mount {
+            typ: Some(MountTypeEnum::VOLUME),
+            source: Some(volume_name),
+            target: Some(path.clone()),
+            ..Default::default()
+        });
+
+        log.send(format!("Mounted persistent disk at {}", path)).await?;
+    }
+
     let host_config = HostConfig {
         port_bindings: Some(port_bindings),
         restart_policy: Some(RestartPolicy {
             name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
             maximum_retry_count: None,
         }),
+        mounts: if mounts.is_empty() { None } else { Some(mounts) },
         ..Default::default()
     };
 
@@ -244,6 +289,47 @@ pub async fn delete_deployment_container(
     });
 
     proxy_reconcile.notify_one();
+
+    Ok(())
+}
+
+/// Remove every Docker volume slasha created for this app. Called when an
+/// app is deleted, after all of its containers are removed (you can't
+/// remove a volume that's still mounted).
+///
+/// Listing by prefix means this works even for "orphan" volumes — paths
+/// that an old deploy declared but the current Dockerfile no longer
+/// includes. We keep those around during the app's lifetime to avoid
+/// losing data if the user removed VOLUME by mistake; on app deletion
+/// they go too.
+pub async fn delete_app_volumes(docker_client: &Docker, app_id: &str) -> DeploymentResult<()> {
+    let prefix = app_volume_prefix(app_id);
+
+    let mut filters: HashMap<String, Vec<String>> = HashMap::new();
+    filters.insert("name".to_string(), vec![prefix.clone()]);
+
+    let opts = ListVolumesOptions {
+        filters: Some(filters),
+    };
+
+    let response = docker_client.list_volumes(Some(opts)).await?;
+
+    let names: Vec<String> = response
+        .volumes
+        .unwrap_or_default()
+        .into_iter()
+        .map(|v| v.name)
+        .filter(|n| n.starts_with(&prefix))
+        .collect();
+
+    for name in names {
+        if let Err(e) = docker_client
+            .remove_volume(&name, None::<RemoveVolumeOptions>)
+            .await
+        {
+            tracing::warn!("Failed to remove app volume {}: {:?}", name, e);
+        }
+    }
 
     Ok(())
 }
