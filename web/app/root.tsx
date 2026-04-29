@@ -4,8 +4,6 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-  useLocation,
-  useNavigate,
 } from 'react-router';
 import type { Route } from './+types/root';
 
@@ -19,8 +17,6 @@ import { FullPageSpinner } from '~/components/icons/spinner';
 import { NavigationProgress } from '~/components/interface/navigation-progress';
 
 import './styles/global.css';
-import { useEffect } from 'react';
-import { isLoggedIn } from './utils/jwt';
 
 export const links: Route.LinksFunction = () => [
   { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
@@ -35,27 +31,7 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
-const guestRoutes = ['/', '/login', '/register'];
-
 export function Layout({ children }: { children: React.ReactNode }) {
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const isGuestRoute = guestRoutes.includes(location.pathname);
-    const isUser = isLoggedIn();
-
-    if (isUser && isGuestRoute) {
-      navigate('/apps');
-      return;
-    }
-
-    if (!isUser && !isGuestRoute) {
-      navigate('/login');
-      return;
-    }
-  }, [location.pathname]);
-
   return (
     <html lang="en">
       <head>
