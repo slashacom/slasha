@@ -20,8 +20,36 @@ if [[ -S /var/run/docker.sock ]]; then
   fi
 fi
 
-# Run sshd as root in the background. openssh-server's postinstall has already
-# generated host keys at image build time.
+# Persist sshd host keys in the slasha-data named volume. Without this, every
+# image rebuild would generate fresh keys and clients would see "host key
+# changed" warnings on git push — training people to ignore those warnings is
+# a real MITM risk.
+HOST_KEY_DIR=/home/slasha/.slasha/sshd-host-keys
+mkdir -p "$HOST_KEY_DIR"
+chmod 700 "$HOST_KEY_DIR"
+for type in rsa ecdsa ed25519; do
+  key="$HOST_KEY_DIR/ssh_host_${type}_key"
+  if [[ ! -f "$key" ]]; then
+    ssh-keygen -q -t "$type" -N "" -f "$key" -C "slasha-host-${type}"
+  fi
+done
+chown -R slasha:slasha "$HOST_KEY_DIR"
+
+# sshd reads /etc/ssh/sshd_config.d/*.conf in addition to the main config.
+{
+  echo "Port 2222"
+  echo "AllowUsers slasha"
+  echo "PermitRootLogin no"
+  echo "PasswordAuthentication no"
+  echo "ChallengeResponseAuthentication no"
+  echo "KbdInteractiveAuthentication no"
+  echo "PubkeyAuthentication yes"
+  for type in rsa ecdsa ed25519; do
+    echo "HostKey $HOST_KEY_DIR/ssh_host_${type}_key"
+  done
+} > /etc/ssh/sshd_config.d/slasha.conf
+
+# Run sshd as root in the background.
 /usr/sbin/sshd -D &
 
 # Drop privileges and run the HTTP server in the foreground.
