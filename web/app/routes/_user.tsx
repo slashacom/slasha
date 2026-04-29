@@ -1,6 +1,21 @@
-import { Navigate, Outlet, useLocation, useParams } from 'react-router';
+import { Outlet, redirect, useLocation, useParams } from 'react-router';
 import { Sidebar } from '~/components/global/sidebar';
+import { getAuthMeOptions } from '~/queries/auth';
+import { queryClient } from '~/utils/query-client';
 import { isLoggedIn } from '~/utils/jwt';
+
+// Ensure the logged-in user's data is in the React Query cache before the
+// layout (sidebar, user menu) renders. Without this, useQuery initially
+// returns undefined data and the user menu flickers in once the request
+// resolves.
+export async function clientLoader() {
+  if (!isLoggedIn()) {
+    throw redirect('/login');
+  }
+
+  await queryClient.ensureQueryData(getAuthMeOptions());
+  return null;
+}
 
 function usePageTitle() {
   const location = useLocation();
@@ -29,10 +44,6 @@ function usePageTitle() {
 }
 
 export default function UserLayout() {
-  if (!isLoggedIn()) {
-    return <Navigate to="/login" replace />;
-  }
-
   const title = usePageTitle();
   const location = useLocation();
   const params = useParams();
