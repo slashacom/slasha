@@ -24,6 +24,7 @@ impl CaddyClient {
     }
 
     fn build_config(routes: &[RouteEntry], env: Env) -> Value {
+        let security_headers = Self::security_headers(env);
         let mut caddy_routes = Vec::new();
 
         for entry in routes {
@@ -34,6 +35,10 @@ impl CaddyClient {
                     }
                 ],
                 "handle": [
+                    {
+                        "handler": "headers",
+                        "response": { "set": security_headers }
+                    },
                     {
                         "handler": "reverse_proxy",
                         "upstreams": [
@@ -71,6 +76,26 @@ impl CaddyClient {
             "admin": { "listen": "127.0.0.1:2019" },
             "apps": apps,
         })
+    }
+
+    fn security_headers(env: Env) -> Value {
+        let mut headers = serde_json::Map::new();
+        headers.insert("X-Content-Type-Options".into(), json!(["nosniff"]));
+        headers.insert("X-Frame-Options".into(), json!(["DENY"]));
+        headers.insert(
+            "Referrer-Policy".into(),
+            json!(["strict-origin-when-cross-origin"]),
+        );
+        headers.insert("Permissions-Policy".into(), json!(["interest-cohort=()"]));
+        // HSTS only in production — sending it from a self-signed dev cert
+        // pins browsers to a broken HTTPS state.
+        if env.is_production() {
+            headers.insert(
+                "Strict-Transport-Security".into(),
+                json!(["max-age=31536000; includeSubDomains"]),
+            );
+        }
+        Value::Object(headers)
     }
 
     async fn load(&self, config: &Value) -> ProxyResult<()> {
