@@ -7,7 +7,7 @@ use mime_guess;
 use rust_embed::RustEmbed;
 
 #[derive(RustEmbed)]
-#[folder = "../../web/build/client"]
+#[folder = "../web/build/client"]
 pub struct Assets;
 
 pub async fn static_handler(path: Option<axum::extract::Path<String>>) -> impl IntoResponse {
