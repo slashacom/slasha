@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Set up SSH agent (slasha-infra deploy key)
-        uses: webfactory/ssh-agent@v0.9.0
+        uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.INFRA_DEPLOY_KEY }}
 
