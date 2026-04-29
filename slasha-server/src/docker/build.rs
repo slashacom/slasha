@@ -1,11 +1,6 @@
 use std::{path::Path, process::Stdio};
 
-use bollard::{
-    Docker, body_stream,
-    query_parameters::{BuildImageOptionsBuilder, TagImageOptionsBuilder},
-};
-use bytes::Bytes;
-use futures_util::{StreamExt, stream};
+use bollard::{Docker, query_parameters::TagImageOptionsBuilder};
 use slasha_db::{app::App, deployment::Deployment};
 use tempfile::TempDir;
 use tokio::{
@@ -86,21 +81,6 @@ async fn checkout_commit_to_dir(
     Ok(())
 }
 
-async fn build_tar_context(repo_path: &Path, commit_sha: &str) -> DeploymentResult<Bytes> {
-    let out = TokioCommand::new("git")
-        .args(["archive", "--format=tar", commit_sha])
-        .current_dir(repo_path)
-        .output()
-        .await?;
-
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        return Err(DeploymentError::GitArchiveFailed(stderr));
-    }
-
-    Ok(Bytes::from(out.stdout))
-}
-
 async fn tag_image_latest(
     docker_client: &Docker,
     image_tag: &str,
@@ -171,44 +151,30 @@ pub async fn phase_build_docker(
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
     let repo_path = Path::new(&app.repo_path);
-    let commit_sha: String = deployment.commit_sha.clone();
+    let commit_sha = &deployment.commit_sha;
     let image_tag = format!("{}:{}", image_name(&app.slug), commit_sha);
 
-    let tar_bytes = build_tar_context(repo_path, &commit_sha).await?;
-    let tar_body_stream = body_stream(stream::once(async move { tar_bytes }));
+    let tmp = TempDir::new()?;
+    let tmp_path = tmp.path();
 
-    let build_opts = BuildImageOptionsBuilder::new()
-        .t(image_tag.as_str())
-        .rm(true)
-        .forcerm(true)
-        .build();
+    log.send(format!("Checking out commit {} to temp dir", commit_sha))
+        .await?;
 
-    let mut build_stream = docker_client.build_image(build_opts, None, Some(tar_body_stream));
+    checkout_commit_to_dir(repo_path, commit_sha, tmp_path).await?;
 
-    while let Some(item) = build_stream.next().await {
-        match item {
-            Ok(info) => {
-                if let Some(line) = info.stream {
-                    let line = line.trim_end_matches('\n').to_string();
-                    if !line.is_empty() {
-                        log.send(line).await?;
-                    }
-                }
-                if let Some(detail) = info.error_detail
-                    && let Some(msg_text) = detail.message
-                {
-                    let msg = msg_text.trim().to_string();
-                    log.send(format!("Build error: {}", msg)).await?;
-                    return Err(DeploymentError::BuildFailed(msg));
-                }
-            }
-            Err(e) => {
-                let msg = format!("Docker error during build: {}", e);
-                log.send(msg).await?;
-                return Err(e.into());
-            }
-        }
-    }
+    log.send("Starting BuildKit build…").await?;
+
+    let buildx_child = TokioCommand::new("docker")
+        .arg("buildx")
+        .arg("build")
+        .arg(tmp_path)
+        .arg("--output")
+        .arg(format!("type=docker,name={}", image_tag))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    stream_command_output(buildx_child, log, "docker buildx build").await?;
 
     tag_image_latest(docker_client, &image_tag, &app.slug).await?;
 
