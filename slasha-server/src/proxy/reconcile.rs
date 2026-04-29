@@ -28,10 +28,13 @@ pub async fn reconcile(clients: &Clients, config: &Config) -> ProxyResult<()> {
         .build();
 
     let containers = clients.docker.list_containers(Some(opts)).await?;
-    let mut routes = vec![RouteEntry {
-        domain: platform_domain.clone(),
-        upstream_port: 3000,
-    }];
+    let mut routes = Vec::new();
+    if !config.private_mode {
+        routes.push(RouteEntry {
+            domain: platform_domain.clone(),
+            upstream_port: 3000,
+        });
+    }
 
     for container in containers {
         let labels = match &container.labels {

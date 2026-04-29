@@ -81,12 +81,17 @@ async fn main() -> anyhow::Result<()> {
     let env = Env::from_str_or_default(
         &std::env::var("SLASHA_ENV").unwrap_or_else(|_| "development".to_string()),
     );
+    let private_mode = matches!(
+        std::env::var("SLASHA_PRIVATE_MODE").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    );
 
     let config = Config::new(
         env,
         std::env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
         std::env::var("SLASHA_PLATFORM_DOMAIN").ok(),
         logs_dir.clone(),
+        private_mode,
     );
 
     let docker =
