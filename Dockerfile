@@ -14,8 +14,8 @@ WORKDIR /app
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY slasha-server/ ./slasha-server/
-COPY slasha-models/ ./slasha-models/
-COPY slasha-server/git-ssh-handler/ ./slasha-server/git-ssh-handler/
+COPY slasha-cli/ ./slasha-cli/
+COPY slasha-db/ ./slasha-db/
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
@@ -23,8 +23,8 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY slasha-server/ ./slasha-server/
-COPY slasha-models/ ./slasha-models/
-COPY slasha-server/git-ssh-handler/ ./slasha-server/git-ssh-handler/
+COPY slasha-cli/ ./slasha-cli/
+COPY slasha-db/ ./slasha-db/
 COPY --from=frontend-builder /app/web/build/client /app/web/build/client
 RUN cargo build --release -p slasha-server --features bundle \
  && cargo build --release -p git-ssh-handler
@@ -36,13 +36,16 @@ RUN apt-get update && \
 
 RUN mkdir /var/run/sshd \
  && useradd -m slasha \
- && mkdir -p /home/slasha/.ssh \
- && chmod 700 /home/slasha/.ssh \
- && chown -R slasha:slasha /home/slasha/.ssh
+ && install -d -m 0700 -o slasha -g slasha /home/slasha/.ssh \
+ && install -d -m 0755 -o slasha -g slasha /home/slasha/.slasha \
+ && touch /home/slasha/.ssh/.keep /home/slasha/.slasha/.keep \
+ && chown slasha:slasha /home/slasha/.ssh/.keep /home/slasha/.slasha/.keep \
+ && echo "Port 2222" > /etc/ssh/sshd_config.d/slasha.conf
 
 COPY --from=builder /app/target/release/slasha-server /usr/local/bin/slasha-server
 COPY --from=builder /app/target/release/slasha-git-ssh-handler /usr/local/bin/slasha-git-ssh-handler
-RUN chmod +x /usr/local/bin/slasha-server /usr/local/bin/slasha-git-ssh-handler
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/slasha-server /usr/local/bin/slasha-git-ssh-handler /usr/local/bin/docker-entrypoint.sh
 
-EXPOSE 3000 22
-CMD ["/bin/bash", "-c", "/usr/sbin/sshd -D & exec su -s /bin/bash slasha -c 'exec slasha-server'"]
+EXPOSE 3000 2222
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

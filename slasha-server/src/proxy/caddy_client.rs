@@ -4,6 +4,7 @@ use reqwest::Client;
 use serde_json::{Value, json};
 
 use super::{ProxyError, ProxyResult};
+use crate::state::Env;
 
 #[derive(Clone)]
 pub struct CaddyClient {
@@ -17,12 +18,12 @@ pub struct RouteEntry {
 }
 
 impl CaddyClient {
-    pub async fn sync_routes(&self, routes: &[RouteEntry]) -> ProxyResult<()> {
-        let config = Self::build_config(routes);
+    pub async fn sync_routes(&self, routes: &[RouteEntry], env: Env) -> ProxyResult<()> {
+        let config = Self::build_config(routes, env);
         self.load(&config).await
     }
 
-    fn build_config(routes: &[RouteEntry]) -> Value {
+    fn build_config(routes: &[RouteEntry], env: Env) -> Value {
         let mut caddy_routes = Vec::new();
 
         for entry in routes {
@@ -45,33 +46,30 @@ impl CaddyClient {
             }));
         }
 
-        json!({
-            "admin": {
-                "listen": "127.0.0.1:2019"
-            },
-            "apps": {
-                "http": {
-                    "servers": {
-                        "srv0": {
-                            "listen": [":80", ":443"],
-                            "routes": caddy_routes
-                        }
-                    }
-                },
-                "tls": {
-                    "automation": {
-                        "policies": [
-                            {
-                                "issuers": [
-                                    {
-                                        "module": "internal"
-                                    }
-                                ]
-                            }
-                        ]
+        let mut apps = json!({
+            "http": {
+                "servers": {
+                    "srv0": {
+                        "listen": [":80", ":443"],
+                        "routes": caddy_routes
                     }
                 }
             }
+        });
+
+        if !env.is_production() {
+            apps["tls"] = json!({
+                "automation": {
+                    "policies": [
+                        { "issuers": [{ "module": "internal" }] }
+                    ]
+                }
+            });
+        }
+
+        json!({
+            "admin": { "listen": "127.0.0.1:2019" },
+            "apps": apps,
         })
     }
 
