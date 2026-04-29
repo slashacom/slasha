@@ -15,31 +15,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Check out slasha
-        uses: actions/checkout@v4
-
       - name: Set up SSH agent (slasha-infra deploy key)
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.INFRA_DEPLOY_KEY }}
 
-      - name: Check out slasha-infra
+      - name: Clone slasha-infra
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          git clone --depth 1 git@github.com:slashacom/slasha-infra.git ../slasha-infra
-
-      - name: Install prod SSH key
-        env:
-          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
-        run: |
-          install -m 700 -d ~/.ssh
-          install -m 600 /dev/null ~/.ssh/id_ed25519
-          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/id_ed25519
+          git clone --depth 1 git@github.com:slashacom/slasha-infra.git
 
       - name: Deploy
-        working-directory: ../slasha-infra
         env:
-          SLASHA_HOST: ${{ vars.SLASHA_HOST }}
-          SLASHA_SRC: ${{ github.workspace }}
+          SLASHA_REF: ${{ github.sha }}
+        working-directory: slasha-infra
         run: ./deploy.sh
