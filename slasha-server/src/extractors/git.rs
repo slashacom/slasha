@@ -81,8 +81,6 @@ where
             .split_once(':')
             .ok_or(GitError::InvalidCredentials)?;
 
-        tracing::info!("Git auth: {} {}", email, password);
-
         let user = UserRepo::find_by_email(&state.storage.db_pool, email)
             .await?
             .ok_or(GitError::InvalidCredentials)?;
@@ -95,7 +93,7 @@ where
             .await
             .map_err(|_| GitError::RepoNotFound)?;
 
-        tracing::info!("verified user");
+        tracing::info!(user_id = %user.id, app_slug = %app.slug, "git auth ok");
 
         Ok(GitAuth { user, app })
     }
