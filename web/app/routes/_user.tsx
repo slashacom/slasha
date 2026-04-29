@@ -1,5 +1,6 @@
-import { Outlet, useLocation, useParams } from 'react-router';
+import { Navigate, Outlet, useLocation, useParams } from 'react-router';
 import { Sidebar } from '~/components/global/sidebar';
+import { isLoggedIn } from '~/utils/jwt';
 
 function usePageTitle() {
   const location = useLocation();
@@ -28,6 +29,10 @@ function usePageTitle() {
 }
 
 export default function UserLayout() {
+  if (!isLoggedIn()) {
+    return <Navigate to="/login" replace />;
+  }
+
   const title = usePageTitle();
   const location = useLocation();
   const params = useParams();
