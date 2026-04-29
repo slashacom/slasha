@@ -40,7 +40,7 @@ RUN mkdir /var/run/sshd \
  && install -d -m 0755 -o slasha -g slasha /home/slasha/.slasha \
  && touch /home/slasha/.ssh/.keep /home/slasha/.slasha/.keep \
  && chown slasha:slasha /home/slasha/.ssh/.keep /home/slasha/.slasha/.keep \
- && echo "Port 2222" > /etc/ssh/sshd_config.d/slasha.conf
+ && rm -f /etc/ssh/ssh_host_*
 
 COPY --from=builder /app/target/release/slasha-server /usr/local/bin/slasha-server
 COPY --from=builder /app/target/release/slasha-git-ssh-handler /usr/local/bin/slasha-git-ssh-handler
