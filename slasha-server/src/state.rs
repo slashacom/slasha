@@ -93,6 +93,10 @@ pub struct Config {
     pub jwt_secret: String,
     pub platform_domain: Option<String>,
     pub logs_dir: PathBuf,
+    /// When true, the dashboard apex route is omitted from the public Caddy
+    /// proxy. App subdomains stay public; the operator reaches the UI via
+    /// `ssh -L 3000:127.0.0.1:3000` (or any other tunnel).
+    pub private_mode: bool,
 }
 
 impl Config {
@@ -101,12 +105,14 @@ impl Config {
         jwt_secret: String,
         platform_domain: Option<String>,
         logs_dir: PathBuf,
+        private_mode: bool,
     ) -> Self {
         Self {
             env,
             jwt_secret,
             platform_domain,
             logs_dir,
+            private_mode,
         }
     }
 }
