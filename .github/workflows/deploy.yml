@@ -30,4 +30,4 @@ jobs:
         env:
           SLASHA_REF: ${{ github.sha }}
         working-directory: slasha-infra
-        run: ./deploy.sh
+        run: ./scripts/deploy.sh
