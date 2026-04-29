@@ -68,16 +68,42 @@ impl Runtime {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Env {
+    Development,
+    Production,
+}
+
+impl Env {
+    pub fn from_str_or_default(s: &str) -> Self {
+        match s {
+            "production" => Env::Production,
+            _ => Env::Development,
+        }
+    }
+
+    pub fn is_production(self) -> bool {
+        matches!(self, Env::Production)
+    }
+}
+
 #[derive(Clone)]
 pub struct Config {
+    pub env: Env,
     pub jwt_secret: String,
     pub platform_domain: Option<String>,
     pub logs_dir: PathBuf,
 }
 
 impl Config {
-    pub fn new(jwt_secret: String, platform_domain: Option<String>, logs_dir: PathBuf) -> Self {
+    pub fn new(
+        env: Env,
+        jwt_secret: String,
+        platform_domain: Option<String>,
+        logs_dir: PathBuf,
+    ) -> Self {
         Self {
+            env,
             jwt_secret,
             platform_domain,
             logs_dir,
