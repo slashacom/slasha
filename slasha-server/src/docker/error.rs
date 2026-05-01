@@ -1,4 +1,5 @@
 use thiserror::Error;
+
 use crate::error::HttpError;
 
 #[derive(Debug, Error)]
@@ -67,8 +68,12 @@ impl From<DeploymentError> for HttpError {
     fn from(e: DeploymentError) -> Self {
         match e {
             DeploymentError::ServiceNotFound(msg) => HttpError::not_found(msg),
-            DeploymentError::ServiceNotRunning(msg) => HttpError::bad_request(format!("Service {} is not running", msg)),
-            DeploymentError::KeyNotExported(svc, key) => HttpError::bad_request(format!("Service {} does not export key {}", svc, key)),
+            DeploymentError::ServiceNotRunning(msg) => {
+                HttpError::bad_request(format!("Service {} is not running", msg))
+            }
+            DeploymentError::KeyNotExported(svc, key) => {
+                HttpError::bad_request(format!("Service {} does not export key {}", svc, key))
+            }
             _ => HttpError::internal(anyhow::anyhow!(e)),
         }
     }

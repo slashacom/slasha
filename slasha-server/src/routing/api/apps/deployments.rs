@@ -19,9 +19,8 @@ use uuid::Uuid;
 
 use crate::{
     docker::{
+        deployment::{delete_deployment_container, run_deployment, stop_deployment_container},
         logs::LogKey,
-        pipeline::run_deployment,
-        run::{delete_deployment_container, stop_deployment_container},
     },
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,

@@ -8,7 +8,7 @@ use bollard::{
     },
     query_parameters::{
         CreateContainerOptions, CreateImageOptions, RemoveContainerOptionsBuilder,
-        StartContainerOptionsBuilder, StopContainerOptionsBuilder,
+        StartContainerOptionsBuilder,
     },
 };
 use chrono::Utc;
@@ -20,21 +20,16 @@ use slasha_db::{
     service::{Service, ServiceEnvVar, ServiceStatus},
 };
 
-use super::{
-    DeploymentError, DeploymentResult,
-    env::RefSource,
-    logs::{LogKey, LogManager, stream_container_logs},
-    network::app_network_name,
+use crate::{
+    docker::{
+        DeploymentError, DeploymentResult,
+        env::{RefSource, resolve_env_value, topo_sort_vars},
+        logs::{Log, LogKey, stream_container_logs},
+        naming::{app_network_name, service_container_name, service_volume_name},
+        rollback::Rollback,
+    },
+    state::{Runtime, Storage},
 };
-use crate::docker::env::{resolve_env_value, topo_sort_vars};
-
-pub fn service_container_name(service_id: &str) -> String {
-    format!("slasha-svc-{}", service_id)
-}
-
-fn service_volume_name(service_id: &str) -> String {
-    format!("slasha-vol-{}", service_id)
-}
 
 pub fn resolve_service_env(
     service_vars: Vec<ServiceEnvVar>,
@@ -67,16 +62,61 @@ pub fn resolve_service_env(
 
         resolved.insert(var.key.clone(), value);
     }
+
     Ok(resolved)
 }
 
 pub async fn provision_service(
+    docker_client: Docker,
+    storage: Storage,
+    runtime: Runtime,
+    app: App,
+    service: Service,
+    env_vars: HashMap<String, String>,
+) -> DeploymentResult<()> {
+    let log_key = LogKey::Service {
+        app_slug: app.slug.clone(),
+        service_name: service.name.clone(),
+    };
+    let log = runtime.log_manager.get_logger(&log_key).await?;
+    let mut rollback = Rollback::new();
+
+    if let Err(e) = provision_service_inner(
+        &docker_client,
+        &storage.db_pool,
+        &app,
+        &service,
+        env_vars,
+        &log,
+        &mut rollback,
+    )
+    .await
+    {
+        tracing::error!("Service provision failed: {:?}", e);
+        let _ = log.send(format!("Service provision failed: {}", e)).await;
+
+        rollback.execute().await;
+
+        let _ =
+            ServiceRepo::update_status(&storage.db_pool, &service.id, ServiceStatus::Failed).await;
+        runtime.log_manager.remove(&log_key);
+
+        return Err(e);
+    }
+
+    rollback.disarm();
+
+    Ok(())
+}
+
+async fn provision_service_inner(
     docker_client: &Docker,
     db_pool: &DbPool,
-    log_manager: &LogManager,
     app: &App,
     service: &Service,
     env_vars: HashMap<String, String>,
+    log: &Log,
+    rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
     let image_name = service.kind.docker_image(&service.version);
 
@@ -98,9 +138,23 @@ pub async fn provision_service(
         name: Some(volume_name.clone()),
         ..Default::default()
     };
-    docker_client
-        .create_volume(vol_config)
-        .await?;
+    docker_client.create_volume(vol_config).await?;
+
+    rollback.register({
+        let docker_client = docker_client.clone();
+        let volume_name = volume_name.clone();
+
+        move || {
+            Box::pin(async move {
+                let _ = docker_client
+                    .remove_volume(
+                        &volume_name,
+                        None::<bollard::query_parameters::RemoveVolumeOptions>,
+                    )
+                    .await;
+            })
+        }
+    });
 
     let container_name = service_container_name(&service.id);
     let network_name = app_network_name(&app.id);
@@ -120,7 +174,7 @@ pub async fn provision_service(
     labels.insert("slasha.service_id".to_string(), service.id.clone());
 
     let now = Utc::now().naive_utc();
-    let new_vars: Vec<ServiceEnvVar> = env_vars
+    let initial_vars: Vec<ServiceEnvVar> = env_vars
         .into_iter()
         .map(|(key, value)| ServiceEnvVar {
             id: uuid::Uuid::new_v4().to_string(),
@@ -132,12 +186,32 @@ pub async fn provision_service(
         })
         .collect();
 
+    let resolved_map = resolve_service_env(initial_vars.clone(), service)?;
+
+    let new_vars: Vec<ServiceEnvVar> = resolved_map
+        .clone()
+        .into_iter()
+        .map(|(key, value)| {
+            let id = initial_vars
+                .iter()
+                .find(|v| v.key == key)
+                .unwrap()
+                .id
+                .clone();
+            ServiceEnvVar {
+                id,
+                service_id: service.id.clone(),
+                key,
+                value,
+                created_at: now,
+                updated_at: now,
+            }
+        })
+        .collect();
+
     ServiceRepo::insert_env_vars(db_pool, new_vars).await?;
 
-    let service_vars = ServiceRepo::get_env_vars(db_pool, &service.id).await?;
-    let env_vars = resolve_service_env(service_vars, service)?;
-
-    let internal_env: Vec<String> = env_vars
+    let internal_env: Vec<String> = resolved_map
         .into_iter()
         .map(|(k, v)| format!("{}={}", k, v))
         .collect();
@@ -179,6 +253,22 @@ pub async fn provision_service(
         .create_container(Some(create_opts), config)
         .await?;
 
+    rollback.register({
+        let docker_client = docker_client.clone();
+        let container_name = container_name.clone();
+
+        move || {
+            Box::pin(async move {
+                let _ = docker_client
+                    .remove_container(
+                        &container_name,
+                        Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+                    )
+                    .await;
+            })
+        }
+    });
+
     docker_client
         .start_container(
             &container_name,
@@ -188,78 +278,16 @@ pub async fn provision_service(
 
     ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Running).await?;
 
-    let log_key = LogKey::Service {
-        app_slug: app.slug.clone(),
-        service_name: service.name.clone(),
-    };
-    let log = log_manager.get_logger(&log_key).await?;
-    let docker_clone = docker_client.clone();
-    let container_name_clone = container_name.clone();
+    tokio::spawn({
+        let docker_client = docker_client.clone();
+        let container_name = container_name.clone();
+        let log = log.clone();
 
-    tokio::spawn(async move {
-        if let Err(e) = stream_container_logs(docker_clone, log, container_name_clone).await {
-            tracing::warn!("service log stream ended with error: {:?}", e);
+        async move {
+            if let Err(e) = stream_container_logs(docker_client, log, container_name).await {
+                tracing::warn!("service log stream ended with error: {:?}", e);
+            }
         }
-    });
-
-    Ok(())
-}
-
-pub async fn stop_service(
-    docker_client: &Docker,
-    db_pool: &DbPool,
-    log_manager: &LogManager,
-    app: &App,
-    service: &Service,
-) -> DeploymentResult<()> {
-    let container_name = service_container_name(&service.id);
-
-    docker_client
-        .stop_container(
-            &container_name,
-            Some(StopContainerOptionsBuilder::new().t(10).build()),
-        )
-        .await?;
-
-    ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Stopped).await?;
-
-    log_manager.remove(&LogKey::Service {
-        app_slug: app.slug.clone(),
-        service_name: service.name.clone(),
-    });
-
-    Ok(())
-}
-
-pub async fn delete_service(
-    docker_client: &Docker,
-    db_pool: &DbPool,
-    log_manager: &LogManager,
-    app: &App,
-    service: &Service,
-) -> DeploymentResult<()> {
-    let container_name = service_container_name(&service.id);
-    let volume_name = service_volume_name(&service.id);
-
-    docker_client
-        .remove_container(
-            &container_name,
-            Some(RemoveContainerOptionsBuilder::new().force(true).build()),
-        )
-        .await?;
-
-    docker_client
-        .remove_volume(
-            &volume_name,
-            None::<bollard::query_parameters::RemoveVolumeOptions>,
-        )
-        .await?;
-
-    ServiceRepo::delete(db_pool, &service.id).await?;
-
-    log_manager.remove(&LogKey::Service {
-        app_slug: app.slug.clone(),
-        service_name: service.name.clone(),
     });
 
     Ok(())

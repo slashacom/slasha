@@ -1,3 +1,4 @@
+use anyhow::Context;
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -12,13 +13,12 @@ use slasha_db::{
 };
 use tokio::process::Command;
 use uuid::Uuid;
-use anyhow::Context;
 
 use crate::{
     docker::{
+        deployment::{delete_app_volumes, delete_deployment_container},
         network::{create_app_network, delete_app_network},
-        run::{delete_app_volumes, delete_deployment_container},
-        services::delete_service,
+        service::delete_service,
     },
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,

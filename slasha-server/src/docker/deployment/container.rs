@@ -11,7 +11,6 @@ use bollard::{
         RemoveVolumeOptions, StartContainerOptionsBuilder, StopContainerOptionsBuilder,
     },
 };
-use sha2::{Digest, Sha256};
 use slasha_db::{
     DbPool,
     app::App,
@@ -20,41 +19,15 @@ use slasha_db::{
 };
 use tokio::sync::Notify;
 
-use super::{
+use crate::docker::{
     DeploymentError, DeploymentResult,
-    logs::{Log, LogManager},
-    network::app_network_name,
+    logs::{Log, LogKey, LogManager, stream_container_logs},
+    naming::{app_container_name, app_network_name, app_volume_name, app_volume_prefix},
     port_pool::PortPool,
 };
-use crate::docker::logs::LogKey;
-
-pub fn app_container_name(app_id: &str, deployment_id: &str) -> String {
-    format!("slasha-{}-{}", app_id, deployment_id)
-}
-
-fn image_name(app_slug: &str) -> String {
-    format!("slasha/{}", app_slug)
-}
-
-/// Prefix for every volume managed on behalf of an app. Used by both
-/// `app_volume_name` (allocate) and `delete_app_volumes` (cleanup).
-pub fn app_volume_prefix(app_id: &str) -> String {
-    format!("slasha-app-vol-{}-", app_id)
-}
-
-/// Deterministic volume name for `(app_id, mount_path)`. Same path on the
-/// next deploy → same name → Docker reuses the existing volume → state
-/// persists across redeploys.
-fn app_volume_name(app_id: &str, mount_path: &str) -> String {
-    let digest = Sha256::digest(mount_path.as_bytes());
-    let short: String = digest.iter().take(4).map(|b| format!("{:02x}", b)).collect();
-    format!("{}{}", app_volume_prefix(app_id), short)
-}
 
 async fn get_container_host_port(docker_client: &Docker, name: &str) -> DeploymentResult<u16> {
-    let info = docker_client
-        .inspect_container(name, None)
-        .await?;
+    let info = docker_client.inspect_container(name, None).await?;
 
     info.network_settings
         .and_then(|ns| ns.ports)
@@ -71,22 +44,19 @@ async fn get_container_host_port(docker_client: &Docker, name: &str) -> Deployme
         })
 }
 
-pub async fn phase_run(
+pub async fn create_deployment_container(
     docker_client: &Docker,
-    db_pool: &DbPool,
     port_pool: &Arc<PortPool>,
-    proxy_reconcile: &Arc<Notify>,
-    log: &Log,
     app: &App,
     deployment: &Deployment,
     container_port: u16,
     env_map: HashMap<String, String>,
     volume_paths: Vec<String>,
-) -> DeploymentResult<()> {
+) -> DeploymentResult<(String, u16)> {
     let deployment_id = deployment.id.clone();
     let host_port = port_pool.allocate().await?;
     let name = app_container_name(&app.id, &deployment_id);
-    let image = format!("{}:{}", image_name(&app.slug), deployment.commit_sha);
+    let image = crate::docker::naming::image_tag(&app.slug, &deployment.commit_sha);
 
     let port_key = format!("{}/tcp", container_port);
     let mut port_bindings: HashMap<String, Option<Vec<PortBinding>>> = HashMap::new();
@@ -105,16 +75,9 @@ pub async fn phase_run(
     labels.insert("slasha.app_slug".into(), app.slug.clone());
     labels.insert("slasha.host_port".into(), host_port.to_string());
 
-    // Persistent disks: one Docker volume per VOLUME directive in the
-    // Dockerfile. Names are derived deterministically from (app_id,
-    // mount_path) so the same path on the next deploy reuses the same
-    // volume — state survives redeploys.
     let mut mounts: Vec<Mount> = Vec::with_capacity(volume_paths.len());
     for path in &volume_paths {
         let volume_name = app_volume_name(&app.id, path);
-
-        // create_volume is idempotent — Docker no-ops when the named
-        // volume already exists.
         docker_client
             .create_volume(VolumeCreateRequest {
                 name: Some(volume_name.clone()),
@@ -128,8 +91,6 @@ pub async fn phase_run(
             target: Some(path.clone()),
             ..Default::default()
         });
-
-        log.send(format!("Mounted persistent disk at {}", path)).await?;
     }
 
     let host_config = HostConfig {
@@ -138,7 +99,11 @@ pub async fn phase_run(
             name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
             maximum_retry_count: None,
         }),
-        mounts: if mounts.is_empty() { None } else { Some(mounts) },
+        mounts: if mounts.is_empty() {
+            None
+        } else {
+            Some(mounts)
+        },
         ..Default::default()
     };
 
@@ -183,29 +148,44 @@ pub async fn phase_run(
         .create_container(Some(create_opts), container_config)
         .await?;
 
+    Ok((name, host_port))
+}
+
+pub async fn start_deployment_container(
+    docker_client: &Docker,
+    db_pool: &DbPool,
+    proxy_reconcile: &Arc<Notify>,
+    log: &Log,
+    deployment_id: &str,
+    container_name: &str,
+    host_port: u16,
+) -> DeploymentResult<()> {
     docker_client
-        .start_container(&name, Some(StartContainerOptionsBuilder::new().build()))
+        .start_container(
+            container_name,
+            Some(StartContainerOptionsBuilder::new().build()),
+        )
         .await?;
 
-    DeploymentRepo::update_status(db_pool, &deployment_id, DeploymentStatus::Running).await?;
+    DeploymentRepo::update_status(db_pool, deployment_id, DeploymentStatus::Running).await?;
 
     proxy_reconcile.notify_one();
 
     log.send(format!(
         "Container {} started on host port {}",
-        name, host_port
+        container_name, host_port
     ))
     .await?;
 
-    let docker_clone = docker_client.clone();
-    let log_clone = log.clone();
-    let name_clone = name.clone();
+    tokio::spawn({
+        let docker_client = docker_client.clone();
+        let log = log.clone();
+        let container_name = container_name.to_string();
 
-    tokio::spawn(async move {
-        if let Err(e) =
-            super::logs::stream_container_logs(docker_clone, log_clone, name_clone).await
-        {
-            tracing::warn!("log stream ended with error: {:?}", e);
+        async move {
+            if let Err(e) = stream_container_logs(docker_client, log, container_name).await {
+                tracing::warn!("log stream ended with error: {:?}", e);
+            }
         }
     });
 
@@ -293,15 +273,6 @@ pub async fn delete_deployment_container(
     Ok(())
 }
 
-/// Remove every Docker volume slasha created for this app. Called when an
-/// app is deleted, after all of its containers are removed (you can't
-/// remove a volume that's still mounted).
-///
-/// Listing by prefix means this works even for "orphan" volumes — paths
-/// that an old deploy declared but the current Dockerfile no longer
-/// includes. We keep those around during the app's lifetime to avoid
-/// losing data if the user removed VOLUME by mistake; on app deletion
-/// they go too.
 pub async fn delete_app_volumes(docker_client: &Docker, app_id: &str) -> DeploymentResult<()> {
     let prefix = app_volume_prefix(app_id);
 
