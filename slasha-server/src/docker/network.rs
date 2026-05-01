@@ -1,10 +1,6 @@
 use bollard::{Docker, models::NetworkCreateRequest};
 
-use super::{DeploymentError, DeploymentResult};
-
-pub fn app_network_name(app_id: &str) -> String {
-    format!("slasha-{}", app_id)
-}
+use super::{DeploymentError, DeploymentResult, naming::app_network_name};
 
 pub async fn create_app_network(docker_client: &Docker, app_id: &str) -> DeploymentResult<()> {
     let network_name = app_network_name(app_id);

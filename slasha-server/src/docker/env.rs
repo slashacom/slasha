@@ -5,7 +5,7 @@ use regex::Regex;
 
 use super::{DeploymentError, DeploymentResult};
 
-static ENV_REF_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\{\{([^}]*)\}\}").unwrap());
+static ENV_REF_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\{\{([^}]*)\}\}").unwrap());
 
 pub enum RefSource {
     Own,
@@ -38,7 +38,7 @@ fn parse_single_ref(s: &str) -> EnvToken {
 fn collect_own_refs(value: &str) -> Vec<&str> {
     let mut refs = Vec::new();
 
-    for cap in ENV_REF_RE.captures_iter(value) {
+    for cap in ENV_REF_REGEX.captures_iter(value) {
         let inner = cap.get(1).unwrap().as_str().trim();
         if !inner.contains('.') {
             refs.push(inner);
@@ -48,7 +48,8 @@ fn collect_own_refs(value: &str) -> Vec<&str> {
     refs
 }
 
-// resolves vars in dependency order so Own refs are always available when needed
+// resolves vars in dependency order so Own refs are always available when
+// needed
 pub fn topo_sort_vars<V: Clone>(
     vars: Vec<V>,
     key_fn: impl Fn(&V) -> &str,
@@ -120,7 +121,7 @@ pub fn resolve_env_value(
     let mut result = String::with_capacity(value.len());
     let mut last = 0;
 
-    for cap in ENV_REF_RE.captures_iter(value) {
+    for cap in ENV_REF_REGEX.captures_iter(value) {
         let full = cap.get(0).unwrap();
         let inner = cap[1].trim();
 

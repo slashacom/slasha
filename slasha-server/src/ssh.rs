@@ -1,6 +1,6 @@
 use std::{fs, io::Write, path::Path};
-use anyhow::Context;
 
+use anyhow::Context;
 use slasha_db::repos::ssh_key::SshKeyRepo;
 
 use crate::state::Storage;
@@ -39,7 +39,8 @@ pub async fn regenerate_authorized_keys(storage: &Storage) -> anyhow::Result<()>
 fn atomic_write(path: &Path, content: &str) -> anyhow::Result<()> {
     let temp_path = path.with_extension("tmp");
     let mut file = fs::File::create(&temp_path).context("Failed to create temp file")?;
-    file.write_all(content.as_bytes()).context("Failed to write to temp file")?;
+    file.write_all(content.as_bytes())
+        .context("Failed to write to temp file")?;
     file.sync_all().context("Failed to sync temp file")?;
     fs::rename(temp_path, path).context("Failed to rename temp file")?;
     Ok(())

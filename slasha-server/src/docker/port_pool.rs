@@ -23,9 +23,7 @@ impl PortPool {
             .filters(&filters)
             .build();
 
-        let containers = docker_client
-            .list_containers(Some(opts))
-            .await?;
+        let containers = docker_client.list_containers(Some(opts)).await?;
 
         for container in containers {
             if let Some(ports) = container.ports {

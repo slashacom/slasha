@@ -73,23 +73,20 @@ pub async fn rate_limit_middleware(
 ) -> Response {
     let ip = client_ip(request.headers());
 
-    if let Some(ip) = ip {
-        if !limiter.check(ip) {
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                [(header::RETRY_AFTER, "60")],
-                "rate limit exceeded\n",
-            )
-                .into_response();
-        }
+    if let Some(ip) = ip
+        && !limiter.check(ip)
+    {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, "60")],
+            "rate limit exceeded\n",
+        )
+            .into_response();
     }
 
     next.run(request).await
 }
 
-/// Slasha-server runs behind the slasha-proxy Caddy on the same host (loopback),
-/// so the TCP peer is always 127.0.0.1 — useless for rate-limiting. The real
-/// client IP is in `X-Forwarded-For`, set by Caddy.
 fn client_ip(headers: &HeaderMap) -> Option<IpAddr> {
     headers
         .get("x-forwarded-for")

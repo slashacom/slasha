@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use axum::{
-    Json, Router, middleware,
+    Json, Router,
     extract::State,
+    middleware,
     response::IntoResponse,
     routing::{get, post},
 };
@@ -31,7 +32,7 @@ pub fn router() -> Router<AppState> {
         window: Duration::from_secs(60),
     });
 
-    let limited = Router::new()
+    let auth_routes = Router::new()
         .route(
             "/signup",
             post(signup).layer(middleware::from_fn_with_state(
@@ -48,7 +49,7 @@ pub fn router() -> Router<AppState> {
         );
 
     Router::new()
-        .merge(limited)
+        .merge(auth_routes)
         .route("/me", get(me))
         .route("/status", get(status))
 }

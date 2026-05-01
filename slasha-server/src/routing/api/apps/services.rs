@@ -22,7 +22,7 @@ use uuid::Uuid;
 use crate::{
     docker::{
         logs::LogKey,
-        services::{delete_service, provision_service, stop_service},
+        service::{delete_service, provision_service, stop_service},
     },
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
@@ -96,33 +96,14 @@ async fn create_service(
 
     let new_service = ServiceRepo::create(&storage.db_pool, new_service).await?;
 
-    let clients_clone = clients.clone();
-    let storage_clone = storage.clone();
-    let runtime_clone = runtime.clone();
-    let app_clone = app.clone();
-    let service_clone = new_service.clone();
-    let env_vars_clone = payload.env_vars.clone();
-
-    tokio::spawn(async move {
-        if let Err(e) = provision_service(
-            &clients_clone.docker,
-            &storage_clone.db_pool,
-            &runtime_clone.log_manager,
-            &app_clone,
-            &service_clone,
-            env_vars_clone,
-        )
-        .await
-        {
-            tracing::error!("Failed to provision service {}: {}", service_clone.id, e);
-            let _ = ServiceRepo::update_status(
-                &storage_clone.db_pool,
-                &service_clone.id,
-                ServiceStatus::Failed,
-            )
-            .await;
-        }
-    });
+    tokio::spawn(provision_service(
+        clients.docker,
+        storage,
+        runtime,
+        app,
+        new_service.clone(),
+        payload.env_vars,
+    ));
 
     Ok(Json(serde_json::json!({
         "service": new_service,

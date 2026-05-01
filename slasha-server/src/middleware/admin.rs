@@ -5,7 +5,11 @@ use crate::{
     extractors::auth::AuthUser,
 };
 
-pub async fn admin_middleware(auth: AuthUser, request: Request, next: Next) -> HttpResult<Response> {
+pub async fn admin_middleware(
+    auth: AuthUser,
+    request: Request,
+    next: Next,
+) -> HttpResult<Response> {
     if auth.0.role != "admin" {
         return Err(HttpError::forbidden("Admin access required"));
     }
