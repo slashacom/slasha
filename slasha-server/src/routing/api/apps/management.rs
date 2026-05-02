@@ -5,9 +5,11 @@ use axum::{
     response::IntoResponse,
     routing::{delete, get, post},
 };
+use bollard::Docker;
 use chrono::Utc;
 use serde::Deserialize;
 use slasha_db::{
+    DbPool,
     app::{App, AppMember, AppMemberRole},
     repos::{app::AppRepo, service::ServiceRepo},
 };
@@ -22,7 +24,7 @@ use crate::{
     },
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
-    state::{AppState, Clients, Runtime, Storage},
+    state::{AppState, Runtime, Storage},
     utils::slugify,
 };
 
@@ -40,7 +42,7 @@ struct CreateAppReq {
 }
 
 async fn create_app(
-    State(clients): State<Clients>,
+    State(docker): State<Docker>,
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
     Json(payload): Json<CreateAppReq>,
@@ -107,7 +109,7 @@ async fn create_app(
 
     let new_app = AppRepo::create(&storage.db_pool, new_app, new_member).await?;
 
-    create_app_network(&clients.docker, &app_id).await?;
+    create_app_network(&docker, &app_id).await?;
 
     Ok(Json(serde_json::json!({
         "app": new_app,
@@ -127,41 +129,32 @@ async fn get_app(
 }
 
 async fn delete_app(
-    State(clients): State<Clients>,
-    State(storage): State<Storage>,
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
     State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
-    if !AppRepo::is_owner(&storage.db_pool, &app.id, &user.id).await? {
+    if !AppRepo::is_owner(&db_pool, &app.id, &user.id).await? {
         return Err(HttpError::bad_request("Only app owners can delete apps"));
     }
 
-    let app_services = ServiceRepo::list_for_app(&storage.db_pool, &app.id).await?;
+    let app_services = ServiceRepo::list_for_app(&db_pool, &app.id).await?;
 
     for svc in app_services {
-        if let Err(e) = delete_service(
-            &clients.docker,
-            &storage.db_pool,
-            &runtime.log_manager,
-            &app,
-            &svc,
-        )
-        .await
-        {
+        if let Err(e) = delete_service(&docker, &db_pool, &runtime.log_manager, &app, &svc).await {
             tracing::warn!("Failed to delete service {}: {}", svc.id, e);
         }
     }
 
-    let deployments = AppRepo::delete(&storage.db_pool, &app.id).await?;
+    let deployments = AppRepo::delete(&db_pool, &app.id).await?;
 
     for dep in deployments {
         if let Err(e) = delete_deployment_container(
-            &clients.docker,
-            &runtime.port_pool,
-            &runtime.proxy_reconcile,
+            &docker,
+            &runtime.proxy_sync_trigger,
             &runtime.log_manager,
             &app,
             &dep,
@@ -176,9 +169,9 @@ async fn delete_app(
         }
     }
 
-    delete_app_network(&clients.docker, &app.id).await?;
+    delete_app_network(&docker, &app.id).await?;
 
-    if let Err(e) = delete_app_volumes(&clients.docker, &app.id).await {
+    if let Err(e) = delete_app_volumes(&docker, &app.id).await {
         tracing::warn!("Failed to clean up volumes for app {}: {:?}", app.id, e);
     }
 

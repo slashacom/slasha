@@ -81,36 +81,34 @@ async fn main() -> anyhow::Result<()> {
     let env = Env::from_str_or_default(
         &std::env::var("SLASHA_ENV").unwrap_or_else(|_| "development".to_string()),
     );
-    let private_mode = matches!(
-        std::env::var("SLASHA_PRIVATE_MODE").as_deref(),
-        Ok("1") | Ok("true") | Ok("yes")
-    );
 
-    let config = Config::new(
-        env,
-        std::env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
-        std::env::var("SLASHA_PLATFORM_DOMAIN").ok(),
-        logs_dir.clone(),
-        private_mode,
-    );
+    let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    let platform_domain =
+        std::env::var("SLASHA_PLATFORM_DOMAIN").expect("SLASHA_PLATFORM_DOMAIN must be set");
+    let port = std::env::var("SLASHA_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(3000);
 
-    let docker =
+    let config = Config::new(env, jwt_secret, platform_domain, logs_dir.clone(), port);
+
+    let docker_client =
         bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");
 
-    ensure_caddy_ready(&docker).await?;
+    ensure_caddy_ready(&docker_client).await?;
 
-    let clients = Clients::new(docker.clone());
+    let clients = Clients::new(docker_client.clone());
     let storage = Storage::new(&db_path, repos_dir)?;
 
     run_migrations(&storage);
 
-    let proxy_reconcile = proxy::spawn_reconciler(clients.clone(), config.clone());
-    let runtime = Runtime::new(4000, 5000, &docker, &logs_dir, proxy_reconcile).await?;
+    let proxy_sync_trigger = proxy::spawn_route_syncer(clients.clone(), config.clone());
+    let runtime = Runtime::new(&logs_dir, proxy_sync_trigger).await?;
     let state = AppState::new(config, clients, storage, runtime);
 
-    state.runtime.proxy_reconcile.notify_one();
+    state.runtime.proxy_sync_trigger.notify_one();
 
-    run_server(Some("0.0.0.0:3000".parse().unwrap()), state).await?;
+    run_server(Some(SocketAddr::from(([127, 0, 0, 1], port))), state).await?;
 
     Ok(())
 }

@@ -5,6 +5,8 @@ use axum::{
 };
 use serde_json::json;
 
+use crate::proxy::ProxyError;
+
 pub struct HttpError {
     pub status: StatusCode,
     pub message: String,
@@ -105,6 +107,16 @@ impl From<anyhow::Error> for HttpError {
 impl From<std::io::Error> for HttpError {
     fn from(e: std::io::Error) -> Self {
         HttpError::internal(e)
+    }
+}
+
+impl From<ProxyError> for HttpError {
+    fn from(e: ProxyError) -> Self {
+        match e {
+            ProxyError::Caddy(msg) => HttpError::bad_request(msg),
+            ProxyError::Timeout(msg) => HttpError::new(StatusCode::GATEWAY_TIMEOUT, msg),
+            _ => HttpError::internal(anyhow::anyhow!(e)),
+        }
     }
 }
 

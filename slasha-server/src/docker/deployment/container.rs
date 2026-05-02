@@ -4,7 +4,7 @@ use bollard::{
     Docker,
     models::{
         ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountTypeEnum, NetworkingConfig,
-        PortBinding, RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
+        RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
     },
     query_parameters::{
         CreateContainerOptions, ListVolumesOptions, RemoveContainerOptionsBuilder,
@@ -19,34 +19,17 @@ use slasha_db::{
 };
 use tokio::sync::Notify;
 
-use crate::docker::{
-    DeploymentError, DeploymentResult,
-    logs::{Log, LogKey, LogManager, stream_container_logs},
-    naming::{app_container_name, app_network_name, app_volume_name, app_volume_prefix},
-    port_pool::PortPool,
+use crate::{
+    docker::{
+        DeploymentResult, image_tag,
+        logs::{Log, LogKey, LogManager, stream_container_logs},
+        naming::{app_container_name, app_network_name, app_volume_name, app_volume_prefix},
+    },
+    proxy::container::PROXY_NETWORK_NAME,
 };
-
-async fn get_container_host_port(docker_client: &Docker, name: &str) -> DeploymentResult<u16> {
-    let info = docker_client.inspect_container(name, None).await?;
-
-    info.network_settings
-        .and_then(|ns| ns.ports)
-        .and_then(|ports| {
-            ports
-                .into_values()
-                .flatten()
-                .flatten()
-                .next()
-                .and_then(|pb| pb.host_port.and_then(|s| s.parse::<u16>().ok()))
-        })
-        .ok_or_else(|| {
-            DeploymentError::PortAllocationFailed("No host port found in container inspect".into())
-        })
-}
 
 pub async fn create_deployment_container(
     docker_client: &Docker,
-    port_pool: &Arc<PortPool>,
     app: &App,
     deployment: &Deployment,
     container_port: u16,
@@ -54,26 +37,15 @@ pub async fn create_deployment_container(
     volume_paths: Vec<String>,
 ) -> DeploymentResult<(String, u16)> {
     let deployment_id = deployment.id.clone();
-    let host_port = port_pool.allocate().await?;
     let name = app_container_name(&app.id, &deployment_id);
-    let image = crate::docker::naming::image_tag(&app.slug, &deployment.commit_sha);
-
-    let port_key = format!("{}/tcp", container_port);
-    let mut port_bindings: HashMap<String, Option<Vec<PortBinding>>> = HashMap::new();
-    port_bindings.insert(
-        port_key,
-        Some(vec![PortBinding {
-            host_ip: Some("127.0.0.1".to_string()),
-            host_port: Some(host_port.to_string()),
-        }]),
-    );
+    let image = image_tag(&app.slug, &deployment.commit_sha);
 
     let mut labels: HashMap<String, String> = HashMap::new();
     labels.insert("slasha.managed".into(), "true".into());
     labels.insert("slasha.app_id".into(), app.id.clone());
     labels.insert("slasha.deployment_id".into(), deployment_id.clone());
     labels.insert("slasha.app_slug".into(), app.slug.clone());
-    labels.insert("slasha.host_port".into(), host_port.to_string());
+    labels.insert("slasha.container_port".into(), container_port.to_string());
 
     let mut mounts: Vec<Mount> = Vec::with_capacity(volume_paths.len());
     for path in &volume_paths {
@@ -94,7 +66,6 @@ pub async fn create_deployment_container(
     }
 
     let host_config = HostConfig {
-        port_bindings: Some(port_bindings),
         restart_policy: Some(RestartPolicy {
             name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
             maximum_retry_count: None,
@@ -118,12 +89,19 @@ pub async fn create_deployment_container(
         )
     };
 
-    let network_name = app_network_name(&app.id);
+    let app_network_name = app_network_name(&app.id);
     let mut endpoints_config = HashMap::new();
     endpoints_config.insert(
-        network_name.clone(),
+        app_network_name.clone(),
         EndpointSettings {
-            network_id: Some(network_name),
+            network_id: Some(app_network_name),
+            ..Default::default()
+        },
+    );
+    endpoints_config.insert(
+        PROXY_NETWORK_NAME.to_string(),
+        EndpointSettings {
+            network_id: Some(PROXY_NETWORK_NAME.to_string()),
             ..Default::default()
         },
     );
@@ -148,17 +126,17 @@ pub async fn create_deployment_container(
         .create_container(Some(create_opts), container_config)
         .await?;
 
-    Ok((name, host_port))
+    Ok((name, container_port))
 }
 
 pub async fn start_deployment_container(
     docker_client: &Docker,
     db_pool: &DbPool,
-    proxy_reconcile: &Arc<Notify>,
+    proxy_sync_trigger: &Arc<Notify>,
     log: &Log,
     deployment_id: &str,
     container_name: &str,
-    host_port: u16,
+    container_port: u16,
 ) -> DeploymentResult<()> {
     docker_client
         .start_container(
@@ -169,11 +147,11 @@ pub async fn start_deployment_container(
 
     DeploymentRepo::update_status(db_pool, deployment_id, DeploymentStatus::Running).await?;
 
-    proxy_reconcile.notify_one();
+    proxy_sync_trigger.notify_one();
 
     log.send(format!(
-        "Container {} started on host port {}",
-        container_name, host_port
+        "Container {} started, listening on internal port {}",
+        container_name, container_port
     ))
     .await?;
 
@@ -195,8 +173,7 @@ pub async fn start_deployment_container(
 pub async fn stop_deployment_container(
     docker_client: &Docker,
     db_pool: &DbPool,
-    port_pool: &Arc<PortPool>,
-    proxy_reconcile: &Arc<Notify>,
+    proxy_sync_trigger: &Arc<Notify>,
     log_manager: &LogManager,
     app: &App,
     deployment: &Deployment,
@@ -207,8 +184,6 @@ pub async fn stop_deployment_container(
     if docker_client.inspect_container(&name, None).await.is_err() {
         return Ok(());
     }
-
-    let host_port = get_container_host_port(docker_client, &name).await?;
 
     docker_client
         .stop_container(
@@ -217,8 +192,6 @@ pub async fn stop_deployment_container(
         )
         .await?;
 
-    port_pool.release(host_port).await;
-
     log_manager.remove(&LogKey::Deployment {
         app_slug: app.slug.clone(),
         deployment_id: deployment.id.clone(),
@@ -226,15 +199,14 @@ pub async fn stop_deployment_container(
 
     DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Stopped).await?;
 
-    proxy_reconcile.notify_one();
+    proxy_sync_trigger.notify_one();
 
     Ok(())
 }
 
 pub async fn delete_deployment_container(
     docker_client: &Docker,
-    port_pool: &Arc<PortPool>,
-    proxy_reconcile: &Arc<Notify>,
+    proxy_sync_trigger: &Arc<Notify>,
     log_manager: &LogManager,
     app: &App,
     deployment: &Deployment,
@@ -246,12 +218,6 @@ pub async fn delete_deployment_container(
         return Ok(());
     }
 
-    let host_port = if deployment.status != DeploymentStatus::Stopped {
-        Some(get_container_host_port(docker_client, &name).await?)
-    } else {
-        None
-    };
-
     docker_client
         .remove_container(
             &name,
@@ -259,16 +225,12 @@ pub async fn delete_deployment_container(
         )
         .await?;
 
-    if let Some(port) = host_port {
-        port_pool.release(port).await;
-    }
-
     log_manager.remove(&LogKey::Deployment {
         app_slug: app.slug.clone(),
         deployment_id: deployment.id.clone(),
     });
 
-    proxy_reconcile.notify_one();
+    proxy_sync_trigger.notify_one();
 
     Ok(())
 }

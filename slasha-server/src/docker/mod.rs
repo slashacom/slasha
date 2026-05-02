@@ -4,7 +4,6 @@ pub mod error;
 pub mod logs;
 pub mod naming;
 pub mod network;
-pub mod port_pool;
 pub mod rollback;
 pub mod service;
 

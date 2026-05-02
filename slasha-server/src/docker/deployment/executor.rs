@@ -18,16 +18,12 @@ use super::{
     container::{create_deployment_container, start_deployment_container},
     dockerfile_parser::{BuildStrategy, detect_build_strategy, parse_expose, parse_volumes},
 };
-use crate::{
-    docker::{
-        DeploymentError, DeploymentResult,
-        env::{RefSource, resolve_env_value, topo_sort_vars},
-        logs::{Log, LogKey},
-        naming::{app_container_name, app_network_name, image_tag, service_container_name},
-        port_pool::PortPool,
-        rollback::Rollback,
-    },
-    state::{Runtime, Storage},
+use crate::docker::{
+    DeploymentError, DeploymentResult,
+    env::{RefSource, resolve_env_value, topo_sort_vars},
+    logs::{Log, LogKey, LogManager},
+    naming::{app_container_name, app_network_name, image_tag, service_container_name},
+    rollback::Rollback,
 };
 
 const DEFAULT_RAILPACK_CONTAINER_PORT: u16 = 8080;
@@ -98,8 +94,9 @@ pub async fn resolve_app_env(
 
 pub async fn run_deployment(
     docker_client: Docker,
-    storage: Storage,
-    runtime: Runtime,
+    db_pool: DbPool,
+    log_manager: Arc<LogManager>,
+    proxy_sync_trigger: Arc<Notify>,
     app: App,
     deployment: Deployment,
 ) -> DeploymentResult<()> {
@@ -108,14 +105,13 @@ pub async fn run_deployment(
         deployment_id: deployment.id.clone(),
     };
 
-    let log = runtime.log_manager.get_logger(&log_key).await?;
+    let log = log_manager.get_logger(&log_key).await?;
     let mut rollback = Rollback::new();
 
     if let Err(e) = run_deployment_inner(
         &docker_client,
-        &storage.db_pool,
-        &runtime.port_pool,
-        &runtime.proxy_reconcile,
+        &db_pool,
+        &proxy_sync_trigger,
         &app,
         &deployment,
         &log,
@@ -127,10 +123,9 @@ pub async fn run_deployment(
         log.send(format!("Deployment failed: {}", e)).await?;
 
         rollback.execute().await;
-        runtime.log_manager.remove(&log_key);
+        log_manager.remove(&log_key);
 
-        DeploymentRepo::update_status(&storage.db_pool, &deployment.id, DeploymentStatus::Failed)
-            .await?;
+        DeploymentRepo::update_status(&db_pool, &deployment.id, DeploymentStatus::Failed).await?;
 
         return Err(e);
     }
@@ -142,8 +137,7 @@ pub async fn run_deployment(
 async fn run_deployment_inner(
     docker_client: &Docker,
     db_pool: &DbPool,
-    port_pool: &Arc<PortPool>,
-    proxy_reconcile: &Arc<Notify>,
+    proxy_sync_trigger: &Arc<Notify>,
     app: &App,
     deployment: &Deployment,
     log: &Log,
@@ -198,9 +192,8 @@ async fn run_deployment_inner(
         }
     });
 
-    let (container_name, host_port) = create_deployment_container(
+    let (container_name, container_port) = create_deployment_container(
         docker_client,
-        port_pool,
         app,
         deployment,
         container_port,
@@ -211,7 +204,6 @@ async fn run_deployment_inner(
 
     rollback.register({
         let docker_client = docker_client.clone();
-        let port_pool = port_pool.clone();
         let container_name = container_name.clone();
 
         move || {
@@ -222,8 +214,6 @@ async fn run_deployment_inner(
                         Some(RemoveContainerOptionsBuilder::new().force(true).build()),
                     )
                     .await;
-
-                port_pool.release(host_port).await;
             })
         }
     });
@@ -231,11 +221,11 @@ async fn run_deployment_inner(
     start_deployment_container(
         docker_client,
         db_pool,
-        proxy_reconcile,
+        proxy_sync_trigger,
         log,
         &deployment.id,
         &container_name,
-        host_port,
+        container_port,
     )
     .await?;
 
