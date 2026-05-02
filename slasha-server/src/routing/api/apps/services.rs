@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -9,10 +9,12 @@ use axum::{
     },
     routing::{delete, get, post},
 };
+use bollard::Docker;
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
 use serde::Deserialize;
 use slasha_db::{
+    DbPool,
     repos::{app::AppRepo, service::ServiceRepo},
     service::{Service, ServiceKind, ServiceStatus},
 };
@@ -21,12 +23,12 @@ use uuid::Uuid;
 
 use crate::{
     docker::{
-        logs::LogKey,
+        logs::{LogKey, LogManager},
         service::{delete_service, provision_service, stop_service},
     },
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
-    state::{AppState, Clients, Runtime, Storage},
+    state::AppState,
 };
 
 pub fn router() -> Router<AppState> {
@@ -47,12 +49,12 @@ struct CreateServiceReq {
 }
 
 async fn list_services(
-    State(storage): State<Storage>,
+    State(db_pool): State<DbPool>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-    let app_services = ServiceRepo::list_for_app(&storage.db_pool, &app.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let app_services = ServiceRepo::list_for_app(&db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({
         "services": app_services,
@@ -60,14 +62,14 @@ async fn list_services(
 }
 
 async fn create_service(
-    State(clients): State<Clients>,
-    State(storage): State<Storage>,
-    State(runtime): State<Runtime>,
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
     Json(payload): Json<CreateServiceReq>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
     if !payload
         .kind
@@ -94,12 +96,12 @@ async fn create_service(
         updated_at: now,
     };
 
-    let new_service = ServiceRepo::create(&storage.db_pool, new_service).await?;
+    let new_service = ServiceRepo::create(&db_pool, new_service).await?;
 
     tokio::spawn(provision_service(
-        clients.docker,
-        storage,
-        runtime,
+        docker,
+        db_pool,
+        log_manager,
         app,
         new_service.clone(),
         payload.env_vars,
@@ -111,40 +113,33 @@ async fn create_service(
 }
 
 async fn stop_service_handler(
-    State(clients): State<Clients>,
-    State(storage): State<Storage>,
-    State(runtime): State<Runtime>,
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-    let svc = ServiceRepo::find(&storage.db_pool, &id, &app.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
     if svc.status != ServiceStatus::Running {
         return Err(HttpError::bad_request("Service is not running"));
     }
 
-    stop_service(
-        &clients.docker,
-        &storage.db_pool,
-        &runtime.log_manager,
-        &app,
-        &svc,
-    )
-    .await?;
+    stop_service(&docker, &db_pool, &log_manager, &app, &svc).await?;
 
     Ok(Json(serde_json::json!({ "stopped": true })))
 }
 
 async fn delete_service_handler(
-    State(clients): State<Clients>,
-    State(storage): State<Storage>,
-    State(runtime): State<Runtime>,
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-    let svc = ServiceRepo::find(&storage.db_pool, &id, &app.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
     if svc.status != ServiceStatus::Stopped && svc.status != ServiceStatus::Failed {
         return Err(HttpError::bad_request(
@@ -152,31 +147,23 @@ async fn delete_service_handler(
         ));
     }
 
-    delete_service(
-        &clients.docker,
-        &storage.db_pool,
-        &runtime.log_manager,
-        &app,
-        &svc,
-    )
-    .await?;
+    delete_service(&docker, &db_pool, &log_manager, &app, &svc).await?;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
 
 async fn stream_logs(
-    State(storage): State<Storage>,
-    State(runtime): State<Runtime>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> HttpResult<
     Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
 > {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-    let svc = ServiceRepo::find(&storage.db_pool, &id, &app.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
-    let log = runtime
-        .log_manager
+    let log = log_manager
         .get_logger(&LogKey::Service {
             app_slug: app.slug.clone(),
             service_name: svc.name.clone(),

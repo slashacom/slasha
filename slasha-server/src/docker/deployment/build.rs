@@ -122,11 +122,13 @@ pub async fn build_docker(
     let tar_bytes = build_tar_context(repo_path, &deployment.commit_sha).await?;
     let tar_body_stream = body_stream(stream::once(async move { tar_bytes }));
 
+    let session_id = uuid::Uuid::new_v4().to_string();
     let build_opts = BuildImageOptionsBuilder::new()
         .t(image_tag.as_str())
         .rm(true)
         .forcerm(true)
         .version(BuilderVersion::BuilderBuildKit)
+        .session(&session_id)
         .build();
 
     let mut build_stream = docker_client.build_image(build_opts, None, Some(tar_body_stream));

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -7,24 +9,27 @@ use axum::{
     },
     routing::{delete, get, post},
 };
+use bollard::Docker;
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
 use serde::Deserialize;
 use slasha_db::{
+    DbPool,
     deployment::{Deployment, DeploymentStatus},
     repos::{app::AppRepo, deployment::DeploymentRepo},
 };
+use tokio::sync::Notify;
 use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
 use crate::{
     docker::{
         deployment::{delete_deployment_container, run_deployment, stop_deployment_container},
-        logs::LogKey,
+        logs::{LogKey, LogManager},
     },
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
-    state::{AppState, Clients, Runtime, Storage},
+    state::{AppState, Runtime},
 };
 
 fn resolve_commit_message(repo_path: &str, sha: &str) -> anyhow::Result<String> {
@@ -60,16 +65,17 @@ struct TriggerDeployReq {
 }
 
 async fn trigger_deploy(
-    State(clients): State<Clients>,
-    State(storage): State<Storage>,
-    State(runtime): State<Runtime>,
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
+    State(proxy_sync_trigger): State<Arc<Notify>>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
     Json(payload): Json<TriggerDeployReq>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
-    let is_running = DeploymentRepo::any_running(&storage.db_pool, &app.id).await?;
+    let is_running = DeploymentRepo::any_running(&db_pool, &app.id).await?;
 
     if is_running {
         return Err(HttpError::bad_request("A deployment is already running"));
@@ -100,12 +106,13 @@ async fn trigger_deploy(
         updated_at: now,
     };
 
-    let deployment = DeploymentRepo::create(&storage.db_pool, deployment).await?;
+    let deployment = DeploymentRepo::create(&db_pool, deployment).await?;
 
     tokio::spawn(run_deployment(
-        clients.docker.clone(),
-        storage.clone(),
-        runtime.clone(),
+        docker,
+        db_pool,
+        log_manager,
+        proxy_sync_trigger,
         app,
         deployment.clone(),
     ));
@@ -114,39 +121,39 @@ async fn trigger_deploy(
 }
 
 async fn list_deployments(
-    State(storage): State<Storage>,
+    State(db_pool): State<DbPool>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
-    let deps = DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
+    let deps = DeploymentRepo::list_for_app(&db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({ "deployments": deps })))
 }
 
 async fn get_deployment(
-    State(storage): State<Storage>,
+    State(db_pool): State<DbPool>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
-    let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
+    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     Ok(Json(serde_json::json!({ "deployment": deployment })))
 }
 
 async fn stop_deployment(
-    State(clients): State<Clients>,
-    State(storage): State<Storage>,
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
     State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
-    let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
+    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     if !matches!(
         deployment.status,
@@ -159,10 +166,9 @@ async fn stop_deployment(
     }
 
     stop_deployment_container(
-        &clients.docker,
-        &storage.db_pool,
-        &runtime.port_pool,
-        &runtime.proxy_reconcile,
+        &docker,
+        &db_pool,
+        &runtime.proxy_sync_trigger,
         &runtime.log_manager,
         &app,
         &deployment,
@@ -176,21 +182,21 @@ async fn stop_deployment(
 }
 
 async fn restart_deployment(
-    State(clients): State<Clients>,
-    State(storage): State<Storage>,
-    State(runtime): State<Runtime>,
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
+    State(proxy_sync_trigger): State<Arc<Notify>>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
-    let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
+    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     delete_deployment_container(
-        &clients.docker,
-        &runtime.port_pool,
-        &runtime.proxy_reconcile,
-        &runtime.log_manager,
+        &docker,
+        &proxy_sync_trigger,
+        &log_manager,
         &app,
         &deployment,
     )
@@ -198,12 +204,13 @@ async fn restart_deployment(
 
     let now = Utc::now().naive_utc();
     let updated_deployment =
-        DeploymentRepo::reset_to_pending(&storage.db_pool, &deployment.id, now).await?;
+        DeploymentRepo::reset_to_pending(&db_pool, &deployment.id, now).await?;
 
     tokio::spawn(run_deployment(
-        clients.docker.clone(),
-        storage.clone(),
-        runtime.clone(),
+        docker,
+        db_pool,
+        log_manager,
+        proxy_sync_trigger,
         app,
         updated_deployment.clone(),
     ));
@@ -214,19 +221,18 @@ async fn restart_deployment(
 }
 
 async fn stream_logs(
-    State(storage): State<Storage>,
-    State(runtime): State<Runtime>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<
     Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
 > {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
-    DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
+    DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
-    let log = runtime
-        .log_manager
+    let log = log_manager
         .get_logger(&LogKey::Deployment {
             app_slug: app.slug.clone(),
             deployment_id,
@@ -254,27 +260,27 @@ async fn stream_logs(
 }
 
 async fn delete_deployment(
-    State(clients): State<Clients>,
-    State(storage): State<Storage>,
-    State(runtime): State<Runtime>,
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
+    State(proxy_sync_trigger): State<Arc<Notify>>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
-    let deployment = DeploymentRepo::find(&storage.db_pool, &deployment_id, &app.id).await?;
+    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     delete_deployment_container(
-        &clients.docker,
-        &runtime.port_pool,
-        &runtime.proxy_reconcile,
-        &runtime.log_manager,
+        &docker,
+        &proxy_sync_trigger,
+        &log_manager,
         &app,
         &deployment,
     )
     .await?;
 
-    DeploymentRepo::delete(&storage.db_pool, &deployment.id, &app.id).await?;
+    DeploymentRepo::delete(&db_pool, &deployment.id, &app.id).await?;
 
     Ok(Json(serde_json::json!({
         "deleted": true,

@@ -1,39 +1,34 @@
-use std::sync::Arc;
-
 use reqwest::Client;
 use serde_json::{Value, json};
 
 use super::{ProxyError, ProxyResult};
 use crate::state::Env;
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct CaddyClient {
     client: Client,
-    admin_url: Arc<str>,
 }
 
+#[derive(Debug)]
 pub struct RouteEntry {
     pub domain: String,
+    pub upstream_host: String,
     pub upstream_port: u16,
 }
 
 impl CaddyClient {
-    pub async fn sync_routes(&self, routes: &[RouteEntry], env: Env) -> ProxyResult<()> {
+    pub async fn apply_routes(&self, routes: &[RouteEntry], env: Env) -> ProxyResult<()> {
         let config = Self::build_config(routes, env);
-        self.load(&config).await
+        self.apply_config(&config).await
     }
 
     fn build_config(routes: &[RouteEntry], env: Env) -> Value {
         let security_headers = Self::security_headers(env);
-        let mut caddy_routes = Vec::new();
 
-        for entry in routes {
-            caddy_routes.push(json!({
-                "match": [
-                    {
-                        "host": [entry.domain]
-                    }
-                ],
+        let caddy_routes: Vec<Value> = routes
+            .iter()
+            .map(|entry| json!({
+                "match": [{ "host": [entry.domain] }],
                 "handle": [
                     {
                         "handler": "headers",
@@ -42,22 +37,26 @@ impl CaddyClient {
                     {
                         "handler": "reverse_proxy",
                         "upstreams": [
-                            {
-                                "dial": format!("127.0.0.1:{}", entry.upstream_port)
-                            }
+                            { "dial": format!("{}:{}", entry.upstream_host, entry.upstream_port) }
                         ]
                     }
                 ]
-            }));
+            }))
+            .collect();
+
+        let mut server = json!({
+            "listen": [":80", ":443"],
+            "routes": caddy_routes
+        });
+
+        if !env.is_production() {
+            server["automatic_https"] = json!({ "disable_redirects": true });
         }
 
         let mut apps = json!({
             "http": {
                 "servers": {
-                    "srv0": {
-                        "listen": [":80", ":443"],
-                        "routes": caddy_routes
-                    }
+                    "srv0": server
                 }
             }
         });
@@ -65,15 +64,13 @@ impl CaddyClient {
         if !env.is_production() {
             apps["tls"] = json!({
                 "automation": {
-                    "policies": [
-                        { "issuers": [{ "module": "internal" }] }
-                    ]
+                    "policies": [{ "issuers": [{ "module": "internal" }] }]
                 }
             });
         }
 
         json!({
-            "admin": { "listen": "127.0.0.1:2019" },
+            "admin": { "listen": "0.0.0.0:2019" },
             "apps": apps,
         })
     }
@@ -87,6 +84,7 @@ impl CaddyClient {
             json!(["strict-origin-when-cross-origin"]),
         );
         headers.insert("Permissions-Policy".into(), json!(["interest-cohort=()"]));
+
         // HSTS only in production — sending it from a self-signed dev cert
         // pins browsers to a broken HTTPS state.
         if env.is_production() {
@@ -95,27 +93,23 @@ impl CaddyClient {
                 json!(["max-age=31536000; includeSubDomains"]),
             );
         }
+
         Value::Object(headers)
     }
 
-    async fn load(&self, config: &Value) -> ProxyResult<()> {
-        let url = format!("{}/load", self.admin_url);
-        let res = self.client.post(&url).json(config).send().await?;
+    async fn apply_config(&self, config: &Value) -> ProxyResult<()> {
+        let res = self
+            .client
+            .post("http://127.0.0.1:2019/load")
+            .json(config)
+            .send()
+            .await?;
 
         if !res.status().is_success() {
-            let body = res.text().await.unwrap_or_else(|_| "unknown error".into());
+            let body = res.text().await?;
             return Err(ProxyError::Caddy(body));
         }
 
         Ok(())
-    }
-}
-
-impl Default for CaddyClient {
-    fn default() -> Self {
-        Self {
-            client: Client::new(),
-            admin_url: Arc::from("http://127.0.0.1:2019"),
-        }
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use bollard::{
     Docker,
@@ -20,15 +20,12 @@ use slasha_db::{
     service::{Service, ServiceEnvVar, ServiceStatus},
 };
 
-use crate::{
-    docker::{
-        DeploymentError, DeploymentResult,
-        env::{RefSource, resolve_env_value, topo_sort_vars},
-        logs::{Log, LogKey, stream_container_logs},
-        naming::{app_network_name, service_container_name, service_volume_name},
-        rollback::Rollback,
-    },
-    state::{Runtime, Storage},
+use crate::docker::{
+    DeploymentError, DeploymentResult,
+    env::{RefSource, resolve_env_value, topo_sort_vars},
+    logs::{Log, LogKey, LogManager, stream_container_logs},
+    naming::{app_network_name, service_container_name, service_volume_name},
+    rollback::Rollback,
 };
 
 pub fn resolve_service_env(
@@ -68,8 +65,8 @@ pub fn resolve_service_env(
 
 pub async fn provision_service(
     docker_client: Docker,
-    storage: Storage,
-    runtime: Runtime,
+    db_pool: DbPool,
+    log_manager: Arc<LogManager>,
     app: App,
     service: Service,
     env_vars: HashMap<String, String>,
@@ -78,12 +75,12 @@ pub async fn provision_service(
         app_slug: app.slug.clone(),
         service_name: service.name.clone(),
     };
-    let log = runtime.log_manager.get_logger(&log_key).await?;
+    let log = log_manager.get_logger(&log_key).await?;
     let mut rollback = Rollback::new();
 
     if let Err(e) = provision_service_inner(
         &docker_client,
-        &storage.db_pool,
+        &db_pool,
         &app,
         &service,
         env_vars,
@@ -97,9 +94,8 @@ pub async fn provision_service(
 
         rollback.execute().await;
 
-        let _ =
-            ServiceRepo::update_status(&storage.db_pool, &service.id, ServiceStatus::Failed).await;
-        runtime.log_manager.remove(&log_key);
+        let _ = ServiceRepo::update_status(&db_pool, &service.id, ServiceStatus::Failed).await;
+        log_manager.remove(&log_key);
 
         return Err(e);
     }

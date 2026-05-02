@@ -8,11 +8,7 @@ use bollard::Docker;
 use slasha_db::DbPool;
 use tokio::sync::Notify;
 
-use crate::{
-    docker::{logs::LogManager, port_pool::PortPool},
-    proxy::CaddyClient,
-    utils,
-};
+use crate::{docker::logs::LogManager, proxy::CaddyClient, utils};
 
 #[derive(Clone)]
 pub struct Clients {
@@ -47,23 +43,15 @@ impl Storage {
 
 #[derive(Clone)]
 pub struct Runtime {
-    pub port_pool: Arc<PortPool>,
     pub log_manager: Arc<LogManager>,
-    pub proxy_reconcile: Arc<Notify>,
+    pub proxy_sync_trigger: Arc<Notify>,
 }
 
 impl Runtime {
-    pub async fn new(
-        port_start: u16,
-        port_end: u16,
-        docker_client: &Docker,
-        logs_dir: &Path,
-        proxy_reconcile: Arc<Notify>,
-    ) -> anyhow::Result<Self> {
+    pub async fn new(logs_dir: &Path, proxy_sync_trigger: Arc<Notify>) -> anyhow::Result<Self> {
         Ok(Self {
-            port_pool: Arc::new(PortPool::new(port_start, port_end, docker_client).await?),
             log_manager: Arc::new(LogManager::new(utils::ensure_dir(logs_dir))),
-            proxy_reconcile,
+            proxy_sync_trigger,
         })
     }
 }
@@ -91,28 +79,25 @@ impl Env {
 pub struct Config {
     pub env: Env,
     pub jwt_secret: String,
-    pub platform_domain: Option<String>,
+    pub platform_domain: String,
     pub logs_dir: PathBuf,
-    /// When true, the dashboard apex route is omitted from the public Caddy
-    /// proxy. App subdomains stay public; the operator reaches the UI via
-    /// `ssh -L 3000:127.0.0.1:3000` (or any other tunnel).
-    pub private_mode: bool,
+    pub port: u16,
 }
 
 impl Config {
     pub fn new(
         env: Env,
         jwt_secret: String,
-        platform_domain: Option<String>,
+        platform_domain: String,
         logs_dir: PathBuf,
-        private_mode: bool,
+        port: u16,
     ) -> Self {
         Self {
             env,
             jwt_secret,
             platform_domain,
             logs_dir,
-            private_mode,
+            port,
         }
     }
 }
@@ -142,15 +127,45 @@ impl FromRef<AppState> for Clients {
     }
 }
 
+impl FromRef<AppState> for Docker {
+    fn from_ref(state: &AppState) -> Self {
+        state.clients.docker.clone()
+    }
+}
+
+impl FromRef<AppState> for CaddyClient {
+    fn from_ref(state: &AppState) -> Self {
+        state.clients.caddy.clone()
+    }
+}
+
 impl FromRef<AppState> for Storage {
     fn from_ref(state: &AppState) -> Self {
         state.storage.clone()
     }
 }
 
+impl FromRef<AppState> for DbPool {
+    fn from_ref(state: &AppState) -> Self {
+        state.storage.db_pool.clone()
+    }
+}
+
 impl FromRef<AppState> for Runtime {
     fn from_ref(state: &AppState) -> Self {
         state.runtime.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<Notify> {
+    fn from_ref(state: &AppState) -> Self {
+        state.runtime.proxy_sync_trigger.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<LogManager> {
+    fn from_ref(state: &AppState) -> Self {
+        state.runtime.log_manager.clone()
     }
 }
 
