@@ -63,8 +63,18 @@ export function useDeleteDeployment() {
 export function useRestartDeployment() {
   return useMutation({
     mutationFn: (data: { appSlug: string; deploymentId: string }) =>
-      httpPost<{ deployment: Deployment }>(
+      httpPost<{ restarted: boolean }>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}/restart`,
+        {}
+      ),
+  });
+}
+
+export function useRedeployDeployment() {
+  return useMutation({
+    mutationFn: (data: { appSlug: string; deploymentId: string }) =>
+      httpPost<{ deployment: Deployment }>(
+        `apps/${data.appSlug}/deployments/${data.deploymentId}/redeploy`,
         {}
       ),
   });

@@ -22,6 +22,7 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
+    docker::sync::run_container_sync,
     proxy::container::ensure_caddy_ready,
     state::{Clients, Config, Env, Runtime, Storage},
 };
@@ -105,6 +106,13 @@ async fn main() -> anyhow::Result<()> {
     let proxy_sync_trigger = proxy::spawn_route_syncer(clients.clone(), config.clone());
     let runtime = Runtime::new(&logs_dir, proxy_sync_trigger).await?;
     let state = AppState::new(config, clients, storage, runtime);
+
+    run_container_sync(
+        &state.clients.docker,
+        &state.storage.db_pool,
+        &state.runtime.log_manager,
+    )
+    .await?;
 
     state.runtime.proxy_sync_trigger.notify_one();
 

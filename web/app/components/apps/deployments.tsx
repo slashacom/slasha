@@ -25,7 +25,7 @@ import {
   useStopDeployment,
   useDeleteDeployment,
   useRestartDeployment,
-  type CommitInfo,
+  useRedeployDeployment,
 } from '~/queries/deployments';
 import {
   Dialog,
@@ -315,6 +315,7 @@ function DeploymentRow({
   const stopDeployment = useStopDeployment();
   const deleteDeployment = useDeleteDeployment();
   const restartDeployment = useRestartDeployment();
+  const redeployDeployment = useRedeployDeployment();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleStop = async (e: React.MouseEvent) => {
@@ -340,9 +341,25 @@ function DeploymentRow({
       queryClient.invalidateQueries({
         queryKey: ['apps', appSlug, 'deployments'],
       });
-      toast.success('Deployment restart triggered');
+      toast.success('Container started');
     } catch (e) {
-      toast.error('Failed to restart deployment: ' + e);
+      toast.error('Failed to start container: ' + e);
+    }
+  };
+
+  const handleRedeploy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await redeployDeployment.mutateAsync({
+        appSlug,
+        deploymentId: deployment.id,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['apps', appSlug, 'deployments'],
+      });
+      toast.success('Redeploy triggered');
+    } catch (e) {
+      toast.error('Failed to redeploy: ' + e);
     }
   };
 
@@ -400,16 +417,28 @@ function DeploymentRow({
               isLoading={stopDeployment.isPending}
             />
           )}
-          {(deployment.status === 'Stopped' ||
-            deployment.status === 'Failed') && (
+          {deployment.status === 'Stopped' && (
             <Button
               label="Restart"
-              icon={<RotateCcw className="size-3.5" />}
+              icon={<Play className="size-3.5" />}
               variant="ghost"
               size="sm"
               color="neutral"
               onClick={handleRestart}
               isLoading={restartDeployment.isPending}
+            />
+          )}
+          {(deployment.status === 'Running' ||
+            deployment.status === 'Stopped' ||
+            deployment.status === 'Failed') && (
+            <Button
+              label="Redeploy"
+              icon={<RotateCcw className="size-3.5" />}
+              variant="ghost"
+              size="sm"
+              color="neutral"
+              onClick={handleRedeploy}
+              isLoading={redeployDeployment.isPending}
             />
           )}
           <Button

@@ -24,7 +24,11 @@ use uuid::Uuid;
 
 use crate::{
     docker::{
-        deployment::{delete_deployment_container, run_deployment, stop_deployment_container},
+        app_container_name,
+        deployment::{
+            delete_deployment_container, run_deployment, start_deployment_container,
+            stop_deployment_container,
+        },
         logs::{LogKey, LogManager},
     },
     error::{HttpError, HttpResult},
@@ -56,6 +60,7 @@ pub fn router() -> Router<AppState> {
         .route("/{deployment_id}/logs", get(stream_logs))
         .route("/{deployment_id}/stop", post(stop_deployment))
         .route("/{deployment_id}/restart", post(restart_deployment))
+        .route("/{deployment_id}/redeploy", post(redeploy_deployment))
         .route("/{deployment_id}", delete(delete_deployment))
 }
 
@@ -181,7 +186,7 @@ async fn stop_deployment(
     })))
 }
 
-async fn restart_deployment(
+async fn redeploy_deployment(
     State(docker): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
@@ -218,6 +223,41 @@ async fn restart_deployment(
     Ok(Json(
         serde_json::json!({ "deployment": updated_deployment }),
     ))
+}
+
+async fn restart_deployment(
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
+    State(proxy_sync_trigger): State<Arc<Notify>>,
+    AuthUser(user): AuthUser,
+    Path((slug, deployment_id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
+
+    let container_name = app_container_name(&app.id, &deployment.id);
+
+    let log_key = LogKey::Deployment {
+        app_slug: app.slug.clone(),
+        deployment_id: deployment.id.clone(),
+    };
+    let log = log_manager.get_logger(&log_key).await?;
+
+    start_deployment_container(
+        &docker,
+        &db_pool,
+        &proxy_sync_trigger,
+        &log,
+        &deployment.id,
+        &container_name,
+    )
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "restarted": true,
+        "deployment_id": deployment_id
+    })))
 }
 
 async fn stream_logs(
