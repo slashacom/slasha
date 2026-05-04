@@ -35,9 +35,9 @@ pub async fn create_deployment_container(
     container_port: u16,
     env_map: HashMap<String, String>,
     volume_paths: Vec<String>,
-) -> DeploymentResult<(String, u16)> {
+) -> DeploymentResult<String> {
     let deployment_id = deployment.id.clone();
-    let name = app_container_name(&app.id, &deployment_id);
+    let container_name = app_container_name(&app.id, &deployment_id);
     let image = image_tag(&app.slug, &deployment.commit_sha);
 
     let mut labels: HashMap<String, String> = HashMap::new();
@@ -118,7 +118,7 @@ pub async fn create_deployment_container(
     };
 
     let create_opts = CreateContainerOptions {
-        name: Some(name.clone()),
+        name: Some(container_name.clone()),
         ..Default::default()
     };
 
@@ -126,7 +126,7 @@ pub async fn create_deployment_container(
         .create_container(Some(create_opts), container_config)
         .await?;
 
-    Ok((name, container_port))
+    Ok(container_name)
 }
 
 pub async fn start_deployment_container(
@@ -136,7 +136,6 @@ pub async fn start_deployment_container(
     log: &Log,
     deployment_id: &str,
     container_name: &str,
-    container_port: u16,
 ) -> DeploymentResult<()> {
     docker_client
         .start_container(
@@ -149,11 +148,7 @@ pub async fn start_deployment_container(
 
     proxy_sync_trigger.notify_one();
 
-    log.send(format!(
-        "Container {} started, listening on internal port {}",
-        container_name, container_port
-    ))
-    .await?;
+    log.send(format!("Container {} started", container_name)).await?;
 
     tokio::spawn({
         let docker_client = docker_client.clone();

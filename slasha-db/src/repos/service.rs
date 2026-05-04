@@ -4,7 +4,7 @@ use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
     models::{
-        schema::{service_env_vars, services},
+        schema::{apps, service_env_vars, services},
         service::{Service, ServiceEnvVar, ServiceStatus},
     },
 };
@@ -12,6 +12,23 @@ use crate::{
 pub struct ServiceRepo;
 
 impl ServiceRepo {
+    pub async fn list_non_terminal(pool: &DbPool) -> DbResult<Vec<(Service, String)>> {
+        let pool = pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(services::table
+                .inner_join(apps::table)
+                .filter(
+                    services::status
+                        .eq(ServiceStatus::Provisioning.to_string())
+                        .or(services::status.eq(ServiceStatus::Running.to_string())),
+                )
+                .select((Service::as_select(), apps::slug))
+                .load::<(Service, String)>(&mut conn)?)
+        })
+        .await?
+    }
+
     pub async fn list_for_app(pool: &DbPool, app_id: &str) -> DbResult<Vec<Service>> {
         let pool = pool.clone();
         let app_id = app_id.to_string();

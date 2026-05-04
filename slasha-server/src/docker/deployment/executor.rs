@@ -192,7 +192,7 @@ async fn run_deployment_inner(
         }
     });
 
-    let (container_name, container_port) = create_deployment_container(
+    let container_name = create_deployment_container(
         docker_client,
         app,
         deployment,
@@ -225,7 +225,6 @@ async fn run_deployment_inner(
         log,
         &deployment.id,
         &container_name,
-        container_port,
     )
     .await?;
 

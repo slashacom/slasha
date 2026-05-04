@@ -19,54 +19,57 @@ pub const PROXY_NETWORK_NAME: &str = "slasha-proxy";
 const IMAGE: &str = "caddy:latest";
 const ADMIN_URL: &str = "http://127.0.0.1:2019/config/";
 
-pub async fn ensure_caddy_ready(docker_client: &Docker) -> ProxyResult<()> {
-    ensure_proxy_network(docker_client).await?;
-    ensure_caddy_volumes(docker_client).await?;
-    pull_caddy_image(docker_client).await?;
+pub async fn ensure_caddy_ready(docker: &Docker) -> ProxyResult<()> {
+    let state = docker
+        .inspect_container(PROXY_CONTAINER_NAME, None)
+        .await
+        .ok()
+        .and_then(|c| c.state);
 
-    if !caddy_container_exists(docker_client).await {
-        create_caddy_container(docker_client).await?;
+    match state {
+        Some(s) => {
+            // container exists, just start it
+            if s.running != Some(true) {
+                docker
+                    .start_container(
+                        PROXY_CONTAINER_NAME,
+                        Some(StartContainerOptionsBuilder::new().build()),
+                    )
+                    .await?;
+            }
+
+            // container running already
+            return wait_for_admin_api().await;
+        }
+        None => {}
     }
 
-    start_caddy_container(docker_client).await;
-    wait_for_caddy_ready().await?;
-
-    Ok(())
-}
-
-pub async fn ensure_proxy_network(docker_client: &Docker) -> ProxyResult<()> {
-    let config = NetworkCreateRequest {
-        name: PROXY_NETWORK_NAME.to_string(),
-        driver: Some("bridge".to_string()),
-        ..Default::default()
-    };
-
-    match docker_client.create_network(config).await {
-        Ok(_) => Ok(()),
-        Err(bollard::errors::Error::DockerResponseServerError {
-            status_code: 409, ..
-        }) => Ok(()), // already exists
-        Err(e) => Err(ProxyError::DockerApi(e)),
-    }
-}
-
-async fn ensure_caddy_volumes(docker_client: &Docker) -> ProxyResult<()> {
-    let volumes = ["slasha-caddy-data", "slasha-caddy-config"];
-
-    for &name in &volumes {
-        let req = VolumeCreateRequest {
-            name: Some(name.to_string()),
+    match docker
+        .create_network(NetworkCreateRequest {
+            name: PROXY_NETWORK_NAME.to_string(),
+            driver: Some("bridge".to_string()),
             ..Default::default()
-        };
-
-        docker_client.create_volume(req).await?;
+        })
+        .await
+    {
+        // network already exists
+        Ok(_)
+        | Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 409, ..
+        }) => {}
+        Err(e) => return Err(ProxyError::DockerApi(e)),
     }
 
-    Ok(())
-}
+    for name in ["slasha-caddy-data", "slasha-caddy-config"] {
+        docker
+            .create_volume(VolumeCreateRequest {
+                name: Some(name.to_string()),
+                ..Default::default()
+            })
+            .await?;
+    }
 
-async fn pull_caddy_image(docker_client: &Docker) -> ProxyResult<()> {
-    let mut stream = docker_client.create_image(
+    let mut stream = docker.create_image(
         Some(CreateImageOptions {
             from_image: Some(IMAGE.to_string()),
             ..Default::default()
@@ -77,26 +80,12 @@ async fn pull_caddy_image(docker_client: &Docker) -> ProxyResult<()> {
 
     while let Some(result) = stream.next().await {
         if let Err(e) = result {
-            tracing::warn!("Failed to pull {}: {}", IMAGE, e);
+            tracing::warn!("Failed to pull {IMAGE}: {e}");
         }
     }
 
-    Ok(())
-}
-
-async fn caddy_container_exists(docker_client: &Docker) -> bool {
-    docker_client
-        .inspect_container(PROXY_CONTAINER_NAME, None)
-        .await
-        .is_ok()
-}
-
-async fn create_caddy_container(docker_client: &Docker) -> ProxyResult<()> {
-    let mut labels = HashMap::new();
-    labels.insert("slasha.managed".into(), "true".into());
-    labels.insert("slasha.role".into(), "proxy".into());
-
     let mut port_bindings: HashMap<String, Option<Vec<PortBinding>>> = HashMap::new();
+
     port_bindings.insert(
         "80/tcp".into(),
         Some(vec![PortBinding {
@@ -119,91 +108,66 @@ async fn create_caddy_container(docker_client: &Docker) -> ProxyResult<()> {
         }]),
     );
 
-    let host_config = HostConfig {
-        port_bindings: Some(port_bindings),
-        extra_hosts: Some(vec!["host.docker.internal:host-gateway".to_string()]),
-        restart_policy: Some(RestartPolicy {
-            name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
-            ..Default::default()
-        }),
-        mounts: Some(vec![
-            mount_volume("slasha-caddy-data", "/data"),
-            mount_volume("slasha-caddy-config", "/config"),
-        ]),
-        ..Default::default()
-    };
+    let mut labels = HashMap::new();
+    labels.insert("slasha.managed".into(), "true".into());
+    labels.insert("slasha.role".into(), "proxy".into());
 
-    let mut endpoints_config = HashMap::new();
-    endpoints_config.insert(
-        PROXY_NETWORK_NAME.to_string(),
-        EndpointSettings {
-            network_id: Some(PROXY_NETWORK_NAME.to_string()),
-            ..Default::default()
-        },
-    );
-
-    let config = ContainerCreateBody {
-        image: Some(IMAGE.to_string()),
-        labels: Some(labels),
-        host_config: Some(host_config),
-        networking_config: Some(NetworkingConfig {
-            endpoints_config: Some(endpoints_config),
-        }),
-        cmd: Some(vec![
-            "/bin/sh".to_string(),
-            "-c".to_string(),
-            "printf '{\n  admin 0.0.0.0:2019\n}\n' > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile --adapter caddyfile".to_string(),
-        ]),
-        ..Default::default()
-    };
-
-    docker_client
-        .create_container(
-            Some(CreateContainerOptions {
-                name: Some(PROXY_CONTAINER_NAME.to_string()),
+    docker.create_container(
+        Some(CreateContainerOptions { name: Some(PROXY_CONTAINER_NAME.to_string()), ..Default::default() }),
+        ContainerCreateBody {
+            image: Some(IMAGE.to_string()),
+            labels: Some(labels),
+            cmd: Some(vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "printf '{\n  admin 0.0.0.0:2019\n}\n' > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile --adapter caddyfile".into(),
+            ]),
+            host_config: Some(HostConfig {
+                port_bindings: Some(port_bindings),
+                extra_hosts: Some(vec!["host.docker.internal:host-gateway".into()]),
+                restart_policy: Some(RestartPolicy {
+                    name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                    ..Default::default()
+                }),
+                mounts: Some(vec![
+                    Mount { typ: Some(MountTypeEnum::VOLUME), source: Some("slasha-caddy-data".into()),   target: Some("/data".into()),   ..Default::default() },
+                    Mount { typ: Some(MountTypeEnum::VOLUME), source: Some("slasha-caddy-config".into()), target: Some("/config".into()), ..Default::default() },
+                ]),
                 ..Default::default()
             }),
-            config,
+            networking_config: Some(NetworkingConfig {
+                endpoints_config: Some(HashMap::from([(
+                    PROXY_NETWORK_NAME.to_string(),
+                    EndpointSettings { network_id: Some(PROXY_NETWORK_NAME.to_string()), ..Default::default() },
+                )])),
+            }),
+            ..Default::default()
+        },
+    ).await?;
+
+    docker
+        .start_container(
+            PROXY_CONTAINER_NAME,
+            Some(StartContainerOptionsBuilder::new().build()),
         )
         .await?;
 
-    Ok(())
+    wait_for_admin_api().await
 }
 
-fn mount_volume(source: &str, target: &str) -> Mount {
-    Mount {
-        typ: Some(MountTypeEnum::VOLUME),
-        source: Some(source.to_string()),
-        target: Some(target.to_string()),
-        ..Default::default()
-    }
-}
-
-async fn start_caddy_container(docker_client: &Docker) {
-    let opts = StartContainerOptionsBuilder::new().build();
-
-    if let Err(e) = docker_client
-        .start_container(PROXY_CONTAINER_NAME, Some(opts))
-        .await
-    {
-        tracing::debug!("Container start result (may already be running): {:?}", e);
-    }
-}
-
-async fn wait_for_caddy_ready() -> ProxyResult<()> {
+async fn wait_for_admin_api() -> ProxyResult<()> {
     let client = reqwest::Client::new();
 
     for _ in 0..20 {
-        if let Ok(res) = client.get(ADMIN_URL).send().await
-            && res.status().is_success()
-        {
-            return Ok(());
+        if let Ok(res) = client.get(ADMIN_URL).send().await {
+            if res.status().is_success() {
+                return Ok(());
+            }
         }
-
         sleep(Duration::from_millis(500)).await;
     }
 
     Err(ProxyError::Timeout(
-        "Caddy admin API did not become ready within 20s".into(),
+        "Caddy admin API did not become ready within 10s".into(),
     ))
 }
