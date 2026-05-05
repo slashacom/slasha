@@ -116,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
 
     state.runtime.proxy_sync_trigger.notify_one();
 
-    run_server(Some(SocketAddr::from(([127, 0, 0, 1], port))), state).await?;
+    run_server(Some(SocketAddr::from(([0, 0, 0, 0], port))), state).await?;
 
     Ok(())
 }
