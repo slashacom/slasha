@@ -37,7 +37,7 @@ fn format_status(status: ServiceStatus) -> String {
 
 pub async fn handle_list(state: &AppState, slug: &str) -> Result<()> {
     let services_data = state
-        .client
+        .api_client
         .get(&format!("/api/apps/{}/services", slug))
         .await?;
 
@@ -78,7 +78,7 @@ pub async fn handle_create(
     let default_env = fetch_default_env(state, kind).await?;
 
     let provision_res = state
-        .client
+        .api_client
         .post(
             &format!("/api/apps/{}/services", slug),
             &json!({
@@ -120,7 +120,7 @@ pub async fn handle_stop(state: &AppState, slug: &str, service: &str, yes: bool)
     }
 
     state
-        .client
+        .api_client
         .post(
             &format!("/api/apps/{}/services/{}/stop", slug, service_id),
             &serde_json::Value::Null,
@@ -146,7 +146,7 @@ pub async fn handle_delete(state: &AppState, slug: &str, service: &str, yes: boo
     }
 
     state
-        .client
+        .api_client
         .delete(&format!("/api/apps/{}/services/{}", slug, service_id))
         .await?;
 
@@ -161,18 +161,9 @@ pub async fn handle_logs(state: &AppState, slug: &str, service: &str, follow: bo
     let service_id = resolve_service_id(state, slug, service).await?;
 
     let res = state
-        .client
+        .api_client
         .get_stream(&format!("/api/apps/{}/services/{}/logs", slug, service_id))
         .await?;
-
-    if !res.status().is_success() {
-        let body: serde_json::Value = res.json().await.context("Failed to parse response body")?;
-        let msg = body["error"]
-            .as_str()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| body.to_string());
-        anyhow::bail!("{}", msg);
-    }
 
     let mut stream = res.bytes_stream().eventsource();
 
@@ -214,7 +205,7 @@ pub async fn resolve_service_id(state: &AppState, slug: &str, name_or_id: &str) 
     }
 
     let services_data = state
-        .client
+        .api_client
         .get(&format!("/api/apps/{}/services", slug))
         .await?;
 
@@ -234,7 +225,7 @@ async fn fetch_default_env(
     state: &AppState,
     kind: &ServiceKind,
 ) -> Result<std::collections::HashMap<String, String>> {
-    let kinds_data = match state.client.get("/api/services/kinds").await {
+    let kinds_data = match state.api_client.get("/api/services/kinds").await {
         Ok(b) => b,
         Err(_) => return Ok(Default::default()),
     };

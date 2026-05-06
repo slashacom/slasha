@@ -5,7 +5,6 @@ use crate::{config::Config, token::get_auth_token};
 pub struct ApiClient {
     client: reqwest::Client,
     base_url: String,
-    auth_token: Option<String>,
 }
 
 impl ApiClient {
@@ -14,12 +13,12 @@ impl ApiClient {
         let client = reqwest::Client::builder()
             .build()
             .context("Failed to build HTTP client")?;
+
         Ok(Self {
             client,
             base_url: config
                 .base_url
                 .unwrap_or("http://localhost:3000".to_string()),
-            auth_token: get_auth_token()?,
         })
     }
 
@@ -36,10 +35,25 @@ impl ApiClient {
     }
 
     pub async fn get_stream(&self, path: &str) -> Result<reqwest::Response> {
-        self.apply_auth(self.client.get(self.url(path)))
+        let res = self
+            .apply_auth(self.client.get(self.url(path)))?
             .send()
             .await
-            .context("GET request failed")
+            .context("GET request failed")?;
+
+        if !res.status().is_success() {
+            let body: serde_json::Value =
+                res.json().await.context("Failed to parse response body")?;
+
+            let msg = body["error"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| body.to_string());
+
+            anyhow::bail!("{}", msg);
+        }
+
+        Ok(res)
     }
 
     pub async fn post<B: serde::Serialize>(
@@ -63,42 +77,44 @@ impl ApiClient {
     }
 
     pub fn url(&self, path: &str) -> String {
-        format!("{}{}", self.base_url, path)
+        format!(
+            "{}/{}",
+            self.base_url.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        )
     }
 
-    fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        match &self.auth_token {
-            Some(token) => req.bearer_auth(token),
-            None => req,
+    fn apply_auth(&self, req: reqwest::RequestBuilder) -> Result<reqwest::RequestBuilder> {
+        if let Some(token) = get_auth_token()? {
+            return Ok(req.bearer_auth(token));
         }
+
+        Ok(req)
     }
 
     async fn send(&self, req: reqwest::RequestBuilder) -> Result<serde_json::Value> {
         let res = self
-            .apply_auth(req)
+            .apply_auth(req)?
             .send()
             .await
             .context("Request failed")?;
-        Self::parse_response(res).await
-    }
 
-    async fn parse_response(res: reqwest::Response) -> Result<serde_json::Value> {
         let status = res.status();
         if status == reqwest::StatusCode::NO_CONTENT {
             return Ok(serde_json::Value::Null);
         }
-        let json: serde_json::Value = res.json().await.context("failed to parse response body")?;
+
+        let body: serde_json::Value = res.json().await.context("Failed to parse response body")?;
+
         if !status.is_success() {
-            let msg = json["error"]
+            let msg = body["error"]
                 .as_str()
                 .map(str::to_string)
-                .unwrap_or_else(|| json.to_string());
+                .unwrap_or_else(|| body.to_string());
+
             anyhow::bail!("{}", msg);
         }
-        Ok(json)
-    }
-}
 
-pub fn client() -> Result<ApiClient> {
-    ApiClient::from_config()
+        Ok(body)
+    }
 }

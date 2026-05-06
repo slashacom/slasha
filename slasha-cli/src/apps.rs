@@ -12,14 +12,14 @@ use crate::{
 fn git_remote_url(state: &AppState, slug: &str) -> String {
     format!(
         "{}/git/{}",
-        state.client.url("").trim_end_matches('/'),
+        state.api_client.url("").trim_end_matches('/'),
         slug
     )
 }
 
 fn ssh_git_url(state: &AppState, slug: &str) -> String {
     let host = state
-        .client
+        .api_client
         .url("")
         .trim_end_matches('/')
         .trim_start_matches("http://")
@@ -51,7 +51,7 @@ fn print_app(state: &AppState, app: &App) {
 }
 
 pub async fn handle_list(state: &AppState) -> Result<()> {
-    let body = state.client.get("/api/apps").await?;
+    let body = state.api_client.get("/api/apps").await?;
 
     let apps: Vec<App> =
         serde_json::from_value(body["apps"].clone()).context("Failed to parse apps")?;
@@ -81,7 +81,7 @@ pub async fn handle_list(state: &AppState) -> Result<()> {
 
 pub async fn handle_create(state: &AppState, name: &str) -> Result<()> {
     let body = state
-        .client
+        .api_client
         .post("/api/apps", &json!({ "name": name }))
         .await?;
 
@@ -96,7 +96,7 @@ pub async fn handle_create(state: &AppState, name: &str) -> Result<()> {
 }
 
 pub async fn handle_info(state: &AppState, slug: &str) -> Result<()> {
-    let body = state.client.get(&format!("/api/apps/{}", slug)).await?;
+    let body = state.api_client.get(&format!("/api/apps/{}", slug)).await?;
 
     let app: App = serde_json::from_value(body["app"].clone()).context("Failed to parse app")?;
 
@@ -119,11 +119,18 @@ pub async fn handle_delete(state: &AppState, slug: &str, yes: bool) -> Result<()
         return Ok(());
     }
 
-    state.client.delete(&format!("/api/apps/{}", slug)).await?;
+    state
+        .api_client
+        .delete(&format!("/api/apps/{}", slug))
+        .await?;
 
-    output(state.output_mode, &json!({ "ok": true, "slug": slug }), || {
-        cli_success(format!("App {} deleted.", slug));
-    })?;
+    output(
+        state.output_mode,
+        &json!({ "ok": true, "slug": slug }),
+        || {
+            cli_success(format!("App {} deleted.", slug));
+        },
+    )?;
 
     Ok(())
 }
@@ -132,7 +139,7 @@ pub async fn handle_link(state: &AppState, app_flag: Option<String>) -> Result<(
     let slug = match app_flag {
         Some(s) => s,
         None => {
-            let body = state.client.get("/api/apps").await?;
+            let body = state.api_client.get("/api/apps").await?;
 
             let apps: Vec<App> =
                 serde_json::from_value(body["apps"].clone()).context("Failed to parse apps")?;
@@ -146,18 +153,22 @@ pub async fn handle_link(state: &AppState, app_flag: Option<String>) -> Result<(
         }
     };
 
-    state.client.get(&format!("/api/apps/{}", slug)).await?;
+    state.api_client.get(&format!("/api/apps/{}", slug)).await?;
 
     let mut config = Config::load().unwrap_or_default();
     config.app = Some(slug.clone());
     config.save()?;
 
-    output(state.output_mode, &json!({ "ok": true, "slug": slug }), || {
-        cli_success(format!(
-            "Linked current directory to app '{}' in slasha.toml",
-            slug
-        ));
-    })?;
+    output(
+        state.output_mode,
+        &json!({ "ok": true, "slug": slug }),
+        || {
+            cli_success(format!(
+                "Linked current directory to app '{}' in slasha.toml",
+                slug
+            ));
+        },
+    )?;
 
     Ok(())
 }

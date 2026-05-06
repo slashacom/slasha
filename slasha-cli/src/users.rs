@@ -23,7 +23,7 @@ pub async fn dispatch(state: &AppState, cmd: UsersCommand) -> Result<()> {
 }
 
 pub async fn handle_list(state: &AppState) -> Result<()> {
-    let users_data = state.client.get("/api/users").await?;
+    let users_data = state.api_client.get("/api/users").await?;
 
     let users: Vec<User> =
         serde_json::from_value(users_data["users"].clone()).context("Failed to parse users")?;
@@ -55,7 +55,7 @@ pub async fn handle_create(
     role: &str,
 ) -> Result<()> {
     let create_res = state
-        .client
+        .api_client
         .post(
             "/api/users",
             &json!({
@@ -86,7 +86,7 @@ pub async fn handle_update(
     role: Option<String>,
 ) -> Result<()> {
     let update_res = state
-        .client
+        .api_client
         .put(
             &format!("/api/users/{}", id),
             &json!({
@@ -117,7 +117,10 @@ pub async fn handle_delete(state: &AppState, id: &str, yes: bool) -> Result<()> 
         return Ok(());
     }
 
-    state.client.delete(&format!("/api/users/{}", id)).await?;
+    state
+        .api_client
+        .delete(&format!("/api/users/{}", id))
+        .await?;
 
     output(state.output_mode, &json!({ "ok": true }), || {
         cli_success("User deleted.");

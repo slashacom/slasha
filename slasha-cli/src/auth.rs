@@ -28,7 +28,7 @@ struct MeResponse {
 
 async fn check_has_admin(state: &AppState) -> Result<bool> {
     let status: StatusResponse =
-        serde_json::from_value(state.client.get("/api/auth/status").await?)
+        serde_json::from_value(state.api_client.get("/api/auth/status").await?)
             .context("Failed to parse status")?;
 
     Ok(status.has_admin)
@@ -58,7 +58,7 @@ pub async fn handle_login(state: &AppState) -> Result<()> {
 
     let auth: AuthResponse = match serde_json::from_value(
         state
-            .client
+            .api_client
             .post(
                 "/api/auth/login",
                 &json!({ "email": email, "password": password }),
@@ -98,7 +98,7 @@ async fn handle_signup(state: &AppState) -> Result<()> {
 
     let auth: AuthResponse = match serde_json::from_value(
         state
-            .client
+            .api_client
             .post(
                 "/api/auth/signup",
                 &json!({ "email": email, "password": password }),
@@ -138,7 +138,7 @@ pub async fn handle_logout(state: &AppState) -> Result<()> {
 }
 
 pub async fn handle_me(state: &AppState) -> Result<()> {
-    let me: MeResponse = serde_json::from_value(state.client.get("/api/auth/me").await?)
+    let me: MeResponse = serde_json::from_value(state.api_client.get("/api/auth/me").await?)
         .context("Failed to parse me response")?;
 
     output(state.output_mode, &me.user, || {
@@ -151,7 +151,7 @@ pub async fn handle_me(state: &AppState) -> Result<()> {
 }
 
 pub async fn handle_status(state: &AppState) -> Result<()> {
-    let health = state.client.get("/api/health").await?;
+    let health = state.api_client.get("/api/health").await?;
 
     output(state.output_mode, &health, || {
         cli_success(format!(

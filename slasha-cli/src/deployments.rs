@@ -46,7 +46,7 @@ pub async fn handle_trigger(state: &AppState, slug: &str, commit: Option<String>
     };
 
     let payload = match state
-        .client
+        .api_client
         .post(&format!("/api/apps/{}/deployments", slug), &payload)
         .await
     {
@@ -93,7 +93,7 @@ fn format_status(status: DeploymentStatus) -> String {
 
 pub async fn handle_list(state: &AppState, slug: &str) -> Result<()> {
     let deployments_data = state
-        .client
+        .api_client
         .get(&format!("/api/apps/{}/deployments", slug))
         .await?;
 
@@ -132,21 +132,12 @@ pub async fn handle_logs(
     let deployment_id = resolve_deployment_id(state, slug, deployment_id).await?;
 
     let res = state
-        .client
+        .api_client
         .get_stream(&format!(
             "/api/apps/{}/deployments/{}/logs",
             slug, deployment_id
         ))
         .await?;
-
-    if !res.status().is_success() {
-        let body: serde_json::Value = res.json().await.context("Failed to parse response body")?;
-        let msg = body["error"]
-            .as_str()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| body.to_string());
-        anyhow::bail!("{}", msg);
-    }
 
     let mut stream = res.bytes_stream().eventsource();
 
@@ -173,6 +164,7 @@ pub async fn handle_logs(
                     )?;
                 }
             }
+
             Err(e) => {
                 cli_error(format!("Stream error: {}", e));
                 break;
@@ -191,7 +183,7 @@ pub async fn handle_stop(
     let deployment_id = resolve_deployment_id(state, slug, deployment_id).await?;
 
     state
-        .client
+        .api_client
         .post(
             &format!("/api/apps/{}/deployments/{}/stop", slug, deployment_id),
             &json!({}),
@@ -213,7 +205,7 @@ pub async fn handle_restart(
     let deployment_id = resolve_deployment_id(state, slug, deployment_id).await?;
 
     state
-        .client
+        .api_client
         .post(
             &format!("/api/apps/{}/deployments/{}/restart", slug, deployment_id),
             &json!({}),
@@ -235,7 +227,7 @@ pub async fn handle_redeploy(
     let deployment_id = resolve_deployment_id(state, slug, deployment_id).await?;
 
     let payload = state
-        .client
+        .api_client
         .post(
             &format!("/api/apps/{}/deployments/{}/redeploy", slug, deployment_id),
             &json!({}),
@@ -276,7 +268,7 @@ pub async fn handle_delete(
     }
 
     state
-        .client
+        .api_client
         .delete(&format!("/api/apps/{}/deployments/{}", slug, deployment_id))
         .await?;
 
@@ -298,7 +290,7 @@ async fn resolve_deployment_id(
     }
 
     let deployments_data = state
-        .client
+        .api_client
         .get(&format!("/api/apps/{}/deployments", slug))
         .await?;
 

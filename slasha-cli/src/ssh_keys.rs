@@ -21,7 +21,7 @@ pub async fn dispatch(state: &AppState, cmd: SshKeysCommand) -> Result<()> {
 }
 
 pub async fn handle_list(state: &AppState) -> Result<()> {
-    let keys_data = state.client.get("/api/ssh-keys").await?;
+    let keys_data = state.api_client.get("/api/ssh-keys").await?;
 
     let keys: Vec<SshKey> =
         serde_json::from_value(keys_data["keys"].clone()).context("Failed to parse keys")?;
@@ -71,7 +71,7 @@ pub async fn handle_add(
     let public_key = raw_key.trim().to_string();
 
     let add_res = state
-        .client
+        .api_client
         .post(
             "/api/ssh-keys",
             &json!({ "title": title, "public_key": public_key }),
@@ -92,7 +92,7 @@ pub async fn handle_add(
 
 pub async fn handle_remove(state: &AppState, id: &str) -> Result<()> {
     state
-        .client
+        .api_client
         .delete(&format!("/api/ssh-keys/{}", id))
         .await?;
 

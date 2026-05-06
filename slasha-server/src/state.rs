@@ -123,19 +123,19 @@ impl AppState {
 
 impl FromRef<AppState> for Clients {
     fn from_ref(state: &AppState) -> Self {
-        state.clients.clone()
+        state.api_clients.clone()
     }
 }
 
 impl FromRef<AppState> for Docker {
     fn from_ref(state: &AppState) -> Self {
-        state.clients.docker.clone()
+        state.api_clients.docker.clone()
     }
 }
 
 impl FromRef<AppState> for CaddyClient {
     fn from_ref(state: &AppState) -> Self {
-        state.clients.caddy.clone()
+        state.api_clients.caddy.clone()
     }
 }
 

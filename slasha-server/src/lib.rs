@@ -106,7 +106,7 @@ pub async fn start_server() -> anyhow::Result<()> {
     let state = AppState::new(config, clients, storage, runtime);
 
     run_container_sync(
-        &state.clients.docker,
+        &state.api_clients.docker,
         &state.storage.db_pool,
         &state.runtime.log_manager,
     )
