@@ -6,8 +6,12 @@ COPY web/ .
 RUN NODE_ENV=production bun run build
 
 FROM lukemathwalker/cargo-chef:latest-rust-slim-bookworm AS chef
+# libdbus-1-dev: keyring crate's `sync-secret-service` feature pulls in
+# libdbus-sys on Linux. The keyring is only used by the CLI on user
+# laptops (it has no working DBus session inside the container), but
+# the dep still has to compile when we build the bundled binary.
 RUN apt-get update && \
-    apt-get install -y pkg-config libssl-dev libsqlite3-dev && \
+    apt-get install -y pkg-config libssl-dev libsqlite3-dev libdbus-1-dev && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
