@@ -24,7 +24,7 @@ pub async fn dispatch(
 
 pub async fn handle_list(state: &AppState, slug: &str, service_id: &str) -> Result<()> {
     let env_data = state
-        .client
+        .api_client
         .get(&format!("/api/apps/{}/services/{}/env", slug, service_id))
         .await?;
 
@@ -63,7 +63,7 @@ pub async fn handle_set(
     }
 
     let update_res = state
-        .client
+        .api_client
         .put(
             &format!("/api/apps/{}/services/{}/env", slug, service_id),
             &json!({ "vars": current }),
@@ -92,7 +92,7 @@ pub async fn handle_unset(
     }
 
     let update_res = state
-        .client
+        .api_client
         .put(
             &format!("/api/apps/{}/services/{}/env", slug, service_id),
             &json!({ "vars": current }),
@@ -112,7 +112,7 @@ async fn fetch_vars(
     service_id: &str,
 ) -> Result<HashMap<String, String>> {
     let env_data = state
-        .client
+        .api_client
         .get(&format!("/api/apps/{}/services/{}/env", slug, service_id))
         .await?;
 
