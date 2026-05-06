@@ -35,9 +35,11 @@ pub enum GitError {
 impl From<GitError> for HttpError {
     fn from(e: GitError) -> Self {
         match e {
-            GitError::Unauthorized | GitError::InvalidCredentials => {
-                HttpError::unauthorized().with_git_auth_challenge()
-            }
+            GitError::Unauthorized | GitError::InvalidCredentials => HttpError::unauthorized()
+                .with_headers(vec![(
+                    header::WWW_AUTHENTICATE,
+                    "Basic realm=\"Git\"".to_string(),
+                )]),
             GitError::RepoNotFound => HttpError::not_found("Repository not found"),
             GitError::NotMember => HttpError::forbidden("Not a member"),
             GitError::BadRequest(msg) => HttpError::bad_request(msg),

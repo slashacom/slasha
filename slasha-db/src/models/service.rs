@@ -10,7 +10,7 @@ use diesel::{
     sqlite::Sqlite,
 };
 use serde::{Deserialize, Serialize};
-use strum_macros::{Display, EnumIter, EnumString};
+use strum_macros::{Display, EnumIter, EnumString, VariantNames};
 use ts_rs::TS;
 
 use crate::models::service::deserialize::FromSqlRow;
@@ -39,6 +39,7 @@ pub struct Service {
     Clone,
     EnumString,
     EnumIter,
+    VariantNames,
     Serialize,
     Deserialize,
     TS,
@@ -132,7 +133,7 @@ impl FromSql<Text, Sqlite> for ServiceKind {
     Deserialize,
     TS,
 )]
-#[strum(serialize_all = "lowercase")]
+#[strum(serialize_all = "lowercase")] // db uses lowercase
 #[diesel(sql_type = diesel::sql_types::Text)]
 #[ts(export, export_to = "./service.ts")]
 pub enum ServiceStatus {

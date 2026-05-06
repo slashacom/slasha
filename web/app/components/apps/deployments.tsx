@@ -488,7 +488,7 @@ function LogModal({
 
     es.onmessage = (event) => {
       const data = event.data;
-      if (data) {
+      if (data && data !== '[done]') {
         setLogs((prev) => [...prev, data]);
       }
     };

@@ -41,7 +41,7 @@ pub struct Deployment {
     Deserialize,
     TS,
 )]
-#[strum(serialize_all = "lowercase")]
+#[strum(serialize_all = "lowercase")] // db uses lowercase
 #[diesel(sql_type = diesel::sql_types::Text)]
 #[ts(export, export_to = "./deployment.ts")]
 pub enum DeploymentStatus {

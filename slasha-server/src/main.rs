@@ -61,8 +61,7 @@ fn run_migrations(storage: &Storage) {
         .expect("Failed to run migrations");
 }
 
-pub async fn run_server(address: Option<SocketAddr>, state: AppState) -> anyhow::Result<()> {
-    let address = address.unwrap_or_else(|| "0.0.0.0:3000".parse().unwrap());
+pub async fn run_server(address: SocketAddr, state: AppState) -> anyhow::Result<()> {
     info!("🚀 Slasha server starting on http://{}", address);
 
     let app = routing::router(state.clone()).with_state(state);
@@ -116,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
 
     state.runtime.proxy_sync_trigger.notify_one();
 
-    run_server(Some(SocketAddr::from(([0, 0, 0, 0], port))), state).await?;
+    run_server(SocketAddr::from(([0, 0, 0, 0], port)), state).await?;
 
     Ok(())
 }

@@ -164,7 +164,7 @@ pub async fn run_container_sync(
                         container_record.mark_failed(db_pool).await?;
                         return Ok(());
                     }
-                    
+
                     Err(e) => anyhow::bail!(e),
                 }
 

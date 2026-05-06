@@ -148,7 +148,8 @@ pub async fn start_deployment_container(
 
     proxy_sync_trigger.notify_one();
 
-    log.send(format!("Container {} started", container_name)).await?;
+    log.send(format!("Container {} started", container_name))
+        .await?;
 
     tokio::spawn({
         let docker_client = docker_client.clone();
