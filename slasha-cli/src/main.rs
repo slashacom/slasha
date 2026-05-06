@@ -24,6 +24,7 @@ use crate::{
     clap_app::{ClapApp, Command},
     config::Config,
     diagnostic::DiagnosticReport,
+    http::ApiClient,
     output::print_json,
     state::AppState,
 };
@@ -44,22 +45,28 @@ fn resolve_app(flag: Option<String>) -> anyhow::Result<String> {
 }
 
 async fn run(cli: ClapApp) -> anyhow::Result<()> {
-    let output_mode = cli.output_mode;
-    let state = AppState {
-        client: http::client()?.with_url_override(cli.url),
+    let ClapApp {
+        command,
         output_mode,
-    };
+        url,
+        diagnostic,
+    } = cli;
 
-    if cli.diagnostic {
+    if diagnostic {
         DiagnosticReport::generate()?.print()?;
         return Ok(());
     }
 
-    match cli.command {
+    let state = AppState {
+        api_client: ApiClient::from_config()?.with_url_override(url),
+        output_mode,
+    };
+
+    match command {
         #[cfg(feature = "serve")]
-        Command::Serve => return slasha_server::start_server().await,
+        Command::Serve => slasha_server::start_server().await?,
         #[cfg(feature = "serve")]
-        Command::GitSsh { user_id } => return git_ssh::handle(user_id).await,
+        Command::GitSsh { user_id } => git_ssh::handle(user_id).await?,
 
         Command::Status => auth::handle_status(&state).await?,
         Command::Login => auth::handle_login(&state).await?,

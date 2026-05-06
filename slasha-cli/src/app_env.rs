@@ -18,7 +18,10 @@ pub async fn dispatch(state: &AppState, slug: &str, cmd: AppEnvCommand) -> Resul
 }
 
 pub async fn handle_list(state: &AppState, slug: &str) -> Result<()> {
-    let env_data = state.client.get(&format!("/api/apps/{}/env", slug)).await?;
+    let env_data = state
+        .api_client
+        .get(&format!("/api/apps/{}/env", slug))
+        .await?;
 
     let vars: HashMap<String, String> =
         serde_json::from_value(env_data["env_vars"].clone()).context("Failed to parse env vars")?;
@@ -50,7 +53,7 @@ pub async fn handle_set(state: &AppState, slug: &str, pairs: &[String]) -> Resul
     }
 
     let update_res = state
-        .client
+        .api_client
         .put(
             &format!("/api/apps/{}/env", slug),
             &json!({ "vars": current }),
@@ -74,7 +77,7 @@ pub async fn handle_unset(state: &AppState, slug: &str, keys: &[String]) -> Resu
     }
 
     let update_res = state
-        .client
+        .api_client
         .put(
             &format!("/api/apps/{}/env", slug),
             &json!({ "vars": current }),
@@ -89,7 +92,10 @@ pub async fn handle_unset(state: &AppState, slug: &str, keys: &[String]) -> Resu
 }
 
 async fn fetch_vars(state: &AppState, slug: &str) -> Result<HashMap<String, String>> {
-    let env_data = state.client.get(&format!("/api/apps/{}/env", slug)).await?;
+    let env_data = state
+        .api_client
+        .get(&format!("/api/apps/{}/env", slug))
+        .await?;
 
     serde_json::from_value(env_data["env_vars"].clone()).context("Failed to parse env vars")
 }

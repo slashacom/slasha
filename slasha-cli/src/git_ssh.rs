@@ -1,7 +1,4 @@
-use std::{
-    env,
-    process::{Command, Stdio},
-};
+use std::{env, process::Command};
 
 use anyhow::{Context, Result};
 use slasha_db::{
