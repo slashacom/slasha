@@ -44,23 +44,36 @@ fn resolve_app(flag: Option<String>) -> anyhow::Result<String> {
 }
 
 async fn run(cli: ClapApp) -> anyhow::Result<()> {
-    let output_mode = cli.output_mode;
-    let state = AppState {
-        client: http::client()?.with_url_override(cli.url),
+    let ClapApp {
+        command,
         output_mode,
-    };
+        url,
+        diagnostic,
+    } = cli;
 
-    if cli.diagnostic {
+    if diagnostic {
         DiagnosticReport::generate()?.print()?;
         return Ok(());
     }
 
-    match cli.command {
+    // `serve` and `git-ssh` run inside the prod container, which has no
+    // DBus/libsecret session. Handle them before building the API client —
+    // `http::client()` reads the auth token from the OS keyring on startup,
+    // which crashes the server on a headless host.
+    let command = match command {
         #[cfg(feature = "serve")]
         Command::Serve => return slasha_server::start_server().await,
         #[cfg(feature = "serve")]
         Command::GitSsh { user_id } => return git_ssh::handle(user_id).await,
+        other => other,
+    };
 
+    let state = AppState {
+        client: http::client()?.with_url_override(url),
+        output_mode,
+    };
+
+    match command {
         Command::Status => auth::handle_status(&state).await?,
         Command::Login => auth::handle_login(&state).await?,
         Command::Logout => auth::handle_logout(&state).await?,
@@ -118,6 +131,9 @@ async fn run(cli: ClapApp) -> anyhow::Result<()> {
 
         Command::SshKeys { command } => ssh_keys::dispatch(&state, command).await?,
         Command::Users { command } => users::dispatch(&state, command).await?,
+
+        #[cfg(feature = "serve")]
+        Command::Serve | Command::GitSsh { .. } => unreachable!(),
     }
 
     Ok(())
