@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # PID 1 inside the slasha container.
-# Runs sshd (port 2222, for git push) and slasha-server side by side.
+# Runs sshd (port 2222, for git push) and `slasha serve` side by side.
 
 set -euo pipefail
 
