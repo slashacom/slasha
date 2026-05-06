@@ -70,6 +70,11 @@ async fn main() -> anyhow::Result<()> {
                 apps::handle_list().await?;
             }
         },
+
+        #[cfg(feature = "serve")]
+        Command::Serve => {
+            slasha_server::run().await?;
+        }
     }
 
     Ok(())

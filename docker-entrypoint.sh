@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # PID 1 inside the slasha container.
-# Runs sshd (port 2222, for git push) and slasha-server side by side.
+# Runs sshd (port 2222, for git push) and `slasha serve` side by side.
 
 set -euo pipefail
 
@@ -53,4 +53,4 @@ chown -R slasha:slasha "$HOST_KEY_DIR"
 /usr/sbin/sshd -D &
 
 # Drop privileges and run the HTTP server in the foreground.
-exec runuser -u slasha -- /usr/local/bin/slasha-server
+exec runuser -u slasha -- /usr/local/bin/slasha serve

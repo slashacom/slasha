@@ -3065,6 +3065,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slasha-db",
+ "slasha-server",
  "tokio",
  "tracing",
  "tracing-subscriber",

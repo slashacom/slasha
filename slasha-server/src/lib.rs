@@ -1,0 +1,109 @@
+#[cfg(feature = "bundle")]
+pub mod assets;
+pub mod auth;
+pub mod docker;
+pub mod error;
+pub mod extractors;
+pub mod middleware;
+pub mod proxy;
+pub mod routing;
+pub mod ssh;
+pub mod state;
+pub mod utils;
+
+use std::net::SocketAddr;
+
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+use dotenv::dotenv;
+pub use error::{HttpError, HttpResult};
+pub use state::AppState;
+use tokio::net::TcpListener;
+use tracing::info;
+
+use crate::{
+    docker::sync::run_container_sync,
+    proxy::container::ensure_caddy_ready,
+    state::{Clients, Config, Env, Runtime, Storage},
+};
+
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../slasha-db/migrations");
+
+fn setup_dirs() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+    let data_dir = dirs::home_dir()
+        .expect("Failed to get home directory")
+        .join(".slasha");
+
+    let db_path = utils::ensure_dir(&data_dir).join("slasha.db");
+    let repos_dir = utils::ensure_dir(data_dir.join("repos"));
+    let logs_dir = utils::ensure_dir(data_dir.join("logs"));
+
+    (db_path, repos_dir, logs_dir)
+}
+
+fn run_migrations(storage: &Storage) {
+    let mut conn = storage
+        .db_pool
+        .get()
+        .expect("Failed to get DB connection from pool");
+
+    conn.run_pending_migrations(MIGRATIONS)
+        .expect("Failed to run migrations");
+}
+
+pub async fn run_server(address: Option<SocketAddr>, state: AppState) -> anyhow::Result<()> {
+    let address = address.unwrap_or_else(|| "0.0.0.0:3000".parse().unwrap());
+    info!("🚀 Slasha server starting on http://{}", address);
+
+    let app = routing::router(state.clone()).with_state(state);
+    let listener = TcpListener::bind(address).await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
+
+pub async fn run() -> anyhow::Result<()> {
+    dotenv().ok();
+
+    let (db_path, repos_dir, logs_dir) = setup_dirs();
+
+    let env = Env::from_str_or_default(
+        &std::env::var("SLASHA_ENV").unwrap_or_else(|_| "development".to_string()),
+    );
+
+    let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    let platform_domain =
+        std::env::var("SLASHA_PLATFORM_DOMAIN").expect("SLASHA_PLATFORM_DOMAIN must be set");
+    let port = std::env::var("SLASHA_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(3000);
+
+    let config = Config::new(env, jwt_secret, platform_domain, logs_dir.clone(), port);
+
+    let docker_client =
+        bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");
+
+    ensure_caddy_ready(&docker_client).await?;
+
+    let clients = Clients::new(docker_client.clone());
+    let storage = Storage::new(&db_path, repos_dir)?;
+
+    run_migrations(&storage);
+
+    let proxy_sync_trigger = proxy::spawn_route_syncer(clients.clone(), config.clone());
+    let runtime = Runtime::new(&logs_dir, proxy_sync_trigger).await?;
+    let state = AppState::new(config, clients, storage, runtime);
+
+    run_container_sync(
+        &state.clients.docker,
+        &state.storage.db_pool,
+        &state.runtime.log_manager,
+    )
+    .await?;
+
+    state.runtime.proxy_sync_trigger.notify_one();
+
+    run_server(Some(SocketAddr::from(([0, 0, 0, 0], port))), state).await?;
+
+    Ok(())
+}

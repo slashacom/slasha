@@ -34,6 +34,14 @@ pub enum Command {
         #[command(subcommand)]
         command: AppsCommand,
     },
+
+    #[cfg(feature = "serve")]
+    #[command(
+        name = "serve",
+        about = "Run the slasha server",
+        override_usage = "slasha serve"
+    )]
+    Serve,
 }
 
 #[derive(Subcommand)]
