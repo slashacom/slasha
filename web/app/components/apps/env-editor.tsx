@@ -1,7 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, useId } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Save, KeyRound, Copy, Check } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  Save,
+  KeyRound,
+  Copy,
+  Check,
+  FileText,
+  Table as TableIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
+import TextareaAutosize from 'react-textarea-autosize';
 
 import { getAppEnvVarsOptions, useUpdateAppEnvVars } from '~/queries/apps';
 import {
@@ -10,19 +20,22 @@ import {
 } from '~/queries/services';
 
 import { Button } from '~/components/interface/button';
-import { TextInput } from '~/components/interface/text-input';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
+import {
+  RichValueInput,
+  SLASHA_SYSTEM_REFS,
+} from '~/components/apps/env-value-input';
+
+type EnvVar = { key: string; value: string };
 
 export const fromEnvRecord = (
   record: Record<string, string> | undefined
-): { key: string; value: string }[] => {
+): EnvVar[] => {
   return Object.entries(record ?? {}).map(([key, value]) => ({ key, value }));
 };
 
-export const toEnvRecord = (
-  vars: { key: string; value: string }[]
-): Record<string, string> => {
+export const toEnvRecord = (vars: EnvVar[]): Record<string, string> => {
   const record: Record<string, string> = {};
   vars.forEach((v) => {
     if (v.key.trim()) {
@@ -31,6 +44,75 @@ export const toEnvRecord = (
   });
   return record;
 };
+
+function parseDotEnv(text: string): EnvVar[] {
+  const out: EnvVar[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+    const eq = line.indexOf('=');
+    if (eq === -1) {
+      continue;
+    }
+    const key = line.slice(0, eq).trim();
+    if (!key) {
+      continue;
+    }
+    let value = line.slice(eq + 1).trim();
+    if (
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'")))
+    ) {
+      value = value.slice(1, -1);
+    }
+    out.push({ key, value });
+  }
+  return out;
+}
+
+function serializeDotEnv(vars: EnvVar[]): string {
+  return vars
+    .filter((v) => v.key.trim())
+    .map((v) => {
+      const value = v.value;
+      const needsQuoting =
+        /[\s#"']/.test(value) || value.includes('\n') || value === '';
+      if (!needsQuoting) {
+        return `${v.key.trim()}=${value}`;
+      }
+      const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      return `${v.key.trim()}="${escaped}"`;
+    })
+    .join('\n');
+}
+
+function looksLikeDotEnv(text: string): boolean {
+  if (!text.includes('\n') && !text.includes('=')) {
+    return false;
+  }
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'));
+  if (lines.length === 0) {
+    return false;
+  }
+  const withEq = lines.filter((l) => l.includes('=')).length;
+  return withEq / lines.length >= 0.6;
+}
+
+const noAutofillProps = {
+  autoComplete: 'off',
+  autoCorrect: 'off',
+  autoCapitalize: 'off',
+  spellCheck: false,
+  'data-1p-ignore': 'true',
+  'data-lpignore': 'true',
+  'data-form-type': 'other',
+} as const;
 
 export interface EnvEditorProps {
   title?: string;
@@ -57,10 +139,11 @@ export function EnvEditor({
   readOnly = false,
   variant = 'default',
 }: EnvEditorProps) {
-  const [vars, setVars] = useState<{ key: string; value: string }[]>(() =>
-    fromEnvRecord(initialVars)
-  );
+  const [vars, setVars] = useState<EnvVar[]>(() => fromEnvRecord(initialVars));
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [mode, setMode] = useState<'table' | 'raw'>('table');
+  const [rawText, setRawText] = useState<string>('');
+  const formId = useId();
 
   useEffect(() => {
     if (JSON.stringify(toEnvRecord(vars)) !== JSON.stringify(initialVars)) {
@@ -68,30 +151,80 @@ export function EnvEditor({
     }
   }, [initialVars]);
 
-  const updateVars = (newVars: { key: string; value: string }[]) => {
-    setVars(newVars);
+  const availableRefs = (rowIndex: number): string[] => {
+    const ownKeys: string[] = [];
+    for (let i = 0; i < vars.length; i++) {
+      if (i === rowIndex) {
+        continue;
+      }
+      const k = vars[i].key.trim();
+      if (k && !ownKeys.includes(k)) {
+        ownKeys.push(k);
+      }
+    }
+    return [...ownKeys, ...SLASHA_SYSTEM_REFS];
+  };
 
+  const duplicateKeys = useMemo(() => {
+    const seen = new Map<string, number>();
+    const dupes = new Set<string>();
+    for (const v of vars) {
+      const k = v.key.trim();
+      if (!k) {
+        continue;
+      }
+      const count = (seen.get(k) ?? 0) + 1;
+      seen.set(k, count);
+      if (count > 1) {
+        dupes.add(k);
+      }
+    }
+    return dupes;
+  }, [vars]);
+
+  const commitVars = (newVars: EnvVar[]) => {
+    setVars(newVars);
     if (onChange) {
       onChange(toEnvRecord(newVars));
     }
   };
 
+  const enterRawMode = () => {
+    setRawText(serializeDotEnv(vars));
+    setMode('raw');
+  };
+
+  const exitRawMode = () => {
+    setMode('table');
+  };
+
+  const handleRawChange = (text: string) => {
+    setRawText(text);
+    commitVars(parseDotEnv(text));
+  };
+
   const handleSave = async () => {
-    if (readOnly || !onSave) return;
-    const keys = new Set();
-    for (const v of vars) {
+    if (readOnly || !onSave) {
+      return;
+    }
+    const finalVars = mode === 'raw' ? parseDotEnv(rawText) : vars;
+    const keys = new Set<string>();
+    for (const v of finalVars) {
       if (!v.key.trim()) {
         toast.error('Keys cannot be empty');
         return;
       }
-      if (keys.has(v.key)) {
+      if (keys.has(v.key.trim())) {
         toast.error(`Duplicate key: ${v.key}`);
         return;
       }
-      keys.add(v.key);
+      keys.add(v.key.trim());
     }
-
-    await onSave(toEnvRecord(vars));
+    if (mode === 'raw') {
+      setVars(finalVars);
+      setMode('table');
+    }
+    await onSave(toEnvRecord(finalVars));
   };
 
   const handleCopy = (text: string, index: number) => {
@@ -99,6 +232,55 @@ export function EnvEditor({
     setCopiedIndex(index);
     setTimeout(() => setCopiedIndex(null), 2000);
     toast.success('Copied to clipboard');
+  };
+
+  const handleCopyAll = () => {
+    navigator.clipboard.writeText(serializeDotEnv(vars));
+    toast.success('Copied .env to clipboard');
+  };
+
+  const handleSmartPaste = (
+    e: React.ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+    rowIndex: number,
+    field: 'key' | 'value'
+  ) => {
+    if (readOnly) {
+      return;
+    }
+    const text = e.clipboardData.getData('text');
+    if (!looksLikeDotEnv(text)) {
+      return;
+    }
+    const parsed = parseDotEnv(text);
+    if (parsed.length === 0) {
+      return;
+    }
+    e.preventDefault();
+    const current = vars[rowIndex];
+    const isEmptyRow =
+      current && !current.key.trim() && !current.value.trim();
+
+    let newVars: EnvVar[];
+    if (isEmptyRow) {
+      newVars = [
+        ...vars.slice(0, rowIndex),
+        ...parsed,
+        ...vars.slice(rowIndex + 1),
+      ];
+    } else if (
+      field === 'value' &&
+      parsed.length === 1 &&
+      !text.includes('\n')
+    ) {
+      // Single KEY=VALUE pasted into a value cell — let it through as-is.
+      return;
+    } else {
+      newVars = [...vars, ...parsed];
+    }
+    commitVars(newVars);
+    toast.success(
+      `Imported ${parsed.length} variable${parsed.length === 1 ? '' : 's'}`
+    );
   };
 
   if (isLoading) {
@@ -109,6 +291,44 @@ export function EnvEditor({
     );
   }
 
+  const showHeader = variant === 'default';
+  const showFooter = variant === 'default';
+
+  const headerActions = (
+    <HStack space={1.5}>
+      {vars.length > 0 && (
+        <Button
+          label={mode === 'raw' ? 'Table view' : 'Edit as .env'}
+          icon={
+            mode === 'raw' ? (
+              <TableIcon className="size-3.5" />
+            ) : (
+              <FileText className="size-3.5" />
+            )
+          }
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            if (mode === 'raw') {
+              exitRawMode();
+            } else {
+              enterRawMode();
+            }
+          }}
+        />
+      )}
+      {readOnly && vars.length > 0 && (
+        <Button
+          label="Copy .env"
+          icon={<Copy className="size-3.5" />}
+          variant="ghost"
+          size="sm"
+          onClick={handleCopyAll}
+        />
+      )}
+    </HStack>
+  );
+
   return (
     <VStack space={variant === 'embedded' ? 3 : 4}>
       <div
@@ -117,9 +337,9 @@ export function EnvEditor({
             'overflow-hidden rounded-xl border border-border bg-surface/50 shadow-sm backdrop-blur-sm'
         )}
       >
-        {variant === 'default' && (
+        {showHeader && (
           <div className="border-b border-border bg-surface/50 px-6 py-5">
-            <HStack justifyContent="between">
+            <HStack justifyContent="between" alignItems="start">
               <HStack space={3}>
                 <div className="rounded-lg bg-white/5 p-2 text-text-secondary">
                   <KeyRound className="size-5" />
@@ -133,130 +353,214 @@ export function EnvEditor({
                   </p>
                 </div>
               </HStack>
+              {headerActions}
             </HStack>
           </div>
         )}
 
-        <div className={cn(variant === 'default' ? 'p-6' : 'p-0')}>
-          <VStack space={3}>
-            {vars.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-10">
-                <p className="text-sm text-text-tertiary">
-                  No environment variables defined.
-                </p>
-                {!readOnly && (
-                  <Button
-                    label="Add First Variable"
-                    icon={<Plus className="size-4" />}
-                    variant="ghost"
-                    size="sm"
-                    className="mt-3"
-                    onClick={() => updateVars([{ key: '', value: '' }])}
-                  />
-                )}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-border overflow-hidden bg-surface/10">
-                <div className="grid grid-cols-[1.2fr_2fr_auto] gap-px border-b border-border bg-surface/50 text-[11px] font-medium text-text-tertiary uppercase tracking-wider">
-                  <div className="px-4 py-2 border-r border-border">Key</div>
+        <div className={cn(showHeader ? 'p-6' : 'p-0')}>
+          {!showHeader && vars.length > 0 && !readOnly && (
+            <div className="mb-3 flex justify-end">{headerActions}</div>
+          )}
+
+          {mode === 'raw' ? (
+            <RawEditor
+              value={rawText}
+              onChange={handleRawChange}
+              readOnly={readOnly}
+            />
+          ) : vars.length === 0 ? (
+            <EmptyState
+              readOnly={readOnly}
+              onAdd={() => commitVars([{ key: '', value: '' }])}
+              onPaste={(e) => {
+                if (readOnly) {
+                  return;
+                }
+                const text = e.clipboardData.getData('text');
+                if (!looksLikeDotEnv(text)) {
+                  return;
+                }
+                const parsed = parseDotEnv(text);
+                if (parsed.length === 0) {
+                  return;
+                }
+                e.preventDefault();
+                commitVars(parsed);
+                toast.success(
+                  `Imported ${parsed.length} variable${
+                    parsed.length === 1 ? '' : 's'
+                  }`
+                );
+              }}
+            />
+          ) : (
+            <VStack space={3}>
+              <div className="overflow-hidden rounded-lg border border-border bg-surface/10">
+                <div className="grid grid-cols-[minmax(220px,260px)_1fr_auto] gap-px border-b border-border bg-surface/50 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+                  <div className="border-r border-border px-4 py-2">Key</div>
                   <div className="px-4 py-2">Value</div>
-                  <div className="w-10"></div>
+                  <div className="w-10" />
                 </div>
                 <div className="divide-y divide-border">
-                  {vars.map((v, i) => (
-                    <div
-                      key={i}
-                      className="grid grid-cols-[1.2fr_2fr_auto] items-stretch gap-px transition-colors hover:bg-white/[0.02]"
-                    >
-                      <div className="border-r border-border bg-white/[0.01] px-1.5 py-1">
-                        <TextInput
-                          placeholder="e.g. DATABASE_URL"
-                          value={v.key}
-                          onChange={(val) => {
-                            if (readOnly) return;
-                            const newVars = [...vars];
-                            newVars[i].key = val;
-                            updateVars(newVars);
-                          }}
-                          readOnly={readOnly}
+                  {vars.map((v, i) => {
+                    const trimmedKey = v.key.trim();
+                    const isDuplicate =
+                      !!trimmedKey && duplicateKeys.has(trimmedKey);
+                    return (
+                      <div
+                        key={i}
+                        className={cn(
+                          'grid grid-cols-[minmax(220px,260px)_1fr_auto] items-stretch gap-px transition-colors',
+                          isDuplicate
+                            ? 'bg-red-500/[0.04] hover:bg-red-500/[0.07]'
+                            : 'hover:bg-white/[0.02]'
+                        )}
+                      >
+                        <div
                           className={cn(
-                            'bg-transparent border-none font-mono text-[12px] h-8 focus:ring-0',
-                            !readOnly && 'hover:bg-white/[0.02]'
+                            'border-r border-border px-2 py-2',
+                            isDuplicate
+                              ? 'bg-red-500/[0.03]'
+                              : 'bg-white/[0.01]'
                           )}
-                        />
-                      </div>
-                      <div className="px-1.5 py-1">
-                        <HStack space={2} className="h-full">
-                          <TextInput
-                            placeholder="e.g. postgres://..."
-                            value={v.value}
-                            onChange={(val) => {
-                              if (readOnly) return;
-                              const newVars = [...vars];
-                              newVars[i].value = val;
-                              updateVars(newVars);
-                            }}
+                        >
+                          <input
+                            type="text"
+                            placeholder="DATABASE_URL"
+                            value={v.key}
+                            name={`${formId}-key-${i}`}
                             readOnly={readOnly}
+                            onChange={(e) => {
+                              if (readOnly) {
+                                return;
+                              }
+                              const newVars = [...vars];
+                              newVars[i] = {
+                                ...newVars[i],
+                                key: e.target.value,
+                              };
+                              commitVars(newVars);
+                            }}
+                            onPaste={(e) => handleSmartPaste(e, i, 'key')}
+                            {...noAutofillProps}
                             className={cn(
-                              'flex-1 bg-transparent border-none font-mono text-[12px] h-8 focus:ring-0',
-                              !readOnly && 'hover:bg-white/[0.02]'
+                              'w-full bg-transparent font-mono text-[13px] tracking-tight text-text outline-none placeholder:text-text-tertiary/60',
+                              isDuplicate && 'text-red-300'
                             )}
                           />
-                          {readOnly && (
+                        </div>
+                        <div className="px-2 py-1.5">
+                          <HStack space={2} alignItems="start">
+                            <div className="flex-1 min-w-0">
+                              <RichValueInput
+                                value={v.value}
+                                placeholder="postgres://..."
+                                readOnly={readOnly}
+                                suggestions={availableRefs(i)}
+                                onChange={(val) => {
+                                  if (readOnly) {
+                                    return;
+                                  }
+                                  const newVars = [...vars];
+                                  newVars[i] = { ...newVars[i], key: newVars[i].key, value: val };
+                                  commitVars(newVars);
+                                }}
+                                onPasteRaw={(text) => {
+                                  if (readOnly) {
+                                    return false;
+                                  }
+                                  if (!looksLikeDotEnv(text)) {
+                                    return false;
+                                  }
+                                  const parsed = parseDotEnv(text);
+                                  if (parsed.length === 0) {
+                                    return false;
+                                  }
+                                  const current = vars[i];
+                                  const isEmptyRow =
+                                    current &&
+                                    !current.key.trim() &&
+                                    !current.value.trim();
+                                  const newVars = isEmptyRow
+                                    ? [
+                                        ...vars.slice(0, i),
+                                        ...parsed,
+                                        ...vars.slice(i + 1),
+                                      ]
+                                    : [...vars, ...parsed];
+                                  commitVars(newVars);
+                                  toast.success(
+                                    `Imported ${parsed.length} variable${
+                                      parsed.length === 1 ? '' : 's'
+                                    }`
+                                  );
+                                  return true;
+                                }}
+                              />
+                            </div>
+                            {readOnly && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                icon={
+                                  copiedIndex === i ? (
+                                    <Check className="size-3.5 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="size-3.5" />
+                                  )
+                                }
+                                onClick={() => handleCopy(v.value, i)}
+                                className="size-7 shrink-0"
+                              />
+                            )}
+                          </HStack>
+                        </div>
+                        <div className="flex items-start justify-center px-1 py-2">
+                          {!readOnly && (
                             <Button
                               variant="ghost"
-                              size="sm"
-                              icon={
-                                copiedIndex === i ? (
-                                  <Check className="size-3.5 text-emerald-400" />
-                                ) : (
-                                  <Copy className="size-3.5" />
-                                )
-                              }
-                              onClick={() => handleCopy(v.value, i)}
-                              className="size-7"
+                              color="error"
+                              icon={<Trash2 className="size-3.5" />}
+                              onClick={() => {
+                                commitVars(
+                                  vars.filter((_, index) => index !== i)
+                                );
+                              }}
+                              className="size-7 opacity-50 hover:opacity-100"
                             />
                           )}
-                        </HStack>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-center px-1">
-                        {!readOnly && (
-                          <Button
-                            variant="ghost"
-                            color="error"
-                            icon={<Trash2 className="size-3.5" />}
-                            onClick={() => {
-                              updateVars(
-                                vars.filter((_, index) => index !== i)
-                              );
-                            }}
-                            className="size-7 opacity-50 hover:opacity-100"
-                          />
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
-            )}
 
-            {!readOnly && vars.length > 0 && (
-              <div className="mt-1">
-                <Button
-                  label="Add Variable"
-                  icon={<Plus className="size-3.5" />}
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => updateVars([...vars, { key: '', value: '' }])}
-                  className="h-8 text-[12px]"
-                />
-              </div>
-            )}
-          </VStack>
+              {!readOnly && (
+                <HStack justifyContent="between" alignItems="center">
+                  <Button
+                    label="Add Variable"
+                    icon={<Plus className="size-3.5" />}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      commitVars([...vars, { key: '', value: '' }])
+                    }
+                    className="h-8 text-[12px]"
+                  />
+                  <span className="text-[11px] text-text-tertiary/70">
+                    Tip: paste a <code className="font-mono">.env</code> blob
+                    to import multiple at once
+                  </span>
+                </HStack>
+              )}
+            </VStack>
+          )}
         </div>
 
-        {variant === 'default' && (
-          <div className="border-t border-border bg-surface/50 px-6 py-4 flex justify-end gap-3">
+        {showFooter && (
+          <div className="flex justify-end gap-3 border-t border-border bg-surface/50 px-6 py-4">
             {onCancel && (
               <Button
                 label={readOnly ? 'Close' : 'Cancel'}
@@ -278,6 +582,73 @@ export function EnvEditor({
         )}
       </div>
     </VStack>
+  );
+}
+
+function EmptyState({
+  readOnly,
+  onAdd,
+  onPaste,
+}: {
+  readOnly: boolean;
+  onAdd: () => void;
+  onPaste: (e: React.ClipboardEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div
+      onPaste={onPaste}
+      className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-10"
+    >
+      <p className="text-sm text-text-tertiary">
+        No environment variables defined.
+      </p>
+      {!readOnly && (
+        <>
+          <p className="mt-1 text-[12px] text-text-tertiary/70">
+            Add one manually, or paste a{' '}
+            <code className="font-mono">.env</code> file here.
+          </p>
+          <Button
+            label="Add First Variable"
+            icon={<Plus className="size-4" />}
+            variant="ghost"
+            size="sm"
+            className="mt-3"
+            onClick={onAdd}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function RawEditor({
+  value,
+  onChange,
+  readOnly,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  readOnly: boolean;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-surface/10">
+      <div className="border-b border-border bg-surface/50 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+        .env
+      </div>
+      <TextareaAutosize
+        ref={ref}
+        value={value}
+        readOnly={readOnly}
+        onChange={(e) => onChange(e.target.value)}
+        minRows={8}
+        maxRows={24}
+        placeholder={'DATABASE_URL=postgres://...\nAPI_KEY=sk-...\n# comments are supported'}
+        {...noAutofillProps}
+        className="block w-full resize-none bg-transparent px-4 py-3 font-mono text-[13px] leading-5 text-text outline-none placeholder:text-text-tertiary/50"
+      />
+    </div>
   );
 }
 
@@ -337,7 +708,9 @@ export function ServiceEnvEditor({
   const updateEnvVars = useUpdateServiceEnvVars();
 
   const handleSave = async (vars: Record<string, string>) => {
-    if (readOnly) return;
+    if (readOnly) {
+      return;
+    }
     try {
       await updateEnvVars.mutateAsync({
         appSlug,
