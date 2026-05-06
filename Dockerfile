@@ -29,7 +29,7 @@ COPY --from=frontend-builder /app/web/build/client /app/web/build/client
 RUN cargo build --release -p slasha-cli --features serve-bundle
 
 FROM debian:bookworm-slim AS runtime
-# docker-ce-cli + docker-buildx-plugin are required: slasha-server shells out
+# docker-ce-cli + docker-buildx-plugin are required: `slasha serve` shells out
 # to `docker buildx build` for both Dockerfile and Railpack build paths
 # (talks to the host daemon via the bind-mounted /var/run/docker.sock).
 RUN apt-get update && \
