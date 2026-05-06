@@ -4,19 +4,23 @@ version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "slasha"   
+name = "slasha"
 path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.6.0", features = ["derive"] }
+colored = "3.1.1"
+comfy-table = { version = "7.2.2", features = ["tty", "custom_styling"] }
 dirs = "6.0.0"
+futures-util = "0.3.32"
 indicatif = "0.18.4"
 inquire = "0.9.4"
-reqwest = { version = "0.13.2", features = ["json"] }
+reqwest = { version = "0.13.2", features = ["json", "stream"] }
+eventsource-stream = "0.2.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-tokio = { version = "1.50.0", features = ["full"] }
-tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 slasha-db = { path = "../slasha-db" }
+strum = { version = "0.28", features = ["derive"] }
+tokio = { version = "1.50.0", features = ["full"] }
+tokio-stream = "0.1.18"

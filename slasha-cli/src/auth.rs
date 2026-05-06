@@ -1,21 +1,49 @@
-use std::time::Duration;
-
 use anyhow::{Context, Result};
-use indicatif::{ProgressBar, ProgressStyle};
+use colored::Colorize;
 use inquire::{Password, PasswordDisplayMode, Text};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use slasha_db::user::User;
 
-use crate::{config::Config, http::client};
+use crate::{
+    config::Config,
+    output::{cli_info, cli_label, cli_section, cli_success, output, spinner},
+    state::AppState,
+};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct AuthResponse {
     token: String,
 }
 
-pub async fn handle_login() -> Result<()> {
-    tracing::info!("Login to Slasha");
+#[derive(Deserialize, Serialize)]
+struct StatusResponse {
+    has_admin: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+struct MeResponse {
+    user: User,
+}
+
+async fn check_has_admin(state: &AppState) -> Result<bool> {
+    let status: StatusResponse =
+        serde_json::from_value(state.client.get("/api/auth/status").await?)
+            .context("Failed to parse status")?;
+
+    Ok(status.has_admin)
+}
+
+pub async fn handle_login(state: &AppState) -> Result<()> {
+    let has_admin = check_has_admin(state).await?;
+
+    if !has_admin {
+        if !state.output.is_json() {
+            cli_info(format!("{} No admin account exists. Setting up initial admin...", "-->".cyan()));
+        }
+        return handle_signup(state).await;
+    }
+
     let email = Text::new("Email:").prompt()?;
     let password = Password::new("Password:")
         .without_confirmation()
@@ -23,62 +51,114 @@ pub async fn handle_login() -> Result<()> {
         .with_display_toggle_enabled()
         .prompt()?;
 
-    let pb = ProgressBar::new_spinner();
-    pb.enable_steady_tick(Duration::from_millis(100));
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&["-", "\\", "|", "/"])
-            .template("{spinner} {msg}")?,
-    );
-    pb.set_message("Authenticating...");
+    let pb = spinner("Authenticating...");
 
-    let response = client()?
-        .post(
-            "/api/auth/login",
-            &json!({ "email": email, "password": password }),
-        )
-        .await
-        .context("Login request failed")?;
-
-    if !response.status().is_success() {
-        pb.finish_and_clear();
-        let error_body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".into());
-        anyhow::bail!("Login failed: {}", error_body);
-    }
-
-    let auth_res: AuthResponse = response.json().await.context("Failed to parse response")?;
+    let auth: AuthResponse = match serde_json::from_value(
+        state
+            .client
+            .post(
+                "/api/auth/login",
+                &json!({ "email": email, "password": password }),
+            )
+            .await?,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            pb.finish_and_clear();
+            anyhow::bail!("Login failed: {}", e);
+        }
+    };
 
     let mut conf = Config::load()?;
-    conf.auth_token = Some(auth_res.token);
+    conf.auth_token = Some(auth.token);
     conf.save()?;
 
-    pb.finish_with_message("Successfully logged in.");
+    pb.finish_and_clear();
+
+    output(state.output, &json!({ "ok": true, "message": "Logged in" }), || {
+        cli_success("Logged in successfully.");
+    })?;
+
     Ok(())
 }
 
-pub async fn handle_me() -> Result<()> {
-    let response = client()?
-        .get("/api/auth/me")
-        .await
-        .context("Failed to get user info")?;
+async fn handle_signup(state: &AppState) -> Result<()> {
+    let email = Text::new("Admin email:").prompt()?;
+    let password = Password::new("Password:")
+        .with_display_mode(PasswordDisplayMode::Masked)
+        .with_display_toggle_enabled()
+        .prompt()?;
 
-    if !response.status().is_success() {
-        let error_body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".into());
-        anyhow::bail!("Failed to get user info: {}", error_body);
-    }
+    let pb = spinner("Creating admin account...");
 
-    let value: serde_json::Value = response.json().await.context("Failed to parse response")?;
-    let user: User = serde_json::from_value(value["user"].clone())
-        .context("Failed to deserialize user object")?;
+    let auth: AuthResponse = match serde_json::from_value(
+        state
+            .client
+            .post(
+                "/api/auth/signup",
+                &json!({ "email": email, "password": password }),
+            )
+            .await?,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            pb.finish_and_clear();
+            anyhow::bail!("Signup failed: {}", e);
+        }
+    };
 
-    tracing::info!("Email: {}", user.email);
-    tracing::info!("Role: {}", user.role);
+    let mut conf = Config::load()?;
+    conf.auth_token = Some(auth.token);
+    conf.save()?;
+
+    pb.finish_and_clear();
+
+    output(
+        state.output,
+        &json!({ "ok": true, "message": "Admin account created" }),
+        || {
+            cli_success("Admin account created and logged in.");
+        },
+    )?;
+
+    Ok(())
+}
+
+pub async fn handle_logout(state: &AppState) -> Result<()> {
+    let mut conf = Config::load()?;
+    conf.auth_token = None;
+    conf.save()?;
+
+    output(state.output, &json!({ "ok": true }), || {
+        cli_success("Logged out.");
+    })?;
+
+    Ok(())
+}
+
+pub async fn handle_me(state: &AppState) -> Result<()> {
+    let me: MeResponse = serde_json::from_value(state.client.get("/api/auth/me").await?)
+        .context("Failed to parse me response")?;
+
+    output(state.output, &me.user, || {
+        cli_section("Current user");
+        cli_label("Email", &me.user.email);
+        cli_label("Role", &me.user.role);
+    })?;
+
+    Ok(())
+}
+
+pub async fn handle_status(state: &AppState) -> Result<()> {
+    let health = state.client.get("/api/health").await?;
+
+    output(state.output, &health, || {
+        cli_success(format!(
+            "Server is {}",
+            health["status"].as_str().unwrap_or("ok").green()
+        ));
+        cli_label("Version", &health["version"]);
+    })?;
 
     Ok(())
 }

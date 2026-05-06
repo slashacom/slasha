@@ -77,8 +77,10 @@ async fn create_service(
         .contains(&payload.version.as_str())
     {
         return Err(HttpError::bad_request(format!(
-            "Version {} is not supported for {:?}",
-            payload.version, payload.kind
+            "Version {} is not supported for {:?}. Supported versions: {:?}",
+            payload.version,
+            payload.kind,
+            payload.kind.supported_versions()
         )));
     }
 
@@ -185,7 +187,9 @@ async fn stream_logs(
         Err(e) => Ok(Event::default().event("error").data(e.to_string())),
     });
 
-    let combined = historical_stream.chain(live_stream);
+    // marker to help distinguish between historical and live logs
+    let done_marker = stream::once(async { Ok(Event::default().data("[done]")) });
+    let combined = historical_stream.chain(done_marker).chain(live_stream);
 
     Ok(Sse::new(combined).keep_alive(KeepAlive::default()))
 }

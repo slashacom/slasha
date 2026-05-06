@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    http::{HeaderName, StatusCode, header},
+    http::{HeaderName, StatusCode},
     response::{IntoResponse, Response},
 };
 use serde_json::json;
@@ -59,9 +59,8 @@ impl HttpError {
         Self::new(StatusCode::FORBIDDEN, message)
     }
 
-    pub fn with_git_auth_challenge(mut self) -> Self {
-        self.extra_headers
-            .push((header::WWW_AUTHENTICATE, "Basic realm=\"Git\"".to_string()));
+    pub fn with_headers(mut self, headers: impl IntoIterator<Item = (HeaderName, String)>) -> Self {
+        self.extra_headers.extend(headers);
         self
     }
 }

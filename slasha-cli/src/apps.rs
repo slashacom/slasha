@@ -1,150 +1,154 @@
 use anyhow::{Context, Result};
+use colored::Colorize;
 use serde_json::json;
 use slasha_db::app::App;
 
-use crate::{config::Config, http::client};
+use crate::{
+    output::{cli_info, cli_label, cli_section, cli_success, confirm_action, output, print_table},
+    state::AppState,
+};
 
-fn build_git_remote_url(slug: &str) -> String {
-    let config = Config::load().unwrap();
-    format!("{}/git/{}", config.base_url, slug)
+fn git_remote_url(state: &AppState, slug: &str) -> String {
+    format!(
+        "{}/git/{}",
+        state.client.url("").trim_end_matches('/'),
+        slug
+    )
 }
 
-fn build_ssh_git_url(slug: &str) -> String {
-    let config = Config::load().unwrap();
-
-    let host = config
-        .base_url
+fn ssh_git_url(state: &AppState, slug: &str) -> String {
+    let host = state
+        .client
+        .url("")
+        .trim_end_matches('/')
         .trim_start_matches("http://")
         .trim_start_matches("https://")
         .split(':')
         .next()
-        .unwrap_or("localhost");
+        .unwrap_or("localhost")
+        .to_string();
 
     format!("slasha@{}:{}.git", host, slug)
 }
 
-pub async fn handle_create(name: &str) -> Result<()> {
-    let response = client()?
-        .post("/api/apps", &json!({ "name": name }))
-        .await
-        .context("Failed to create app")?;
+fn print_app(state: &AppState, app: &App) {
+    cli_section(&app.name);
+    cli_label("Slug", &app.slug);
+    cli_label("Status", &app.status);
+    cli_label("Branch", &app.default_branch);
 
-    if !response.status().is_success() {
-        let error_body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".into());
-        anyhow::bail!("Failed to create app: {}", error_body);
-    }
+    cli_section("Git remotes");
+    cli_label("HTTPS", git_remote_url(state, &app.slug));
+    cli_label("SSH", ssh_git_url(state, &app.slug));
 
-    let body: serde_json::Value = response.json().await.context("Failed to parse response")?;
-    let app: App =
-        serde_json::from_value(body["app"].clone()).context("Failed to parse app object")?;
-
-    let git_url = build_git_remote_url(&app.slug);
-    let ssh_url = build_ssh_git_url(&app.slug);
-
-    tracing::info!("App created successfully!");
-    tracing::info!("  Name:   {}", app.name);
-    tracing::info!("  Slug:   {}", app.slug);
-    tracing::info!("  Status: {}", app.status);
-    tracing::info!("");
-    tracing::info!("Git Remote URLs:");
-    tracing::info!("  HTTPS: {}", git_url);
-    tracing::info!("  SSH:   {}", ssh_url);
-    tracing::info!("");
-    tracing::info!("To deploy, add a remote and push:");
-    tracing::info!("  git remote add slasha {}", ssh_url);
-    tracing::info!("  git push -u slasha main");
-
-    Ok(())
+    cli_section("Deploy");
+    cli_info(format!("  git remote add slasha {}", ssh_git_url(state, &app.slug)));
+    cli_info("  git push -u slasha main".to_string());
 }
 
-pub async fn handle_delete(slug: &str) -> Result<()> {
-    let response = client()?
-        .delete(&format!("/api/apps/{}", slug))
-        .await
-        .context("Failed to delete app")?;
+pub async fn handle_list(state: &AppState) -> Result<()> {
+    let body = state.client.get("/api/apps").await?;
 
-    if !response.status().is_success() {
-        let error_body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".into());
-        anyhow::bail!("Failed to delete app: {}", error_body);
-    }
-
-    tracing::info!("App deleted successfully!");
-
-    Ok(())
-}
-
-pub async fn handle_info(slug: &str) -> Result<()> {
-    let response = client()?
-        .get(&format!("/api/apps/{}", slug))
-        .await
-        .context("Failed to get app info")?;
-
-    if !response.status().is_success() {
-        let error_body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".into());
-        anyhow::bail!("Failed to get app info: {}", error_body);
-    }
-
-    let body: serde_json::Value = response.json().await.context("Failed to parse response")?;
-    let app: App =
-        serde_json::from_value(body["app"].clone()).context("Failed to parse app object")?;
-
-    let git_url = build_git_remote_url(&app.slug);
-    let ssh_url = build_ssh_git_url(&app.slug);
-
-    tracing::info!("App info:");
-    tracing::info!("  Name:   {}", app.name);
-    tracing::info!("  Slug:   {}", app.slug);
-    tracing::info!("  Status: {}", app.status);
-    tracing::info!("");
-    tracing::info!("Git Remote URLs:");
-    tracing::info!("  HTTPS: {}", git_url);
-    tracing::info!("  SSH:   {}", ssh_url);
-    tracing::info!("");
-    tracing::info!("To deploy, add a remote and push:");
-    tracing::info!("  git remote add slasha {}", ssh_url);
-    tracing::info!("  git push slasha main");
-
-    Ok(())
-}
-
-pub async fn handle_list() -> Result<()> {
-    let response = client()?
-        .get("/api/apps")
-        .await
-        .context("Failed to list apps")?;
-
-    if !response.status().is_success() {
-        let error_body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".into());
-        anyhow::bail!("Failed to list apps: {}", error_body);
-    }
-
-    let body: serde_json::Value = response.json().await.context("Failed to parse response")?;
     let apps: Vec<App> =
-        serde_json::from_value(body["apps"].clone()).context("Failed to parse apps array")?;
+        serde_json::from_value(body["apps"].clone()).context("Failed to parse apps")?;
 
-    if apps.is_empty() {
-        tracing::info!("No apps found. Create one with: slasha apps create <name>");
+    output(state.output, &apps, || {
+        if apps.is_empty() {
+            cli_info("No apps yet. Run slasha create <name> to create one.");
+        } else {
+            print_table(
+                &["NAME", "SLUG", "STATUS", "BRANCH"],
+                apps.iter()
+                    .map(|a| {
+                        vec![
+                            a.name.clone(),
+                            a.slug.clone(),
+                            a.status.clone(),
+                            a.default_branch.clone(),
+                        ]
+                    })
+                    .collect(),
+            );
+        }
+    })?;
+
+    Ok(())
+}
+
+pub async fn handle_create(state: &AppState, name: &str) -> Result<()> {
+    let body = state
+        .client
+        .post("/api/apps", &json!({ "name": name }))
+        .await?;
+
+    let app: App = serde_json::from_value(body["app"].clone()).context("Failed to parse app")?;
+
+    output(state.output, &app, || {
+        cli_success("App created");
+        print_app(state, &app);
+    })?;
+
+    Ok(())
+}
+
+pub async fn handle_info(state: &AppState, slug: &str) -> Result<()> {
+    let body = state.client.get(&format!("/api/apps/{}", slug)).await?;
+
+    let app: App = serde_json::from_value(body["app"].clone()).context("Failed to parse app")?;
+
+    output(state.output, &app, || {
+        print_app(state, &app);
+    })?;
+
+    Ok(())
+}
+
+pub async fn handle_delete(state: &AppState, slug: &str, yes: bool) -> Result<()> {
+    if !confirm_action(
+        state.output,
+        yes,
+        &format!(
+            "Delete app {}? This removes all deployments and services.",
+            slug.red()
+        ),
+    )? {
         return Ok(());
     }
 
-    tracing::info!("{:<20} {:<15} {:<10}", "NAME", "SLUG", "STATUS");
-    tracing::info!("{}", "-".repeat(45));
+    state.client.delete(&format!("/api/apps/{}", slug)).await?;
 
-    for app in apps {
-        tracing::info!("{:<20} {:<15} {:<10}", app.name, app.slug, app.status);
-    }
+    output(state.output, &json!({ "ok": true, "slug": slug }), || {
+        cli_success(format!("App {} deleted.", slug));
+    })?;
+
+    Ok(())
+}
+
+pub async fn handle_link(state: &AppState, app_flag: Option<String>) -> Result<()> {
+    let slug = match app_flag {
+        Some(s) => s,
+        None => {
+            let body = state.client.get("/api/apps").await?;
+
+            let apps: Vec<App> =
+                serde_json::from_value(body["apps"].clone()).context("Failed to parse apps")?;
+
+            if apps.is_empty() {
+                anyhow::bail!("No apps found. Create one first with `slasha create <name>`.");
+            }
+
+            let choices: Vec<String> = apps.into_iter().map(|a| a.slug).collect();
+            inquire::Select::new("Select app to link:", choices).prompt()?
+        }
+    };
+
+    state.client.get(&format!("/api/apps/{}", slug)).await?;
+
+    std::fs::write(".slasha", &slug).context("Failed to write .slasha file")?;
+
+    output(state.output, &json!({ "ok": true, "slug": slug }), || {
+        cli_success(format!("Linked current directory to app '{}'", slug));
+    })?;
 
     Ok(())
 }
