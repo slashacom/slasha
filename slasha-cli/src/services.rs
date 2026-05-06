@@ -8,7 +8,8 @@ use slasha_db::service::{Service, ServiceKind, ServiceStatus};
 use crate::{
     clap_app::ServicesCommand,
     output::{cli_error, cli_info, cli_label, cli_success, confirm_action, output, print_table},
-    service_env, state::AppState,
+    service_env,
+    state::AppState,
 };
 
 pub async fn dispatch(state: &AppState, slug: &str, cmd: ServicesCommand) -> Result<()> {
@@ -43,7 +44,7 @@ pub async fn handle_list(state: &AppState, slug: &str) -> Result<()> {
     let svcs: Vec<Service> = serde_json::from_value(services_data["services"].clone())
         .context("Failed to parse services")?;
 
-    output(state.output, &svcs, || {
+    output(state.output_mode, &svcs, || {
         if svcs.is_empty() {
             cli_info("No services attached. Run slasha provision to add one.");
         } else {
@@ -92,15 +93,15 @@ pub async fn handle_create(
     let svc: Service = serde_json::from_value(provision_res["service"].clone())
         .context("Failed to parse service")?;
 
-    output(state.output, &svc, || {
+    output(state.output_mode, &svc, || {
         cli_success("Service provisioning started.");
         cli_label("ID", &svc.id);
         cli_label("Name", &svc.name);
         cli_label("Kind", svc.kind);
         cli_label("Vers", &svc.version);
         cli_info(format!(
-            "\nFollow provisioning: {}",
-            format!("slasha logs --app {} --follow", slug)
+            "\nFollow service logs: slasha services logs --app {} --service {} --follow",
+            slug, svc.name
         ));
     })?;
 
@@ -110,7 +111,11 @@ pub async fn handle_create(
 pub async fn handle_stop(state: &AppState, slug: &str, service: &str, yes: bool) -> Result<()> {
     let service_id = resolve_service_id(state, slug, service).await?;
 
-    if !confirm_action(state.output, yes, &format!("Stop service {}?", service.red()))? {
+    if !confirm_action(
+        state.output_mode,
+        yes,
+        &format!("Stop service {}?", service.red()),
+    )? {
         return Ok(());
     }
 
@@ -122,7 +127,7 @@ pub async fn handle_stop(state: &AppState, slug: &str, service: &str, yes: bool)
         )
         .await?;
 
-    output(state.output, &json!({ "ok": true }), || {
+    output(state.output_mode, &json!({ "ok": true }), || {
         cli_success(format!("Service {} stop triggered.", service));
     })?;
 
@@ -132,7 +137,11 @@ pub async fn handle_stop(state: &AppState, slug: &str, service: &str, yes: bool)
 pub async fn handle_delete(state: &AppState, slug: &str, service: &str, yes: bool) -> Result<()> {
     let service_id = resolve_service_id(state, slug, service).await?;
 
-    if !confirm_action(state.output, yes, &format!("Delete service {}?", service.red()))? {
+    if !confirm_action(
+        state.output_mode,
+        yes,
+        &format!("Delete service {}?", service.red()),
+    )? {
         return Ok(());
     }
 
@@ -141,7 +150,7 @@ pub async fn handle_delete(state: &AppState, slug: &str, service: &str, yes: boo
         .delete(&format!("/api/apps/{}/services/{}", slug, service_id))
         .await?;
 
-    output(state.output, &json!({ "ok": true }), || {
+    output(state.output_mode, &json!({ "ok": true }), || {
         cli_success(format!("Service {} deleted.", service));
     })?;
 
@@ -172,7 +181,7 @@ pub async fn handle_logs(state: &AppState, slug: &str, service: &str, follow: bo
             Ok(event) => {
                 if event.data == "[done]" {
                     output(
-                        state.output,
+                        state.output_mode,
                         &json!({ "type": "status", "event": "history_complete" }),
                         || {},
                     )?;
@@ -180,9 +189,13 @@ pub async fn handle_logs(state: &AppState, slug: &str, service: &str, follow: bo
                         break;
                     }
                 } else {
-                    output(state.output, &json!({ "type": "log", "message": event.data }), || {
-                        cli_info(&event.data);
-                    })?;
+                    output(
+                        state.output_mode,
+                        &json!({ "type": "log", "message": event.data }),
+                        || {
+                            cli_info(&event.data);
+                        },
+                    )?;
                 }
             }
             Err(e) => {

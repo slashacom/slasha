@@ -7,7 +7,9 @@ use slasha_db::deployment::{Deployment, DeploymentStatus};
 
 use crate::{
     clap_app::DeploymentsCommand,
-    output::{cli_error, cli_info, cli_label, cli_success, confirm_action, output, print_table, spinner},
+    output::{
+        cli_error, cli_info, cli_label, cli_success, confirm_action, output, print_table, spinner,
+    },
     state::AppState,
 };
 
@@ -37,7 +39,7 @@ pub async fn handle_trigger(state: &AppState, slug: &str, commit: Option<String>
         None => json!({ "commit_sha": null }),
     };
 
-    let pb = if !state.output.is_json() {
+    let pb = if !state.output_mode.is_json() {
         Some(spinner("Triggering deployment..."))
     } else {
         None
@@ -65,13 +67,13 @@ pub async fn handle_trigger(state: &AppState, slug: &str, commit: Option<String>
     let dep: Deployment = serde_json::from_value(payload["deployment"].clone())
         .context("Failed to parse deployment")?;
 
-    output(state.output, &dep, || {
+    output(state.output_mode, &dep, || {
         cli_success("Deployment triggered.");
         cli_label("ID", &dep.id);
         cli_label("Commit", &dep.commit_sha);
         cli_info(format!(
-            "\nFollow logs: {}",
-            format!("slasha logs --app {} --follow", slug)
+            "\nFollow logs: slasha logs --app {} --follow",
+            slug
         ));
     })?;
 
@@ -98,7 +100,7 @@ pub async fn handle_list(state: &AppState, slug: &str) -> Result<()> {
     let deps: Vec<Deployment> = serde_json::from_value(deployments_data["deployments"].clone())
         .context("Failed to parse deployments")?;
 
-    output(state.output, &deps, || {
+    output(state.output_mode, &deps, || {
         if deps.is_empty() {
             cli_info(format!("No deployments found for app '{}'.", slug));
         } else {
@@ -153,7 +155,7 @@ pub async fn handle_logs(
             Ok(event) => {
                 if event.data == "[done]" {
                     output(
-                        state.output,
+                        state.output_mode,
                         &json!({ "type": "status", "event": "history_complete" }),
                         || {},
                     )?;
@@ -162,9 +164,13 @@ pub async fn handle_logs(
                         break;
                     }
                 } else {
-                    output(state.output, &json!({ "type": "log", "message": event.data }), || {
-                        cli_info(&event.data);
-                    })?;
+                    output(
+                        state.output_mode,
+                        &json!({ "type": "log", "message": event.data }),
+                        || {
+                            cli_info(&event.data);
+                        },
+                    )?;
                 }
             }
             Err(e) => {
@@ -192,7 +198,7 @@ pub async fn handle_stop(
         )
         .await?;
 
-    output(state.output, &json!({ "ok": true }), || {
+    output(state.output_mode, &json!({ "ok": true }), || {
         cli_success(format!("Deployment {} stop triggered.", deployment_id));
     })?;
 
@@ -214,7 +220,7 @@ pub async fn handle_restart(
         )
         .await?;
 
-    output(state.output, &json!({ "ok": true }), || {
+    output(state.output_mode, &json!({ "ok": true }), || {
         cli_success(format!("Deployment {} restart triggered.", deployment_id));
     })?;
 
@@ -239,11 +245,14 @@ pub async fn handle_redeploy(
     let dep: Deployment = serde_json::from_value(payload["deployment"].clone())
         .context("Failed to parse deployment")?;
 
-    output(state.output, &dep, || {
-        cli_success(format!("Redeploy triggered for deployment {}.", deployment_id));
+    output(state.output_mode, &dep, || {
+        cli_success(format!(
+            "Redeploy triggered for deployment {}.",
+            deployment_id
+        ));
         cli_info(format!(
-            "\nFollow logs: {}",
-            format!("slasha logs --app {} --follow", slug)
+            "\nFollow logs: slasha logs --app {} --follow",
+            slug
         ));
     })?;
 
@@ -259,7 +268,7 @@ pub async fn handle_delete(
     let deployment_id = resolve_deployment_id(state, slug, deployment_id).await?;
 
     if !confirm_action(
-        state.output,
+        state.output_mode,
         yes,
         &format!("Delete deployment {}?", deployment_id.red()),
     )? {
@@ -271,7 +280,7 @@ pub async fn handle_delete(
         .delete(&format!("/api/apps/{}/deployments/{}", slug, deployment_id))
         .await?;
 
-    output(state.output, &json!({ "ok": true }), || {
+    output(state.output_mode, &json!({ "ok": true }), || {
         cli_success(format!("Deployment {} deleted.", deployment_id));
     })?;
 

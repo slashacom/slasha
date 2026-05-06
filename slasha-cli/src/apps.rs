@@ -4,6 +4,7 @@ use serde_json::json;
 use slasha_db::app::App;
 
 use crate::{
+    config::Config,
     output::{cli_info, cli_label, cli_section, cli_success, confirm_action, output, print_table},
     state::AppState,
 };
@@ -42,7 +43,10 @@ fn print_app(state: &AppState, app: &App) {
     cli_label("SSH", ssh_git_url(state, &app.slug));
 
     cli_section("Deploy");
-    cli_info(format!("  git remote add slasha {}", ssh_git_url(state, &app.slug)));
+    cli_info(format!(
+        "  git remote add slasha {}",
+        ssh_git_url(state, &app.slug)
+    ));
     cli_info("  git push -u slasha main".to_string());
 }
 
@@ -52,7 +56,7 @@ pub async fn handle_list(state: &AppState) -> Result<()> {
     let apps: Vec<App> =
         serde_json::from_value(body["apps"].clone()).context("Failed to parse apps")?;
 
-    output(state.output, &apps, || {
+    output(state.output_mode, &apps, || {
         if apps.is_empty() {
             cli_info("No apps yet. Run slasha create <name> to create one.");
         } else {
@@ -83,7 +87,7 @@ pub async fn handle_create(state: &AppState, name: &str) -> Result<()> {
 
     let app: App = serde_json::from_value(body["app"].clone()).context("Failed to parse app")?;
 
-    output(state.output, &app, || {
+    output(state.output_mode, &app, || {
         cli_success("App created");
         print_app(state, &app);
     })?;
@@ -96,7 +100,7 @@ pub async fn handle_info(state: &AppState, slug: &str) -> Result<()> {
 
     let app: App = serde_json::from_value(body["app"].clone()).context("Failed to parse app")?;
 
-    output(state.output, &app, || {
+    output(state.output_mode, &app, || {
         print_app(state, &app);
     })?;
 
@@ -105,7 +109,7 @@ pub async fn handle_info(state: &AppState, slug: &str) -> Result<()> {
 
 pub async fn handle_delete(state: &AppState, slug: &str, yes: bool) -> Result<()> {
     if !confirm_action(
-        state.output,
+        state.output_mode,
         yes,
         &format!(
             "Delete app {}? This removes all deployments and services.",
@@ -117,7 +121,7 @@ pub async fn handle_delete(state: &AppState, slug: &str, yes: bool) -> Result<()
 
     state.client.delete(&format!("/api/apps/{}", slug)).await?;
 
-    output(state.output, &json!({ "ok": true, "slug": slug }), || {
+    output(state.output_mode, &json!({ "ok": true, "slug": slug }), || {
         cli_success(format!("App {} deleted.", slug));
     })?;
 
@@ -144,10 +148,15 @@ pub async fn handle_link(state: &AppState, app_flag: Option<String>) -> Result<(
 
     state.client.get(&format!("/api/apps/{}", slug)).await?;
 
-    std::fs::write(".slasha", &slug).context("Failed to write .slasha file")?;
+    let mut config = Config::load().unwrap_or_default();
+    config.app = Some(slug.clone());
+    config.save()?;
 
-    output(state.output, &json!({ "ok": true, "slug": slug }), || {
-        cli_success(format!("Linked current directory to app '{}'", slug));
+    output(state.output_mode, &json!({ "ok": true, "slug": slug }), || {
+        cli_success(format!(
+            "Linked current directory to app '{}' in slasha.toml",
+            slug
+        ));
     })?;
 
     Ok(())

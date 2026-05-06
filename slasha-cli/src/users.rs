@@ -28,7 +28,7 @@ pub async fn handle_list(state: &AppState) -> Result<()> {
     let users: Vec<User> =
         serde_json::from_value(users_data["users"].clone()).context("Failed to parse users")?;
 
-    output(state.output, &users, || {
+    output(state.output_mode, &users, || {
         print_table(
             &["ID", "EMAIL", "ROLE", "CREATED AT"],
             users
@@ -69,7 +69,7 @@ pub async fn handle_create(
     let user: User =
         serde_json::from_value(create_res["user"].clone()).context("Failed to parse user")?;
 
-    output(state.output, &user, || {
+    output(state.output_mode, &user, || {
         cli_success("User created.");
         cli_label("ID", &user.id);
         cli_label("Email", &user.email);
@@ -99,7 +99,7 @@ pub async fn handle_update(
     let user: User =
         serde_json::from_value(update_res["user"].clone()).context("Failed to parse user")?;
 
-    output(state.output, &user, || {
+    output(state.output_mode, &user, || {
         cli_success("User updated.");
         cli_label("Email", &user.email);
         cli_label("Role", &user.role);
@@ -109,13 +109,17 @@ pub async fn handle_update(
 }
 
 pub async fn handle_delete(state: &AppState, id: &str, yes: bool) -> Result<()> {
-    if !confirm_action(state.output, yes, &format!("Delete user {}?", id.red()))? {
+    if !confirm_action(
+        state.output_mode,
+        yes,
+        &format!("Delete user {}?", id.red()),
+    )? {
         return Ok(());
     }
 
     state.client.delete(&format!("/api/users/{}", id)).await?;
 
-    output(state.output, &json!({ "ok": true }), || {
+    output(state.output_mode, &json!({ "ok": true }), || {
         cli_success("User deleted.");
     })?;
 

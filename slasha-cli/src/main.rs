@@ -1,37 +1,142 @@
-mod output;
 mod app_env;
 mod apps;
 mod auth;
 mod clap_app;
 mod config;
 mod deployments;
+mod diagnostic;
+#[cfg(feature = "serve")]
+mod git_ssh;
 mod http;
+mod output;
 mod service_env;
 mod services;
 mod ssh_keys;
 mod state;
+mod token;
 mod users;
 
-use std::fs;
-
 use clap::Parser;
+use colored::Colorize;
 use serde_json::json;
 
 use crate::{
     clap_app::{ClapApp, Command},
+    config::Config,
+    diagnostic::DiagnosticReport,
     output::print_json,
     state::AppState,
 };
 
+fn resolve_app(flag: Option<String>) -> anyhow::Result<String> {
+    if let Some(app) = flag {
+        return Ok(app);
+    }
+
+    let config = Config::load()?;
+    if let Some(slug) = config.app
+        && !slug.is_empty()
+    {
+        return Ok(slug);
+    }
+
+    anyhow::bail!("Missing --app flag and no app specified in slasha.toml");
+}
+
+async fn run(cli: ClapApp) -> anyhow::Result<()> {
+    let output_mode = cli.output_mode;
+    let state = AppState {
+        client: http::client()?.with_url_override(cli.url),
+        output_mode,
+    };
+
+    if cli.diagnostic {
+        DiagnosticReport::generate()?.print()?;
+        return Ok(());
+    }
+
+    match cli.command {
+        #[cfg(feature = "serve")]
+        Command::Serve => return slasha_server::start_server().await,
+        #[cfg(feature = "serve")]
+        Command::GitSsh { user_id } => return git_ssh::handle(user_id).await,
+
+        Command::Status => auth::handle_status(&state).await?,
+        Command::Login => auth::handle_login(&state).await?,
+        Command::Logout => auth::handle_logout(&state).await?,
+        Command::Me => auth::handle_me(&state).await?,
+
+        Command::SetUrl { url } => {
+            let mut config = Config::load()?;
+            config.base_url = Some(url);
+            config.save()?;
+            return Ok(());
+        }
+
+        Command::Version { verbose } => {
+            println!("{} {}", "Version".green(), env!("CARGO_PKG_VERSION"));
+
+            if verbose {
+                println!("{} {}", "Authors".green(), env!("CARGO_PKG_AUTHORS"));
+                println!("{} {}", "License".green(), env!("CARGO_PKG_LICENSE"));
+                println!("{} {}", "Repository".green(), env!("CARGO_PKG_REPOSITORY"));
+                println!("{} {}", "Build Timestamp".green(), env!("BUILD_TIMESTAMP"));
+            }
+
+            return Ok(());
+        }
+
+        Command::Create { name } => apps::handle_create(&state, &name).await?,
+        Command::Delete { app, yes } => {
+            apps::handle_delete(&state, &resolve_app(app)?, yes).await?
+        }
+        Command::Info { app } => apps::handle_info(&state, &resolve_app(app)?).await?,
+        Command::List => apps::handle_list(&state).await?,
+        Command::Link { app } => apps::handle_link(&state, app).await?,
+
+        Command::Deploy { app, commit } => {
+            deployments::handle_trigger(&state, &resolve_app(app)?, commit).await?
+        }
+        Command::Deployments { app, command } => {
+            deployments::dispatch(&state, &resolve_app(app)?, command).await?
+        }
+
+        Command::Provision {
+            app,
+            kind,
+            name,
+            version,
+        } => services::handle_create(&state, &resolve_app(app)?, &kind, &name, &version).await?,
+
+        Command::AppEnv { app, command } => {
+            app_env::dispatch(&state, &resolve_app(app)?, command).await?
+        }
+
+        Command::Services { app, command } => {
+            services::dispatch(&state, &resolve_app(app)?, command).await?
+        }
+
+        Command::SshKeys { command } => ssh_keys::dispatch(&state, command).await?,
+        Command::Users { command } => users::dispatch(&state, command).await?,
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
-    let cli = ClapApp::parse();
-    let json = cli.output.is_json();
+    if std::env::var_os("NO_COLOR").is_some()
+        || !std::io::IsTerminal::is_terminal(&std::io::stdout())
+    {
+        colored::control::set_override(false);
+    }
 
+    let cli = ClapApp::parse();
+    let is_json = cli.output_mode.is_json();
     let result = run(cli).await;
 
     if let Err(e) = result {
-        if json {
+        if is_json {
             let _ = print_json(&json!({ "error": format!("{:#}", e) }));
         } else {
             eprintln!("{}", e);
@@ -44,63 +149,4 @@ async fn main() {
 
         std::process::exit(1);
     }
-}
-
-fn resolve_app(flag: Option<String>) -> anyhow::Result<String> {
-    if let Some(app) = flag {
-        return Ok(app);
-    }
-    let content = fs::read_to_string(".slasha")
-        .map_err(|_| anyhow::anyhow!("Missing --app flag and no .slasha file found"))?;
-    let slug = content.trim().to_string();
-    if slug.is_empty() {
-        anyhow::bail!("Missing --app flag and .slasha file is empty");
-    }
-    Ok(slug)
-}
-
-async fn run(cli: ClapApp) -> anyhow::Result<()> {
-    let output = cli.output;
-    let state = AppState {
-        client: http::client()?.with_url_override(cli.url),
-        output,
-    };
-
-    match cli.command {
-        Command::Status => return auth::handle_status(&state).await,
-        Command::Login => return auth::handle_login(&state).await,
-        Command::Me => return auth::handle_me(&state).await,
-        Command::Logout => return auth::handle_logout(&state).await,
-        Command::SetUrl { url } => {
-            let mut conf = config::Config::load()?;
-            conf.base_url = url.clone();
-            conf.save()?;
-            return Ok(());
-        }
-        Command::List => return apps::handle_list(&state).await,
-        Command::Create { name } => return apps::handle_create(&state, &name).await,
-        Command::Link => return apps::handle_link(&state, cli.app).await,
-        Command::SshKeys { command } => return ssh_keys::dispatch(&state, command).await,
-        Command::Users { command } => return users::dispatch(&state, command).await,
-        _ => {}
-    }
-
-    let slug = resolve_app(cli.app)?;
-
-    match cli.command {
-        Command::Info => apps::handle_info(&state, &slug).await?,
-        Command::Delete { yes } => apps::handle_delete(&state, &slug, yes).await?,
-        Command::Deploy { commit } => deployments::handle_trigger(&state, &slug, commit).await?,
-        Command::Deployments { command } => deployments::dispatch(&state, &slug, command).await?,
-        Command::Provision {
-            kind,
-            name,
-            version,
-        } => services::handle_create(&state, &slug, &kind, &name, &version).await?,
-        Command::AppEnv { command } => app_env::dispatch(&state, &slug, command).await?,
-        Command::Services { command } => services::dispatch(&state, &slug, command).await?,
-        _ => unreachable!(),
-    }
-
-    Ok(())
 }

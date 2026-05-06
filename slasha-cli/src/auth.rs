@@ -6,9 +6,9 @@ use serde_json::json;
 use slasha_db::user::User;
 
 use crate::{
-    config::Config,
     output::{cli_info, cli_label, cli_section, cli_success, output, spinner},
     state::AppState,
+    token::{clear_auth_token, set_auth_token},
 };
 
 #[derive(Deserialize, Serialize)]
@@ -38,8 +38,11 @@ pub async fn handle_login(state: &AppState) -> Result<()> {
     let has_admin = check_has_admin(state).await?;
 
     if !has_admin {
-        if !state.output.is_json() {
-            cli_info(format!("{} No admin account exists. Setting up initial admin...", "-->".cyan()));
+        if !state.output_mode.is_json() {
+            cli_info(format!(
+                "{} No admin account exists. Setting up initial admin...",
+                "-->".cyan()
+            ));
         }
         return handle_signup(state).await;
     }
@@ -69,15 +72,17 @@ pub async fn handle_login(state: &AppState) -> Result<()> {
         }
     };
 
-    let mut conf = Config::load()?;
-    conf.auth_token = Some(auth.token);
-    conf.save()?;
+    set_auth_token(&auth.token)?;
 
     pb.finish_and_clear();
 
-    output(state.output, &json!({ "ok": true, "message": "Logged in" }), || {
-        cli_success("Logged in successfully.");
-    })?;
+    output(
+        state.output_mode,
+        &json!({ "ok": true, "message": "Logged in" }),
+        || {
+            cli_success("Logged in successfully.");
+        },
+    )?;
 
     Ok(())
 }
@@ -107,14 +112,12 @@ async fn handle_signup(state: &AppState) -> Result<()> {
         }
     };
 
-    let mut conf = Config::load()?;
-    conf.auth_token = Some(auth.token);
-    conf.save()?;
+    set_auth_token(&auth.token)?;
 
     pb.finish_and_clear();
 
     output(
-        state.output,
+        state.output_mode,
         &json!({ "ok": true, "message": "Admin account created" }),
         || {
             cli_success("Admin account created and logged in.");
@@ -125,11 +128,9 @@ async fn handle_signup(state: &AppState) -> Result<()> {
 }
 
 pub async fn handle_logout(state: &AppState) -> Result<()> {
-    let mut conf = Config::load()?;
-    conf.auth_token = None;
-    conf.save()?;
+    clear_auth_token()?;
 
-    output(state.output, &json!({ "ok": true }), || {
+    output(state.output_mode, &json!({ "ok": true }), || {
         cli_success("Logged out.");
     })?;
 
@@ -140,7 +141,7 @@ pub async fn handle_me(state: &AppState) -> Result<()> {
     let me: MeResponse = serde_json::from_value(state.client.get("/api/auth/me").await?)
         .context("Failed to parse me response")?;
 
-    output(state.output, &me.user, || {
+    output(state.output_mode, &me.user, || {
         cli_section("Current user");
         cli_label("Email", &me.user.email);
         cli_label("Role", &me.user.role);
@@ -152,7 +153,7 @@ pub async fn handle_me(state: &AppState) -> Result<()> {
 pub async fn handle_status(state: &AppState) -> Result<()> {
     let health = state.client.get("/api/health").await?;
 
-    output(state.output, &health, || {
+    output(state.output_mode, &health, || {
         cli_success(format!(
             "Server is {}",
             health["status"].as_str().unwrap_or("ok").green()

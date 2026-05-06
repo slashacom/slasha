@@ -26,8 +26,7 @@ COPY slasha-server/ ./slasha-server/
 COPY slasha-cli/ ./slasha-cli/
 COPY slasha-db/ ./slasha-db/
 COPY --from=frontend-builder /app/web/build/client /app/web/build/client
-RUN cargo build --release -p slasha-server --features bundle \
- && cargo build --release -p git-ssh-handler
+RUN cargo build --release -p slasha-cli --features serve-bundle
 
 FROM debian:bookworm-slim AS runtime
 # docker-ce-cli + docker-buildx-plugin are required: slasha-server shells out
@@ -51,10 +50,9 @@ RUN mkdir /var/run/sshd \
  && chown slasha:slasha /home/slasha/.ssh/.keep /home/slasha/.slasha/.keep \
  && rm -f /etc/ssh/ssh_host_*
 
-COPY --from=builder /app/target/release/slasha-server /usr/local/bin/slasha-server
-COPY --from=builder /app/target/release/slasha-git-ssh-handler /usr/local/bin/slasha-git-ssh-handler
+COPY --from=builder /app/target/release/slasha /usr/local/bin/slasha
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/slasha-server /usr/local/bin/slasha-git-ssh-handler /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/slasha /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 3000 2222
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

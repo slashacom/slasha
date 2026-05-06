@@ -53,4 +53,4 @@ chown -R slasha:slasha "$HOST_KEY_DIR"
 /usr/sbin/sshd -D &
 
 # Drop privileges and run the HTTP server in the foreground.
-exec runuser -u slasha -- /usr/local/bin/slasha-server
+exec runuser -u slasha -- /usr/local/bin/slasha serve

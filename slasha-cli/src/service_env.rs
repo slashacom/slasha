@@ -31,7 +31,7 @@ pub async fn handle_list(state: &AppState, slug: &str, service_id: &str) -> Resu
     let vars: HashMap<String, String> =
         serde_json::from_value(env_data["env_vars"].clone()).context("Failed to parse env vars")?;
 
-    output(state.output, &vars, || {
+    output(state.output_mode, &vars, || {
         if vars.is_empty() {
             cli_info("No env vars set.");
         } else {
@@ -70,7 +70,7 @@ pub async fn handle_set(
         )
         .await?;
 
-    output(state.output, &update_res["env_vars"], || {
+    output(state.output_mode, &update_res["env_vars"], || {
         cli_success("Service env vars updated.");
     })?;
 
@@ -99,7 +99,7 @@ pub async fn handle_unset(
         )
         .await?;
 
-    output(state.output, &update_res["env_vars"], || {
+    output(state.output_mode, &update_res["env_vars"], || {
         cli_success("Service env vars updated.");
     })?;
 
