@@ -71,8 +71,7 @@ pub async fn run_server(address: SocketAddr, state: AppState) -> anyhow::Result<
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+pub async fn start_server() -> anyhow::Result<()> {
     dotenv().ok();
     setup_tracing();
 

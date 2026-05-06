@@ -26,7 +26,7 @@ pub async fn handle_list(state: &AppState) -> Result<()> {
     let keys: Vec<SshKey> =
         serde_json::from_value(keys_data["keys"].clone()).context("Failed to parse keys")?;
 
-    output(state.output, &keys, || {
+    output(state.output_mode, &keys, || {
         if keys.is_empty() {
             cli_info("No SSH keys added. Run slasha ssh-keys add to add one.");
         } else {
@@ -81,7 +81,7 @@ pub async fn handle_add(
     let key: SshKey =
         serde_json::from_value(add_res["key"].clone()).context("Failed to parse key")?;
 
-    output(state.output, &key, || {
+    output(state.output_mode, &key, || {
         cli_success("SSH key added.");
         cli_label("ID", &key.id);
         cli_label("Title", key.title.as_deref().unwrap_or("—"));
@@ -96,7 +96,7 @@ pub async fn handle_remove(state: &AppState, id: &str) -> Result<()> {
         .delete(&format!("/api/ssh-keys/{}", id))
         .await?;
 
-    output(state.output, &json!({ "ok": true }), || {
+    output(state.output_mode, &json!({ "ok": true }), || {
         cli_success("SSH key removed.");
     })?;
 

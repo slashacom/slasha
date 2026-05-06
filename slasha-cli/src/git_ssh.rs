@@ -9,10 +9,7 @@ use slasha_db::{
     repos::{app::AppRepo, user::UserRepo},
 };
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let user_id = env::args().nth(1).context("No user ID provided")?;
-
+pub async fn handle(user_id: String) -> Result<()> {
     let db_path = dirs::home_dir()
         .context("Failed to get home directory")?
         .join(".slasha")
@@ -52,9 +49,6 @@ async fn main() -> Result<()> {
     let mut child = Command::new("git")
         .arg(service)
         .arg(&app.repo_path)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
         .spawn()
         .context("Failed to spawn git process")?;
 

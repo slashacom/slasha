@@ -12,7 +12,7 @@ gen-models:
 dev: setup
 	@test -f .env || cp .env.example .env
 	@trap 'kill $$(jobs -p)' EXIT; \
-	cargo run -p slasha-server & \
+	cargo run -p slasha-cli --features serve -- serve & \
 	cd web && bun run dev & \
 	wait
 
@@ -21,7 +21,7 @@ dev-cli:
 
 dev-bundle:
 	cd web && bun run build
-	cargo run -p slasha-server --features bundle
+	cargo run -p slasha-cli --features serve-bundle -- serve
 
 docker-up:
 	docker compose up --build

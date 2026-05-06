@@ -8,13 +8,17 @@ use crate::state::Storage;
 pub async fn regenerate_authorized_keys(storage: &Storage) -> anyhow::Result<()> {
     let keys = SshKeyRepo::list_all(&storage.db_pool).await?;
 
-    let handler_path = "slasha-git-ssh-handler";
+    let current_exe = std::env::current_exe()
+        .unwrap_or_else(|_| std::path::PathBuf::from("slasha"))
+        .display()
+        .to_string();
+
     let mut content = String::new();
 
     for key in keys {
         let line = format!(
-            "command=\"{} {}\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty {}\n",
-            handler_path, key.user_id, key.public_key
+            "command=\"{} git-ssh {}\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty {}\n",
+            current_exe, key.user_id, key.public_key
         );
         content.push_str(&line);
     }

@@ -12,14 +12,18 @@ use crate::output::OutputMode;
     about = "Deploy and manage apps on your Slasha PaaS"
 )]
 pub struct ClapApp {
-    #[arg(long, global = true, default_value = "human")]
-    pub output: OutputMode,
+    #[arg(name = "output", long, global = true, default_value = "human")]
+    pub output_mode: OutputMode,
 
     #[arg(long, global = true, value_name = "URL")]
     pub url: Option<String>,
 
-    #[arg(long, global = true, value_name = "SLUG")]
-    pub app: Option<String>,
+    #[arg(
+        long,
+        global = true,
+        help = "Show diagnostic information for bug reports"
+    )]
+    pub diagnostic: bool,
 
     #[command(subcommand)]
     pub command: Command,
@@ -27,11 +31,30 @@ pub struct ClapApp {
 
 #[derive(Subcommand)]
 pub enum Command {
+    #[cfg(feature = "serve")]
+    #[command(name = "serve", about = "Run the Slasha server")]
+    Serve,
+
+    #[cfg(feature = "serve")]
+    #[command(name = "git-ssh", hide = true)]
+    GitSsh { user_id: String },
+
     #[command(name = "status", about = "Check server health")]
     Status,
 
-    #[command(name = "set-url", about = "Persist base URL to config")]
-    SetUrl { url: String },
+    #[command(
+        name = "version",
+        about = "Print version information",
+        override_usage = "envio version [OPTIONS]"
+    )]
+    Version {
+        #[arg(
+            long = "verbose",
+            short = 'v',
+            help = "show verbose version information"
+        )]
+        verbose: bool,
+    },
 
     #[command(name = "login", about = "Authenticate")]
     Login,
@@ -41,64 +64,6 @@ pub enum Command {
 
     #[command(name = "me", about = "Show current user")]
     Me,
-
-    #[command(name = "link", about = "Write app context to .slasha in cwd")]
-    Link,
-
-    #[command(name = "list", about = "List all apps")]
-    List,
-
-    #[command(name = "create", about = "Create a new app")]
-    Create { name: String },
-
-    #[command(name = "info", about = "Show app details")]
-    Info,
-
-    #[command(name = "delete", about = "Delete an app")]
-    Delete {
-        #[arg(short = 'y', long)]
-        yes: bool,
-    },
-
-    #[command(name = "deploy", about = "Trigger a deployment")]
-    Deploy {
-        #[arg(long, value_name = "SHA")]
-        commit: Option<String>,
-    },
-
-    #[command(name = "deployments", about = "Manage deployments")]
-    Deployments {
-        #[command(subcommand)]
-        command: DeploymentsCommand,
-    },
-
-    #[command(
-        name = "provision",
-        about = "Provision a new service (e.g. PostgreSQL)"
-    )]
-    Provision {
-        #[arg(
-            long,
-            value_parser = PossibleValuesParser::new(ServiceKind::VARIANTS)
-        )]
-        kind: ServiceKind,
-        #[arg(long)]
-        name: String,
-        #[arg(long)]
-        version: String,
-    },
-
-    #[command(name = "env", about = "Manage app env vars")]
-    AppEnv {
-        #[command(subcommand)]
-        command: AppEnvCommand,
-    },
-
-    #[command(name = "services", about = "Manage attached services")]
-    Services {
-        #[command(subcommand)]
-        command: ServicesCommand,
-    },
 
     #[command(name = "ssh-keys", about = "Manage SSH keys")]
     SshKeys {
@@ -110,6 +75,82 @@ pub enum Command {
     Users {
         #[command(subcommand)]
         command: UsersCommand,
+    },
+
+    #[command(name = "create", about = "Create a new app")]
+    Create { name: String },
+
+    #[command(name = "delete", about = "Delete an app")]
+    Delete {
+        #[arg(long, value_name = "SLUG")]
+        app: Option<String>,
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+
+    #[command(name = "info", about = "Show app details")]
+    Info {
+        #[arg(long, value_name = "SLUG")]
+        app: Option<String>,
+    },
+
+    #[command(name = "list", about = "List all apps")]
+    List,
+
+    #[command(name = "link", about = "Write app context to .slasha in cwd")]
+    Link {
+        #[arg(long, value_name = "SLUG")]
+        app: Option<String>,
+    },
+
+    #[command(name = "set-url", about = "Persist base URL to config")]
+    SetUrl { url: String },
+
+    #[command(name = "deploy", about = "Trigger a deployment")]
+    Deploy {
+        #[arg(long, value_name = "SLUG")]
+        app: Option<String>,
+        #[arg(long, value_name = "SHA")]
+        commit: Option<String>,
+    },
+
+    #[command(name = "deployments", about = "Manage deployments")]
+    Deployments {
+        #[arg(long, value_name = "SLUG")]
+        app: Option<String>,
+        #[command(subcommand)]
+        command: DeploymentsCommand,
+    },
+
+    #[command(
+        name = "provision",
+        about = "Provision a new service (e.g. PostgreSQL)"
+    )]
+    Provision {
+        #[arg(long, value_name = "SLUG")]
+        app: Option<String>,
+        #[arg(long, value_parser = PossibleValuesParser::new(ServiceKind::VARIANTS))]
+        kind: ServiceKind,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        version: String,
+    },
+
+    #[command(name = "services", about = "Manage attached services")]
+    Services {
+        #[arg(long, value_name = "SLUG")]
+        app: Option<String>,
+        #[command(subcommand)]
+        command: ServicesCommand,
+    },
+
+    #[command(name = "env", about = "Manage app env vars")]
+    AppEnv {
+        #[arg(long, value_name = "SLUG")]
+        app: Option<String>,
+        #[command(subcommand)]
+        command: AppEnvCommand,
     },
 }
 
