@@ -120,6 +120,6 @@ a:not(nav a) {
 
 .env-value-editor [data-mention] {
   display: inline-block;
-  white-space: nowrap;
+  white-space: nowrap !important;
   vertical-align: middle;
 }
