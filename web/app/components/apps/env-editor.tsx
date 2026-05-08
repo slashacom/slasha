@@ -13,7 +13,11 @@ import {
 import { toast } from 'sonner';
 import TextareaAutosize from 'react-textarea-autosize';
 
-import { getAppEnvVarsOptions, useUpdateAppEnvVars } from '~/queries/apps';
+import {
+  getAppEnvSuggestionsOptions,
+  getAppEnvVarsOptions,
+  useUpdateAppEnvVars,
+} from '~/queries/apps';
 import {
   getServiceEnvVarsOptions,
   useUpdateServiceEnvVars,
@@ -23,8 +27,10 @@ import { Button } from '~/components/interface/button';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
 import {
+  APP_SLASHA_REFS,
   RichValueInput,
-  SLASHA_SYSTEM_REFS,
+  SERVICE_SLASHA_REFS,
+  type SuggestionGroup,
 } from '~/components/apps/env-value-input';
 
 type EnvVar = { key: string; value: string };
@@ -125,6 +131,7 @@ export interface EnvEditorProps {
   onCancel?: () => void;
   readOnly?: boolean;
   variant?: 'default' | 'embedded';
+  extraGroups?: SuggestionGroup[];
 }
 
 export function EnvEditor({
@@ -138,12 +145,38 @@ export function EnvEditor({
   onCancel,
   readOnly = false,
   variant = 'default',
+  extraGroups,
 }: EnvEditorProps) {
   const [vars, setVars] = useState<EnvVar[]>(() => fromEnvRecord(initialVars));
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [mode, setMode] = useState<'table' | 'raw'>('table');
   const [rawText, setRawText] = useState<string>('');
+  const [keyColWidth, setKeyColWidth] = useState<number>(240);
   const formId = useId();
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = keyColWidth;
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(120, Math.min(600, startW + (ev.clientX - startX)));
+      setKeyColWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  const gridStyle = {
+    gridTemplateColumns: `${keyColWidth}px 1fr auto`,
+  };
 
   useEffect(() => {
     if (JSON.stringify(toEnvRecord(vars)) !== JSON.stringify(initialVars)) {
@@ -151,7 +184,7 @@ export function EnvEditor({
     }
   }, [initialVars]);
 
-  const availableRefs = (rowIndex: number): string[] => {
+  const groupsForRow = (rowIndex: number): SuggestionGroup[] => {
     const ownKeys: string[] = [];
     for (let i = 0; i < vars.length; i++) {
       if (i === rowIndex) {
@@ -162,7 +195,18 @@ export function EnvEditor({
         ownKeys.push(k);
       }
     }
-    return [...ownKeys, ...SLASHA_SYSTEM_REFS];
+    const groups: SuggestionGroup[] = [];
+    if (ownKeys.length > 0) {
+      groups.push({ label: 'Own', items: ownKeys });
+    }
+    if (extraGroups) {
+      for (const g of extraGroups) {
+        if (g.items.length > 0) {
+          groups.push(g);
+        }
+      }
+    }
+    return groups;
   };
 
   const duplicateKeys = useMemo(() => {
@@ -397,10 +441,22 @@ export function EnvEditor({
           ) : (
             <VStack space={3}>
               <div className="overflow-hidden rounded-lg border border-border bg-surface/10">
-                <div className="grid grid-cols-[minmax(220px,260px)_1fr_auto] gap-px border-b border-border bg-surface/50 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+                <div
+                  className="relative grid gap-px border-b border-border bg-surface/50 text-[11px] font-medium uppercase tracking-wider text-text-tertiary"
+                  style={gridStyle}
+                >
                   <div className="border-r border-border px-4 py-2">Key</div>
                   <div className="px-4 py-2">Value</div>
                   <div className="w-10" />
+                  {!readOnly && (
+                    <div
+                      onMouseDown={startResize}
+                      className="absolute top-0 bottom-0 z-10 w-2 cursor-col-resize hover:bg-blue-500/20"
+                      style={{ left: `${keyColWidth - 4}px` }}
+                      aria-label="Resize key column"
+                      role="separator"
+                    />
+                  )}
                 </div>
                 <div className="divide-y divide-border">
                   {vars.map((v, i) => {
@@ -410,8 +466,9 @@ export function EnvEditor({
                     return (
                       <div
                         key={i}
+                        style={gridStyle}
                         className={cn(
-                          'grid grid-cols-[minmax(220px,260px)_1fr_auto] items-stretch gap-px transition-colors',
+                          'grid items-stretch gap-px transition-colors',
                           isDuplicate
                             ? 'bg-red-500/[0.04] hover:bg-red-500/[0.07]'
                             : 'hover:bg-white/[0.02]'
@@ -450,14 +507,14 @@ export function EnvEditor({
                             )}
                           />
                         </div>
-                        <div className="px-2 py-1.5">
+                        <div className="min-w-0 px-2 py-1.5">
                           <HStack space={2} alignItems="start">
-                            <div className="flex-1 min-w-0">
+                            <div className="min-w-0 flex-1">
                               <RichValueInput
                                 value={v.value}
                                 placeholder="postgres://..."
                                 readOnly={readOnly}
-                                suggestions={availableRefs(i)}
+                                groups={groupsForRow(i)}
                                 onChange={(val) => {
                                   if (readOnly) {
                                     return;
@@ -644,9 +701,10 @@ function RawEditor({
         onChange={(e) => onChange(e.target.value)}
         minRows={8}
         maxRows={24}
+        wrap="off"
         placeholder={'DATABASE_URL=postgres://...\nAPI_KEY=sk-...\n# comments are supported'}
         {...noAutofillProps}
-        className="block w-full resize-none bg-transparent px-4 py-3 font-mono text-[13px] leading-5 text-text outline-none placeholder:text-text-tertiary/50"
+        className="block w-full resize-none overflow-x-auto whitespace-pre bg-transparent px-4 py-3 font-mono text-[13px] leading-5 text-text outline-none placeholder:text-text-tertiary/50"
       />
     </div>
   );
@@ -657,7 +715,22 @@ export function AppEnvEditor({ appSlug }: { appSlug: string }) {
   const { data: envData, isLoading: envLoading } = useQuery(
     getAppEnvVarsOptions(appSlug)
   );
+  const { data: suggestionsData } = useQuery(
+    getAppEnvSuggestionsOptions(appSlug)
+  );
   const updateEnvVars = useUpdateAppEnvVars();
+
+  const extraGroups = useMemo<SuggestionGroup[]>(() => {
+    const out: SuggestionGroup[] = [];
+    for (const svc of suggestionsData?.services ?? []) {
+      out.push({
+        label: svc.name,
+        items: svc.env_keys.map((k) => `${svc.name}.${k}`),
+      });
+    }
+    out.push({ label: 'SLASHA', items: APP_SLASHA_REFS });
+    return out;
+  }, [suggestionsData]);
 
   const handleSave = async (vars: Record<string, string>) => {
     try {
@@ -682,6 +755,7 @@ export function AppEnvEditor({ appSlug }: { appSlug: string }) {
       isLoading={envLoading}
       isSaving={updateEnvVars.isPending}
       onSave={handleSave}
+      extraGroups={extraGroups}
     />
   );
 }
@@ -730,6 +804,10 @@ export function ServiceEnvEditor({
     }
   };
 
+  const extraGroups: SuggestionGroup[] = [
+    { label: 'SLASHA', items: SERVICE_SLASHA_REFS },
+  ];
+
   return (
     <EnvEditor
       title={`${serviceName} Configuration`}
@@ -744,6 +822,7 @@ export function ServiceEnvEditor({
       onSave={readOnly ? undefined : handleSave}
       onCancel={onCancel}
       readOnly={readOnly}
+      extraGroups={extraGroups}
     />
   );
 }
