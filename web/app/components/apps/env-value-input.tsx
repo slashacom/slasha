@@ -188,7 +188,7 @@ export function RichValueInput({
         Mention.configure({
           HTMLAttributes: {
             class:
-              'inline-flex items-center whitespace-nowrap rounded bg-blue-500/15 px-1 py-px font-mono text-[12px] text-blue-300 ring-1 ring-blue-500/25',
+              'inline-block whitespace-nowrap rounded bg-blue-500/15 px-1 py-px align-middle font-mono text-[12px] text-blue-300 ring-1 ring-blue-500/25',
           },
           renderText({ node }) {
             return `\${{ ${node.attrs.id} }}`;

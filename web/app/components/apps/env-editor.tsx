@@ -151,7 +151,32 @@ export function EnvEditor({
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [mode, setMode] = useState<'table' | 'raw'>('table');
   const [rawText, setRawText] = useState<string>('');
+  const [keyColWidth, setKeyColWidth] = useState<number>(240);
   const formId = useId();
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = keyColWidth;
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(120, Math.min(600, startW + (ev.clientX - startX)));
+      setKeyColWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  const gridStyle = {
+    gridTemplateColumns: `${keyColWidth}px 1fr auto`,
+  };
 
   useEffect(() => {
     if (JSON.stringify(toEnvRecord(vars)) !== JSON.stringify(initialVars)) {
@@ -416,10 +441,22 @@ export function EnvEditor({
           ) : (
             <VStack space={3}>
               <div className="overflow-hidden rounded-lg border border-border bg-surface/10">
-                <div className="grid grid-cols-[minmax(220px,260px)_1fr_auto] gap-px border-b border-border bg-surface/50 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+                <div
+                  className="relative grid gap-px border-b border-border bg-surface/50 text-[11px] font-medium uppercase tracking-wider text-text-tertiary"
+                  style={gridStyle}
+                >
                   <div className="border-r border-border px-4 py-2">Key</div>
                   <div className="px-4 py-2">Value</div>
                   <div className="w-10" />
+                  {!readOnly && (
+                    <div
+                      onMouseDown={startResize}
+                      className="absolute top-0 bottom-0 z-10 w-2 cursor-col-resize hover:bg-blue-500/20"
+                      style={{ left: `${keyColWidth - 4}px` }}
+                      aria-label="Resize key column"
+                      role="separator"
+                    />
+                  )}
                 </div>
                 <div className="divide-y divide-border">
                   {vars.map((v, i) => {
@@ -429,8 +466,9 @@ export function EnvEditor({
                     return (
                       <div
                         key={i}
+                        style={gridStyle}
                         className={cn(
-                          'grid grid-cols-[minmax(220px,260px)_1fr_auto] items-stretch gap-px transition-colors',
+                          'grid items-stretch gap-px transition-colors',
                           isDuplicate
                             ? 'bg-red-500/[0.04] hover:bg-red-500/[0.07]'
                             : 'hover:bg-white/[0.02]'
