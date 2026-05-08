@@ -16,6 +16,16 @@ const SingleLineParagraph = Paragraph;
 const REF_RE = /\$\{\{\s*([\w.-]+)\s*\}\}/g;
 const PARTIAL_RE = /\$\{\{\s*([\w.-]*)$/;
 
+export type SuggestionGroup = {
+  label: string;
+  items: string[];
+};
+
+type FlatItem = {
+  id: string;
+  group: string;
+};
+
 function valueToContent(value: string) {
   const content: { type: string; text?: string; attrs?: { id: string; label: string } }[] = [];
   let last = 0;
@@ -44,7 +54,7 @@ function valueToContent(value: string) {
 type HandlerBox = { current: (event: KeyboardEvent) => boolean };
 
 interface SuggestionListProps {
-  items: string[];
+  items: FlatItem[];
   command: (props: { id: string; label: string }) => void;
   handlerBox: HandlerBox;
 }
@@ -63,7 +73,7 @@ function SuggestionList(props: SuggestionListProps) {
     if (!item) {
       return;
     }
-    command({ id: item, label: item });
+    command({ id: item.id, label: item.id });
   };
 
   // Mutate the shared handler box so the suggestion plugin can route
@@ -98,24 +108,33 @@ function SuggestionList(props: SuggestionListProps) {
   return (
     <div className="overflow-hidden rounded-md border border-border bg-bg/95 shadow-lg backdrop-blur">
       <ul className="max-h-64 overflow-y-auto py-1">
-        {items.map((item, i) => (
-          <li key={item}>
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => select(i)}
-              onMouseEnter={() => setSelected(i)}
-              className={cn(
-                'flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-[12px] text-text',
-                i === selected && 'bg-white/10'
+        {items.map((item, i) => {
+          const prevGroup = i > 0 ? items[i - 1].group : null;
+          const showHeader = item.group !== prevGroup;
+          return (
+            <li key={`${item.group}::${item.id}`}>
+              {showHeader && (
+                <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-text-tertiary/70">
+                  {item.group}
+                </div>
               )}
-            >
-              <span className="text-text-tertiary">$&#123;&#123;</span>
-              <span>{item}</span>
-              <span className="text-text-tertiary">&#125;&#125;</span>
-            </button>
-          </li>
-        ))}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => select(i)}
+                onMouseEnter={() => setSelected(i)}
+                className={cn(
+                  'flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-[12px] text-text',
+                  i === selected && 'bg-white/10'
+                )}
+              >
+                <span className="text-text-tertiary">$&#123;&#123;</span>
+                <span>{item.id}</span>
+                <span className="text-text-tertiary">&#125;&#125;</span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -143,7 +162,7 @@ function positionPopup(el: HTMLDivElement, rect: DOMRect | null) {
 export interface RichValueInputProps {
   value: string;
   onChange: (val: string) => void;
-  suggestions: string[];
+  groups: SuggestionGroup[];
   placeholder?: string;
   readOnly?: boolean;
   onPasteRaw?: (text: string) => boolean;
@@ -153,7 +172,7 @@ export interface RichValueInputProps {
 export function RichValueInput({
   value,
   onChange,
-  suggestions,
+  groups,
   placeholder,
   readOnly = false,
   onPasteRaw,
@@ -222,9 +241,15 @@ export function RichValueInput({
             },
             items: ({ query }) => {
               const q = query.toLowerCase();
-              return suggestions
-                .filter((s) => s.toLowerCase().includes(q))
-                .slice(0, 8);
+              const out: FlatItem[] = [];
+              for (const group of groups) {
+                for (const id of group.items) {
+                  if (id.toLowerCase().includes(q)) {
+                    out.push({ id, group: group.label });
+                  }
+                }
+              }
+              return out.slice(0, 12);
             },
             render: () => {
               let renderer: ReactRenderer | null = null;
@@ -272,7 +297,7 @@ export function RichValueInput({
       editorProps: {
         attributes: {
           class: cn(
-            'env-value-editor block w-full bg-transparent font-mono text-[13px] leading-5 text-text outline-none [&_p]:m-0 [&_p]:min-h-[20px]',
+            'env-value-editor block w-full bg-transparent font-mono text-[13px] leading-5 text-text outline-none [&_p]:m-0 [&_p]:min-h-[20px] [&_p]:[overflow-wrap:anywhere]',
             className
           ),
           autoComplete: 'off',
@@ -322,11 +347,18 @@ export function RichValueInput({
   return <EditorContent editor={editor} />;
 }
 
-export const SLASHA_SYSTEM_REFS = [
+export const APP_SLASHA_REFS = [
   'SLASHA.app_container_name',
   'SLASHA.app_id',
   'SLASHA.app_name',
   'SLASHA.app_slug',
   'SLASHA.network_name',
+];
+
+export const SERVICE_SLASHA_REFS = [
   'SLASHA.service_container_name',
+  'SLASHA.service_id',
+  'SLASHA.service_name',
+  'SLASHA.app_id',
+  'SLASHA.network_name',
 ];

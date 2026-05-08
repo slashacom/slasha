@@ -13,7 +13,11 @@ import {
 import { toast } from 'sonner';
 import TextareaAutosize from 'react-textarea-autosize';
 
-import { getAppEnvVarsOptions, useUpdateAppEnvVars } from '~/queries/apps';
+import {
+  getAppEnvSuggestionsOptions,
+  getAppEnvVarsOptions,
+  useUpdateAppEnvVars,
+} from '~/queries/apps';
 import {
   getServiceEnvVarsOptions,
   useUpdateServiceEnvVars,
@@ -23,8 +27,10 @@ import { Button } from '~/components/interface/button';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
 import {
+  APP_SLASHA_REFS,
   RichValueInput,
-  SLASHA_SYSTEM_REFS,
+  SERVICE_SLASHA_REFS,
+  type SuggestionGroup,
 } from '~/components/apps/env-value-input';
 
 type EnvVar = { key: string; value: string };
@@ -125,6 +131,7 @@ export interface EnvEditorProps {
   onCancel?: () => void;
   readOnly?: boolean;
   variant?: 'default' | 'embedded';
+  extraGroups?: SuggestionGroup[];
 }
 
 export function EnvEditor({
@@ -138,6 +145,7 @@ export function EnvEditor({
   onCancel,
   readOnly = false,
   variant = 'default',
+  extraGroups,
 }: EnvEditorProps) {
   const [vars, setVars] = useState<EnvVar[]>(() => fromEnvRecord(initialVars));
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -151,7 +159,7 @@ export function EnvEditor({
     }
   }, [initialVars]);
 
-  const availableRefs = (rowIndex: number): string[] => {
+  const groupsForRow = (rowIndex: number): SuggestionGroup[] => {
     const ownKeys: string[] = [];
     for (let i = 0; i < vars.length; i++) {
       if (i === rowIndex) {
@@ -162,7 +170,18 @@ export function EnvEditor({
         ownKeys.push(k);
       }
     }
-    return [...ownKeys, ...SLASHA_SYSTEM_REFS];
+    const groups: SuggestionGroup[] = [];
+    if (ownKeys.length > 0) {
+      groups.push({ label: 'Own', items: ownKeys });
+    }
+    if (extraGroups) {
+      for (const g of extraGroups) {
+        if (g.items.length > 0) {
+          groups.push(g);
+        }
+      }
+    }
+    return groups;
   };
 
   const duplicateKeys = useMemo(() => {
@@ -450,14 +469,14 @@ export function EnvEditor({
                             )}
                           />
                         </div>
-                        <div className="px-2 py-1.5">
+                        <div className="min-w-0 px-2 py-1.5">
                           <HStack space={2} alignItems="start">
-                            <div className="flex-1 min-w-0">
+                            <div className="min-w-0 flex-1">
                               <RichValueInput
                                 value={v.value}
                                 placeholder="postgres://..."
                                 readOnly={readOnly}
-                                suggestions={availableRefs(i)}
+                                groups={groupsForRow(i)}
                                 onChange={(val) => {
                                   if (readOnly) {
                                     return;
@@ -657,7 +676,22 @@ export function AppEnvEditor({ appSlug }: { appSlug: string }) {
   const { data: envData, isLoading: envLoading } = useQuery(
     getAppEnvVarsOptions(appSlug)
   );
+  const { data: suggestionsData } = useQuery(
+    getAppEnvSuggestionsOptions(appSlug)
+  );
   const updateEnvVars = useUpdateAppEnvVars();
+
+  const extraGroups = useMemo<SuggestionGroup[]>(() => {
+    const out: SuggestionGroup[] = [];
+    for (const svc of suggestionsData?.services ?? []) {
+      out.push({
+        label: svc.name,
+        items: svc.env_keys.map((k) => `${svc.name}.${k}`),
+      });
+    }
+    out.push({ label: 'SLASHA', items: APP_SLASHA_REFS });
+    return out;
+  }, [suggestionsData]);
 
   const handleSave = async (vars: Record<string, string>) => {
     try {
@@ -682,6 +716,7 @@ export function AppEnvEditor({ appSlug }: { appSlug: string }) {
       isLoading={envLoading}
       isSaving={updateEnvVars.isPending}
       onSave={handleSave}
+      extraGroups={extraGroups}
     />
   );
 }
@@ -730,6 +765,10 @@ export function ServiceEnvEditor({
     }
   };
 
+  const extraGroups: SuggestionGroup[] = [
+    { label: 'SLASHA', items: SERVICE_SLASHA_REFS },
+  ];
+
   return (
     <EnvEditor
       title={`${serviceName} Configuration`}
@@ -744,6 +783,7 @@ export function ServiceEnvEditor({
       onSave={readOnly ? undefined : handleSave}
       onCancel={onCancel}
       readOnly={readOnly}
+      extraGroups={extraGroups}
     />
   );
 }

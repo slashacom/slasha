@@ -37,6 +37,21 @@ export function getAppEnvVarsOptions(appSlug: string) {
   });
 }
 
+export type EnvSuggestionService = {
+  name: string;
+  env_keys: string[];
+};
+
+export function getAppEnvSuggestionsOptions(appSlug: string) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'env-suggestions'],
+    queryFn: () =>
+      httpGet<{ services: EnvSuggestionService[] }>(
+        `apps/${appSlug}/env/suggestions`
+      ),
+  });
+}
+
 export function useUpdateAppEnvVars() {
   return useMutation({
     mutationFn: (data: { appSlug: string; vars: Record<string, string> }) =>

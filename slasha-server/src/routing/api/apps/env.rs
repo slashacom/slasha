@@ -7,8 +7,11 @@ use axum::{
     routing::{get, put},
 };
 use chrono::Utc;
-use serde::Deserialize;
-use slasha_db::{app::AppEnvVar, repos::app::AppRepo};
+use serde::{Deserialize, Serialize};
+use slasha_db::{
+    app::AppEnvVar,
+    repos::{app::AppRepo, service::ServiceRepo},
+};
 use uuid::Uuid;
 
 use crate::{
@@ -21,6 +24,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(get_env_vars))
         .route("/", put(update_env_vars))
+        .route("/suggestions", get(get_env_suggestions))
 }
 
 #[derive(Deserialize)]
@@ -41,6 +45,37 @@ async fn get_env_vars(
 
     Ok(Json(serde_json::json!({
         "env_vars": env_map,
+    })))
+}
+
+#[derive(Serialize)]
+struct ServiceSuggestion {
+    name: String,
+    env_keys: Vec<String>,
+}
+
+async fn get_env_suggestions(
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
+    Path(slug): Path<String>,
+) -> HttpResult<impl IntoResponse> {
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let services = ServiceRepo::list_for_app(&storage.db_pool, &app.id).await?;
+
+    let mut out: Vec<ServiceSuggestion> = Vec::with_capacity(services.len());
+    for svc in services {
+        let vars = ServiceRepo::get_env_vars(&storage.db_pool, &svc.id).await?;
+        let mut env_keys: Vec<String> = vars.into_iter().map(|v| v.key).collect();
+        env_keys.sort();
+        env_keys.insert(0, "service_container_name".to_string());
+        out.push(ServiceSuggestion {
+            name: svc.name,
+            env_keys,
+        });
+    }
+
+    Ok(Json(serde_json::json!({
+        "services": out,
     })))
 }
 
