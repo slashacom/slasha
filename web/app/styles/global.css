@@ -112,3 +112,14 @@ a:not(nav a) {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: hsl(0 0% 100% / 20%);
 }
+
+.env-value-editor,
+.env-value-editor p {
+  white-space: nowrap;
+}
+
+.env-value-editor [data-mention] {
+  display: inline-block;
+  white-space: nowrap;
+  vertical-align: middle;
+}
