@@ -701,9 +701,10 @@ function RawEditor({
         onChange={(e) => onChange(e.target.value)}
         minRows={8}
         maxRows={24}
+        wrap="off"
         placeholder={'DATABASE_URL=postgres://...\nAPI_KEY=sk-...\n# comments are supported'}
         {...noAutofillProps}
-        className="block w-full resize-none bg-transparent px-4 py-3 font-mono text-[13px] leading-5 text-text outline-none placeholder:text-text-tertiary/50"
+        className="block w-full resize-none overflow-x-auto whitespace-pre bg-transparent px-4 py-3 font-mono text-[13px] leading-5 text-text outline-none placeholder:text-text-tertiary/50"
       />
     </div>
   );
