@@ -297,7 +297,7 @@ export function RichValueInput({
       editorProps: {
         attributes: {
           class: cn(
-            'env-value-editor block w-full bg-transparent font-mono text-[13px] leading-5 text-text outline-none [&_p]:m-0 [&_p]:min-h-[20px] [&_p]:[overflow-wrap:anywhere]',
+            'env-value-editor block w-full overflow-x-auto bg-transparent font-mono text-[13px] leading-5 text-text outline-none [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-white/10 [&_p]:m-0 [&_p]:min-h-[20px] [&_p]:whitespace-nowrap',
             className
           ),
           autoComplete: 'off',
