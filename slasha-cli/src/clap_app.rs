@@ -124,7 +124,7 @@ pub enum Command {
 
     #[command(
         name = "provision",
-        about = "Provision a new service (e.g. PostgreSQL)"
+        about = "Provision a new service (e.g. PostgreSQL, MySQL, MongoDB, Redis)"
     )]
     Provision {
         #[arg(long, value_name = "SLUG")]
