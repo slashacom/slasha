@@ -98,7 +98,7 @@ pub async fn handle_create(
         cli_label("ID", &svc.id);
         cli_label("Name", &svc.name);
         cli_label("Kind", svc.kind);
-        cli_label("Vers", &svc.version);
+        cli_label("Version", &svc.version);
         cli_info(format!(
             "\nFollow service logs: slasha services logs --app {} --service {} --follow",
             slug, svc.name
@@ -200,10 +200,6 @@ pub async fn handle_logs(state: &AppState, slug: &str, service: &str, follow: bo
 }
 
 pub async fn resolve_service_id(state: &AppState, slug: &str, name_or_id: &str) -> Result<String> {
-    if name_or_id.len() > 20 && name_or_id.contains('-') {
-        return Ok(name_or_id.to_string());
-    }
-
     let services_data = state
         .api_client
         .get(&format!("/api/apps/{}/services", slug))
@@ -225,17 +221,19 @@ async fn fetch_default_env(
     state: &AppState,
     kind: &ServiceKind,
 ) -> Result<std::collections::HashMap<String, String>> {
-    let kinds_data = match state.api_client.get("/api/services/kinds").await {
-        Ok(b) => b,
-        Err(_) => return Ok(Default::default()),
-    };
+    let kinds_data = state
+        .api_client
+        .get("/api/services/kinds")
+        .await
+        .context("Failed to fetch supported service kinds")?;
 
     let kinds = kinds_data["kinds"].as_array().cloned().unwrap_or_default();
 
     let kind_str = kind.to_string();
     for k in kinds {
         if k["name"].as_str().unwrap_or("") == kind_str {
-            return Ok(serde_json::from_value(k["default_env_vars"].clone()).unwrap_or_default());
+            return serde_json::from_value(k["default_env_vars"].clone())
+                .context("Failed to parse default env vars for service kind");
         }
     }
 

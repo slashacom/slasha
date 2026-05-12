@@ -4,32 +4,17 @@ use serde_json::json;
 use slasha_db::app::App;
 
 use crate::{
-    config::Config,
+    config::ProjectConfig,
     output::{cli_info, cli_label, cli_section, cli_success, confirm_action, output, print_table},
     state::AppState,
 };
 
 fn git_remote_url(state: &AppState, slug: &str) -> String {
-    format!(
-        "{}/git/{}",
-        state.api_client.url("").trim_end_matches('/'),
-        slug
-    )
+    format!("{}/git/{}", state.api_client.base_url(), slug)
 }
 
 fn ssh_git_url(state: &AppState, slug: &str) -> String {
-    let host = state
-        .api_client
-        .url("")
-        .trim_end_matches('/')
-        .trim_start_matches("http://")
-        .trim_start_matches("https://")
-        .split(':')
-        .next()
-        .unwrap_or("localhost")
-        .to_string();
-
-    format!("slasha@{}:{}.git", host, slug)
+    format!("slasha@{}:{}.git", state.api_client.git_host(), slug)
 }
 
 fn print_app(state: &AppState, app: &App) {
@@ -155,7 +140,7 @@ pub async fn handle_link(state: &AppState, app_flag: Option<String>) -> Result<(
 
     state.api_client.get(&format!("/api/apps/{}", slug)).await?;
 
-    let mut config = Config::load().unwrap_or_default();
+    let mut config = ProjectConfig::load().unwrap_or_default();
     config.app = Some(slug.clone());
     config.save()?;
 
