@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub struct User {
     pub id: String,
     pub email: String,
+    #[serde(skip, default)]
+    #[ts(skip)]
     pub password_hash: String,
     pub role: String,
     pub created_at: chrono::NaiveDateTime,
