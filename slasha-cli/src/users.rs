@@ -1,5 +1,8 @@
+use std::io::{IsTerminal, Read};
+
 use anyhow::{Context, Result};
 use colored::Colorize;
+use inquire::{Password, PasswordDisplayMode};
 use serde_json::json;
 use slasha_db::user::User;
 
@@ -9,17 +12,56 @@ use crate::{
     state::AppState,
 };
 
+const PASSWORD_ENV: &str = "SLASHA_PASSWORD";
+
 pub async fn dispatch(state: &AppState, cmd: UsersCommand) -> Result<()> {
     match cmd {
         UsersCommand::List => handle_list(state).await,
         UsersCommand::Create {
             email,
-            password,
+            password_stdin,
             role,
-        } => handle_create(state, &email, &password, &role).await,
+        } => {
+            let password = read_password(password_stdin)?;
+            handle_create(state, &email, &password, &role).await
+        }
         UsersCommand::Update { id, email, role } => handle_update(state, &id, email, role).await,
         UsersCommand::Delete { id, yes } => handle_delete(state, &id, yes).await,
     }
+}
+
+fn read_password(from_stdin: bool) -> Result<String> {
+    if from_stdin {
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .context("Failed to read password from stdin")?;
+
+        let password = buf.trim_end_matches(['\n', '\r']).to_string();
+        if password.is_empty() {
+            anyhow::bail!("Empty password received on stdin");
+        }
+        return Ok(password);
+    }
+
+    if let Ok(env_password) = std::env::var(PASSWORD_ENV) {
+        if !env_password.is_empty() {
+            return Ok(env_password);
+        }
+    }
+
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "No TTY available — pass --password-stdin or set {} to provide the password",
+            PASSWORD_ENV
+        );
+    }
+
+    Password::new("Password:")
+        .with_display_mode(PasswordDisplayMode::Masked)
+        .with_display_toggle_enabled()
+        .prompt()
+        .context("Failed to read password")
 }
 
 pub async fn handle_list(state: &AppState) -> Result<()> {

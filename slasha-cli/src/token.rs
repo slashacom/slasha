@@ -2,8 +2,16 @@ use anyhow::{Context, Result};
 
 const SERVICE: &str = "slasha";
 const USER: &str = "auth_token";
+const TOKEN_ENV: &str = "SLASHA_TOKEN";
 
 pub fn get_auth_token() -> Result<Option<String>> {
+    if let Ok(token) = std::env::var(TOKEN_ENV) {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            return Ok(Some(trimmed.to_string()));
+        }
+    }
+
     let entry = keyring::Entry::new(SERVICE, USER)?;
 
     match entry.get_password() {
