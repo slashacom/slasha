@@ -20,6 +20,6 @@ export type ServiceEnvVar = {
   updated_at: string;
 };
 
-export type ServiceKind = 'PostgreSQL';
+export type ServiceKind = 'PostgreSQL' | 'MySQL' | 'MongoDB' | 'Redis';
 
 export type ServiceStatus = 'Provisioning' | 'Running' | 'Stopped' | 'Failed';
