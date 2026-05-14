@@ -14,6 +14,10 @@ import {
   Server,
   Plus,
   Settings,
+  ChevronDown,
+  ChevronRight,
+  Globe,
+  GlobeLock,
 } from 'lucide-react';
 import type { Service, ServiceStatus, ServiceKind } from '~/models/service';
 import {
@@ -22,6 +26,11 @@ import {
   useProvisionService,
   useStopService,
   useDeleteService,
+  useExposeService,
+  useUnexposeService,
+  type ResourcesPayload,
+  type ServiceKindDefaultResources,
+  type ServiceWithExposure,
 } from '~/queries/services';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
@@ -185,15 +194,17 @@ function ServiceRow({
   appSlug,
   onShowLogs,
 }: {
-  service: Service;
+  service: ServiceWithExposure;
   appSlug: string;
   onShowLogs: () => void;
 }) {
   const queryClient = useQueryClient();
   const stopService = useStopService();
   const deleteService = useDeleteService();
+  const unexposeService = useUnexposeService();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
+  const [showExposeModal, setShowExposeModal] = useState(false);
 
   const handleStop = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -225,6 +236,22 @@ function ServiceRow({
     }
   };
 
+  const handleUnexpose = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await unexposeService.mutateAsync({
+        appSlug,
+        serviceId: service.id,
+      });
+      toast.success('Removing host port binding. Service will restart.');
+      queryClient.invalidateQueries({
+        queryKey: ['apps', appSlug, 'services'],
+      });
+    } catch (err) {
+      toast.error('Failed to unexpose service: ' + err);
+    }
+  };
+
   return (
     <>
       <div className="group grid grid-cols-[1fr_auto] items-center gap-4 px-8 py-4 transition-colors hover:bg-white/[0.02]">
@@ -245,6 +272,12 @@ function ServiceRow({
             <span className="text-[11px] text-text-tertiary">
               Created {formatRelativeTime(service.created_at)}
             </span>
+            {service.exposure && (
+              <span className="text-[11px] inline-flex items-center gap-1 text-sky-400 bg-sky-400/10 px-1.5 py-0.5 rounded">
+                <Globe className="size-3" />
+                {service.exposure.bind_addr}:{service.exposure.host_port}
+              </span>
+            )}
           </HStack>
         </VStack>
 
@@ -257,6 +290,30 @@ function ServiceRow({
             color="neutral"
             onClick={onShowLogs}
           />
+          {service.status === 'Running' && !service.exposure && (
+            <Button
+              label="Expose"
+              icon={<Globe className="size-3.5" />}
+              variant="ghost"
+              size="sm"
+              color="neutral"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowExposeModal(true);
+              }}
+            />
+          )}
+          {service.status === 'Running' && service.exposure && (
+            <Button
+              label="Unexpose"
+              icon={<GlobeLock className="size-3.5" />}
+              variant="ghost"
+              size="sm"
+              color="neutral"
+              onClick={handleUnexpose}
+              isLoading={unexposeService.isPending}
+            />
+          )}
           {(service.status === 'Running' ||
             service.status === 'Provisioning') && (
             <Button
@@ -310,8 +367,120 @@ function ServiceRow({
           onClose={() => setShowConfig(false)}
         />
       )}
+
+      {showExposeModal && (
+        <ExposeServiceModal
+          appSlug={appSlug}
+          service={service}
+          onClose={() => setShowExposeModal(false)}
+        />
+      )}
     </>
   );
+}
+
+const BYTES_PER_MB = 1024 * 1024;
+const NANO_PER_CORE = 1_000_000_000;
+
+const MIN_MEMORY_MB = 64;
+const MIN_CPU_CORES = 0.1;
+const MIN_SHM_MB = 64;
+const MIN_PIDS = 64;
+
+function parseMemoryMbToBytes(input: string): number | null {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+  return Math.round(n * BYTES_PER_MB);
+}
+
+function parseCoresToNano(input: string): number | null {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+  return Math.round(n * NANO_PER_CORE);
+}
+
+function parsePositiveInt(input: string): number | null {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const n = Number(trimmed);
+  if (!Number.isInteger(n) || n <= 0) {
+    return null;
+  }
+  return n;
+}
+
+function bytesToMb(bytes: number): number {
+  return Math.round(bytes / BYTES_PER_MB);
+}
+
+function nanoToCores(nano: number): number {
+  return Number((nano / NANO_PER_CORE).toFixed(2));
+}
+
+function buildResourcesPayload(
+  memoryMb: string,
+  cpuCores: string,
+  shmMb: string,
+  pidsLimit: string
+): { payload: ResourcesPayload | null; error: string | null } {
+  const memory_bytes = parseMemoryMbToBytes(memoryMb);
+  const nano_cpus = parseCoresToNano(cpuCores);
+  const shm_size = parseMemoryMbToBytes(shmMb);
+  const pids_limit = parsePositiveInt(pidsLimit);
+
+  if (memoryMb.trim() && memory_bytes === null) {
+    return { payload: null, error: 'Memory must be a positive number (MB).' };
+  }
+  if (cpuCores.trim() && nano_cpus === null) {
+    return { payload: null, error: 'CPU must be a positive number of cores.' };
+  }
+  if (shmMb.trim() && shm_size === null) {
+    return { payload: null, error: 'SHM must be a positive number (MB).' };
+  }
+  if (pidsLimit.trim() && pids_limit === null) {
+    return { payload: null, error: 'PIDs limit must be a positive integer.' };
+  }
+
+  if (memory_bytes !== null && memory_bytes < MIN_MEMORY_MB * BYTES_PER_MB) {
+    return { payload: null, error: `Memory must be at least ${MIN_MEMORY_MB} MB.` };
+  }
+  if (nano_cpus !== null && nano_cpus < MIN_CPU_CORES * NANO_PER_CORE) {
+    return { payload: null, error: `CPU must be at least ${MIN_CPU_CORES} cores.` };
+  }
+  if (shm_size !== null && shm_size < MIN_SHM_MB * BYTES_PER_MB) {
+    return { payload: null, error: `SHM must be at least ${MIN_SHM_MB} MB.` };
+  }
+  if (pids_limit !== null && pids_limit < MIN_PIDS) {
+    return { payload: null, error: `PIDs limit must be at least ${MIN_PIDS}.` };
+  }
+
+  if (
+    memory_bytes === null &&
+    nano_cpus === null &&
+    shm_size === null &&
+    pids_limit === null
+  ) {
+    return { payload: null, error: null };
+  }
+
+  return {
+    payload: { memory_bytes, nano_cpus, pids_limit, shm_size },
+    error: null,
+  };
 }
 
 function ProvisionServiceModal({
@@ -331,6 +500,12 @@ function ProvisionServiceModal({
   const [kindName, setKindName] = useState<ServiceKind | ''>('');
   const [version, setVersion] = useState<string>('');
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
+
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [memoryMb, setMemoryMb] = useState('');
+  const [cpuCores, setCpuCores] = useState('');
+  const [shmMb, setShmMb] = useState('');
+  const [pidsLimit, setPidsLimit] = useState('');
 
   const selectedKind = useMemo(() => {
     return kinds.find((k) => k.name === kindName);
@@ -356,6 +531,18 @@ function ProvisionServiceModal({
       toast.error('Please fill in all fields.');
       return;
     }
+
+    const { payload, error } = buildResourcesPayload(
+      memoryMb,
+      cpuCores,
+      shmMb,
+      pidsLimit
+    );
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
     try {
       await provisionService.mutateAsync({
         appSlug,
@@ -363,6 +550,7 @@ function ProvisionServiceModal({
         name: name.trim(),
         version,
         envVars,
+        resources: payload,
       });
       queryClient.invalidateQueries({
         queryKey: ['apps', appSlug, 'services'],
@@ -444,6 +632,20 @@ function ProvisionServiceModal({
               />
             </div>
           </VStack>
+
+          <AdvancedResourcesSection
+            isOpen={isAdvancedOpen}
+            onToggle={() => setIsAdvancedOpen((v) => !v)}
+            defaults={selectedKind?.default_resources}
+            memoryMb={memoryMb}
+            cpuCores={cpuCores}
+            shmMb={shmMb}
+            pidsLimit={pidsLimit}
+            onMemoryChange={setMemoryMb}
+            onCpuChange={setCpuCores}
+            onShmChange={setShmMb}
+            onPidsChange={setPidsLimit}
+          />
         </VStack>
         <DialogFooter className="mt-6">
           <Button label="Cancel" variant="ghost" onClick={onClose} />
@@ -452,6 +654,239 @@ function ProvisionServiceModal({
             onClick={handleProvision}
             isLoading={provisionService.isPending}
             disabled={!name.trim() || !kindName || !version}
+          />
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AdvancedResourcesSection({
+  isOpen,
+  onToggle,
+  defaults,
+  memoryMb,
+  cpuCores,
+  shmMb,
+  pidsLimit,
+  onMemoryChange,
+  onCpuChange,
+  onShmChange,
+  onPidsChange,
+}: {
+  isOpen: boolean;
+  onToggle: () => void;
+  defaults: ServiceKindDefaultResources | undefined;
+  memoryMb: string;
+  cpuCores: string;
+  shmMb: string;
+  pidsLimit: string;
+  onMemoryChange: (v: string) => void;
+  onCpuChange: (v: string) => void;
+  onShmChange: (v: string) => void;
+  onPidsChange: (v: string) => void;
+}) {
+  const memoryPlaceholder = defaults
+    ? String(bytesToMb(defaults.memory_bytes))
+    : '';
+  const cpuPlaceholder = defaults ? String(nanoToCores(defaults.nano_cpus)) : '';
+  const shmPlaceholder = defaults
+    ? String(bytesToMb(defaults.shm_size))
+    : '';
+  const pidsPlaceholder = defaults ? String(defaults.pids_limit) : '';
+
+  return (
+    <VStack space={2} className="mt-4">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-text transition-colors w-fit"
+      >
+        {isOpen ? (
+          <ChevronDown className="size-3.5" />
+        ) : (
+          <ChevronRight className="size-3.5" />
+        )}
+        Advanced
+      </button>
+
+      {isOpen && (
+        <VStack space={3} className="rounded-lg border border-border bg-surface/30 p-4">
+          <p className="text-[11px] text-text-tertiary">
+            Override per-container resource caps. Leave blank to use the
+            default.
+          </p>
+
+          <HStack space={3}>
+            <VStack space={1.5} className="flex-1">
+              <label className="text-[11px] font-medium text-text-secondary">
+                Memory (MB)
+              </label>
+              <TextInput
+                value={memoryMb}
+                onChange={onMemoryChange}
+                placeholder={memoryPlaceholder}
+              />
+            </VStack>
+            <VStack space={1.5} className="flex-1">
+              <label className="text-[11px] font-medium text-text-secondary">
+                CPU (cores)
+              </label>
+              <TextInput
+                value={cpuCores}
+                onChange={onCpuChange}
+                placeholder={cpuPlaceholder}
+              />
+            </VStack>
+          </HStack>
+
+          <HStack space={3}>
+            <VStack space={1.5} className="flex-1">
+              <label className="text-[11px] font-medium text-text-secondary">
+                Shared Memory (MB)
+              </label>
+              <TextInput
+                value={shmMb}
+                onChange={onShmChange}
+                placeholder={shmPlaceholder}
+              />
+            </VStack>
+            <VStack space={1.5} className="flex-1">
+              <label className="text-[11px] font-medium text-text-secondary">
+                PID Limit
+              </label>
+              <TextInput
+                value={pidsLimit}
+                onChange={onPidsChange}
+                placeholder={pidsPlaceholder}
+              />
+            </VStack>
+          </HStack>
+        </VStack>
+      )}
+    </VStack>
+  );
+}
+
+function ExposeServiceModal({
+  appSlug,
+  service,
+  onClose,
+}: {
+  appSlug: string;
+  service: ServiceWithExposure;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const exposeService = useExposeService();
+
+  const [hostPort, setHostPort] = useState('');
+  const [bindAddr, setBindAddr] = useState<'127.0.0.1' | '0.0.0.0'>(
+    '127.0.0.1'
+  );
+
+  const handleExpose = async () => {
+    const trimmed = hostPort.trim();
+    const port = Number(trimmed);
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+      toast.error('Host port must be an integer between 1024 and 65535.');
+      return;
+    }
+
+    try {
+      await exposeService.mutateAsync({
+        appSlug,
+        serviceId: service.id,
+        hostPort: port,
+        bindAddr,
+      });
+      toast.success('Exposing service. Container will restart.');
+      queryClient.invalidateQueries({
+        queryKey: ['apps', appSlug, 'services'],
+      });
+      onClose();
+    } catch (e) {
+      toast.error('Failed to expose service: ' + e);
+    }
+  };
+
+  return (
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Expose {service.name}</DialogTitle>
+        </DialogHeader>
+        <VStack space={4} className="mt-4">
+          <p className="text-xs text-text-tertiary">
+            Bind a host port to the container. The container will restart with
+            the new binding.
+          </p>
+
+          <VStack space={1.5}>
+            <label className="text-xs font-medium text-text-secondary">
+              Host Port
+            </label>
+            <TextInput
+              value={hostPort}
+              onChange={setHostPort}
+              placeholder="e.g. 5432"
+            />
+            <span className="text-[11px] text-text-tertiary">
+              Must be between 1024 and 65535 and not already in use.
+            </span>
+          </VStack>
+
+          <VStack space={1.5}>
+            <label className="text-xs font-medium text-text-secondary">
+              Bind Address
+            </label>
+            <VStack space={2}>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="bind_addr"
+                  checked={bindAddr === '127.0.0.1'}
+                  onChange={() => setBindAddr('127.0.0.1')}
+                  className="mt-1"
+                />
+                <VStack space={0.5}>
+                  <span className="text-xs text-text">
+                    127.0.0.1 (localhost only)
+                  </span>
+                  <span className="text-[11px] text-text-tertiary">
+                    Only reachable from the host machine. Use this for SSH
+                    tunnels.
+                  </span>
+                </VStack>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="bind_addr"
+                  checked={bindAddr === '0.0.0.0'}
+                  onChange={() => setBindAddr('0.0.0.0')}
+                  className="mt-1"
+                />
+                <VStack space={0.5}>
+                  <span className="text-xs text-text">
+                    0.0.0.0 (all interfaces)
+                  </span>
+                  <span className="text-[11px] text-amber-400">
+                    Anyone who can reach the host on this port can connect.
+                    Make sure your firewall is configured.
+                  </span>
+                </VStack>
+              </label>
+            </VStack>
+          </VStack>
+        </VStack>
+        <DialogFooter className="mt-6">
+          <Button label="Cancel" variant="ghost" onClick={onClose} />
+          <Button
+            label="Expose"
+            onClick={handleExpose}
+            isLoading={exposeService.isPending}
+            disabled={!hostPort.trim()}
           />
         </DialogFooter>
       </DialogContent>

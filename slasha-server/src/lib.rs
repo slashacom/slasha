@@ -22,7 +22,7 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    docker::sync::startup_container_sync,
+    docker::{service::spawn_service_reconciler, sync::startup_container_sync},
     proxy::container::ensure_caddy_ready,
     state::{Clients, Config, Env, Runtime, Storage},
 };
@@ -112,6 +112,11 @@ pub async fn start_server() -> anyhow::Result<()> {
         &state.runtime,
     )
     .await?;
+
+    spawn_service_reconciler(
+        state.clients.docker.clone(),
+        state.storage.db_pool.clone(),
+    );
 
     state.runtime.proxy_sync_trigger.notify_one();
 
