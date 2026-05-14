@@ -8,25 +8,89 @@ use slasha_db::{
     DbPool,
     app::{App, AppEnvVar},
     deployment::{Deployment, DeploymentStatus},
-    repos::{app::AppRepo, deployment::DeploymentRepo, service::ServiceRepo},
+    models::app_scale::ProcessType,
+    repos::{
+        app::AppRepo, app_scale::AppScaleRepo, deployment::DeploymentRepo, service::ServiceRepo,
+    },
     service::{Service, ServiceStatus},
 };
 use tokio::sync::Notify;
 
 use super::{
     build::{build_docker, build_railpack},
-    container::{create_deployment_container, start_deployment_container},
+    container::{create_process_container, run_release_container, start_process_container},
     dockerfile_parser::{BuildStrategy, detect_build_strategy, parse_expose, parse_volumes},
+    procfile_parser::{Procfile, load_procfile},
 };
 use crate::docker::{
     DeploymentError, DeploymentResult,
     env::{RefSource, resolve_env_value, topo_sort_vars},
     logs::{Log, LogKey, LogManager},
-    naming::{app_container_name, app_network_name, image_tag, service_container_name},
+    naming::{app_network_name, image_tag, process_container_name, service_container_name},
     rollback::Rollback,
 };
 
-const DEFAULT_RAILPACK_CONTAINER_PORT: u16 = 8080;
+pub const DEFAULT_RAILPACK_CONTAINER_PORT: u16 = 8080;
+
+pub struct DeploymentContext {
+    pub strategy: BuildStrategy,
+    pub env_map: HashMap<String, String>,
+    pub container_port: u16,
+    pub volume_paths: Vec<String>,
+    pub procfile: Option<super::procfile_parser::Procfile>,
+}
+
+pub async fn resolve_deployment_context(
+    db_pool: &DbPool,
+    app: &App,
+    deployment: &Deployment,
+) -> DeploymentResult<DeploymentContext> {
+    let strategy = detect_build_strategy(Path::new(&app.repo_path), &deployment.commit_sha).await?;
+    let app_vars = AppRepo::get_env_vars(db_pool, &app.id).await?;
+    let app_services = ServiceRepo::list_for_app(db_pool, &app.id).await?;
+    let mut env_map = resolve_app_env(db_pool, app, deployment, app_vars, app_services).await?;
+
+    let container_port = resolve_container_port(&strategy, &mut env_map)?;
+    let volume_paths = resolve_volume_paths(&strategy);
+    let procfile = load_procfile(Path::new(&app.repo_path), &deployment.commit_sha).await?;
+
+    Ok(DeploymentContext {
+        strategy,
+        env_map,
+        container_port,
+        volume_paths,
+        procfile,
+    })
+}
+
+fn resolve_container_port(
+    strategy: &BuildStrategy,
+    env_map: &mut HashMap<String, String>,
+) -> DeploymentResult<u16> {
+    if let Some(port_str) = env_map.get("PORT") {
+        return port_str
+            .parse::<u16>()
+            .map_err(|e| DeploymentError::EnvResolveFailed(e.to_string()));
+    }
+
+    match strategy {
+        BuildStrategy::Dockerfile { content } => Ok(parse_expose(content)),
+        BuildStrategy::Railpack => {
+            env_map.insert(
+                "PORT".to_string(),
+                DEFAULT_RAILPACK_CONTAINER_PORT.to_string(),
+            );
+            Ok(DEFAULT_RAILPACK_CONTAINER_PORT)
+        }
+    }
+}
+
+fn resolve_volume_paths(strategy: &BuildStrategy) -> Vec<String> {
+    match strategy {
+        BuildStrategy::Dockerfile { content } => parse_volumes(content),
+        BuildStrategy::Railpack => Vec::new(),
+    }
+}
 
 pub async fn resolve_app_env(
     db_pool: &DbPool,
@@ -52,7 +116,9 @@ pub async fn resolve_app_env(
             RefSource::Own => Ok(resolved.get(key).unwrap().clone()),
 
             RefSource::System => match key {
-                "app_container_name" => Ok(app_container_name(&app.id, &deployment.id)),
+                "app_container_name" => {
+                    Ok(process_container_name(&app.id, &deployment.id, "web", 0))
+                }
                 "app_id" => Ok(app.id.clone()),
                 "app_name" => Ok(app.name.clone()),
                 "app_slug" => Ok(app.slug.clone()),
@@ -90,6 +156,47 @@ pub async fn resolve_app_env(
     }
 
     Ok(resolved)
+}
+
+struct ProcessTarget {
+    process_type: ProcessType,
+    command: Option<String>,
+    count: u32,
+}
+
+fn resolve_process_targets(
+    procfile: &Option<Procfile>,
+    scale_configs: &[slasha_db::models::app_scale::AppScale],
+) -> Vec<ProcessTarget> {
+    let mut targets = Vec::new();
+
+    if let Some(pf) = procfile {
+        for (pt, cmd) in &pf.commands {
+            if *pt == ProcessType::Release {
+                continue;
+            }
+
+            let count = scale_configs
+                .iter()
+                .find(|s| s.process_type == *pt)
+                .map(|s| s.desired as u32)
+                .unwrap_or(1);
+
+            targets.push(ProcessTarget {
+                process_type: *pt,
+                command: Some(cmd.clone()),
+                count,
+            });
+        }
+    } else {
+        targets.push(ProcessTarget {
+            process_type: ProcessType::Web,
+            command: None,
+            count: 1,
+        });
+    }
+
+    targets
 }
 
 pub async fn run_deployment(
@@ -143,18 +250,12 @@ async fn run_deployment_inner(
     log: &Log,
     rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
-    let strategy = detect_build_strategy(Path::new(&app.repo_path), &deployment.commit_sha).await?;
+    let deployment_context = resolve_deployment_context(db_pool, app, deployment).await?;
 
+    // building
     DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Building).await?;
 
-    let app_vars = AppRepo::get_env_vars(db_pool, &app.id).await?;
-    let app_services = ServiceRepo::list_for_app(db_pool, &app.id).await?;
-    let mut env_map = resolve_app_env(db_pool, app, deployment, app_vars, app_services).await?;
-
-    let container_port = resolve_container_port(&strategy, &mut env_map)?;
-    let volume_paths = resolve_volume_paths(&strategy);
-
-    let build_label = match strategy {
+    let build_label = match deployment_context.strategy {
         BuildStrategy::Dockerfile { .. } => "Dockerfile",
         BuildStrategy::Railpack => "Railpack",
     };
@@ -165,7 +266,7 @@ async fn run_deployment_inner(
     ))
     .await?;
 
-    match &strategy {
+    match &deployment_context.strategy {
         BuildStrategy::Dockerfile { .. } => {
             build_docker(docker_client, log, app, deployment).await?
         }
@@ -192,70 +293,72 @@ async fn run_deployment_inner(
         }
     });
 
-    let container_name = create_deployment_container(
-        docker_client,
-        app,
-        deployment,
-        container_port,
-        env_map,
-        volume_paths,
-    )
-    .await?;
-
-    rollback.register({
-        let docker_client = docker_client.clone();
-        let container_name = container_name.clone();
-
-        move || {
-            Box::pin(async move {
-                let _ = docker_client
-                    .remove_container(
-                        &container_name,
-                        Some(RemoveContainerOptionsBuilder::new().force(true).build()),
-                    )
-                    .await;
-            })
+    // release
+    if let Some(pf) = &deployment_context.procfile
+        && let Some(cmd) = pf.get(&ProcessType::Release) {
+            run_release_container(
+                docker_client,
+                log,
+                app,
+                deployment,
+                cmd.to_string(),
+                deployment_context.env_map.clone(),
+            )
+            .await?;
         }
-    });
 
-    start_deployment_container(
-        docker_client,
-        db_pool,
-        proxy_sync_trigger,
-        log,
-        &deployment.id,
-        &container_name,
-    )
-    .await?;
+    // running processes
+    let scale_configs = AppScaleRepo::list_for_app(db_pool, &app.id).await?;
+    let targets = resolve_process_targets(&deployment_context.procfile, &scale_configs);
+
+    let mut created_containers = Vec::new();
+
+    for target in targets {
+        for i in 0..target.count {
+            create_process_container(
+                docker_client,
+                app,
+                deployment,
+                target.process_type,
+                i,
+                deployment_context.container_port,
+                target.command.clone(),
+                deployment_context.env_map.clone(),
+                deployment_context.volume_paths.clone(),
+            )
+            .await?;
+
+            rollback.register({
+                let docker_client = docker_client.clone();
+                let container_name = process_container_name(
+                    &app.id,
+                    &deployment.id,
+                    &target.process_type.to_string().to_lowercase(),
+                    i,
+                );
+
+                move || {
+                    Box::pin(async move {
+                        let _ = docker_client
+                            .remove_container(
+                                &container_name,
+                                Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+                            )
+                            .await;
+                    })
+                }
+            });
+
+            created_containers.push((target.process_type, i));
+        }
+    }
+
+    for (pt, i) in created_containers {
+        start_process_container(docker_client, log, app, deployment, pt, i).await?;
+    }
+
+    DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Running).await?;
+    proxy_sync_trigger.notify_one();
 
     Ok(())
-}
-
-fn resolve_container_port(
-    strategy: &BuildStrategy,
-    env_map: &mut HashMap<String, String>,
-) -> DeploymentResult<u16> {
-    if let Some(port_str) = env_map.get("PORT") {
-        return port_str
-            .parse::<u16>()
-            .map_err(|e| DeploymentError::EnvResolveFailed(e.to_string()));
-    }
-
-    match strategy {
-        BuildStrategy::Dockerfile { content } => Ok(parse_expose(content)),
-        BuildStrategy::Railpack => {
-            env_map.insert(
-                "PORT".to_string(),
-                DEFAULT_RAILPACK_CONTAINER_PORT.to_string(),
-            );
-            Ok(DEFAULT_RAILPACK_CONTAINER_PORT)
-        }
-    }
-}
-
-fn resolve_volume_paths(strategy: &BuildStrategy) -> Vec<String> {
-    match strategy {
-        BuildStrategy::Dockerfile { content } => parse_volumes(content),
-        BuildStrategy::Railpack => Vec::new(),
-    }
 }

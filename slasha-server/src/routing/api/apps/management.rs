@@ -11,14 +11,14 @@ use serde::Deserialize;
 use slasha_db::{
     DbPool,
     app::{App, AppMember, AppMemberRole},
-    repos::{app::AppRepo, service::ServiceRepo},
+    repos::{app::AppRepo, app_scale::AppScaleRepo, service::ServiceRepo},
 };
 use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::{
     docker::{
-        deployment::{delete_app_volumes, delete_deployment_container},
+        deployment::{delete_app_volumes, delete_deployment_processes},
         network::{create_app_network, delete_app_network},
         service::delete_service,
     },
@@ -33,6 +33,7 @@ pub fn router() -> Router<AppState> {
         .route("/", post(create_app))
         .route("/", get(list_apps))
         .route("/{slug}", get(get_app))
+        .route("/{slug}/scales", get(list_scales))
         .route("/{slug}", delete(delete_app))
 }
 
@@ -152,7 +153,7 @@ async fn delete_app(
     let deployments = AppRepo::delete(&db_pool, &app.id).await?;
 
     for dep in deployments {
-        if let Err(e) = delete_deployment_container(
+        if let Err(e) = delete_deployment_processes(
             &docker,
             &runtime.proxy_sync_trigger,
             &runtime.log_manager,
@@ -197,4 +198,15 @@ async fn list_apps(
     Ok(Json(serde_json::json!({
         "apps": user_apps,
     })))
+}
+
+async fn list_scales(
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
+    Path(slug): Path<String>,
+) -> HttpResult<impl IntoResponse> {
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+    let scales = AppScaleRepo::list_for_app(&storage.db_pool, &app.id).await?;
+
+    Ok(Json(serde_json::json!({ "scales": scales })))
 }

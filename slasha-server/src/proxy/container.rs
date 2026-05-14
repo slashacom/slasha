@@ -26,22 +26,19 @@ pub async fn ensure_caddy_ready(docker: &Docker) -> ProxyResult<()> {
         .ok()
         .and_then(|c| c.state);
 
-    match state {
-        Some(s) => {
-            // container exists, just start it
-            if s.running != Some(true) {
-                docker
-                    .start_container(
-                        PROXY_CONTAINER_NAME,
-                        Some(StartContainerOptionsBuilder::new().build()),
-                    )
-                    .await?;
-            }
-
-            // container running already
-            return wait_for_admin_api().await;
+    if let Some(s) = state {
+        // container exists, just start it
+        if s.running != Some(true) {
+            docker
+                .start_container(
+                    PROXY_CONTAINER_NAME,
+                    Some(StartContainerOptionsBuilder::new().build()),
+                )
+                .await?;
         }
-        None => {}
+
+        // container running already
+        return wait_for_admin_api().await;
     }
 
     match docker
@@ -159,10 +156,10 @@ async fn wait_for_admin_api() -> ProxyResult<()> {
     let client = reqwest::Client::new();
 
     for _ in 0..20 {
-        if let Ok(res) = client.get(ADMIN_URL).send().await {
-            if res.status().is_success() {
-                return Ok(());
-            }
+        if let Ok(res) = client.get(ADMIN_URL).send().await
+            && res.status().is_success()
+        {
+            return Ok(());
         }
         sleep(Duration::from_millis(500)).await;
     }

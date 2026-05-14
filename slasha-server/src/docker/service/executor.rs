@@ -280,7 +280,7 @@ async fn provision_service_inner(
         let log = log.clone();
 
         async move {
-            if let Err(e) = stream_container_logs(docker_client, log, container_name).await {
+            if let Err(e) = stream_container_logs(docker_client, log, container_name, None).await {
                 tracing::warn!("service log stream ended with error: {:?}", e);
             }
         }

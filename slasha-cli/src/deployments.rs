@@ -280,7 +280,7 @@ pub async fn handle_delete(
 }
 
 // return the latest deployment id if not provided else the provided id
-async fn resolve_deployment_id(
+pub async fn resolve_deployment_id(
     state: &AppState,
     slug: &str,
     deployment_id: Option<String>,

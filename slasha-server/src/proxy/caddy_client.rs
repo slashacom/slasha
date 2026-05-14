@@ -10,10 +10,15 @@ pub struct CaddyClient {
 }
 
 #[derive(Debug)]
+pub struct Upstream {
+    pub host: String,
+    pub port: u16,
+}
+
+#[derive(Debug)]
 pub struct RouteEntry {
     pub domain: String,
-    pub upstream_host: String,
-    pub upstream_port: u16,
+    pub upstreams: Vec<Upstream>,
 }
 
 impl CaddyClient {
@@ -27,21 +32,27 @@ impl CaddyClient {
 
         let caddy_routes: Vec<Value> = routes
             .iter()
-            .map(|entry| json!({
-                "match": [{ "host": [entry.domain] }],
-                "handle": [
-                    {
-                        "handler": "headers",
-                        "response": { "set": security_headers }
-                    },
-                    {
-                        "handler": "reverse_proxy",
-                        "upstreams": [
-                            { "dial": format!("{}:{}", entry.upstream_host, entry.upstream_port) }
-                        ]
-                    }
-                ]
-            }))
+            .map(|entry| {
+                let upstream_objects: Vec<Value> = entry
+                    .upstreams
+                    .iter()
+                    .map(|u| json!({ "dial": format!("{}:{}", u.host, u.port) }))
+                    .collect();
+
+                json!({
+                    "match": [{ "host": [entry.domain] }],
+                    "handle": [
+                        {
+                            "handler": "headers",
+                            "response": { "set": security_headers }
+                        },
+                        {
+                            "handler": "reverse_proxy",
+                            "upstreams": upstream_objects
+                        }
+                    ]
+                })
+            })
             .collect();
 
         let mut server = json!({

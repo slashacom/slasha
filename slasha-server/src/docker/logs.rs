@@ -220,6 +220,7 @@ pub async fn stream_container_logs(
     docker_client: Docker,
     log: Log,
     container: String,
+    prefix: Option<String>,
 ) -> DeploymentResult<()> {
     let opts = LogsOptionsBuilder::new()
         .follow(true)
@@ -239,11 +240,16 @@ pub async fn stream_container_logs(
                 while let Some(pos) = buffer.find('\n') {
                     let line = buffer[..pos].to_string();
                     buffer.drain(..=pos);
-                    log.send(line).await?;
+
+                    let formatted = match &prefix {
+                        Some(p) => format!("{} {}", p, line),
+                        None => line,
+                    };
+                    log.send(formatted).await?;
                 }
             }
             Err(e) => {
-                let msg = format!("Runtime log stream error for {}: {}", log.key(), e);
+                let msg = format!("log stream error for {}: {}", log.key(), e);
                 tracing::warn!("{}", msg);
                 log.send(msg).await?;
                 break;
@@ -252,7 +258,11 @@ pub async fn stream_container_logs(
     }
 
     if !buffer.is_empty() {
-        log.send(buffer).await?;
+        let formatted = match &prefix {
+            Some(p) => format!("{} {}", p, buffer),
+            None => buffer,
+        };
+        log.send(formatted).await?;
     }
 
     tracing::info!("Runtime log stream ended for {}", log.key());
