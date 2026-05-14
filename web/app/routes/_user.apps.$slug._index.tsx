@@ -23,6 +23,7 @@ import { FolderViewer } from '~/components/apps/folder-viewer';
 import { DeploymentsView } from '~/components/apps/deployments';
 import { ServicesView } from '~/components/apps/services';
 import { AppEnvEditor } from '~/components/apps/env-editor';
+import { DomainManager } from '~/components/apps/domain-manager';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { cn } from '~/utils/classname';
 import { queryClient } from '~/utils/query-client';
@@ -292,8 +293,11 @@ export default function AppIndexPage() {
 
       {activeTab === 'settings' ? (
         <div className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-3xl mb-12">
+          <div className="max-w-3xl mb-8">
             <AppEnvEditor appSlug={slug!} />
+          </div>
+          <div className="max-w-3xl mb-12">
+            <DomainManager appSlug={slug!} />
           </div>
           <div className="max-w-2xl">
             <h3 className="text-[14px] font-semibold text-text">Danger Zone</h3>

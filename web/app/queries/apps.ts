@@ -2,6 +2,7 @@ import { queryOptions, useMutation } from '@tanstack/react-query';
 import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
 import type { App } from '~/models/app';
 import type { AppScale } from '~/models/app_scale';
+import type { AppDomain } from '~/models/app';
 
 export function getAppsOptions() {
   return queryOptions({
@@ -69,5 +70,30 @@ export function getScalesOptions(appSlug: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'scales'],
     queryFn: () => httpGet<{ scales: AppScale[] }>(`apps/${appSlug}/scales`),
+  });
+}
+
+
+
+export function getAppDomainsOptions(appSlug: string) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'domains'],
+    queryFn: () => httpGet<{ domains: AppDomain[] }>(`apps/${appSlug}/domains`),
+  });
+}
+
+export function useAddAppDomain() {
+  return useMutation({
+    mutationFn: (data: { appSlug: string; domain: string }) =>
+      httpPost<{ domain: AppDomain }>(`apps/${data.appSlug}/domains`, {
+        domain: data.domain,
+      }),
+  });
+}
+
+export function useDeleteAppDomain() {
+  return useMutation({
+    mutationFn: (data: { appSlug: string; domainId: string }) =>
+      httpDelete(`apps/${data.appSlug}/domains/${data.domainId}`),
   });
 }

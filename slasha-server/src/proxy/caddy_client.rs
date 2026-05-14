@@ -9,7 +9,7 @@ pub struct CaddyClient {
     client: Client,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Upstream {
     pub host: String,
     pub port: u16,

@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use bollard::query_parameters::ListContainersOptionsBuilder;
+use slasha_db::{DbPool, repos::app_domain::AppDomainRepo};
 use tokio::{
     sync::Notify,
     time::{Duration, sleep},
@@ -9,7 +10,7 @@ use tokio::{
 use super::{PROXY_NETWORK_NAME, ProxyResult, RouteEntry, Upstream};
 use crate::state::{Clients, Config};
 
-pub async fn sync_routes(clients: &Clients, config: &Config) -> ProxyResult<()> {
+pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -> ProxyResult<()> {
     let mut filters: HashMap<String, Vec<String>> = HashMap::new();
     filters.insert("label".to_string(), vec!["slasha.managed=true".to_string()]);
     filters.insert("status".to_string(), vec!["running".to_string()]);
@@ -39,6 +40,10 @@ pub async fn sync_routes(clients: &Clients, config: &Config) -> ProxyResult<()> 
         if labels.get("slasha.role").map(|v| v.as_str()) == Some("proxy") {
             continue;
         }
+
+        let Some(app_id) = labels.get("slasha.app_id") else {
+            continue;
+        };
 
         let Some(app_slug) = labels.get("slasha.app_slug") else {
             continue;
@@ -78,11 +83,26 @@ pub async fn sync_routes(clients: &Clients, config: &Config) -> ProxyResult<()> 
             }
         };
 
-        let domain = format!("{}.{}", app_slug, config.platform_domain);
-        domain_upstreams.entry(domain).or_default().push(Upstream {
+        let upstream = Upstream {
             host: container_ip,
             port: container_port,
-        });
+        };
+
+        // Add default domain
+        let default_domain = format!("{}.{}", app_slug, config.platform_domain);
+        domain_upstreams
+            .entry(default_domain)
+            .or_default()
+            .push(upstream.clone());
+
+        // Add custom domains
+        let custom_domains = AppDomainRepo::list_for_app(db_pool, app_id).await?;
+        for domain in custom_domains {
+            domain_upstreams
+                .entry(domain.domain)
+                .or_default()
+                .push(upstream.clone());
+        }
     }
 
     let routes: Vec<RouteEntry> = domain_upstreams
@@ -96,7 +116,7 @@ pub async fn sync_routes(clients: &Clients, config: &Config) -> ProxyResult<()> 
     Ok(())
 }
 
-pub fn spawn_route_syncer(clients: Clients, config: Config) -> Arc<Notify> {
+pub fn spawn_route_syncer(clients: Clients, db_pool: DbPool, config: Config) -> Arc<Notify> {
     let notify = Arc::new(Notify::new());
 
     tokio::spawn({
@@ -107,7 +127,7 @@ pub fn spawn_route_syncer(clients: Clients, config: Config) -> Arc<Notify> {
                 loop {
                     tokio::select! {
                         _ = sleep(Duration::from_millis(500)) => {
-                            if let Err(e) = sync_routes(&clients, &config).await {
+                            if let Err(e) = sync_routes(&clients, &db_pool, &config).await {
                                 tracing::error!("Proxy route sync failed: {:?}", e);
                             }
                             break;

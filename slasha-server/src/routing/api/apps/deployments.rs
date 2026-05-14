@@ -82,10 +82,15 @@ async fn trigger_deploy(
 ) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
-    let is_running = DeploymentRepo::any_running(&db_pool, &app.id).await?;
+    let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
+    let is_building = active_deployments
+        .iter()
+        .any(|d| d.status == DeploymentStatus::Building);
 
-    if is_running {
-        return Err(HttpError::bad_request("A deployment is already running"));
+    if is_building {
+        return Err(HttpError::bad_request(
+            "A deployment is already building for this app",
+        ));
     }
 
     let (commit_sha, commit_message) = match payload.commit_sha {
