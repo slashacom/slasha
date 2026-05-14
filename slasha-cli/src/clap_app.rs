@@ -26,7 +26,7 @@ pub struct ClapApp {
     pub diagnostic: bool,
 
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -42,11 +42,7 @@ pub enum Command {
     #[command(name = "status", about = "Check server health")]
     Status,
 
-    #[command(
-        name = "version",
-        about = "Print version information",
-        override_usage = "envio version [OPTIONS]"
-    )]
+    #[command(name = "version", about = "Print version information")]
     Version {
         #[arg(
             long = "verbose",
@@ -323,8 +319,11 @@ pub enum UsersCommand {
     Create {
         #[arg(long)]
         email: String,
-        #[arg(long)]
-        password: String,
+        #[arg(
+            long,
+            help = "Read password from stdin instead of prompting (SLASHA_PASSWORD env is also honored)"
+        )]
+        password_stdin: bool,
         #[arg(long)]
         role: String,
     },

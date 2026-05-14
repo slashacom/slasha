@@ -24,10 +24,10 @@ use serde_json::json;
 
 use crate::{
     clap_app::{ClapApp, Command},
-    config::Config,
+    config::{GlobalConfig, ProjectConfig},
     diagnostic::DiagnosticReport,
     http::ApiClient,
-    output::print_json,
+    output::{cli_success, output, print_json},
     state::AppState,
 };
 
@@ -36,7 +36,7 @@ fn resolve_app(flag: Option<String>) -> anyhow::Result<String> {
         return Ok(app);
     }
 
-    let config = Config::load()?;
+    let config = ProjectConfig::load()?;
     if let Some(slug) = config.app
         && !slug.is_empty()
     {
@@ -46,7 +46,7 @@ fn resolve_app(flag: Option<String>) -> anyhow::Result<String> {
     anyhow::bail!("Missing --app flag and no app specified in slasha.toml");
 }
 
-async fn run(cli: ClapApp) -> anyhow::Result<()> {
+async fn run(cli: ClapApp) -> anyhow::Result<i32> {
     let ClapApp {
         command,
         output_mode,
@@ -56,8 +56,12 @@ async fn run(cli: ClapApp) -> anyhow::Result<()> {
 
     if diagnostic {
         DiagnosticReport::generate()?.print()?;
-        return Ok(());
+        return Ok(0);
     }
+
+    let Some(command) = command else {
+        anyhow::bail!("No command provided. Run `slasha --help` for usage.");
+    };
 
     let state = AppState {
         api_client: ApiClient::from_config()?.with_url_override(url),
@@ -68,7 +72,7 @@ async fn run(cli: ClapApp) -> anyhow::Result<()> {
         #[cfg(feature = "serve")]
         Command::Serve => slasha_server::start_server().await?,
         #[cfg(feature = "serve")]
-        Command::GitSsh { user_id } => git_ssh::handle(user_id).await?,
+        Command::GitSsh { user_id } => return git_ssh::handle(user_id).await,
 
         Command::Status => auth::handle_status(&state).await?,
         Command::Login => auth::handle_login(&state).await?,
@@ -76,10 +80,14 @@ async fn run(cli: ClapApp) -> anyhow::Result<()> {
         Command::Me => auth::handle_me(&state).await?,
 
         Command::SetUrl { url } => {
-            let mut config = Config::load()?;
-            config.base_url = Some(url);
+            let mut config = GlobalConfig::load()?;
+            config.base_url = Some(url.clone());
             config.save()?;
-            return Ok(());
+
+            output(output_mode, &json!({ "ok": true, "base_url": url }), || {
+                cli_success(format!("Base URL saved: {}", url));
+            })?;
+            return Ok(0);
         }
 
         Command::Version { verbose } => {
@@ -92,7 +100,7 @@ async fn run(cli: ClapApp) -> anyhow::Result<()> {
                 println!("{} {}", "Build Timestamp".green(), env!("BUILD_TIMESTAMP"));
             }
 
-            return Ok(());
+            return Ok(0);
         }
 
         Command::Create { name } => apps::handle_create(&state, &name).await?,
@@ -147,7 +155,7 @@ async fn run(cli: ClapApp) -> anyhow::Result<()> {
         Command::Users { command } => users::dispatch(&state, command).await?,
     }
 
-    Ok(())
+    Ok(0)
 }
 
 #[tokio::main]
@@ -162,18 +170,21 @@ async fn main() {
     let is_json = cli.output_mode.is_json();
     let result = run(cli).await;
 
-    if let Err(e) = result {
-        if is_json {
-            let _ = print_json(&json!({ "error": format!("{:#}", e) }));
-        } else {
-            eprintln!("{}", e);
-            let mut source = e.source();
-            while let Some(cause) = source {
-                eprintln!("  {} {}", colored::Colorize::dimmed("caused by:"), cause);
-                source = cause.source();
+    match result {
+        Ok(code) => std::process::exit(code),
+        Err(e) => {
+            if is_json {
+                let _ = print_json(&json!({ "error": format!("{:#}", e) }));
+            } else {
+                eprintln!("{}", e);
+                let mut source = e.source();
+                while let Some(cause) = source {
+                    eprintln!("  {} {}", colored::Colorize::dimmed("caused by:"), cause);
+                    source = cause.source();
+                }
             }
-        }
 
-        std::process::exit(1);
+            std::process::exit(1);
+        }
     }
 }
