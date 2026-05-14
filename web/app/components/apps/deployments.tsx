@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
@@ -311,6 +311,7 @@ function DeploymentRow({
   appSlug: string;
   onShowLogs: () => void;
 }) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const stopDeployment = useStopDeployment();
   const deleteDeployment = useDeleteDeployment();
@@ -380,10 +381,13 @@ function DeploymentRow({
 
   return (
     <>
-      <div className="group grid grid-cols-[1fr_auto] items-center gap-4 px-8 py-4 transition-colors hover:bg-white/[0.02]">
+      <div
+        onClick={() => navigate(`/apps/${appSlug}/deployments/${deployment.id}`)}
+        className="group grid cursor-pointer grid-cols-[1fr_auto] items-center gap-4 px-8 py-4 transition-colors hover:bg-white/[0.02]"
+      >
         <VStack space={1.5}>
           <HStack space={3}>
-            <span className="font-mono text-[12px] font-semibold text-text">
+            <span className="font-mono text-[12px] font-semibold text-text group-hover:text-primary transition-colors">
               {deployment.commit_sha.slice(0, 7)}
             </span>
             <StatusBadge status={deployment.status} />
@@ -396,7 +400,7 @@ function DeploymentRow({
           </p>
         </VStack>
 
-        <HStack space={2}>
+        <HStack space={2} onClick={(e) => e.stopPropagation()}>
           <Button
             label="Logs"
             icon={<Terminal className="size-3.5" />}

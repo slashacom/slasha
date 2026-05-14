@@ -148,6 +148,33 @@ pub enum Command {
         #[command(subcommand)]
         command: AppEnvCommand,
     },
+
+    #[command(name = "scale", about = "Scale process types (web=2 worker=1 ...)")]
+    Scale {
+        #[arg(long, value_name = "SLUG")]
+        app: Option<String>,
+        #[arg(value_name = "TYPE=COUNT", required = true, num_args = 1..)]
+        pairs: Vec<String>,
+    },
+    #[command(name = "domains", about = "Manage custom domains")]
+    Domains {
+        #[arg(long, value_name = "SLUG")]
+        app: Option<String>,
+        #[command(subcommand)]
+        command: DomainsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DomainsCommand {
+    #[command(name = "list", about = "List domains for an app")]
+    List,
+
+    #[command(name = "add", about = "Add a custom domain to an app")]
+    Add { domain: String },
+
+    #[command(name = "remove", about = "Remove a custom domain from an app")]
+    Remove { domain: String },
 }
 
 #[derive(Subcommand)]

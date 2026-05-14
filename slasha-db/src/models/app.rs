@@ -41,6 +41,16 @@ pub struct AppEnvVar {
 }
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
+#[diesel(table_name = crate::models::schema::app_domains)]
+#[ts(export, export_to = "./app.ts")]
+pub struct AppDomain {
+    pub id: String,
+    pub app_id: String,
+    pub domain: String,
+    pub created_at: chrono::NaiveDateTime,
+}
+
+#[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
 #[diesel(table_name = crate::models::schema::app_members)]
 #[ts(export, export_to = "./app.ts")]
 pub struct AppMember {

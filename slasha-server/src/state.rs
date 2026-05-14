@@ -45,6 +45,7 @@ impl Storage {
 pub struct Runtime {
     pub log_manager: Arc<LogManager>,
     pub proxy_sync_trigger: Arc<Notify>,
+    pub scaling_locks: Arc<dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl Runtime {
@@ -52,7 +53,15 @@ impl Runtime {
         Ok(Self {
             log_manager: Arc::new(LogManager::new(utils::ensure_dir(logs_dir))),
             proxy_sync_trigger,
+            scaling_locks: Arc::new(dashmap::DashMap::new()),
         })
+    }
+
+    pub fn get_scaling_lock(&self, deployment_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.scaling_locks
+            .entry(deployment_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
     }
 }
 

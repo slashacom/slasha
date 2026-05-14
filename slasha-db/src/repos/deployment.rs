@@ -6,27 +6,26 @@ use crate::{
     error::{DbError, DbResult},
     models::{
         deployment::{Deployment, DeploymentStatus},
-        schema::{apps, deployments},
+        schema::deployments,
     },
 };
 
 pub struct DeploymentRepo;
 
 impl DeploymentRepo {
-    pub async fn list_non_terminal(pool: &DbPool) -> DbResult<Vec<(Deployment, String)>> {
+    pub async fn list_non_terminal(pool: &DbPool) -> DbResult<Vec<Deployment>> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             Ok(deployments::table
-                .inner_join(apps::table)
                 .filter(
                     deployments::status
                         .eq(DeploymentStatus::Pending.to_string())
                         .or(deployments::status.eq(DeploymentStatus::Building.to_string()))
                         .or(deployments::status.eq(DeploymentStatus::Running.to_string())),
                 )
-                .select((Deployment::as_select(), apps::slug))
-                .load::<(Deployment, String)>(&mut conn)?)
+                .select(Deployment::as_select())
+                .load::<Deployment>(&mut conn)?)
         })
         .await?
     }
@@ -39,6 +38,23 @@ impl DeploymentRepo {
             Ok(deployments::table
                 .filter(deployments::app_id.eq(&app_id))
                 .order(deployments::created_at.desc())
+                .load::<Deployment>(&mut conn)?)
+        })
+        .await?
+    }
+
+    pub async fn list_active_for_app(pool: &DbPool, app_id: &str) -> DbResult<Vec<Deployment>> {
+        let pool = pool.clone();
+        let app_id = app_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(deployments::table
+                .filter(deployments::app_id.eq(&app_id))
+                .filter(
+                    deployments::status
+                        .eq(DeploymentStatus::Building.to_string())
+                        .or(deployments::status.eq(DeploymentStatus::Running.to_string())),
+                )
                 .load::<Deployment>(&mut conn)?)
         })
         .await?

@@ -22,7 +22,7 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    docker::sync::run_container_sync,
+    docker::sync::startup_container_sync,
     proxy::container::ensure_caddy_ready,
     state::{Clients, Config, Env, Runtime, Storage},
 };
@@ -101,14 +101,15 @@ pub async fn start_server() -> anyhow::Result<()> {
 
     run_migrations(&storage);
 
-    let proxy_sync_trigger = proxy::spawn_route_syncer(clients.clone(), config.clone());
+    let proxy_sync_trigger =
+        proxy::spawn_route_syncer(clients.clone(), storage.db_pool.clone(), config.clone());
     let runtime = Runtime::new(&logs_dir, proxy_sync_trigger).await?;
     let state = AppState::new(config, clients, storage, runtime);
 
-    run_container_sync(
+    startup_container_sync(
         &state.clients.docker,
         &state.storage.db_pool,
-        &state.runtime.log_manager,
+        &state.runtime,
     )
     .await?;
 

@@ -5,10 +5,12 @@ mod clap_app;
 mod config;
 mod deployments;
 mod diagnostic;
+mod domains;
 #[cfg(feature = "serve")]
 mod git_ssh;
 mod http;
 mod output;
+mod scale;
 mod service_env;
 mod services;
 mod ssh_keys;
@@ -129,6 +131,24 @@ async fn run(cli: ClapApp) -> anyhow::Result<i32> {
 
         Command::Services { app, command } => {
             services::dispatch(&state, &resolve_app(app)?, command).await?
+        }
+
+        Command::Scale { app, pairs } => {
+            scale::handle_scale(&state, &resolve_app(app)?, pairs).await?
+        }
+        Command::Domains { app, command } => {
+            let app_slug = resolve_app(app)?;
+            match command {
+                crate::clap_app::DomainsCommand::List => {
+                    domains::handle_list(&state, &app_slug).await?
+                }
+                crate::clap_app::DomainsCommand::Add { domain } => {
+                    domains::handle_add(&state, &app_slug, &domain).await?
+                }
+                crate::clap_app::DomainsCommand::Remove { domain } => {
+                    domains::handle_remove(&state, &app_slug, &domain).await?
+                }
+            }
         }
 
         Command::SshKeys { command } => ssh_keys::dispatch(&state, command).await?,

@@ -16,6 +16,7 @@ use serde::Deserialize;
 use slasha_db::{
     DbPool,
     deployment::{Deployment, DeploymentStatus},
+    models::app_scale::ProcessType,
     repos::{app::AppRepo, deployment::DeploymentRepo},
 };
 use tokio::sync::Notify;
@@ -24,10 +25,9 @@ use uuid::Uuid;
 
 use crate::{
     docker::{
-        app_container_name,
         deployment::{
-            delete_deployment_container, run_deployment, start_deployment_container,
-            stop_deployment_container,
+            delete_deployment_processes, list_deployment_processes, run_deployment,
+            scale_deployment_process, start_deployment_processes, stop_deployment_processes,
         },
         logs::{LogKey, LogManager},
     },
@@ -61,6 +61,8 @@ pub fn router() -> Router<AppState> {
         .route("/{deployment_id}/stop", post(stop_deployment))
         .route("/{deployment_id}/restart", post(restart_deployment))
         .route("/{deployment_id}/redeploy", post(redeploy_deployment))
+        .route("/{deployment_id}/scale", post(scale_deployment))
+        .route("/{deployment_id}/processes", get(list_processes))
         .route("/{deployment_id}", delete(delete_deployment))
 }
 
@@ -80,10 +82,15 @@ async fn trigger_deploy(
 ) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
-    let is_running = DeploymentRepo::any_running(&db_pool, &app.id).await?;
+    let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
+    let is_building = active_deployments
+        .iter()
+        .any(|d| d.status == DeploymentStatus::Building);
 
-    if is_running {
-        return Err(HttpError::bad_request("A deployment is already running"));
+    if is_building {
+        return Err(HttpError::bad_request(
+            "A deployment is already building for this app",
+        ));
     }
 
     let (commit_sha, commit_message) = match payload.commit_sha {
@@ -170,7 +177,7 @@ async fn stop_deployment(
         )));
     }
 
-    stop_deployment_container(
+    stop_deployment_processes(
         &docker,
         &db_pool,
         &runtime.proxy_sync_trigger,
@@ -198,7 +205,7 @@ async fn redeploy_deployment(
 
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
-    delete_deployment_container(
+    delete_deployment_processes(
         &docker,
         &proxy_sync_trigger,
         &log_manager,
@@ -236,23 +243,14 @@ async fn restart_deployment(
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
-    let container_name = app_container_name(&app.id, &deployment.id);
-
     let log_key = LogKey::Deployment {
         app_slug: app.slug.clone(),
         deployment_id: deployment.id.clone(),
     };
     let log = log_manager.get_logger(&log_key).await?;
 
-    start_deployment_container(
-        &docker,
-        &db_pool,
-        &proxy_sync_trigger,
-        &log,
-        &deployment.id,
-        &container_name,
-    )
-    .await?;
+    start_deployment_processes(&docker, &db_pool, &proxy_sync_trigger, &log, &deployment.id)
+        .await?;
 
     Ok(Json(serde_json::json!({
         "restarted": true,
@@ -313,7 +311,7 @@ async fn delete_deployment(
 
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
-    delete_deployment_container(
+    delete_deployment_processes(
         &docker,
         &proxy_sync_trigger,
         &log_manager,
@@ -328,4 +326,73 @@ async fn delete_deployment(
         "deleted": true,
         "deployment_id": deployment_id
     })))
+}
+
+#[derive(Deserialize)]
+struct ScaleDeploymentReq {
+    process_type: ProcessType,
+    count: i32,
+}
+
+async fn scale_deployment(
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
+    State(proxy_sync_trigger): State<Arc<Notify>>,
+    State(runtime): State<Runtime>,
+    AuthUser(user): AuthUser,
+    Path((slug, deployment_id)): Path<(String, String)>,
+    Json(payload): Json<ScaleDeploymentReq>,
+) -> HttpResult<impl IntoResponse> {
+    if payload.count <= 0 {
+        return Err(HttpError::bad_request("Count must be greater than 0"));
+    }
+
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
+
+    if deployment.status != DeploymentStatus::Running {
+        return Err(HttpError::bad_request(
+            "Scaling is only allowed for running deployments",
+        ));
+    }
+
+    let log_key = LogKey::Deployment {
+        app_slug: app.slug.clone(),
+        deployment_id: deployment.id.clone(),
+    };
+    let log = log_manager.get_logger(&log_key).await?;
+
+    scale_deployment_process(
+        &docker,
+        &db_pool,
+        &proxy_sync_trigger,
+        &log,
+        &app,
+        &deployment,
+        payload.process_type,
+        payload.count as u32,
+        runtime.get_scaling_lock(&deployment.id),
+    )
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "scaled": true,
+        "process_type": payload.process_type,
+        "count": payload.count
+    })))
+}
+
+async fn list_processes(
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    AuthUser(user): AuthUser,
+    Path((slug, deployment_id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
+
+    let processes = list_deployment_processes(&docker, &deployment.id).await?;
+
+    Ok(Json(serde_json::json!({ "processes": processes })))
 }
