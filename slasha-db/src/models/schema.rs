@@ -83,6 +83,7 @@ diesel::table! {
         status -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        resources -> Nullable<Text>,
     }
 }
 

@@ -9,9 +9,20 @@ use diesel::{
     sql_types::Text,
     sqlite::Sqlite,
 };
+use rand::{Rng, distr::Alphanumeric};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter, EnumString, VariantNames};
 use ts_rs::TS;
+
+const GENERATED_PASSWORD_LEN: usize = 32;
+
+fn generate_password() -> String {
+    rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(GENERATED_PASSWORD_LEN)
+        .map(char::from)
+        .collect()
+}
 
 use crate::models::service::deserialize::FromSqlRow;
 
@@ -27,6 +38,34 @@ pub struct Service {
     pub status: ServiceStatus,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
+    pub resources: Option<ServiceResources>,
+}
+
+#[derive(
+    Debug, Clone, Default, PartialEq, FromSqlRow, AsExpression, Serialize, Deserialize, TS,
+)]
+#[diesel(sql_type = diesel::sql_types::Text)]
+#[ts(export, export_to = "./service.ts")]
+pub struct ServiceResources {
+    pub memory_bytes: Option<i64>,
+    pub nano_cpus: Option<i64>,
+    pub pids_limit: Option<i64>,
+    pub shm_size: Option<i64>,
+}
+
+impl ToSql<Text, Sqlite> for ServiceResources {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        let json = serde_json::to_string(self)?;
+        out.set_value(json);
+        Ok(IsNull::No)
+    }
+}
+
+impl FromSql<Text, Sqlite> for ServiceResources {
+    fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        Ok(serde_json::from_str(&s)?)
+    }
 }
 
 #[derive(
@@ -115,12 +154,41 @@ impl ServiceKind {
                 ),
             ]),
             ServiceKind::Redis => HashMap::from([
+                ("REDIS_PASSWORD".to_string(), "redis".to_string()),
                 ("PORT".to_string(), "6379".to_string()),
                 (
                     "DATABASE_URL".to_string(),
-                    "redis://${{ SLASHA.service_container_name }}:${{ PORT }}".to_string(),
+                    "redis://default:${{ REDIS_PASSWORD }}@${{ SLASHA.service_container_name }}:${{ PORT }}".to_string(),
                 ),
             ]),
+        }
+    }
+
+    pub fn secret_env_keys(&self) -> &'static [&'static str] {
+        match self {
+            ServiceKind::PostgreSQL => &["POSTGRES_PASSWORD"],
+            ServiceKind::MySQL => &["MYSQL_ROOT_PASSWORD", "MYSQL_PASSWORD"],
+            ServiceKind::MongoDB => &["MONGO_INITDB_ROOT_PASSWORD"],
+            ServiceKind::Redis => &["REDIS_PASSWORD"],
+        }
+    }
+
+    pub fn generate_initial_env_vars(&self) -> HashMap<String, String> {
+        let mut vars = self.default_env_vars();
+        for key in self.secret_env_keys() {
+            vars.insert((*key).to_string(), generate_password());
+        }
+        vars
+    }
+
+    pub fn command(&self) -> Option<Vec<String>> {
+        match self {
+            ServiceKind::Redis => Some(vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "exec redis-server --requirepass \"$REDIS_PASSWORD\"".to_string(),
+            ]),
+            _ => None,
         }
     }
 
@@ -130,6 +198,43 @@ impl ServiceKind {
             ServiceKind::MySQL => "/var/lib/mysql",
             ServiceKind::MongoDB => "/data/db",
             ServiceKind::Redis => "/data",
+        }
+    }
+
+    pub fn health_test(&self) -> Vec<String> {
+        let cmd = match self {
+            ServiceKind::PostgreSQL => {
+                "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
+            }
+            ServiceKind::MySQL => {
+                "mysqladmin ping -h 127.0.0.1 -u root -p\"$MYSQL_ROOT_PASSWORD\" --silent"
+            }
+            ServiceKind::MongoDB => {
+                "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' | grep -q 1"
+            }
+            ServiceKind::Redis => {
+                "redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"
+            }
+        };
+        vec!["CMD-SHELL".to_string(), cmd.to_string()]
+    }
+
+    pub fn default_memory_bytes(&self) -> i64 {
+        4 * 1024 * 1024 * 1024
+    }
+
+    pub fn default_nano_cpus(&self) -> i64 {
+        4_000_000_000
+    }
+
+    pub fn default_pids_limit(&self) -> i64 {
+        2048
+    }
+
+    pub fn default_shm_size(&self) -> i64 {
+        match self {
+            ServiceKind::PostgreSQL => 256 * 1024 * 1024,
+            _ => 64 * 1024 * 1024,
         }
     }
 }

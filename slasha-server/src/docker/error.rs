@@ -66,6 +66,12 @@ pub enum DeploymentError {
 
     #[error("Release command failed with exit code {0}")]
     ReleaseFailed(i64),
+
+    #[error("Service \"{0}\" did not become healthy within {1}s")]
+    HealthcheckTimeout(String, u64),
+
+    #[error("Service \"{0}\" reported unhealthy")]
+    HealthcheckFailed(String),
 }
 
 pub type DeploymentResult<T> = std::result::Result<T, DeploymentError>;

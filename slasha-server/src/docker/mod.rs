@@ -1,6 +1,7 @@
 pub mod deployment;
 pub mod env;
 pub mod error;
+pub mod log_driver;
 pub mod logs;
 pub mod naming;
 pub mod network;
