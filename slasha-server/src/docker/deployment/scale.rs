@@ -1,7 +1,7 @@
-use futures_util::{StreamExt, TryStreamExt};
 use std::{collections::HashMap, sync::Arc};
 
 use bollard::{Docker, query_parameters::RemoveContainerOptionsBuilder};
+use futures_util::{StreamExt, TryStreamExt};
 use slasha_db::{
     DbPool,
     app::App,

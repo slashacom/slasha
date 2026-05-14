@@ -101,7 +101,8 @@ pub async fn start_server() -> anyhow::Result<()> {
 
     run_migrations(&storage);
 
-    let proxy_sync_trigger = proxy::spawn_route_syncer(clients.clone(), config.clone());
+    let proxy_sync_trigger =
+        proxy::spawn_route_syncer(clients.clone(), storage.db_pool.clone(), config.clone());
     let runtime = Runtime::new(&logs_dir, proxy_sync_trigger).await?;
     let state = AppState::new(config, clients, storage, runtime);
 

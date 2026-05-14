@@ -1,6 +1,15 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    app_domains (id) {
+        id -> Text,
+        app_id -> Text,
+        domain -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     app_env_vars (id) {
         id -> Text,
         app_id -> Text,
@@ -98,6 +107,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(app_domains -> apps (app_id));
 diesel::joinable!(app_env_vars -> apps (app_id));
 diesel::joinable!(app_members -> apps (app_id));
 diesel::joinable!(app_members -> users (user_id));
@@ -108,6 +118,7 @@ diesel::joinable!(services -> apps (app_id));
 diesel::joinable!(ssh_keys -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    app_domains,
     app_env_vars,
     app_members,
     app_scale,

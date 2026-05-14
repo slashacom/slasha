@@ -24,8 +24,9 @@ use super::{
 };
 use crate::docker::{
     DeploymentError, DeploymentResult,
+    deployment::stop_deployment_processes,
     env::{RefSource, resolve_env_value, topo_sort_vars},
-    logs::{Log, LogKey, LogManager},
+    logs::{LogKey, LogManager},
     naming::{app_network_name, image_tag, process_container_name, service_container_name},
     rollback::Rollback,
 };
@@ -219,9 +220,9 @@ pub async fn run_deployment(
         &docker_client,
         &db_pool,
         &proxy_sync_trigger,
+        &log_manager,
         &app,
         &deployment,
-        &log,
         &mut rollback,
     )
     .await
@@ -245,12 +246,18 @@ async fn run_deployment_inner(
     docker_client: &Docker,
     db_pool: &DbPool,
     proxy_sync_trigger: &Arc<Notify>,
+    log_manager: &Arc<LogManager>,
     app: &App,
     deployment: &Deployment,
-    log: &Log,
     rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
     let deployment_context = resolve_deployment_context(db_pool, app, deployment).await?;
+
+    let log_key = LogKey::Deployment {
+        app_slug: app.slug.clone(),
+        deployment_id: deployment.id.clone(),
+    };
+    let log = log_manager.get_logger(&log_key).await?;
 
     // building
     DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Building).await?;
@@ -268,9 +275,9 @@ async fn run_deployment_inner(
 
     match &deployment_context.strategy {
         BuildStrategy::Dockerfile { .. } => {
-            build_docker(docker_client, log, app, deployment).await?
+            build_docker(docker_client, &log, app, deployment).await?
         }
-        BuildStrategy::Railpack => build_railpack(docker_client, log, app, deployment).await?,
+        BuildStrategy::Railpack => build_railpack(docker_client, &log, app, deployment).await?,
     };
 
     rollback.register({
@@ -295,17 +302,18 @@ async fn run_deployment_inner(
 
     // release
     if let Some(pf) = &deployment_context.procfile
-        && let Some(cmd) = pf.get(&ProcessType::Release) {
-            run_release_container(
-                docker_client,
-                log,
-                app,
-                deployment,
-                cmd.to_string(),
-                deployment_context.env_map.clone(),
-            )
-            .await?;
-        }
+        && let Some(cmd) = pf.get(&ProcessType::Release)
+    {
+        run_release_container(
+            docker_client,
+            &log,
+            app,
+            deployment,
+            cmd.to_string(),
+            deployment_context.env_map.clone(),
+        )
+        .await?;
+    }
 
     // running processes
     let scale_configs = AppScaleRepo::list_for_app(db_pool, &app.id).await?;
@@ -354,7 +362,35 @@ async fn run_deployment_inner(
     }
 
     for (pt, i) in created_containers {
-        start_process_container(docker_client, log, app, deployment, pt, i).await?;
+        start_process_container(docker_client, &log, app, deployment, pt, i).await?;
+    }
+
+    DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Running).await?;
+    proxy_sync_trigger.notify_one();
+
+    // stop previous deployments
+    let active_deployments = DeploymentRepo::list_active_for_app(db_pool, &app.id).await?;
+    for active_dep in active_deployments {
+        if active_dep.id == deployment.id {
+            continue;
+        }
+
+        if let Err(e) = stop_deployment_processes(
+            docker_client,
+            db_pool,
+            proxy_sync_trigger,
+            log_manager,
+            app,
+            &active_dep,
+        )
+        .await
+        {
+            tracing::warn!(
+                "Failed to stop previous deployment {}: {:?}",
+                active_dep.id,
+                e
+            );
+        }
     }
 
     DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Running).await?;

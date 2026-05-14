@@ -1,4 +1,5 @@
 mod deployments;
+mod domains;
 mod env;
 mod files;
 mod management;
@@ -67,6 +68,7 @@ pub fn router() -> Router<AppState> {
         .nest("/{slug}/files", files::router())
         .route("/{slug}/commits", get(list_commits))
         .nest("/{slug}/deployments", deployments::router())
+        .nest("/{slug}/domains", domains::router())
         .nest("/{slug}/services", services::router())
         .nest("/{slug}/services/{service_id}/env", service_env::router())
 }

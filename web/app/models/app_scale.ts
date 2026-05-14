@@ -6,4 +6,4 @@ export type ProcessContainer = { name: string, process_type: ProcessType, instan
 
 export type ProcessStatus = "Running" | "Stopped";
 
-export type ProcessType = "Web" | "Worker" | "Release";
+export type ProcessType = "web" | "worker" | "release";
