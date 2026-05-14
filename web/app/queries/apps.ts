@@ -1,6 +1,7 @@
 import { queryOptions, useMutation } from '@tanstack/react-query';
 import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
-import type { App, AppEnvVar } from '~/models/app';
+import type { App } from '~/models/app';
+import type { AppScale } from '~/models/app_scale';
 
 export function getAppsOptions() {
   return queryOptions({
@@ -61,5 +62,12 @@ export function useUpdateAppEnvVars() {
           vars: data.vars,
         }
       ),
+  });
+}
+
+export function getScalesOptions(appSlug: string) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'scales'],
+    queryFn: () => httpGet<{ scales: AppScale[] }>(`apps/${appSlug}/scales`),
   });
 }

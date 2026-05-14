@@ -9,6 +9,7 @@ mod diagnostic;
 mod git_ssh;
 mod http;
 mod output;
+mod scale;
 mod service_env;
 mod services;
 mod ssh_keys;
@@ -121,6 +122,10 @@ async fn run(cli: ClapApp) -> anyhow::Result<()> {
 
         Command::Services { app, command } => {
             services::dispatch(&state, &resolve_app(app)?, command).await?
+        }
+
+        Command::Scale { app, pairs } => {
+            scale::handle_scale(&state, &resolve_app(app)?, pairs).await?
         }
 
         Command::SshKeys { command } => ssh_keys::dispatch(&state, command).await?,

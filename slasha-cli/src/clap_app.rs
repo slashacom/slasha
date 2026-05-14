@@ -152,6 +152,14 @@ pub enum Command {
         #[command(subcommand)]
         command: AppEnvCommand,
     },
+
+    #[command(name = "scale", about = "Scale process types (web=2 worker=1 ...)")]
+    Scale {
+        #[arg(long, value_name = "SLUG")]
+        app: Option<String>,
+        #[arg(value_name = "TYPE=COUNT", required = true, num_args = 1..)]
+        pairs: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]

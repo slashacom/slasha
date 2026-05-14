@@ -60,6 +60,12 @@ pub enum DeploymentError {
 
     #[error("Proxy error: {0}")]
     Proxy(#[from] crate::proxy::error::ProxyError),
+
+    #[error("Scale error: {0}")]
+    ScaleError(String),
+
+    #[error("Release command failed with exit code {0}")]
+    ReleaseFailed(i64),
 }
 
 pub type DeploymentResult<T> = std::result::Result<T, DeploymentError>;
@@ -73,6 +79,9 @@ impl From<DeploymentError> for HttpError {
             }
             DeploymentError::KeyNotExported(svc, key) => {
                 HttpError::bad_request(format!("Service {} does not export key {}", svc, key))
+            }
+            DeploymentError::ReleaseFailed(code) => {
+                HttpError::bad_request(format!("Release command failed with exit code {}", code))
             }
             _ => HttpError::internal(anyhow::anyhow!(e)),
         }

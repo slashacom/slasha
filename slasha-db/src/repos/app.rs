@@ -30,6 +30,20 @@ impl AppRepo {
         .await?
     }
 
+    pub async fn find_by_id(pool: &DbPool, id: &str) -> DbResult<App> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            apps::table
+                .filter(apps::id.eq(&id))
+                .first::<App>(&mut conn)
+                .optional()?
+                .ok_or_else(|| DbError::NotFound(format!("app '{}' not found", id)))
+        })
+        .await?
+    }
+
     pub async fn find_by_slug_for_user(pool: &DbPool, slug: &str, user_id: &str) -> DbResult<App> {
         let pool = pool.clone();
         let slug = slug.to_string();

@@ -6,7 +6,7 @@ use tokio::{
     time::{Duration, sleep},
 };
 
-use super::{PROXY_NETWORK_NAME, ProxyResult, RouteEntry};
+use super::{PROXY_NETWORK_NAME, ProxyResult, RouteEntry, Upstream};
 use crate::state::{Clients, Config};
 
 pub async fn sync_routes(clients: &Clients, config: &Config) -> ProxyResult<()> {
@@ -20,14 +20,16 @@ pub async fn sync_routes(clients: &Clients, config: &Config) -> ProxyResult<()> 
         .build();
 
     let containers = clients.docker.list_containers(Some(opts)).await?;
-    let mut routes = Vec::new();
+    let mut domain_upstreams: HashMap<String, Vec<Upstream>> = HashMap::new();
 
     #[cfg(feature = "bundle")]
-    routes.push(RouteEntry {
-        domain: config.platform_domain.clone(),
-        upstream_host: "host.docker.internal".to_string(),
-        upstream_port: config.port,
-    });
+    domain_upstreams.insert(
+        config.platform_domain.clone(),
+        vec![Upstream {
+            host: "host.docker.internal".to_string(),
+            port: config.port,
+        }],
+    );
 
     for container in containers {
         let Some(labels) = &container.labels else {
@@ -41,6 +43,10 @@ pub async fn sync_routes(clients: &Clients, config: &Config) -> ProxyResult<()> 
         let Some(app_slug) = labels.get("slasha.app_slug") else {
             continue;
         };
+
+        if labels.get("slasha.process_type").map(|v| v.as_str()) != Some("web") {
+            continue;
+        }
 
         let container_port = match labels
             .get("slasha.container_port")
@@ -72,12 +78,17 @@ pub async fn sync_routes(clients: &Clients, config: &Config) -> ProxyResult<()> 
             }
         };
 
-        routes.push(RouteEntry {
-            domain: format!("{}.{}", app_slug, config.platform_domain),
-            upstream_host: container_ip,
-            upstream_port: container_port,
+        let domain = format!("{}.{}", app_slug, config.platform_domain);
+        domain_upstreams.entry(domain).or_default().push(Upstream {
+            host: container_ip,
+            port: container_port,
         });
     }
+
+    let routes: Vec<RouteEntry> = domain_upstreams
+        .into_iter()
+        .map(|(domain, upstreams)| RouteEntry { domain, upstreams })
+        .collect();
 
     clients.caddy.apply_routes(&routes, config.env).await?;
     tracing::info!("Synced proxy routes: {:#?}", routes);
