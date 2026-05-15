@@ -233,9 +233,10 @@ pub async fn run_deployment(
         rollback.execute().await;
         log_manager.remove(&log_key);
 
-        DeploymentRepo::update_status(&db_pool, &deployment.id, DeploymentStatus::Failed).await?;
+        let _ =
+            DeploymentRepo::update_status(&db_pool, &deployment.id, DeploymentStatus::Failed).await;
 
-        return Err(e);
+        return Ok(());
     }
 
     rollback.disarm();
@@ -365,10 +366,6 @@ async fn run_deployment_inner(
         start_process_container(docker_client, &log, app, deployment, pt, i).await?;
     }
 
-    DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Running).await?;
-    proxy_sync_trigger.notify_one();
-
-    // stop previous deployments
     let active_deployments = DeploymentRepo::list_active_for_app(db_pool, &app.id).await?;
     for active_dep in active_deployments {
         if active_dep.id == deployment.id {

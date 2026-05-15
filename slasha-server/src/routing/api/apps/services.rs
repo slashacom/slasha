@@ -78,15 +78,18 @@ async fn read_service_exposure(
 ) -> Option<ServiceExposure> {
     let container_name = service_container_name(service_id);
     let info = docker.inspect_container(&container_name, None).await.ok()?;
-    let bindings = info.host_config?.port_bindings?;
+
+    let bindings = info.network_settings?.ports?;
     let key = format!("{}/tcp", container_port);
     let binding = bindings.get(&key)?.as_ref()?.first()?;
+
     let host_port = binding.host_port.as_ref()?.parse::<u16>().ok()?;
     let bind_addr = binding
         .host_ip
         .clone()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "0.0.0.0".to_string());
+        .filter(|ip| !ip.is_empty() && ip != "0.0.0.0")
+        .unwrap_or_else(|| "127.0.0.1".to_string()); // Default to localhost for display if 0.0.0.0
+
     Some(ServiceExposure {
         host_port,
         bind_addr,
@@ -211,9 +214,17 @@ async fn expose_service_handler(
         )
         .await;
 
-    tokio::spawn(async move {
-        let _ = provision_service(docker, db_pool, log_manager, app, svc, None, true).await;
-    });
+    ServiceRepo::update_status(&db_pool, &svc.id, ServiceStatus::Provisioning).await?;
+
+    tokio::spawn(provision_service(
+        docker,
+        db_pool,
+        log_manager,
+        app,
+        svc,
+        None,
+        true,
+    ));
 
     Ok(Json(serde_json::json!({ "exposing": true })))
 }
@@ -239,6 +250,9 @@ async fn unexpose_service_handler(
             ),
         )
         .await;
+
+    // Reset to Provisioning so startup_container_sync can clean up orphans on crash
+    ServiceRepo::update_status(&db_pool, &svc.id, ServiceStatus::Provisioning).await?;
 
     tokio::spawn(async move {
         let _ = provision_service(docker, db_pool, log_manager, app, svc, None, false).await;
