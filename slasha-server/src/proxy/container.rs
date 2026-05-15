@@ -13,6 +13,7 @@ use futures_util::StreamExt;
 use tokio::time::sleep;
 
 use super::{ProxyError, ProxyResult};
+use crate::docker::log_driver::default_log_config;
 
 pub const PROXY_CONTAINER_NAME: &str = "slasha-proxy";
 pub const PROXY_NETWORK_NAME: &str = "slasha-proxy";
@@ -130,6 +131,7 @@ pub async fn ensure_caddy_ready(docker: &Docker) -> ProxyResult<()> {
                     Mount { typ: Some(MountTypeEnum::VOLUME), source: Some("slasha-caddy-data".into()),   target: Some("/data".into()),   ..Default::default() },
                     Mount { typ: Some(MountTypeEnum::VOLUME), source: Some("slasha-caddy-config".into()), target: Some("/config".into()), ..Default::default() },
                 ]),
+                log_config: Some(default_log_config()),
                 ..Default::default()
             }),
             networking_config: Some(NetworkingConfig {

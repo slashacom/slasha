@@ -26,6 +26,7 @@ use tokio::sync::Notify;
 use crate::{
     docker::{
         DeploymentError, DeploymentResult, image_tag,
+        log_driver::default_log_config,
         logs::{Log, LogKey, LogManager, stream_container_logs},
         naming::{
             app_network_name, app_volume_name, app_volume_prefix, process_container_name,
@@ -172,6 +173,7 @@ pub async fn create_process_container(
                     } else {
                         Some(mounts)
                     },
+                    log_config: Some(default_log_config()),
                     ..Default::default()
                 }),
                 networking_config: Some(NetworkingConfig {

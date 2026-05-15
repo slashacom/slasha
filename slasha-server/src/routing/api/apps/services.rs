@@ -16,7 +16,7 @@ use serde::Deserialize;
 use slasha_db::{
     DbPool,
     repos::{app::AppRepo, service::ServiceRepo},
-    service::{Service, ServiceKind, ServiceStatus},
+    service::{Service, ServiceKind, ServiceResources, ServiceStatus},
 };
 use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
@@ -24,7 +24,10 @@ use uuid::Uuid;
 use crate::{
     docker::{
         logs::{LogKey, LogManager},
-        service::{delete_service, provision_service, stop_service},
+        naming::service_container_name,
+        service::{
+            delete_service, expose_service, provision_service, stop_service, unexpose_service,
+        },
     },
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
@@ -37,6 +40,8 @@ pub fn router() -> Router<AppState> {
         .route("/", post(create_service))
         .route("/{id}/logs", get(stream_logs))
         .route("/{id}/stop", post(stop_service_handler))
+        .route("/{id}/expose", post(expose_service_handler))
+        .route("/{id}/expose", delete(unexpose_service_handler))
         .route("/{id}", delete(delete_service_handler))
 }
 
@@ -46,9 +51,53 @@ struct CreateServiceReq {
     name: String,
     version: String,
     env_vars: HashMap<String, String>,
+    #[serde(default)]
+    resources: Option<ServiceResources>,
+}
+
+#[derive(Deserialize)]
+struct ExposeServiceReq {
+    host_port: u16,
+    bind_addr: String,
+}
+
+#[derive(serde::Serialize)]
+struct ServiceExposure {
+    host_port: u16,
+    bind_addr: String,
+}
+
+#[derive(serde::Serialize)]
+struct ServiceWithExposure {
+    #[serde(flatten)]
+    service: Service,
+    exposure: Option<ServiceExposure>,
+}
+
+async fn read_service_exposure(
+    docker: &Docker,
+    service_id: &str,
+    container_port: u16,
+) -> Option<ServiceExposure> {
+    let container_name = service_container_name(service_id);
+    let info = docker.inspect_container(&container_name, None).await.ok()?;
+    let bindings = info.host_config?.port_bindings?;
+    let key = format!("{}/tcp", container_port);
+    let binding = bindings.get(&key)?.as_ref()?.first()?;
+    let host_port = binding.host_port.as_ref()?.parse::<u16>().ok()?;
+    let bind_addr = binding
+        .host_ip
+        .clone()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "0.0.0.0".to_string());
+    Some(ServiceExposure {
+        host_port,
+        bind_addr,
+    })
 }
 
 async fn list_services(
+    State(docker): State<Docker>,
     State(db_pool): State<DbPool>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
@@ -56,8 +105,21 @@ async fn list_services(
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let app_services = ServiceRepo::list_for_app(&db_pool, &app.id).await?;
 
+    let mut enriched = Vec::with_capacity(app_services.len());
+    for svc in app_services {
+        let exposure = if svc.status == ServiceStatus::Running {
+            read_service_exposure(&docker, &svc.id, svc.kind.container_port()).await
+        } else {
+            None
+        };
+        enriched.push(ServiceWithExposure {
+            service: svc,
+            exposure,
+        });
+    }
+
     Ok(Json(serde_json::json!({
-        "services": app_services,
+        "services": enriched,
     })))
 }
 
@@ -84,6 +146,20 @@ async fn create_service(
         )));
     }
 
+    for key in payload.kind.secret_env_keys() {
+        let missing = payload
+            .env_vars
+            .get(*key)
+            .map(|v| v.trim().is_empty())
+            .unwrap_or(true);
+        if missing {
+            return Err(HttpError::bad_request(format!(
+                "{} is required and cannot be empty",
+                key
+            )));
+        }
+    }
+
     let now = Utc::now().naive_utc();
     let service_id = Uuid::new_v4().to_string();
 
@@ -96,6 +172,7 @@ async fn create_service(
         status: ServiceStatus::Provisioning,
         created_at: now,
         updated_at: now,
+        resources: payload.resources,
     };
 
     let new_service = ServiceRepo::create(&db_pool, new_service).await?;
@@ -112,6 +189,72 @@ async fn create_service(
     Ok(Json(serde_json::json!({
         "service": new_service,
     })))
+}
+
+async fn expose_service_handler(
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
+    AuthUser(user): AuthUser,
+    Path((slug, id)): Path<(String, String)>,
+    Json(payload): Json<ExposeServiceReq>,
+) -> HttpResult<impl IntoResponse> {
+    if payload.host_port < 1024 {
+        return Err(HttpError::bad_request(
+            "Host port must be 1024 or higher (ports below 1024 are privileged)",
+        ));
+    }
+    if payload.bind_addr != "127.0.0.1" && payload.bind_addr != "0.0.0.0" {
+        return Err(HttpError::bad_request(
+            "Bind address must be 127.0.0.1 or 0.0.0.0",
+        ));
+    }
+
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+
+    if svc.status != ServiceStatus::Running {
+        return Err(HttpError::bad_request(
+            "Service must be running before it can be exposed",
+        ));
+    }
+
+    let host_port = payload.host_port;
+    let bind_addr = payload.bind_addr.clone();
+
+    tokio::spawn(async move {
+        let _ =
+            expose_service(&docker, &db_pool, &log_manager, &app, &svc, host_port, bind_addr).await;
+    });
+
+    Ok(Json(serde_json::json!({
+        "exposing": true,
+        "host_port": payload.host_port,
+        "bind_addr": payload.bind_addr,
+    })))
+}
+
+async fn unexpose_service_handler(
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
+    AuthUser(user): AuthUser,
+    Path((slug, id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+
+    if svc.status != ServiceStatus::Running {
+        return Err(HttpError::bad_request(
+            "Service must be running before it can be unexposed",
+        ));
+    }
+
+    tokio::spawn(async move {
+        let _ = unexpose_service(&docker, &db_pool, &log_manager, &app, &svc).await;
+    });
+
+    Ok(Json(serde_json::json!({ "unexposing": true })))
 }
 
 async fn stop_service_handler(

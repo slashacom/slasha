@@ -14,7 +14,13 @@ async fn get_service_kinds() -> HttpResult<Json<serde_json::Value>> {
             serde_json::json!({
                 "name": kind.to_string(),
                 "supported_versions": kind.supported_versions(),
-                "default_env_vars": kind.default_env_vars(),
+                "default_env_vars": kind.generate_initial_env_vars(),
+                "default_resources": {
+                    "memory_bytes": kind.default_memory_bytes(),
+                    "nano_cpus": kind.default_nano_cpus(),
+                    "pids_limit": kind.default_pids_limit(),
+                    "shm_size": kind.default_shm_size(),
+                },
             })
         })
         .collect();
