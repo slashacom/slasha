@@ -61,11 +61,14 @@ export default function DeploymentDetailPage() {
   }
 
   // Group processes by type
-  const processGroups = processes.reduce((acc, p) => {
-    if (!acc[p.process_type]) acc[p.process_type] = [];
-    acc[p.process_type].push(p);
-    return acc;
-  }, {} as Record<string, typeof processes>);
+  const processGroups = processes.reduce(
+    (acc, p) => {
+      if (!acc[p.process_type]) acc[p.process_type] = [];
+      acc[p.process_type].push(p);
+      return acc;
+    },
+    {} as Record<string, typeof processes>
+  );
 
   // Also include process types from scale configs even if no containers are running
   scales.forEach((s) => {
@@ -104,8 +107,8 @@ export default function DeploymentDetailPage() {
                 deployment.status === 'Running'
                   ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
                   : deployment.status === 'Building'
-                  ? 'bg-sky-500 animate-pulse'
-                  : 'bg-text-tertiary'
+                    ? 'bg-sky-500 animate-pulse'
+                    : 'bg-text-tertiary'
               )}
             />
             <span className="text-[11px] font-medium text-text-secondary">
@@ -124,7 +127,9 @@ export default function DeploymentDetailPage() {
           <section>
             <HStack space={2} alignItems="center" className="mb-5">
               <Layers className="size-4 text-text-tertiary" />
-              <h3 className="text-sm font-semibold text-text">Horizontal Scaling</h3>
+              <h3 className="text-sm font-semibold text-text">
+                Horizontal Scaling
+              </h3>
             </HStack>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Object.keys(processGroups)
@@ -138,7 +143,10 @@ export default function DeploymentDetailPage() {
                     desiredCount={
                       scales.find((s) => s.process_type === type)?.desired ?? 1
                     }
-                    runningCount={processGroups[type].filter(p => p.status === 'Running').length}
+                    runningCount={
+                      processGroups[type].filter((p) => p.status === 'Running')
+                        .length
+                    }
                   />
                 ))}
             </div>
@@ -148,7 +156,9 @@ export default function DeploymentDetailPage() {
           <section>
             <HStack space={2} alignItems="center" className="mb-5">
               <Box className="size-4 text-text-tertiary" />
-              <h3 className="text-sm font-semibold text-text">Process Explorer</h3>
+              <h3 className="text-sm font-semibold text-text">
+                Process Explorer
+              </h3>
             </HStack>
             <div className="overflow-hidden rounded-md border border-border bg-surface/20">
               <table className="w-full text-left">
@@ -210,7 +220,14 @@ export default function DeploymentDetailPage() {
                                 : 'bg-white/5 text-text-tertiary'
                             )}
                           >
-                            <div className={cn("size-1 rounded-full", p.status === 'Running' ? "bg-emerald-500" : "bg-text-tertiary")} />
+                            <div
+                              className={cn(
+                                'size-1 rounded-full',
+                                p.status === 'Running'
+                                  ? 'bg-emerald-500'
+                                  : 'bg-text-tertiary'
+                              )}
+                            />
                             {p.status}
                           </span>
                         </td>
@@ -247,8 +264,8 @@ function ScaleCard({
 
   const handleScale = async () => {
     if (count < 1) {
-        toast.error("Scale must be at least 1");
-        return;
+      toast.error('Scale must be at least 1');
+      return;
     }
     try {
       await scale.mutateAsync({
@@ -275,10 +292,14 @@ function ScaleCard({
               {runningCount} / {desiredCount} replicas up
             </span>
           </VStack>
-          <div className={cn(
-            "size-2 rounded-full",
-            runningCount === desiredCount && runningCount > 0 ? "bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" : "bg-primary animate-pulse"
-          )} />
+          <div
+            className={cn(
+              'size-2 rounded-full',
+              runningCount === desiredCount && runningCount > 0
+                ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]'
+                : 'bg-primary animate-pulse'
+            )}
+          />
         </HStack>
 
         <HStack space={2}>
@@ -288,36 +309,42 @@ function ScaleCard({
               onChange={(e) => {
                 const val = e.target.value;
                 if (val === '' || /^\d+$/.test(val)) {
-                    setCountStr(val);
+                  setCountStr(val);
                 }
               }}
               onBlur={() => {
                 if (countStr === '' || parseInt(countStr) < 1) {
-                    setCountStr("1");
+                  setCountStr('1');
                 }
               }}
               className="h-8 pr-8 font-mono text-[12px] font-semibold bg-bg"
               placeholder="1"
             />
             <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col items-center">
-                <button 
-                    onClick={() => setCountStr((prev) => ((parseInt(prev) || 0) + 1).toString())}
-                    className="p-0.5 hover:text-text text-text-tertiary transition-colors"
-                >
-                    <Plus className="size-2.5" />
-                </button>
-                <button 
-                    onClick={() => setCountStr((prev) => (Math.max(1, (parseInt(prev) || 0) - 1)).toString())}
-                    className="p-0.5 hover:text-text text-text-tertiary transition-colors"
-                >
-                    <Minus className="size-2.5" />
-                </button>
+              <button
+                onClick={() =>
+                  setCountStr((prev) => ((parseInt(prev) || 0) + 1).toString())
+                }
+                className="p-0.5 hover:text-text text-text-tertiary transition-colors"
+              >
+                <Plus className="size-2.5" />
+              </button>
+              <button
+                onClick={() =>
+                  setCountStr((prev) =>
+                    Math.max(1, (parseInt(prev) || 0) - 1).toString()
+                  )
+                }
+                className="p-0.5 hover:text-text text-text-tertiary transition-colors"
+              >
+                <Minus className="size-2.5" />
+              </button>
             </div>
           </div>
           <Button
             label="Scale"
             size="sm"
-            variant={count !== desiredCount ? "default" : "ghost"}
+            variant={count !== desiredCount ? 'default' : 'ghost'}
             onClick={handleScale}
             isLoading={scale.isPending}
             isDisabled={count === desiredCount || !countStr}

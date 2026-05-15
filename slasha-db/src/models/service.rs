@@ -36,9 +36,9 @@ pub struct Service {
     pub name: String,
     pub version: String,
     pub status: ServiceStatus,
+    pub resources: Option<ServiceResources>,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
-    pub resources: Option<ServiceResources>,
 }
 
 #[derive(
@@ -203,9 +203,7 @@ impl ServiceKind {
 
     pub fn health_test(&self) -> Vec<String> {
         let cmd = match self {
-            ServiceKind::PostgreSQL => {
-                "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
-            }
+            ServiceKind::PostgreSQL => "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"",
             ServiceKind::MySQL => {
                 "mysqladmin ping -h 127.0.0.1 -u root -p\"$MYSQL_ROOT_PASSWORD\" --silent"
             }

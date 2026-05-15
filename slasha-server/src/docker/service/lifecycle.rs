@@ -13,14 +13,13 @@ use crate::docker::{
     DeploymentResult,
     logs::{LogKey, LogManager},
     naming::{service_container_name, service_volume_name},
-    service::executor::{
-        ExposureSpec, build_service_container_body, create_start_and_wait_healthy,
-        resolve_service_env,
+    service::provision::{
+        PortExposure, build_container_body, resolve_env_vars, start_and_wait_healthy,
     },
 };
 
 pub async fn stop_service(
-    docker_client: &Docker,
+    docker: &Docker,
     db_pool: &DbPool,
     log_manager: &LogManager,
     app: &App,
@@ -28,7 +27,7 @@ pub async fn stop_service(
 ) -> DeploymentResult<()> {
     let container_name = service_container_name(&service.id);
 
-    docker_client
+    docker
         .stop_container(
             &container_name,
             Some(StopContainerOptionsBuilder::new().t(10).build()),
@@ -36,17 +35,13 @@ pub async fn stop_service(
         .await?;
 
     ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Stopped).await?;
-
-    log_manager.remove(&LogKey::Service {
-        app_slug: app.slug.clone(),
-        service_name: service.name.clone(),
-    });
+    log_manager.remove(&log_key(app, service));
 
     Ok(())
 }
 
 pub async fn delete_service(
-    docker_client: &Docker,
+    docker: &Docker,
     db_pool: &DbPool,
     log_manager: &LogManager,
     app: &App,
@@ -55,14 +50,14 @@ pub async fn delete_service(
     let container_name = service_container_name(&service.id);
     let volume_name = service_volume_name(&service.id);
 
-    docker_client
+    let _ = docker
         .remove_container(
             &container_name,
             Some(RemoveContainerOptionsBuilder::new().force(true).build()),
         )
-        .await?;
+        .await;
 
-    docker_client
+    docker
         .remove_volume(
             &volume_name,
             None::<bollard::query_parameters::RemoveVolumeOptions>,
@@ -70,59 +65,54 @@ pub async fn delete_service(
         .await?;
 
     ServiceRepo::delete(db_pool, &service.id).await?;
-
-    log_manager.remove(&LogKey::Service {
-        app_slug: app.slug.clone(),
-        service_name: service.name.clone(),
-    });
+    log_manager.remove(&log_key(app, service));
 
     Ok(())
 }
 
 pub async fn expose_service(
-    docker_client: &Docker,
+    docker: &Docker,
     db_pool: &DbPool,
     log_manager: &LogManager,
     app: &App,
     service: &Service,
     host_port: u16,
-    bind_addr: String,
 ) -> DeploymentResult<()> {
-    let spec = ExposureSpec {
-        host_port,
-        bind_addr,
-    };
-    recreate_service_container(docker_client, db_pool, log_manager, app, service, Some(spec)).await
+    reconfigure(
+        docker,
+        db_pool,
+        log_manager,
+        app,
+        service,
+        Some(PortExposure { host_port }),
+    )
+    .await
 }
 
 pub async fn unexpose_service(
-    docker_client: &Docker,
+    docker: &Docker,
     db_pool: &DbPool,
     log_manager: &LogManager,
     app: &App,
     service: &Service,
 ) -> DeploymentResult<()> {
-    recreate_service_container(docker_client, db_pool, log_manager, app, service, None).await
+    reconfigure(docker, db_pool, log_manager, app, service, None).await
 }
 
-async fn recreate_service_container(
-    docker_client: &Docker,
+async fn reconfigure(
+    docker: &Docker,
     db_pool: &DbPool,
     log_manager: &LogManager,
     app: &App,
     service: &Service,
-    exposure: Option<ExposureSpec>,
+    exposure: Option<PortExposure>,
 ) -> DeploymentResult<()> {
-    let log_key = LogKey::Service {
-        app_slug: app.slug.clone(),
-        service_name: service.name.clone(),
-    };
-    let log = log_manager.get_logger(&log_key).await?;
+    let log = log_manager.get_logger(&log_key(app, service)).await?;
     let container_name = service_container_name(&service.id);
 
     ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Provisioning).await?;
 
-    let _ = docker_client
+    let _ = docker
         .remove_container(
             &container_name,
             Some(RemoveContainerOptionsBuilder::new().force(true).build()),
@@ -130,18 +120,22 @@ async fn recreate_service_container(
         .await;
 
     let env_vars = ServiceRepo::get_env_vars(db_pool, &service.id).await?;
-    let resolved = resolve_service_env(env_vars, service)?;
+    let resolved = resolve_env_vars(env_vars, service)?;
+    let body = build_container_body(service, app, &resolved, exposure.as_ref());
 
-    let body = build_service_container_body(service, app, &resolved, exposure.as_ref());
-
-    if let Err(e) = create_start_and_wait_healthy(docker_client, db_pool, service, body, &log, None)
-        .await
-    {
+    if let Err(e) = start_and_wait_healthy(docker, db_pool, service, body, &log, None).await {
         tracing::error!("Service reconfigure failed: {:?}", e);
-        let _ = log.send(format!("Service reconfigure failed: {}", e)).await;
+        let _ = log.send(format!("Reconfigure failed: {}", e)).await;
         let _ = ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Failed).await;
         return Err(e);
     }
 
     Ok(())
+}
+
+fn log_key(app: &App, service: &Service) -> LogKey {
+    LogKey::Service {
+        app_slug: app.slug.clone(),
+        service_name: service.name.clone(),
+    }
 }

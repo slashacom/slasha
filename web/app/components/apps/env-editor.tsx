@@ -301,8 +301,7 @@ export function EnvEditor({
     }
     e.preventDefault();
     const current = vars[rowIndex];
-    const isEmptyRow =
-      current && !current.key.trim() && !current.value.trim();
+    const isEmptyRow = current && !current.key.trim() && !current.value.trim();
 
     let newVars: EnvVar[];
     if (isEmptyRow) {
@@ -520,7 +519,11 @@ export function EnvEditor({
                                     return;
                                   }
                                   const newVars = [...vars];
-                                  newVars[i] = { ...newVars[i], key: newVars[i].key, value: val };
+                                  newVars[i] = {
+                                    ...newVars[i],
+                                    key: newVars[i].key,
+                                    value: val,
+                                  };
                                   commitVars(newVars);
                                 }}
                                 onPasteRaw={(text) => {
@@ -607,8 +610,8 @@ export function EnvEditor({
                     className="h-8 text-[12px]"
                   />
                   <span className="text-[11px] text-text-tertiary/70">
-                    Tip: paste a <code className="font-mono">.env</code> blob
-                    to import multiple at once
+                    Tip: paste a <code className="font-mono">.env</code> blob to
+                    import multiple at once
                   </span>
                 </HStack>
               )}
@@ -662,8 +665,8 @@ function EmptyState({
       {!readOnly && (
         <>
           <p className="mt-1 text-[12px] text-text-tertiary/70">
-            Add one manually, or paste a{' '}
-            <code className="font-mono">.env</code> file here.
+            Add one manually, or paste a <code className="font-mono">.env</code>{' '}
+            file here.
           </p>
           <Button
             label="Add First Variable"
@@ -702,7 +705,9 @@ function RawEditor({
         minRows={8}
         maxRows={24}
         wrap="off"
-        placeholder={'DATABASE_URL=postgres://...\nAPI_KEY=sk-...\n# comments are supported'}
+        placeholder={
+          'DATABASE_URL=postgres://...\nAPI_KEY=sk-...\n# comments are supported'
+        }
         {...noAutofillProps}
         className="block w-full resize-none overflow-x-auto whitespace-pre bg-transparent px-4 py-3 font-mono text-[13px] leading-5 text-text outline-none placeholder:text-text-tertiary/50"
       />

@@ -5,6 +5,7 @@ CREATE TABLE services (
     name TEXT NOT NULL,
     version TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('provisioning', 'running', 'stopped', 'failed')),
+    resources TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (app_id) REFERENCES apps (id) ON DELETE CASCADE

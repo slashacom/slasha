@@ -96,13 +96,16 @@ export function DomainManager({ appSlug }: { appSlug: string }) {
               />
             </HStack>
             <p className="mt-2 text-[11px] text-text-tertiary">
-              Ensure your domain's A or CNAME record points to this server's IP address.
+              Ensure your domain's A or CNAME record points to this server's IP
+              address.
             </p>
           </form>
 
           {domains.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-8">
-              <p className="text-[13px] text-text-tertiary">No custom domains added yet.</p>
+              <p className="text-[13px] text-text-tertiary">
+                No custom domains added yet.
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-border rounded-lg border border-border bg-surface/20">
@@ -128,7 +131,10 @@ export function DomainManager({ appSlug }: { appSlug: string }) {
                       color="error"
                       icon={<Trash2 className="size-3.5" />}
                       onClick={() => handleDelete(domain.id)}
-                      isLoading={deleteDomain.isPending && deleteDomain.variables?.domainId === domain.id}
+                      isLoading={
+                        deleteDomain.isPending &&
+                        deleteDomain.variables?.domainId === domain.id
+                      }
                       className="size-8"
                     />
                   </HStack>

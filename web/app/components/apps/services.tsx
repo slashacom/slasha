@@ -456,10 +456,16 @@ function buildResourcesPayload(
   }
 
   if (memory_bytes !== null && memory_bytes < MIN_MEMORY_MB * BYTES_PER_MB) {
-    return { payload: null, error: `Memory must be at least ${MIN_MEMORY_MB} MB.` };
+    return {
+      payload: null,
+      error: `Memory must be at least ${MIN_MEMORY_MB} MB.`,
+    };
   }
   if (nano_cpus !== null && nano_cpus < MIN_CPU_CORES * NANO_PER_CORE) {
-    return { payload: null, error: `CPU must be at least ${MIN_CPU_CORES} cores.` };
+    return {
+      payload: null,
+      error: `CPU must be at least ${MIN_CPU_CORES} cores.`,
+    };
   }
   if (shm_size !== null && shm_size < MIN_SHM_MB * BYTES_PER_MB) {
     return { payload: null, error: `SHM must be at least ${MIN_SHM_MB} MB.` };
@@ -689,10 +695,10 @@ function AdvancedResourcesSection({
   const memoryPlaceholder = defaults
     ? String(bytesToMb(defaults.memory_bytes))
     : '';
-  const cpuPlaceholder = defaults ? String(nanoToCores(defaults.nano_cpus)) : '';
-  const shmPlaceholder = defaults
-    ? String(bytesToMb(defaults.shm_size))
+  const cpuPlaceholder = defaults
+    ? String(nanoToCores(defaults.nano_cpus))
     : '';
+  const shmPlaceholder = defaults ? String(bytesToMb(defaults.shm_size)) : '';
   const pidsPlaceholder = defaults ? String(defaults.pids_limit) : '';
 
   return (
@@ -711,7 +717,10 @@ function AdvancedResourcesSection({
       </button>
 
       {isOpen && (
-        <VStack space={3} className="rounded-lg border border-border bg-surface/30 p-4">
+        <VStack
+          space={3}
+          className="rounded-lg border border-border bg-surface/30 p-4"
+        >
           <p className="text-[11px] text-text-tertiary">
             Override per-container resource caps. Leave blank to use the
             default.
@@ -872,8 +881,8 @@ function ExposeServiceModal({
                     0.0.0.0 (all interfaces)
                   </span>
                   <span className="text-[11px] text-amber-400">
-                    Anyone who can reach the host on this port can connect.
-                    Make sure your firewall is configured.
+                    Anyone who can reach the host on this port can connect. Make
+                    sure your firewall is configured.
                   </span>
                 </VStack>
               </label>

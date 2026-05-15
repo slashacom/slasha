@@ -27,7 +27,11 @@ type FlatItem = {
 };
 
 function valueToContent(value: string) {
-  const content: { type: string; text?: string; attrs?: { id: string; label: string } }[] = [];
+  const content: {
+    type: string;
+    text?: string;
+    attrs?: { id: string; label: string };
+  }[] = [];
   let last = 0;
   let m: RegExpExecArray | null;
   REF_RE.lastIndex = 0;
