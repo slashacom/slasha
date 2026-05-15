@@ -223,7 +223,7 @@ async fn create_service_container(
         bindings.insert(
             format!("{}/tcp", service.kind.container_port()),
             Some(vec![PortBinding {
-                host_ip: Some("0.0.0.0".to_string()),
+                host_ip: None,
                 host_port: None,
             }]),
         );
