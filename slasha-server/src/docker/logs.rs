@@ -216,7 +216,20 @@ impl Log {
     }
 }
 
-pub async fn stream_container_logs(
+pub fn stream_container_logs(
+    docker_client: Docker,
+    log: Log,
+    container: String,
+    prefix: Option<String>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        if let Err(e) = stream_container_logs_inner(docker_client, log, container, prefix).await {
+            tracing::warn!("Log stream failed: {:?}", e);
+        }
+    })
+}
+
+pub async fn stream_container_logs_inner(
     docker_client: Docker,
     log: Log,
     container: String,

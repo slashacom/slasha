@@ -27,7 +27,7 @@ use crate::{
     docker::{
         DeploymentError, DeploymentResult, image_tag,
         log_driver::default_log_config,
-        logs::{Log, LogKey, LogManager, stream_container_logs},
+        logs::{Log, LogKey, LogManager, stream_container_logs, stream_container_logs_inner},
         naming::{
             app_network_name, app_volume_name, app_volume_prefix, process_container_name,
             release_container_name,
@@ -290,18 +290,12 @@ pub async fn restart_deployment_processes(
             process.instance_index
         );
 
-        tokio::spawn({
-            let docker = docker_client.clone();
-            let log = log.clone();
-            let container_name = process.name.clone();
-            async move {
-                if let Err(e) =
-                    stream_container_logs(docker, log, container_name, Some(prefix)).await
-                {
-                    tracing::error!("Failed to stream deployment logs: {}", e);
-                }
-            }
-        });
+        stream_container_logs(
+            docker_client.clone(),
+            log.clone(),
+            process.name.clone(),
+            Some(prefix),
+        );
     }
 
     proxy_sync_trigger.notify_one();
@@ -388,16 +382,7 @@ async fn start_and_stream(
     log.send(format!("Container {} started", container_name))
         .await?;
 
-    tokio::spawn({
-        let docker_client = docker_client.clone();
-        let log = log.clone();
-        async move {
-            if let Err(e) = stream_container_logs(docker_client, log, container_name, prefix).await
-            {
-                tracing::warn!("Log stream ended with error: {:?}", e);
-            }
-        }
-    });
+    stream_container_logs(docker_client.clone(), log.clone(), container_name, prefix);
 
     Ok(())
 }
@@ -462,7 +447,7 @@ pub async fn run_release_container(
         )
         .await?;
 
-    stream_container_logs(
+    stream_container_logs_inner(
         docker_client.clone(),
         log.clone(),
         container_name.clone(),

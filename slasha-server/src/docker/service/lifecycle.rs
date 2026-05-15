@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use bollard::{
     Docker,
     query_parameters::{RemoveContainerOptionsBuilder, StopContainerOptionsBuilder},
@@ -8,7 +10,6 @@ use slasha_db::{
     repos::service::ServiceRepo,
     service::{Service, ServiceStatus},
 };
-use std::sync::Arc;
 use tokio::sync::Notify;
 
 use crate::docker::{
@@ -60,15 +61,7 @@ pub async fn restart_service(
     };
     let log = log_manager.get_logger(&log_key).await?;
 
-    tokio::spawn({
-        let docker = docker.clone();
-        let container_name = container_name.clone();
-        async move {
-            if let Err(e) = stream_container_logs(docker, log, container_name, None).await {
-                tracing::error!("Failed to stream service logs: {}", e);
-            }
-        }
-    });
+    stream_container_logs(docker.clone(), log, container_name, None);
 
     ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Running).await?;
     proxy_sync_trigger.notify_one();

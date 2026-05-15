@@ -298,7 +298,7 @@ async fn create_service_container(
     rollback.register({
         let container_name = container_name.to_string();
         let docker_client = docker_client.clone();
-        
+
         move || {
             Box::pin(async move {
                 let _ = docker_client
@@ -328,17 +328,12 @@ async fn start_and_wait_healthy(
         )
         .await?;
 
-    tokio::spawn({
-        let docker_client = docker_client.clone();
-        let log = log.clone();
-        let container_name = container_name.clone();
-
-        async move {
-            if let Err(e) = stream_container_logs(docker_client, log, container_name, None).await {
-                tracing::warn!("Log stream ended: {:?}", e);
-            }
-        }
-    });
+    stream_container_logs(
+        docker_client.clone(),
+        log.clone(),
+        container_name.clone(),
+        None,
+    );
 
     wait_until_healthy(docker_client, &container_name, &service.name, log).await
 }

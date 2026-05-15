@@ -297,9 +297,22 @@ async fn redeploy_service_handler(
         )
         .await;
 
-    tokio::spawn(async move {
-        let _ = provision_service(docker, db_pool, log_manager, app, svc, None, exposed).await;
+    log_manager.remove(&LogKey::Service {
+        app_slug: slug,
+        service_name: svc.name.clone(),
     });
+
+    ServiceRepo::update_status(&db_pool, &svc.id, ServiceStatus::Provisioning).await?;
+
+    tokio::spawn(provision_service(
+        docker,
+        db_pool,
+        log_manager,
+        app,
+        svc,
+        None,
+        exposed,
+    ));
 
     Ok(Json(serde_json::json!({ "redeploying": true })))
 }

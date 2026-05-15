@@ -7,8 +7,8 @@ pub mod scale;
 
 pub use container::{
     delete_app_volumes, delete_deployment_processes, list_deployment_processes,
-    run_release_container, start_deployment_processes, stop_deployment_processes,
-    restart_deployment_processes,
+    restart_deployment_processes, run_release_container, start_deployment_processes,
+    stop_deployment_processes,
 };
 pub use dockerfile_parser::{BuildStrategy, detect_build_strategy, parse_expose, parse_volumes};
 pub use executor::run_deployment;
