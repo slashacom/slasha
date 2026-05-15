@@ -26,8 +26,8 @@ use uuid::Uuid;
 use crate::{
     docker::{
         deployment::{
-            delete_deployment_processes, list_deployment_processes, run_deployment,
-            scale_deployment_process, start_deployment_processes, stop_deployment_processes,
+            delete_deployment_processes, list_deployment_processes, restart_deployment_processes,
+            run_deployment, scale_deployment_process, stop_deployment_processes,
         },
         logs::{LogKey, LogManager},
     },
@@ -243,24 +243,14 @@ async fn restart_deployment(
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
-    stop_deployment_processes(
+    restart_deployment_processes(
         &docker,
-        &db_pool,
-        &proxy_sync_trigger,
         &log_manager,
+        &proxy_sync_trigger,
         &app,
-        &deployment,
+        &deployment.id,
     )
     .await?;
-
-    let log_key = LogKey::Deployment {
-        app_slug: app.slug.clone(),
-        deployment_id: deployment.id.clone(),
-    };
-    let log = log_manager.get_logger(&log_key).await?;
-
-    start_deployment_processes(&docker, &db_pool, &proxy_sync_trigger, &log, &deployment.id)
-        .await?;
 
     Ok(Json(serde_json::json!({
         "restarted": true,

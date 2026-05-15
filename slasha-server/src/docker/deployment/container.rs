@@ -27,7 +27,7 @@ use crate::{
     docker::{
         DeploymentError, DeploymentResult, image_tag,
         log_driver::default_log_config,
-        logs::{Log, LogKey, LogManager, stream_container_logs},
+        logs::{Log, LogKey, LogManager, stream_container_logs, stream_container_logs_inner},
         naming::{
             app_network_name, app_volume_name, app_volume_prefix, process_container_name,
             release_container_name,
@@ -267,6 +267,42 @@ pub async fn stop_deployment_processes(
     Ok(())
 }
 
+pub async fn restart_deployment_processes(
+    docker_client: &Docker,
+    log_manager: &LogManager,
+    proxy_sync_trigger: &Arc<Notify>,
+    app: &App,
+    deployment_id: &str,
+) -> DeploymentResult<()> {
+    let processes = list_deployment_processes(docker_client, deployment_id).await?;
+    let log_key = LogKey::Deployment {
+        app_slug: app.slug.clone(),
+        deployment_id: deployment_id.to_string(),
+    };
+    let log = log_manager.get_logger(&log_key).await?;
+
+    for process in processes {
+        docker_client.restart_container(&process.name, None).await?;
+
+        let prefix = format!(
+            "[{}.{}]",
+            process.process_type.to_string().to_lowercase(),
+            process.instance_index
+        );
+
+        stream_container_logs(
+            docker_client.clone(),
+            log.clone(),
+            process.name.clone(),
+            Some(prefix),
+        );
+    }
+
+    proxy_sync_trigger.notify_one();
+
+    Ok(())
+}
+
 pub async fn delete_deployment_processes(
     docker_client: &Docker,
     proxy_sync_trigger: &Arc<Notify>,
@@ -346,16 +382,7 @@ async fn start_and_stream(
     log.send(format!("Container {} started", container_name))
         .await?;
 
-    tokio::spawn({
-        let docker_client = docker_client.clone();
-        let log = log.clone();
-        async move {
-            if let Err(e) = stream_container_logs(docker_client, log, container_name, prefix).await
-            {
-                tracing::warn!("Log stream ended with error: {:?}", e);
-            }
-        }
-    });
+    stream_container_logs(docker_client.clone(), log.clone(), container_name, prefix);
 
     Ok(())
 }
@@ -420,7 +447,7 @@ pub async fn run_release_container(
         )
         .await?;
 
-    stream_container_logs(
+    stream_container_logs_inner(
         docker_client.clone(),
         log.clone(),
         container_name.clone(),

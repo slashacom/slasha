@@ -15,6 +15,8 @@ use crate::{
 pub async fn dispatch(state: &AppState, slug: &str, cmd: ServicesCommand) -> Result<()> {
     match cmd {
         ServicesCommand::List => handle_list(state, slug).await,
+        ServicesCommand::Restart { service } => handle_restart(state, slug, &service).await,
+        ServicesCommand::Redeploy { service } => handle_redeploy(state, slug, &service).await,
         ServicesCommand::Stop { service, yes } => handle_stop(state, slug, &service, yes).await,
         ServicesCommand::Delete { service, yes } => handle_delete(state, slug, &service, yes).await,
         ServicesCommand::Logs { service, follow } => {
@@ -74,6 +76,7 @@ pub async fn handle_create(
     kind: &ServiceKind,
     name: &str,
     version: &str,
+    expose: bool,
 ) -> Result<()> {
     let default_env = fetch_default_env(state, kind).await?;
 
@@ -86,6 +89,7 @@ pub async fn handle_create(
                 "name": name,
                 "version": version,
                 "env_vars": default_env,
+                "exposed": expose,
             }),
         )
         .await?;
@@ -99,10 +103,47 @@ pub async fn handle_create(
         cli_label("Name", &svc.name);
         cli_label("Kind", svc.kind);
         cli_label("Version", &svc.version);
+        cli_label("Exposed", if expose { "Yes" } else { "No" });
         cli_info(format!(
             "\nFollow service logs: slasha services logs --app {} --service {} --follow",
             slug, svc.name
         ));
+    })?;
+
+    Ok(())
+}
+
+pub async fn handle_restart(state: &AppState, slug: &str, service: &str) -> Result<()> {
+    let service_id = resolve_service_id(state, slug, service).await?;
+
+    state
+        .api_client
+        .post(
+            &format!("/api/apps/{}/services/{}/restart", slug, service_id),
+            &json!({}),
+        )
+        .await?;
+
+    output(state.output_mode, &json!({ "ok": true }), || {
+        cli_success(format!("Service {} restart triggered.", service));
+    })?;
+
+    Ok(())
+}
+
+pub async fn handle_redeploy(state: &AppState, slug: &str, service: &str) -> Result<()> {
+    let service_id = resolve_service_id(state, slug, service).await?;
+
+    state
+        .api_client
+        .post(
+            &format!("/api/apps/{}/services/{}/redeploy", slug, service_id),
+            &json!({}),
+        )
+        .await?;
+
+    output(state.output_mode, &json!({ "ok": true }), || {
+        cli_success(format!("Service {} redeploy triggered.", service));
     })?;
 
     Ok(())

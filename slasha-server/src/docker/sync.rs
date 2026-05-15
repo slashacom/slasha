@@ -51,9 +51,12 @@ pub async fn startup_container_sync(
                         };
                         let log = runtime.log_manager.get_logger(&log_key).await?;
                         let docker_client = docker_client.clone();
-                        tokio::spawn(async move {
-                            let _ = stream_container_logs(docker_client, log, name, None).await;
-                        });
+                        stream_container_logs(
+                            docker_client.clone(),
+                            log.clone(),
+                            name.clone(),
+                            None,
+                        );
                     }
                 }
                 Err(_) => {
@@ -97,18 +100,12 @@ pub async fn startup_container_sync(
                     container.process_type.to_string().to_lowercase(),
                     container.instance_index
                 );
-                tokio::spawn({
-                    let docker_client = docker_client.clone();
-                    let log = log.clone();
-                    async move {
-                        if let Err(e) =
-                            stream_container_logs(docker_client, log, container.name, Some(prefix))
-                                .await
-                        {
-                            tracing::warn!("Log stream ended with error: {:?}", e);
-                        }
-                    }
-                });
+                stream_container_logs(
+                    docker_client.clone(),
+                    log.clone(),
+                    container.name,
+                    Some(prefix),
+                );
             }
         }
     }

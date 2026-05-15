@@ -72,7 +72,8 @@ pub async fn provision_service(
     log_manager: Arc<LogManager>,
     app: App,
     service: Service,
-    env_vars: HashMap<String, String>,
+    initial_env: Option<HashMap<String, String>>,
+    exposed: bool,
 ) -> DeploymentResult<()> {
     let log_key = LogKey::Service {
         app_slug: app.slug.clone(),
@@ -86,7 +87,8 @@ pub async fn provision_service(
         &db_pool,
         &app,
         &service,
-        env_vars,
+        initial_env,
+        exposed,
         &log,
         &mut rollback,
     )
@@ -109,10 +111,17 @@ async fn provision_inner(
     db_pool: &DbPool,
     app: &App,
     service: &Service,
-    env_vars: HashMap<String, String>,
+    initial_env: Option<HashMap<String, String>>,
+    exposed: bool,
     log: &Log,
     rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
+    log.send(format!(
+        "Provisioning service {} ({})",
+        service.name, service.kind
+    ))
+    .await?;
+
     let mut stream = docker.create_image(
         Some(CreateImageOptions {
             from_image: Some(service.kind.docker_image(&service.version)),
@@ -134,7 +143,7 @@ async fn provision_inner(
                 }
                 _ => status,
             };
-            let _ = log.send(msg).await;
+            log.send(msg).await?;
         }
     }
 
@@ -146,51 +155,41 @@ async fn provision_inner(
         })
         .await?;
 
-    rollback.register({
-        let docker = docker.clone();
-        let volume_name = volume_name.clone();
-        move || {
-            Box::pin(async move {
-                let _ = docker
-                    .remove_volume(
-                        &volume_name,
-                        None::<bollard::query_parameters::RemoveVolumeOptions>,
-                    )
-                    .await;
+    let env_vars = if let Some(env) = initial_env {
+        let now = Utc::now().naive_utc();
+        let vars: Vec<ServiceEnvVar> = env
+            .into_iter()
+            .map(|(key, value)| ServiceEnvVar {
+                id: uuid::Uuid::new_v4().to_string(),
+                service_id: service.id.clone(),
+                key,
+                value,
+                created_at: now,
+                updated_at: now,
             })
-        }
-    });
+            .collect();
 
-    let now = Utc::now().naive_utc();
-    let initial_vars: Vec<ServiceEnvVar> = env_vars
-        .into_iter()
-        .map(|(key, value)| ServiceEnvVar {
-            id: uuid::Uuid::new_v4().to_string(),
-            service_id: service.id.clone(),
-            key,
-            value,
-            created_at: now,
-            updated_at: now,
-        })
-        .collect();
+        ServiceRepo::set_env_vars(db_pool, &service.id, vars.clone()).await?;
+        vars
+    } else {
+        ServiceRepo::get_env_vars(db_pool, &service.id).await?
+    };
 
-    ServiceRepo::insert_env_vars(db_pool, initial_vars.clone()).await?;
+    let resolved_vars = resolve_env_vars(env_vars, service)?;
 
-    let resolved_vars = resolve_env_vars(initial_vars, service)?;
-
-    create_service_container(docker, service, app, &resolved_vars, false, Some(rollback)).await?;
+    create_service_container(docker, service, app, &resolved_vars, exposed, rollback).await?;
     start_and_wait_healthy(docker, service, log).await?;
     ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Running).await?;
     Ok(())
 }
 
-pub async fn create_service_container(
+async fn create_service_container(
     docker_client: &Docker,
     service: &Service,
     app: &App,
     resolved_env: &HashMap<String, String>,
     exposed: bool,
-    rollback: Option<&mut Rollback>,
+    rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
     let image_name = service.kind.docker_image(&service.version);
     let container_name = service_container_name(&service.id);
@@ -296,11 +295,11 @@ pub async fn create_service_container(
         )
         .await?;
 
-    if let Some(rb) = rollback {
+    rollback.register({
         let container_name = container_name.to_string();
         let docker_client = docker_client.clone();
 
-        rb.register(move || {
+        move || {
             Box::pin(async move {
                 let _ = docker_client
                     .remove_container(
@@ -309,13 +308,13 @@ pub async fn create_service_container(
                     )
                     .await;
             })
-        });
-    }
+        }
+    });
 
     Ok(())
 }
 
-pub async fn start_and_wait_healthy(
+async fn start_and_wait_healthy(
     docker_client: &Docker,
     service: &Service,
     log: &Log,
@@ -329,17 +328,12 @@ pub async fn start_and_wait_healthy(
         )
         .await?;
 
-    tokio::spawn({
-        let docker_client = docker_client.clone();
-        let log = log.clone();
-        let container_name = container_name.clone();
-
-        async move {
-            if let Err(e) = stream_container_logs(docker_client, log, container_name, None).await {
-                tracing::warn!("Log stream ended: {:?}", e);
-            }
-        }
-    });
+    stream_container_logs(
+        docker_client.clone(),
+        log.clone(),
+        container_name.clone(),
+        None,
+    );
 
     wait_until_healthy(docker_client, &container_name, &service.name, log).await
 }
