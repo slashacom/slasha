@@ -7,8 +7,8 @@ use std::{
 use bollard::{
     Docker,
     models::{
-        ContainerCreateBody, EndpointSettings, HealthConfig, HealthStatusEnum, HostConfig, Mount,
-        MountTypeEnum, NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum,
+        EndpointSettings, HealthConfig, HealthStatusEnum, HostConfig, Mount, MountTypeEnum,
+        NetworkingConfig, PortBinding, ProgressDetail, RestartPolicy, RestartPolicyNameEnum,
         VolumeCreateRequest,
     },
     query_parameters::{
@@ -35,24 +35,16 @@ use crate::docker::{
     rollback::Rollback,
 };
 
-#[derive(Debug, Clone)]
-pub struct ExposureSpec {
-    pub host_port: u16,
-    pub bind_addr: String,
-}
-
-pub fn resolve_service_env(
+pub fn resolve_env_vars(
     service_vars: Vec<ServiceEnvVar>,
     service: &Service,
 ) -> DeploymentResult<HashMap<String, String>> {
-    let sorted_vars: Vec<ServiceEnvVar> = topo_sort_vars(service_vars, |v| &v.key, |v| &v.value)?;
+    let sorted = topo_sort_vars(service_vars, |v| &v.key, |v| &v.value)?;
+    let mut resolved: HashMap<String, String> = HashMap::with_capacity(sorted.len());
 
-    let mut resolved: HashMap<String, String> = HashMap::with_capacity(sorted_vars.len());
-
-    for var in sorted_vars {
+    for var in sorted {
         let value = resolve_env_value(&var.value, |source, key| match source {
             RefSource::Own => Ok(resolved.get(key).unwrap().clone()),
-
             RefSource::System => match key {
                 "service_container_name" => Ok(service_container_name(&service.id)),
                 "service_id" => Ok(service.id.clone()),
@@ -64,12 +56,10 @@ pub fn resolve_service_env(
                     key
                 ))),
             },
-
             RefSource::Service(_) => Err(DeploymentError::EnvResolveFailed(
                 "Service references not supported in this context".to_string(),
             )),
         })?;
-
         resolved.insert(var.key.clone(), value);
     }
 
@@ -77,7 +67,7 @@ pub fn resolve_service_env(
 }
 
 pub async fn provision_service(
-    docker_client: Docker,
+    docker: Docker,
     db_pool: DbPool,
     log_manager: Arc<LogManager>,
     app: App,
@@ -91,8 +81,8 @@ pub async fn provision_service(
     let log = log_manager.get_logger(&log_key).await?;
     let mut rollback = Rollback::new();
 
-    if let Err(e) = provision_service_inner(
-        &docker_client,
+    if let Err(e) = provision_inner(
+        &docker,
         &db_pool,
         &app,
         &service,
@@ -104,22 +94,18 @@ pub async fn provision_service(
     {
         tracing::error!("Service provision failed: {:?}", e);
         let _ = log.send(format!("Service provision failed: {}", e)).await;
-
         rollback.execute().await;
-
         let _ = ServiceRepo::update_status(&db_pool, &service.id, ServiceStatus::Failed).await;
         log_manager.remove(&log_key);
-
         return Err(e);
     }
 
     rollback.disarm();
-
     Ok(())
 }
 
-async fn provision_service_inner(
-    docker_client: &Docker,
+async fn provision_inner(
+    docker: &Docker,
     db_pool: &DbPool,
     app: &App,
     service: &Service,
@@ -127,35 +113,45 @@ async fn provision_service_inner(
     log: &Log,
     rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
-    let image_name = service.kind.docker_image(&service.version);
-
-    let mut image_stream = docker_client.create_image(
+    let mut stream = docker.create_image(
         Some(CreateImageOptions {
-            from_image: Some(image_name.clone()),
+            from_image: Some(service.kind.docker_image(&service.version)),
             ..Default::default()
         }),
         None,
         None,
     );
 
-    while let Some(result) = image_stream.next().await {
-        result?;
+    while let Some(result) = stream.next().await {
+        let info = result?;
+        if let Some(status) = info.status {
+            let msg = match info.progress_detail {
+                Some(ProgressDetail {
+                    current: Some(current),
+                    total: Some(total),
+                }) => {
+                    format!("{}: {}/{}", status, current, total)
+                }
+                _ => status,
+            };
+            let _ = log.send(msg).await;
+        }
     }
 
     let volume_name = service_volume_name(&service.id);
-    let vol_config = VolumeCreateRequest {
-        name: Some(volume_name.clone()),
-        ..Default::default()
-    };
-    docker_client.create_volume(vol_config).await?;
+    docker
+        .create_volume(VolumeCreateRequest {
+            name: Some(volume_name.clone()),
+            ..Default::default()
+        })
+        .await?;
 
     rollback.register({
-        let docker_client = docker_client.clone();
+        let docker = docker.clone();
         let volume_name = volume_name.clone();
-
         move || {
             Box::pin(async move {
-                let _ = docker_client
+                let _ = docker
                     .remove_volume(
                         &volume_name,
                         None::<bollard::query_parameters::RemoveVolumeOptions>,
@@ -178,55 +174,28 @@ async fn provision_service_inner(
         })
         .collect();
 
-    let resolved_map = resolve_service_env(initial_vars.clone(), service)?;
+    ServiceRepo::insert_env_vars(db_pool, initial_vars.clone()).await?;
 
-    let new_vars: Vec<ServiceEnvVar> = resolved_map
-        .clone()
-        .into_iter()
-        .map(|(key, value)| {
-            let id = initial_vars
-                .iter()
-                .find(|v| v.key == key)
-                .unwrap()
-                .id
-                .clone();
-            ServiceEnvVar {
-                id,
-                service_id: service.id.clone(),
-                key,
-                value,
-                created_at: now,
-                updated_at: now,
-            }
-        })
-        .collect();
+    let resolved_vars = resolve_env_vars(initial_vars, service)?;
 
-    ServiceRepo::insert_env_vars(db_pool, new_vars).await?;
-
-    let body = build_service_container_body(service, app, &resolved_map, None);
-
-    create_start_and_wait_healthy(
-        docker_client,
-        db_pool,
-        service,
-        body,
-        log,
-        Some(rollback),
-    )
-    .await
+    create_service_container(docker, service, app, &resolved_vars, false, Some(rollback)).await?;
+    start_and_wait_healthy(docker, service, log).await?;
+    ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Running).await?;
+    Ok(())
 }
 
-pub(crate) fn build_service_container_body(
+pub async fn create_service_container(
+    docker_client: &Docker,
     service: &Service,
     app: &App,
     resolved_env: &HashMap<String, String>,
-    exposure: Option<&ExposureSpec>,
-) -> ContainerCreateBody {
+    exposed: bool,
+    rollback: Option<&mut Rollback>,
+) -> DeploymentResult<()> {
     let image_name = service.kind.docker_image(&service.version);
     let container_name = service_container_name(&service.id);
     let network_name = app_network_name(&app.id);
     let volume_name = service_volume_name(&service.id);
-    let mount_target = service.kind.volume_mount_path();
 
     let mut endpoints_config = HashMap::new();
     endpoints_config.insert(
@@ -246,116 +215,112 @@ pub(crate) fn build_service_container_body(
         .iter()
         .map(|(k, v)| format!("{}={}", k, v))
         .collect();
-
     let overrides = service.resources.clone().unwrap_or_default();
 
-    let port_bindings = exposure.map(|spec| {
+    let port_bindings = if exposed {
         let mut bindings = HashMap::new();
+        // `host_port: None` tells Docker to pick a random ephemeral port.
+        // The actual port is read back via `inspect_container` in the API layer.
         bindings.insert(
             format!("{}/tcp", service.kind.container_port()),
             Some(vec![PortBinding {
-                host_ip: Some(spec.bind_addr.clone()),
-                host_port: Some(spec.host_port.to_string()),
+                host_ip: Some("0.0.0.0".to_string()),
+                host_port: None,
             }]),
         );
-        bindings
-    });
-
-    let host_config = HostConfig {
-        restart_policy: Some(RestartPolicy {
-            name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
-            maximum_retry_count: None,
-        }),
-        mounts: Some(vec![Mount {
-            typ: Some(MountTypeEnum::VOLUME),
-            source: Some(volume_name),
-            target: Some(mount_target.to_string()),
-            ..Default::default()
-        }]),
-        log_config: Some(default_log_config()),
-        memory: Some(
-            overrides
-                .memory_bytes
-                .unwrap_or_else(|| service.kind.default_memory_bytes()),
-        ),
-        nano_cpus: Some(
-            overrides
-                .nano_cpus
-                .unwrap_or_else(|| service.kind.default_nano_cpus()),
-        ),
-        pids_limit: Some(
-            overrides
-                .pids_limit
-                .unwrap_or_else(|| service.kind.default_pids_limit()),
-        ),
-        shm_size: Some(
-            overrides
-                .shm_size
-                .unwrap_or_else(|| service.kind.default_shm_size()),
-        ),
-        port_bindings,
-        ..Default::default()
-    };
-
-    let healthcheck = HealthConfig {
-        test: Some(service.kind.health_test()),
-        interval: Some(Duration::from_secs(5).as_nanos() as i64),
-        timeout: Some(Duration::from_secs(5).as_nanos() as i64),
-        retries: Some(10),
-        start_period: Some(Duration::from_secs(60).as_nanos() as i64),
-        start_interval: Some(Duration::from_secs(2).as_nanos() as i64),
-    };
-
-    ContainerCreateBody {
-        image: Some(image_name),
-        hostname: Some(container_name),
-        labels: Some(labels),
-        host_config: Some(host_config),
-        networking_config: Some(NetworkingConfig {
-            endpoints_config: Some(endpoints_config),
-        }),
-        env: Some(env),
-        healthcheck: Some(healthcheck),
-        cmd: service.kind.command(),
-        ..Default::default()
-    }
-}
-
-pub(crate) async fn create_start_and_wait_healthy(
-    docker_client: &Docker,
-    db_pool: &DbPool,
-    service: &Service,
-    body: ContainerCreateBody,
-    log: &Log,
-    rollback: Option<&mut Rollback>,
-) -> DeploymentResult<()> {
-    let container_name = service_container_name(&service.id);
-
-    let create_opts = CreateContainerOptions {
-        name: Some(container_name.clone()),
-        ..Default::default()
+        Some(bindings)
+    } else {
+        None
     };
 
     docker_client
-        .create_container(Some(create_opts), body)
+        .create_container(
+            Some(CreateContainerOptions {
+                name: Some(container_name.clone()),
+                ..Default::default()
+            }),
+            bollard::models::ContainerCreateBody {
+                image: Some(image_name),
+                hostname: Some(container_name.clone()),
+                labels: Some(labels),
+                env: Some(env),
+                cmd: service.kind.command(),
+                healthcheck: Some(HealthConfig {
+                    test: Some(service.kind.health_test()),
+                    interval: Some(Duration::from_secs(5).as_nanos() as i64),
+                    timeout: Some(Duration::from_secs(5).as_nanos() as i64),
+                    retries: Some(10),
+                    start_period: Some(Duration::from_secs(60).as_nanos() as i64),
+                    start_interval: Some(Duration::from_secs(2).as_nanos() as i64),
+                }),
+                networking_config: Some(NetworkingConfig {
+                    endpoints_config: Some(endpoints_config),
+                }),
+                host_config: Some(HostConfig {
+                    restart_policy: Some(RestartPolicy {
+                        name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                        maximum_retry_count: None,
+                    }),
+                    mounts: Some(vec![Mount {
+                        typ: Some(MountTypeEnum::VOLUME),
+                        source: Some(volume_name),
+                        target: Some(service.kind.volume_mount_path().to_string()),
+                        ..Default::default()
+                    }]),
+                    log_config: Some(default_log_config()),
+                    memory: Some(
+                        overrides
+                            .memory_bytes
+                            .unwrap_or_else(|| service.kind.default_memory_bytes()),
+                    ),
+                    nano_cpus: Some(
+                        overrides
+                            .nano_cpus
+                            .unwrap_or_else(|| service.kind.default_nano_cpus()),
+                    ),
+                    pids_limit: Some(
+                        overrides
+                            .pids_limit
+                            .unwrap_or_else(|| service.kind.default_pids_limit()),
+                    ),
+                    shm_size: Some(
+                        overrides
+                            .shm_size
+                            .unwrap_or_else(|| service.kind.default_shm_size()),
+                    ),
+                    port_bindings,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
         .await?;
 
     if let Some(rb) = rollback {
-        rb.register({
-            let docker_client = docker_client.clone();
-            let container_name = container_name.clone();
-            move || {
-                Box::pin(async move {
-                    let _ = docker_client
-                        .remove_container(
-                            &container_name,
-                            Some(RemoveContainerOptionsBuilder::new().force(true).build()),
-                        )
-                        .await;
-                })
-            }
+        let container_name = container_name.to_string();
+        let docker_client = docker_client.clone();
+
+        rb.register(move || {
+            Box::pin(async move {
+                let _ = docker_client
+                    .remove_container(
+                        &container_name,
+                        Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+                    )
+                    .await;
+            })
         });
     }
+
+    Ok(())
+}
+
+pub async fn start_and_wait_healthy(
+    docker_client: &Docker,
+    service: &Service,
+    log: &Log,
+) -> DeploymentResult<()> {
+    let container_name = service_container_name(&service.id);
 
     docker_client
         .start_container(
@@ -366,41 +331,36 @@ pub(crate) async fn create_start_and_wait_healthy(
 
     tokio::spawn({
         let docker_client = docker_client.clone();
-        let container_name = container_name.clone();
         let log = log.clone();
+        let container_name = container_name.clone();
 
         async move {
             if let Err(e) = stream_container_logs(docker_client, log, container_name, None).await {
-                tracing::warn!("service log stream ended with error: {:?}", e);
+                tracing::warn!("Log stream ended: {:?}", e);
             }
         }
     });
 
-    wait_until_healthy(docker_client, &container_name, &service.name, log).await?;
-
-    ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Running).await?;
-
-    Ok(())
+    wait_until_healthy(docker_client, &container_name, &service.name, log).await
 }
 
 const HEALTHCHECK_TIMEOUT_SECS: u64 = 180;
 
 async fn wait_until_healthy(
-    docker_client: &Docker,
+    docker: &Docker,
     container_name: &str,
     service_name: &str,
     log: &Log,
 ) -> DeploymentResult<()> {
     let _ = log
-        .send(format!("Waiting for {} to report healthy...", service_name))
+        .send(format!("Waiting for {} to become healthy...", service_name))
         .await;
 
     let deadline = Instant::now() + Duration::from_secs(HEALTHCHECK_TIMEOUT_SECS);
     let mut last_status: Option<HealthStatusEnum> = None;
 
     loop {
-        let inspect = docker_client.inspect_container(container_name, None).await?;
-
+        let inspect = docker.inspect_container(container_name, None).await?;
         let status = inspect
             .state
             .as_ref()

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -74,12 +76,7 @@ async fn update_env_vars(
 
     let new_vars = ServiceRepo::set_env_vars(&storage.db_pool, &service_id, new_vars).await?;
 
-    let env_map: std::collections::HashMap<String, String> = new_vars
-        .iter()
-        .map(|v| (v.key.clone(), v.value.clone()))
-        .collect();
-
     Ok(Json(serde_json::json!({
-        "env_vars": env_map,
+        "env_vars": new_vars.into_iter().map(|v| (v.key, v.value)).collect::<HashMap<String, String>>(),
     })))
 }

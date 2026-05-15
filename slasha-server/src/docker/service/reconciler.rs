@@ -43,11 +43,7 @@ async fn reconcile_running_service(docker_client: &Docker, db_pool: &DbPool, svc
 
     let next_status = match docker_client.inspect_container(&name, None).await {
         Ok(info) => {
-            let running = info
-                .state
-                .as_ref()
-                .and_then(|s| s.running)
-                .unwrap_or(false);
+            let running = info.state.as_ref().and_then(|s| s.running).unwrap_or(false);
 
             if running {
                 return;

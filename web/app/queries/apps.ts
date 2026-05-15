@@ -73,8 +73,6 @@ export function getScalesOptions(appSlug: string) {
   });
 }
 
-
-
 export function getAppDomainsOptions(appSlug: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'domains'],

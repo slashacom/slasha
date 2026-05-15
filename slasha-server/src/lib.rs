@@ -113,10 +113,7 @@ pub async fn start_server() -> anyhow::Result<()> {
     )
     .await?;
 
-    spawn_service_reconciler(
-        state.clients.docker.clone(),
-        state.storage.db_pool.clone(),
-    );
+    spawn_service_reconciler(state.clients.docker.clone(), state.storage.db_pool.clone());
 
     state.runtime.proxy_sync_trigger.notify_one();
 

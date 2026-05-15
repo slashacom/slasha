@@ -81,9 +81,9 @@ diesel::table! {
         name -> Text,
         version -> Text,
         status -> Text,
+        resources -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
-        resources -> Nullable<Text>,
     }
 }
 

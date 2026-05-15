@@ -382,7 +382,9 @@ function DeploymentRow({
   return (
     <>
       <div
-        onClick={() => navigate(`/apps/${appSlug}/deployments/${deployment.id}`)}
+        onClick={() =>
+          navigate(`/apps/${appSlug}/deployments/${deployment.id}`)
+        }
         className="group grid cursor-pointer grid-cols-[1fr_auto] items-center gap-4 px-8 py-4 transition-colors hover:bg-white/[0.02]"
       >
         <VStack space={1.5}>
@@ -421,7 +423,8 @@ function DeploymentRow({
               isLoading={stopDeployment.isPending}
             />
           )}
-          {deployment.status === 'Stopped' && (
+          {(deployment.status === 'Running' ||
+            deployment.status === 'Stopped') && (
             <Button
               label="Restart"
               icon={<Play className="size-3.5" />}

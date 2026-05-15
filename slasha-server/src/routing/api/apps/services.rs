@@ -55,12 +55,6 @@ struct CreateServiceReq {
     resources: Option<ServiceResources>,
 }
 
-#[derive(Deserialize)]
-struct ExposeServiceReq {
-    host_port: u16,
-    bind_addr: String,
-}
-
 #[derive(serde::Serialize)]
 struct ServiceExposure {
     host_port: u16,
@@ -197,19 +191,7 @@ async fn expose_service_handler(
     State(log_manager): State<Arc<LogManager>>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
-    Json(payload): Json<ExposeServiceReq>,
 ) -> HttpResult<impl IntoResponse> {
-    if payload.host_port < 1024 {
-        return Err(HttpError::bad_request(
-            "Host port must be 1024 or higher (ports below 1024 are privileged)",
-        ));
-    }
-    if payload.bind_addr != "127.0.0.1" && payload.bind_addr != "0.0.0.0" {
-        return Err(HttpError::bad_request(
-            "Bind address must be 127.0.0.1 or 0.0.0.0",
-        ));
-    }
-
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
@@ -219,19 +201,11 @@ async fn expose_service_handler(
         ));
     }
 
-    let host_port = payload.host_port;
-    let bind_addr = payload.bind_addr.clone();
-
     tokio::spawn(async move {
-        let _ =
-            expose_service(&docker, &db_pool, &log_manager, &app, &svc, host_port, bind_addr).await;
+        let _ = expose_service(&docker, &db_pool, &log_manager, &app, &svc).await;
     });
 
-    Ok(Json(serde_json::json!({
-        "exposing": true,
-        "host_port": payload.host_port,
-        "bind_addr": payload.bind_addr,
-    })))
+    Ok(Json(serde_json::json!({ "exposing": true })))
 }
 
 async fn unexpose_service_handler(
