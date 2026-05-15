@@ -23,15 +23,6 @@ export interface ServiceKindMeta {
   default_resources: ServiceKindDefaultResources;
 }
 
-export interface ServiceExposure {
-  host_port: number;
-  bind_addr: string;
-}
-
-export type ServiceWithExposure = Service & {
-  exposure: ServiceExposure | null;
-};
-
 export function getServiceKindsOptions() {
   return queryOptions({
     queryKey: ['services', 'kinds'],
@@ -42,8 +33,7 @@ export function getServiceKindsOptions() {
 export function getAppServicesOptions(appSlug: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'services'],
-    queryFn: () =>
-      httpGet<{ services: ServiceWithExposure[] }>(`apps/${appSlug}/services`),
+    queryFn: () => httpGet<{ services: Service[] }>(`apps/${appSlug}/services`),
   });
 }
 
@@ -55,7 +45,6 @@ export function useProvisionService() {
       name: string;
       version: string;
       envVars: Record<string, string>;
-      exposed?: boolean;
       resources?: ResourcesPayload | null;
     }) =>
       httpPost<{ service: Service }>(`apps/${data.appSlug}/services`, {
@@ -63,7 +52,6 @@ export function useProvisionService() {
         name: data.name,
         version: data.version,
         env_vars: data.envVars,
-        exposed: data.exposed ?? false,
         resources: data.resources ?? null,
       }),
   });
@@ -104,25 +92,6 @@ export function useDeleteService() {
     mutationFn: (data: { appSlug: string; serviceId: string }) =>
       httpDelete<{ deleted: boolean }>(
         `apps/${data.appSlug}/services/${data.serviceId}`
-      ),
-  });
-}
-
-export function useExposeService() {
-  return useMutation({
-    mutationFn: (data: { appSlug: string; serviceId: string }) =>
-      httpPost<{ exposing: boolean }>(
-        `apps/${data.appSlug}/services/${data.serviceId}/expose`,
-        {}
-      ),
-  });
-}
-
-export function useUnexposeService() {
-  return useMutation({
-    mutationFn: (data: { appSlug: string; serviceId: string }) =>
-      httpDelete<{ unexposing: boolean }>(
-        `apps/${data.appSlug}/services/${data.serviceId}/expose`
       ),
   });
 }

@@ -9,6 +9,7 @@ pub mod proxy;
 pub mod routing;
 pub mod ssh;
 pub mod state;
+pub mod tunnel;
 pub mod utils;
 
 use std::net::SocketAddr;
