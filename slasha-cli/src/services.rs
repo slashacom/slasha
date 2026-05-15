@@ -76,7 +76,6 @@ pub async fn handle_create(
     kind: &ServiceKind,
     name: &str,
     version: &str,
-    expose: bool,
 ) -> Result<()> {
     let default_env = fetch_default_env(state, kind).await?;
 
@@ -89,7 +88,6 @@ pub async fn handle_create(
                 "name": name,
                 "version": version,
                 "env_vars": default_env,
-                "exposed": expose,
             }),
         )
         .await?;
@@ -103,9 +101,12 @@ pub async fn handle_create(
         cli_label("Name", &svc.name);
         cli_label("Kind", svc.kind);
         cli_label("Version", &svc.version);
-        cli_label("Exposed", if expose { "Yes" } else { "No" });
         cli_info(format!(
-            "\nFollow service logs: slasha services logs --app {} --service {} --follow",
+            "\nFollow service logs: slasha services logs {} --follow",
+            svc.name
+        ));
+        cli_info(format!(
+            "Connect locally:    slasha proxy --app {} {}",
             slug, svc.name
         ));
     })?;

@@ -8,7 +8,7 @@ use bollard::{
     Docker,
     models::{
         EndpointSettings, HealthConfig, HealthStatusEnum, HostConfig, Mount, MountTypeEnum,
-        NetworkingConfig, PortBinding, ProgressDetail, RestartPolicy, RestartPolicyNameEnum,
+        NetworkingConfig, ProgressDetail, RestartPolicy, RestartPolicyNameEnum,
         VolumeCreateRequest,
     },
     query_parameters::{
@@ -73,7 +73,6 @@ pub async fn provision_service(
     app: App,
     service: Service,
     initial_env: Option<HashMap<String, String>>,
-    exposed: bool,
 ) -> DeploymentResult<()> {
     let log_key = LogKey::Service {
         app_slug: app.slug.clone(),
@@ -88,7 +87,6 @@ pub async fn provision_service(
         &app,
         &service,
         initial_env,
-        exposed,
         &log,
         &mut rollback,
     )
@@ -112,7 +110,6 @@ async fn provision_inner(
     app: &App,
     service: &Service,
     initial_env: Option<HashMap<String, String>>,
-    exposed: bool,
     log: &Log,
     rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
@@ -177,7 +174,7 @@ async fn provision_inner(
 
     let resolved_vars = resolve_env_vars(env_vars, service)?;
 
-    create_service_container(docker, service, app, &resolved_vars, exposed, rollback).await?;
+    create_service_container(docker, service, app, &resolved_vars, rollback).await?;
     start_and_wait_healthy(docker, service, log).await?;
     ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Running).await?;
     Ok(())
@@ -188,7 +185,6 @@ async fn create_service_container(
     service: &Service,
     app: &App,
     resolved_env: &HashMap<String, String>,
-    exposed: bool,
     rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
     let image_name = service.kind.docker_image(&service.version);
@@ -215,22 +211,6 @@ async fn create_service_container(
         .map(|(k, v)| format!("{}={}", k, v))
         .collect();
     let overrides = service.resources.clone().unwrap_or_default();
-
-    let port_bindings = if exposed {
-        let mut bindings = HashMap::new();
-        // `host_port: None` tells Docker to pick a random ephemeral port.
-        // The actual port is read back via `inspect_container` in the API layer.
-        bindings.insert(
-            format!("{}/tcp", service.kind.container_port()),
-            Some(vec![PortBinding {
-                host_ip: None,
-                host_port: None,
-            }]),
-        );
-        Some(bindings)
-    } else {
-        None
-    };
 
     docker_client
         .create_container(
@@ -287,7 +267,6 @@ async fn create_service_container(
                             .shm_size
                             .unwrap_or_else(|| service.kind.default_shm_size()),
                     ),
-                    port_bindings,
                     ..Default::default()
                 }),
                 ..Default::default()

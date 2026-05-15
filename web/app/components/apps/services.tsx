@@ -2,9 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Database,
-  Play,
   Square,
-  Clock,
   AlertCircle,
   CheckCircle2,
   XCircle,
@@ -16,8 +14,9 @@ import {
   Settings,
   ChevronDown,
   ChevronRight,
-  Globe,
-  GlobeLock,
+  Plug,
+  Copy,
+  Check,
   RotateCcw,
   RefreshCw,
 } from 'lucide-react';
@@ -28,13 +27,10 @@ import {
   useProvisionService,
   useStopService,
   useDeleteService,
-  useExposeService,
-  useUnexposeService,
   useRestartService,
   useRedeployService,
   type ResourcesPayload,
   type ServiceKindDefaultResources,
-  type ServiceWithExposure,
 } from '~/queries/services';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
@@ -198,19 +194,18 @@ function ServiceRow({
   appSlug,
   onShowLogs,
 }: {
-  service: ServiceWithExposure;
+  service: Service;
   appSlug: string;
   onShowLogs: () => void;
 }) {
   const queryClient = useQueryClient();
   const stopService = useStopService();
   const deleteService = useDeleteService();
-  const unexposeService = useUnexposeService();
   const restartService = useRestartService();
   const redeployService = useRedeployService();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
-  const [showExposeModal, setShowExposeModal] = useState(false);
+  const [showConnectModal, setShowConnectModal] = useState(false);
 
   const handleStop = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -239,22 +234,6 @@ function ServiceRow({
       setShowDeleteConfirm(false);
     } catch (e) {
       toast.error('Failed to delete service: ' + e);
-    }
-  };
-
-  const handleUnexpose = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await unexposeService.mutateAsync({
-        appSlug,
-        serviceId: service.id,
-      });
-      toast.success('Removing host port binding. Service will restart.');
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'services'],
-      });
-    } catch (err) {
-      toast.error('Failed to unexpose service: ' + err);
     }
   };
 
@@ -310,12 +289,6 @@ function ServiceRow({
             <span className="text-[11px] text-text-tertiary">
               Created {formatRelativeTime(service.created_at)}
             </span>
-            {service.exposure && (
-              <span className="text-[11px] inline-flex items-center gap-1 text-sky-400 bg-sky-400/10 px-1.5 py-0.5 rounded">
-                <Globe className="size-3" />
-                {service.exposure.bind_addr}:{service.exposure.host_port}
-              </span>
-            )}
           </HStack>
         </VStack>
 
@@ -328,28 +301,17 @@ function ServiceRow({
             color="neutral"
             onClick={onShowLogs}
           />
-          {service.status === 'Running' && !service.exposure && (
+          {service.status === 'Running' && (
             <Button
-              label="Expose"
-              icon={<Globe className="size-3.5" />}
+              label="Connect"
+              icon={<Plug className="size-3.5" />}
               variant="ghost"
               size="sm"
               color="neutral"
               onClick={(e) => {
                 e.stopPropagation();
-                setShowExposeModal(true);
+                setShowConnectModal(true);
               }}
-            />
-          )}
-          {service.status === 'Running' && service.exposure && (
-            <Button
-              label="Unexpose"
-              icon={<GlobeLock className="size-3.5" />}
-              variant="ghost"
-              size="sm"
-              color="neutral"
-              onClick={handleUnexpose}
-              isLoading={unexposeService.isPending}
             />
           )}
           {(service.status === 'Running' || service.status === 'Stopped') && (
@@ -429,11 +391,11 @@ function ServiceRow({
         />
       )}
 
-      {showExposeModal && (
-        <ExposeServiceModal
+      {showConnectModal && (
+        <ConnectModal
           appSlug={appSlug}
           service={service}
-          onClose={() => setShowExposeModal(false)}
+          onClose={() => setShowConnectModal(false)}
         />
       )}
     </>
@@ -567,7 +529,6 @@ function ProvisionServiceModal({
   const [kindName, setKindName] = useState<ServiceKind | ''>('');
   const [version, setVersion] = useState<string>('');
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
-  const [exposed, setExposed] = useState(false);
 
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [memoryMb, setMemoryMb] = useState('');
@@ -618,7 +579,6 @@ function ProvisionServiceModal({
         name: name.trim(),
         version,
         envVars,
-        exposed,
         resources: payload,
       });
       queryClient.invalidateQueries({
@@ -683,35 +643,6 @@ function ProvisionServiceModal({
                   </option>
                 ))}
               </select>
-            </VStack>
-          </HStack>
-
-          <HStack
-            alignItems="center"
-            space={2}
-            className="cursor-pointer select-none"
-            onClick={() => setExposed(!exposed)}
-          >
-            <div
-              className={cn(
-                'flex h-4 w-7 shrink-0 items-center rounded-full px-0.5 transition-colors duration-200 ease-in-out',
-                exposed ? 'bg-emerald-500' : 'bg-surface-hover'
-              )}
-            >
-              <div
-                className={cn(
-                  'h-3 w-3 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out',
-                  exposed ? 'translate-x-3' : 'translate-x-0'
-                )}
-              />
-            </div>
-            <VStack space={0.5}>
-              <span className="text-xs font-medium text-text">
-                Expose Service
-              </span>
-              <p className="text-[10px] text-text-tertiary">
-                Assign an ephemeral host port for external access
-              </p>
             </VStack>
           </HStack>
 
@@ -869,31 +800,25 @@ function AdvancedResourcesSection({
   );
 }
 
-function ExposeServiceModal({
+function ConnectModal({
   appSlug,
   service,
   onClose,
 }: {
   appSlug: string;
-  service: ServiceWithExposure;
+  service: Service;
   onClose: () => void;
 }) {
-  const queryClient = useQueryClient();
-  const exposeService = useExposeService();
+  const command = `slasha proxy --app ${appSlug} ${service.name}`;
+  const [copied, setCopied] = useState(false);
 
-  const handleExpose = async () => {
+  const handleCopy = async () => {
     try {
-      await exposeService.mutateAsync({
-        appSlug,
-        serviceId: service.id,
-      });
-      toast.success('Exposing service on an auto-assigned host port.');
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'services'],
-      });
-      onClose();
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
     } catch (e) {
-      toast.error('Failed to expose service: ' + e);
+      toast.error('Failed to copy: ' + e);
     }
   };
 
@@ -901,21 +826,37 @@ function ExposeServiceModal({
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Expose {service.name}</DialogTitle>
+          <DialogTitle>Connect to {service.name}</DialogTitle>
         </DialogHeader>
         <VStack space={4} className="mt-4">
           <p className="text-xs text-text-tertiary">
-            Slasha will restart this service and let Docker assign an ephemeral
-            host port automatically.
+            Run this on your machine to open a secure tunnel to{' '}
+            {service.kind}. The tunnel rides the existing HTTPS connection — no
+            firewall rules required.
+          </p>
+          <div className="rounded-lg border border-border bg-black/40 p-3 font-mono text-[12px] text-text relative">
+            <code className="select-all break-all pr-10">{command}</code>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="absolute top-2 right-2 rounded p-1 text-text-tertiary hover:text-text hover:bg-white/5 transition-colors"
+              aria-label="Copy command"
+            >
+              {copied ? (
+                <Check className="size-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="size-3.5" />
+              )}
+            </button>
+          </div>
+          <p className="text-[11px] text-text-tertiary">
+            The CLI prints the local port and a ready-to-paste connection
+            string. Use <code>--no-secret</code> to mask the password in shell
+            output.
           </p>
         </VStack>
         <DialogFooter className="mt-6">
-          <Button label="Cancel" variant="ghost" onClick={onClose} />
-          <Button
-            label="Expose"
-            onClick={handleExpose}
-            isLoading={exposeService.isPending}
-          />
+          <Button label="Close" variant="ghost" onClick={onClose} />
         </DialogFooter>
       </DialogContent>
     </Dialog>
