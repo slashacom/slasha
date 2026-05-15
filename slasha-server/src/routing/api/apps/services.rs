@@ -214,9 +214,17 @@ async fn expose_service_handler(
         )
         .await;
 
-    tokio::spawn(async move {
-        let _ = provision_service(docker, db_pool, log_manager, app, svc, None, true).await;
-    });
+    ServiceRepo::update_status(&db_pool, &svc.id, ServiceStatus::Provisioning).await?;
+
+    tokio::spawn(provision_service(
+        docker,
+        db_pool,
+        log_manager,
+        app,
+        svc,
+        None,
+        true,
+    ));
 
     Ok(Json(serde_json::json!({ "exposing": true })))
 }
@@ -242,6 +250,9 @@ async fn unexpose_service_handler(
             ),
         )
         .await;
+
+    // Reset to Provisioning so startup_container_sync can clean up orphans on crash
+    ServiceRepo::update_status(&db_pool, &svc.id, ServiceStatus::Provisioning).await?;
 
     tokio::spawn(async move {
         let _ = provision_service(docker, db_pool, log_manager, app, svc, None, false).await;
