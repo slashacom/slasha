@@ -18,6 +18,7 @@ use slasha_db::{
     repos::{app::AppRepo, service::ServiceRepo},
     service::{Service, ServiceKind, ServiceResources, ServiceStatus},
 };
+use tokio::sync::Notify;
 use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
@@ -25,9 +26,7 @@ use crate::{
     docker::{
         logs::{LogKey, LogManager},
         naming::service_container_name,
-        service::{
-            delete_service, expose_service, provision_service, stop_service, unexpose_service,
-        },
+        service::{delete_service, provision_service, restart_service, stop_service},
     },
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
@@ -39,6 +38,8 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list_services))
         .route("/", post(create_service))
         .route("/{id}/logs", get(stream_logs))
+        .route("/{id}/restart", post(restart_service_handler))
+        .route("/{id}/redeploy", post(redeploy_service_handler))
         .route("/{id}/stop", post(stop_service_handler))
         .route("/{id}/expose", post(expose_service_handler))
         .route("/{id}/expose", delete(unexpose_service_handler))
@@ -51,6 +52,8 @@ struct CreateServiceReq {
     name: String,
     version: String,
     env_vars: HashMap<String, String>,
+    #[serde(default)]
+    exposed: bool,
     #[serde(default)]
     resources: Option<ServiceResources>,
 }
@@ -177,7 +180,8 @@ async fn create_service(
         log_manager,
         app,
         new_service.clone(),
-        payload.env_vars,
+        Some(payload.env_vars),
+        payload.exposed,
     ));
 
     Ok(Json(serde_json::json!({
@@ -195,14 +199,20 @@ async fn expose_service_handler(
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
-    if svc.status != ServiceStatus::Running {
-        return Err(HttpError::bad_request(
-            "Service must be running before it can be exposed",
-        ));
-    }
+    let container_name = service_container_name(&svc.id);
+    let _ = docker
+        .remove_container(
+            &container_name,
+            Some(
+                bollard::query_parameters::RemoveContainerOptionsBuilder::new()
+                    .force(true)
+                    .build(),
+            ),
+        )
+        .await;
 
     tokio::spawn(async move {
-        let _ = expose_service(&docker, &db_pool, &log_manager, &app, &svc).await;
+        let _ = provision_service(docker, db_pool, log_manager, app, svc, None, true).await;
     });
 
     Ok(Json(serde_json::json!({ "exposing": true })))
@@ -218,17 +228,80 @@ async fn unexpose_service_handler(
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
-    if svc.status != ServiceStatus::Running {
-        return Err(HttpError::bad_request(
-            "Service must be running before it can be unexposed",
-        ));
-    }
+    let container_name = service_container_name(&svc.id);
+    let _ = docker
+        .remove_container(
+            &container_name,
+            Some(
+                bollard::query_parameters::RemoveContainerOptionsBuilder::new()
+                    .force(true)
+                    .build(),
+            ),
+        )
+        .await;
 
     tokio::spawn(async move {
-        let _ = unexpose_service(&docker, &db_pool, &log_manager, &app, &svc).await;
+        let _ = provision_service(docker, db_pool, log_manager, app, svc, None, false).await;
     });
 
     Ok(Json(serde_json::json!({ "unexposing": true })))
+}
+
+async fn restart_service_handler(
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
+    State(proxy_sync_trigger): State<Arc<Notify>>,
+    AuthUser(user): AuthUser,
+    Path((slug, id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+
+    restart_service(
+        &docker,
+        &db_pool,
+        &log_manager,
+        &proxy_sync_trigger,
+        &app,
+        &svc,
+    )
+    .await?;
+
+    Ok(Json(serde_json::json!({ "restarted": true })))
+}
+
+async fn redeploy_service_handler(
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
+    AuthUser(user): AuthUser,
+    Path((slug, id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+
+    let exposed = read_service_exposure(&docker, &svc.id, svc.kind.container_port())
+        .await
+        .is_some();
+
+    let container_name = service_container_name(&svc.id);
+    let _ = docker
+        .remove_container(
+            &container_name,
+            Some(
+                bollard::query_parameters::RemoveContainerOptionsBuilder::new()
+                    .force(true)
+                    .build(),
+            ),
+        )
+        .await;
+
+    tokio::spawn(async move {
+        let _ = provision_service(docker, db_pool, log_manager, app, svc, None, exposed).await;
+    });
+
+    Ok(Json(serde_json::json!({ "redeploying": true })))
 }
 
 async fn stop_service_handler(

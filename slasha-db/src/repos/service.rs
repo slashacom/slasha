@@ -161,16 +161,4 @@ impl ServiceRepo {
         })
         .await?
     }
-
-    pub async fn insert_env_vars(pool: &DbPool, vars: Vec<ServiceEnvVar>) -> DbResult<()> {
-        let pool = pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let mut conn = pool.get()?;
-            diesel::insert_into(service_env_vars::table)
-                .values(&vars)
-                .execute(&mut conn)?;
-            Ok(())
-        })
-        .await?
-    }
 }

@@ -131,6 +131,8 @@ pub enum Command {
         name: String,
         #[arg(long)]
         version: String,
+        #[arg(long)]
+        expose: bool,
     },
 
     #[command(name = "services", about = "Manage attached services")]
@@ -239,6 +241,18 @@ pub enum AppEnvCommand {
 pub enum ServicesCommand {
     #[command(name = "list", about = "List services attached to an app")]
     List,
+
+    #[command(name = "restart", about = "Restart a service container")]
+    Restart {
+        #[arg(value_name = "NAME_OR_ID")]
+        service: String,
+    },
+
+    #[command(name = "redeploy", about = "Redeploy/reprovision a service container")]
+    Redeploy {
+        #[arg(value_name = "NAME_OR_ID")]
+        service: String,
+    },
 
     #[command(name = "stop", about = "Stop a running service")]
     Stop {

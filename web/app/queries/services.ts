@@ -55,6 +55,7 @@ export function useProvisionService() {
       name: string;
       version: string;
       envVars: Record<string, string>;
+      exposed?: boolean;
       resources?: ResourcesPayload | null;
     }) =>
       httpPost<{ service: Service }>(`apps/${data.appSlug}/services`, {
@@ -62,8 +63,29 @@ export function useProvisionService() {
         name: data.name,
         version: data.version,
         env_vars: data.envVars,
+        exposed: data.exposed ?? false,
         resources: data.resources ?? null,
       }),
+  });
+}
+
+export function useRestartService() {
+  return useMutation({
+    mutationFn: (data: { appSlug: string; serviceId: string }) =>
+      httpPost<{ restarted: boolean }>(
+        `apps/${data.appSlug}/services/${data.serviceId}/restart`,
+        {}
+      ),
+  });
+}
+
+export function useRedeployService() {
+  return useMutation({
+    mutationFn: (data: { appSlug: string; serviceId: string }) =>
+      httpPost<{ redeploying: boolean }>(
+        `apps/${data.appSlug}/services/${data.serviceId}/redeploy`,
+        {}
+      ),
   });
 }
 

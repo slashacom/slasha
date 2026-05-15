@@ -18,6 +18,8 @@ import {
   ChevronRight,
   Globe,
   GlobeLock,
+  RotateCcw,
+  RefreshCw,
 } from 'lucide-react';
 import type { Service, ServiceStatus, ServiceKind } from '~/models/service';
 import {
@@ -28,6 +30,8 @@ import {
   useDeleteService,
   useExposeService,
   useUnexposeService,
+  useRestartService,
+  useRedeployService,
   type ResourcesPayload,
   type ServiceKindDefaultResources,
   type ServiceWithExposure,
@@ -202,6 +206,8 @@ function ServiceRow({
   const stopService = useStopService();
   const deleteService = useDeleteService();
   const unexposeService = useUnexposeService();
+  const restartService = useRestartService();
+  const redeployService = useRedeployService();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [showExposeModal, setShowExposeModal] = useState(false);
@@ -249,6 +255,38 @@ function ServiceRow({
       });
     } catch (err) {
       toast.error('Failed to unexpose service: ' + err);
+    }
+  };
+
+  const handleRestart = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await restartService.mutateAsync({
+        appSlug,
+        serviceId: service.id,
+      });
+      toast.success('Service restart triggered.');
+      queryClient.invalidateQueries({
+        queryKey: ['apps', appSlug, 'services'],
+      });
+    } catch (err) {
+      toast.error('Failed to restart service: ' + err);
+    }
+  };
+
+  const handleRedeploy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await redeployService.mutateAsync({
+        appSlug,
+        serviceId: service.id,
+      });
+      toast.success('Service redeploy started.');
+      queryClient.invalidateQueries({
+        queryKey: ['apps', appSlug, 'services'],
+      });
+    } catch (err) {
+      toast.error('Failed to redeploy service: ' + err);
     }
   };
 
@@ -312,6 +350,30 @@ function ServiceRow({
               color="neutral"
               onClick={handleUnexpose}
               isLoading={unexposeService.isPending}
+            />
+          )}
+          {(service.status === 'Running' || service.status === 'Stopped') && (
+            <Button
+              label="Restart"
+              icon={<RefreshCw className="size-3.5" />}
+              variant="ghost"
+              size="sm"
+              color="neutral"
+              onClick={handleRestart}
+              isLoading={restartService.isPending}
+            />
+          )}
+          {(service.status === 'Running' ||
+            service.status === 'Stopped' ||
+            service.status === 'Failed') && (
+            <Button
+              label="Redeploy"
+              icon={<RotateCcw className="size-3.5" />}
+              variant="ghost"
+              size="sm"
+              color="neutral"
+              onClick={handleRedeploy}
+              isLoading={redeployService.isPending}
             />
           )}
           {service.status === 'Running' && (
@@ -505,6 +567,7 @@ function ProvisionServiceModal({
   const [kindName, setKindName] = useState<ServiceKind | ''>('');
   const [version, setVersion] = useState<string>('');
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
+  const [exposed, setExposed] = useState(false);
 
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [memoryMb, setMemoryMb] = useState('');
@@ -555,6 +618,7 @@ function ProvisionServiceModal({
         name: name.trim(),
         version,
         envVars,
+        exposed,
         resources: payload,
       });
       queryClient.invalidateQueries({
@@ -619,6 +683,35 @@ function ProvisionServiceModal({
                   </option>
                 ))}
               </select>
+            </VStack>
+          </HStack>
+
+          <HStack
+            alignItems="center"
+            space={2}
+            className="cursor-pointer select-none"
+            onClick={() => setExposed(!exposed)}
+          >
+            <div
+              className={cn(
+                'flex h-4 w-7 shrink-0 items-center rounded-full px-0.5 transition-colors duration-200 ease-in-out',
+                exposed ? 'bg-emerald-500' : 'bg-surface-hover'
+              )}
+            >
+              <div
+                className={cn(
+                  'h-3 w-3 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out',
+                  exposed ? 'translate-x-3' : 'translate-x-0'
+                )}
+              />
+            </div>
+            <VStack space={0.5}>
+              <span className="text-xs font-medium text-text">
+                Expose Service
+              </span>
+              <p className="text-[10px] text-text-tertiary">
+                Assign an ephemeral host port for external access
+              </p>
             </VStack>
           </HStack>
 

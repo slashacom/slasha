@@ -267,6 +267,48 @@ pub async fn stop_deployment_processes(
     Ok(())
 }
 
+pub async fn restart_deployment_processes(
+    docker_client: &Docker,
+    log_manager: &LogManager,
+    proxy_sync_trigger: &Arc<Notify>,
+    app: &App,
+    deployment_id: &str,
+) -> DeploymentResult<()> {
+    let processes = list_deployment_processes(docker_client, deployment_id).await?;
+    let log_key = LogKey::Deployment {
+        app_slug: app.slug.clone(),
+        deployment_id: deployment_id.to_string(),
+    };
+    let log = log_manager.get_logger(&log_key).await?;
+
+    for process in processes {
+        docker_client.restart_container(&process.name, None).await?;
+
+        let prefix = format!(
+            "[{}.{}]",
+            process.process_type.to_string().to_lowercase(),
+            process.instance_index
+        );
+
+        tokio::spawn({
+            let docker = docker_client.clone();
+            let log = log.clone();
+            let container_name = process.name.clone();
+            async move {
+                if let Err(e) =
+                    stream_container_logs(docker, log, container_name, Some(prefix)).await
+                {
+                    tracing::error!("Failed to stream deployment logs: {}", e);
+                }
+            }
+        });
+    }
+
+    proxy_sync_trigger.notify_one();
+
+    Ok(())
+}
+
 pub async fn delete_deployment_processes(
     docker_client: &Docker,
     proxy_sync_trigger: &Arc<Notify>,

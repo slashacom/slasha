@@ -123,7 +123,11 @@ async fn run(cli: ClapApp) -> anyhow::Result<i32> {
             kind,
             name,
             version,
-        } => services::handle_create(&state, &resolve_app(app)?, &kind, &name, &version).await?,
+            expose,
+        } => {
+            services::handle_create(&state, &resolve_app(app)?, &kind, &name, &version, expose)
+                .await?
+        }
 
         Command::AppEnv { app, command } => {
             app_env::dispatch(&state, &resolve_app(app)?, command).await?
