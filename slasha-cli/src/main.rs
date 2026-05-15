@@ -10,6 +10,7 @@ mod domains;
 mod git_ssh;
 mod http;
 mod output;
+mod proxy;
 mod scale;
 mod service_env;
 mod services;
@@ -123,11 +124,7 @@ async fn run(cli: ClapApp) -> anyhow::Result<i32> {
             kind,
             name,
             version,
-            expose,
-        } => {
-            services::handle_create(&state, &resolve_app(app)?, &kind, &name, &version, expose)
-                .await?
-        }
+        } => services::handle_create(&state, &resolve_app(app)?, &kind, &name, &version).await?,
 
         Command::AppEnv { app, command } => {
             app_env::dispatch(&state, &resolve_app(app)?, command).await?
@@ -136,6 +133,13 @@ async fn run(cli: ClapApp) -> anyhow::Result<i32> {
         Command::Services { app, command } => {
             services::dispatch(&state, &resolve_app(app)?, command).await?
         }
+
+        Command::Proxy {
+            app,
+            service,
+            port,
+            no_secret,
+        } => proxy::handle_proxy(&state, &resolve_app(app)?, &service, port, no_secret).await?,
 
         Command::Scale { app, pairs } => {
             scale::handle_scale(&state, &resolve_app(app)?, pairs).await?
