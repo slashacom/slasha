@@ -314,8 +314,7 @@ function ServiceRow({
               isLoading={unexposeService.isPending}
             />
           )}
-          {(service.status === 'Running' ||
-            service.status === 'Provisioning') && (
+          {service.status === 'Running' && (
             <Button
               label="Stop"
               icon={<Square className="size-3.5" />}
@@ -789,27 +788,13 @@ function ExposeServiceModal({
   const queryClient = useQueryClient();
   const exposeService = useExposeService();
 
-  const [hostPort, setHostPort] = useState('');
-  const [bindAddr, setBindAddr] = useState<'127.0.0.1' | '0.0.0.0'>(
-    '127.0.0.1'
-  );
-
   const handleExpose = async () => {
-    const trimmed = hostPort.trim();
-    const port = Number(trimmed);
-    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-      toast.error('Host port must be an integer between 1024 and 65535.');
-      return;
-    }
-
     try {
       await exposeService.mutateAsync({
         appSlug,
         serviceId: service.id,
-        hostPort: port,
-        bindAddr,
       });
-      toast.success('Exposing service. Container will restart.');
+      toast.success('Exposing service on an auto-assigned host port.');
       queryClient.invalidateQueries({
         queryKey: ['apps', appSlug, 'services'],
       });
@@ -827,67 +812,9 @@ function ExposeServiceModal({
         </DialogHeader>
         <VStack space={4} className="mt-4">
           <p className="text-xs text-text-tertiary">
-            Bind a host port to the container. The container will restart with
-            the new binding.
+            Slasha will restart this service and let Docker assign an ephemeral
+            host port automatically.
           </p>
-
-          <VStack space={1.5}>
-            <label className="text-xs font-medium text-text-secondary">
-              Host Port
-            </label>
-            <TextInput
-              value={hostPort}
-              onChange={setHostPort}
-              placeholder="e.g. 5432"
-            />
-            <span className="text-[11px] text-text-tertiary">
-              Must be between 1024 and 65535 and not already in use.
-            </span>
-          </VStack>
-
-          <VStack space={1.5}>
-            <label className="text-xs font-medium text-text-secondary">
-              Bind Address
-            </label>
-            <VStack space={2}>
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="bind_addr"
-                  checked={bindAddr === '127.0.0.1'}
-                  onChange={() => setBindAddr('127.0.0.1')}
-                  className="mt-1"
-                />
-                <VStack space={0.5}>
-                  <span className="text-xs text-text">
-                    127.0.0.1 (localhost only)
-                  </span>
-                  <span className="text-[11px] text-text-tertiary">
-                    Only reachable from the host machine. Use this for SSH
-                    tunnels.
-                  </span>
-                </VStack>
-              </label>
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="bind_addr"
-                  checked={bindAddr === '0.0.0.0'}
-                  onChange={() => setBindAddr('0.0.0.0')}
-                  className="mt-1"
-                />
-                <VStack space={0.5}>
-                  <span className="text-xs text-text">
-                    0.0.0.0 (all interfaces)
-                  </span>
-                  <span className="text-[11px] text-amber-400">
-                    Anyone who can reach the host on this port can connect. Make
-                    sure your firewall is configured.
-                  </span>
-                </VStack>
-              </label>
-            </VStack>
-          </VStack>
         </VStack>
         <DialogFooter className="mt-6">
           <Button label="Cancel" variant="ghost" onClick={onClose} />
@@ -895,7 +822,6 @@ function ExposeServiceModal({
             label="Expose"
             onClick={handleExpose}
             isLoading={exposeService.isPending}
-            disabled={!hostPort.trim()}
           />
         </DialogFooter>
       </DialogContent>

@@ -88,15 +88,10 @@ export function useDeleteService() {
 
 export function useExposeService() {
   return useMutation({
-    mutationFn: (data: {
-      appSlug: string;
-      serviceId: string;
-      hostPort: number;
-      bindAddr: string;
-    }) =>
+    mutationFn: (data: { appSlug: string; serviceId: string }) =>
       httpPost<{ exposing: boolean }>(
         `apps/${data.appSlug}/services/${data.serviceId}/expose`,
-        { host_port: data.hostPort, bind_addr: data.bindAddr }
+        {}
       ),
   });
 }
