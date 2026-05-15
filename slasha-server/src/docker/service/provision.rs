@@ -152,6 +152,21 @@ async fn provision_inner(
         })
         .await?;
 
+    rollback.register({
+        let docker = docker.clone();
+        let volume_name = volume_name.clone();
+        move || {
+            Box::pin(async move {
+                let _ = docker
+                    .remove_volume(
+                        &volume_name,
+                        None::<bollard::query_parameters::RemoveVolumeOptions>,
+                    )
+                    .await;
+            })
+        }
+    });
+
     let env_vars = if let Some(env) = initial_env {
         let now = Utc::now().naive_utc();
         let vars: Vec<ServiceEnvVar> = env
@@ -211,6 +226,10 @@ async fn create_service_container(
         .map(|(k, v)| format!("{}={}", k, v))
         .collect();
     let overrides = service.resources.clone().unwrap_or_default();
+    let memory = overrides.memory_bytes;
+    let nano_cpus = overrides.nano_cpus;
+    let pids_limit = overrides.pids_limit;
+    let shm_size = overrides.shm_size;
 
     docker_client
         .create_container(
@@ -247,26 +266,10 @@ async fn create_service_container(
                         ..Default::default()
                     }]),
                     log_config: Some(default_log_config()),
-                    memory: Some(
-                        overrides
-                            .memory_bytes
-                            .unwrap_or_else(|| service.kind.default_memory_bytes()),
-                    ),
-                    nano_cpus: Some(
-                        overrides
-                            .nano_cpus
-                            .unwrap_or_else(|| service.kind.default_nano_cpus()),
-                    ),
-                    pids_limit: Some(
-                        overrides
-                            .pids_limit
-                            .unwrap_or_else(|| service.kind.default_pids_limit()),
-                    ),
-                    shm_size: Some(
-                        overrides
-                            .shm_size
-                            .unwrap_or_else(|| service.kind.default_shm_size()),
-                    ),
+                    memory,
+                    nano_cpus,
+                    pids_limit,
+                    shm_size,
                     ..Default::default()
                 }),
                 ..Default::default()

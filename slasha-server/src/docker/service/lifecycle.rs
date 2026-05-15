@@ -82,22 +82,38 @@ pub async fn delete_service(
         service_name: service.name.clone(),
     };
 
-    docker
-        .remove_container(
-            &container_name,
-            Some(RemoveContainerOptionsBuilder::new().force(true).build()),
-        )
-        .await?;
+    ignore_not_found(
+        docker
+            .remove_container(
+                &container_name,
+                Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+            )
+            .await,
+    )?;
 
-    docker
-        .remove_volume(
-            &volume_name,
-            None::<bollard::query_parameters::RemoveVolumeOptions>,
-        )
-        .await?;
+    ignore_not_found(
+        docker
+            .remove_volume(
+                &volume_name,
+                None::<bollard::query_parameters::RemoveVolumeOptions>,
+            )
+            .await,
+    )?;
 
     ServiceRepo::delete(db_pool, &service.id).await?;
     log_manager.remove(&log_key);
 
     Ok(())
+}
+
+fn ignore_not_found<T>(
+    res: Result<T, bollard::errors::Error>,
+) -> Result<(), bollard::errors::Error> {
+    match res {
+        Ok(_) => Ok(()),
+        Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        }) => Ok(()),
+        Err(e) => Err(e),
+    }
 }
