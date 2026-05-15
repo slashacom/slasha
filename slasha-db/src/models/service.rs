@@ -217,24 +217,6 @@ impl ServiceKind {
         vec!["CMD-SHELL".to_string(), cmd.to_string()]
     }
 
-    pub fn default_memory_bytes(&self) -> i64 {
-        4 * 1024 * 1024 * 1024
-    }
-
-    pub fn default_nano_cpus(&self) -> i64 {
-        4_000_000_000
-    }
-
-    pub fn default_pids_limit(&self) -> i64 {
-        2048
-    }
-
-    pub fn default_shm_size(&self) -> i64 {
-        match self {
-            ServiceKind::PostgreSQL => 256 * 1024 * 1024,
-            _ => 64 * 1024 * 1024,
-        }
-    }
 }
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]

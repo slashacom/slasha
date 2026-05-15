@@ -2,13 +2,6 @@ import { queryOptions, useMutation } from '@tanstack/react-query';
 import { httpGet, httpPost, httpDelete, httpPut } from '~/utils/http';
 import type { Service, ServiceKind } from '~/models/service';
 
-export interface ServiceKindDefaultResources {
-  memory_bytes: number;
-  nano_cpus: number;
-  pids_limit: number;
-  shm_size: number;
-}
-
 export interface ResourcesPayload {
   memory_bytes: number | null;
   nano_cpus: number | null;
@@ -20,7 +13,6 @@ export interface ServiceKindMeta {
   name: ServiceKind;
   supported_versions: string[];
   default_env_vars: Record<string, string>;
-  default_resources: ServiceKindDefaultResources;
 }
 
 export function getServiceKindsOptions() {

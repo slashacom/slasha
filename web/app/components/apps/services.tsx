@@ -30,7 +30,6 @@ import {
   useRestartService,
   useRedeployService,
   type ResourcesPayload,
-  type ServiceKindDefaultResources,
 } from '~/queries/services';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
@@ -446,14 +445,6 @@ function parsePositiveInt(input: string): number | null {
   return n;
 }
 
-function bytesToMb(bytes: number): number {
-  return Math.round(bytes / BYTES_PER_MB);
-}
-
-function nanoToCores(nano: number): number {
-  return Number((nano / NANO_PER_CORE).toFixed(2));
-}
-
 function buildResourcesPayload(
   memoryMb: string,
   cpuCores: string,
@@ -665,7 +656,6 @@ function ProvisionServiceModal({
           <AdvancedResourcesSection
             isOpen={isAdvancedOpen}
             onToggle={() => setIsAdvancedOpen((v) => !v)}
-            defaults={selectedKind?.default_resources}
             memoryMb={memoryMb}
             cpuCores={cpuCores}
             shmMb={shmMb}
@@ -693,7 +683,6 @@ function ProvisionServiceModal({
 function AdvancedResourcesSection({
   isOpen,
   onToggle,
-  defaults,
   memoryMb,
   cpuCores,
   shmMb,
@@ -705,7 +694,6 @@ function AdvancedResourcesSection({
 }: {
   isOpen: boolean;
   onToggle: () => void;
-  defaults: ServiceKindDefaultResources | undefined;
   memoryMb: string;
   cpuCores: string;
   shmMb: string;
@@ -715,15 +703,6 @@ function AdvancedResourcesSection({
   onShmChange: (v: string) => void;
   onPidsChange: (v: string) => void;
 }) {
-  const memoryPlaceholder = defaults
-    ? String(bytesToMb(defaults.memory_bytes))
-    : '';
-  const cpuPlaceholder = defaults
-    ? String(nanoToCores(defaults.nano_cpus))
-    : '';
-  const shmPlaceholder = defaults ? String(bytesToMb(defaults.shm_size)) : '';
-  const pidsPlaceholder = defaults ? String(defaults.pids_limit) : '';
-
   return (
     <VStack space={2} className="mt-4">
       <button
@@ -745,8 +724,7 @@ function AdvancedResourcesSection({
           className="rounded-lg border border-border bg-surface/30 p-4"
         >
           <p className="text-[11px] text-text-tertiary">
-            Override per-container resource caps. Leave blank to use the
-            default.
+            Per-container resource caps. Leave blank for unlimited.
           </p>
 
           <HStack space={3}>
@@ -757,7 +735,7 @@ function AdvancedResourcesSection({
               <TextInput
                 value={memoryMb}
                 onChange={onMemoryChange}
-                placeholder={memoryPlaceholder}
+                placeholder="unlimited"
               />
             </VStack>
             <VStack space={1.5} className="flex-1">
@@ -767,7 +745,7 @@ function AdvancedResourcesSection({
               <TextInput
                 value={cpuCores}
                 onChange={onCpuChange}
-                placeholder={cpuPlaceholder}
+                placeholder="unlimited"
               />
             </VStack>
           </HStack>
@@ -780,7 +758,7 @@ function AdvancedResourcesSection({
               <TextInput
                 value={shmMb}
                 onChange={onShmChange}
-                placeholder={shmPlaceholder}
+                placeholder="unlimited"
               />
             </VStack>
             <VStack space={1.5} className="flex-1">
@@ -790,7 +768,7 @@ function AdvancedResourcesSection({
               <TextInput
                 value={pidsLimit}
                 onChange={onPidsChange}
-                placeholder={pidsPlaceholder}
+                placeholder="unlimited"
               />
             </VStack>
           </HStack>

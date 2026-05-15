@@ -16,7 +16,7 @@ use serde::Deserialize;
 use slasha_db::{
     DbPool,
     repos::{app::AppRepo, service::ServiceRepo},
-    service::{ServiceKind, ServiceResources, ServiceStatus},
+    service::{Service, ServiceKind, ServiceResources, ServiceStatus},
 };
 use tokio::sync::Notify;
 use tokio_stream::wrappers::BroadcastStream;
@@ -54,6 +54,83 @@ struct CreateServiceReq {
     env_vars: HashMap<String, String>,
     #[serde(default)]
     resources: Option<ServiceResources>,
+}
+
+const MIN_MEMORY_BYTES: i64 = 64 * 1024 * 1024;
+const MIN_NANO_CPUS: i64 = 100_000_000;
+const MIN_SHM_BYTES: i64 = 64 * 1024 * 1024;
+const MIN_PIDS_LIMIT: i64 = 64;
+
+async fn validate_resources(docker: &Docker, resources: &ServiceResources) -> HttpResult<()> {
+    if let Some(mem) = resources.memory_bytes
+        && mem < MIN_MEMORY_BYTES
+    {
+        return Err(HttpError::bad_request(format!(
+            "memory must be at least {} MB",
+            MIN_MEMORY_BYTES / (1024 * 1024)
+        )));
+    }
+    if let Some(nc) = resources.nano_cpus
+        && nc < MIN_NANO_CPUS
+    {
+        return Err(HttpError::bad_request("CPU must be at least 0.1 cores"));
+    }
+    if let Some(shm) = resources.shm_size
+        && shm < MIN_SHM_BYTES
+    {
+        return Err(HttpError::bad_request(format!(
+            "shared memory must be at least {} MB",
+            MIN_SHM_BYTES / (1024 * 1024)
+        )));
+    }
+    if let Some(pids) = resources.pids_limit
+        && pids < MIN_PIDS_LIMIT
+    {
+        return Err(HttpError::bad_request(format!(
+            "PID limit must be at least {}",
+            MIN_PIDS_LIMIT
+        )));
+    }
+
+    let info = docker
+        .info()
+        .await
+        .map_err(|e| HttpError::internal(anyhow::anyhow!(e)))?;
+
+    if let Some(host_mem) = info.mem_total
+        && let Some(mem) = resources.memory_bytes
+        && mem > host_mem
+    {
+        return Err(HttpError::bad_request(format!(
+            "memory ({} MB) exceeds host capacity ({} MB)",
+            mem / (1024 * 1024),
+            host_mem / (1024 * 1024)
+        )));
+    }
+    if let Some(host_cpus) = info.ncpu
+        && let Some(nc) = resources.nano_cpus
+    {
+        let host_nano = host_cpus.saturating_mul(1_000_000_000);
+        if nc > host_nano {
+            return Err(HttpError::bad_request(format!(
+                "CPU ({:.2} cores) exceeds host capacity ({} cores)",
+                nc as f64 / 1_000_000_000.0,
+                host_cpus
+            )));
+        }
+    }
+    if let Some(host_mem) = info.mem_total
+        && let Some(shm) = resources.shm_size
+        && shm > host_mem
+    {
+        return Err(HttpError::bad_request(format!(
+            "shared memory ({} MB) exceeds host capacity ({} MB)",
+            shm / (1024 * 1024),
+            host_mem / (1024 * 1024)
+        )));
+    }
+
+    Ok(())
 }
 
 async fn list_services(
@@ -106,10 +183,14 @@ async fn create_service(
         }
     }
 
+    if let Some(ref resources) = payload.resources {
+        validate_resources(&docker, resources).await?;
+    }
+
     let now = Utc::now().naive_utc();
     let service_id = Uuid::new_v4().to_string();
 
-    let new_service = slasha_db::service::Service {
+    let new_service = Service {
         id: service_id.clone(),
         app_id: app.id.clone(),
         kind: payload.kind,
