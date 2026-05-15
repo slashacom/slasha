@@ -243,6 +243,16 @@ async fn restart_deployment(
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
+    stop_deployment_processes(
+        &docker,
+        &db_pool,
+        &proxy_sync_trigger,
+        &log_manager,
+        &app,
+        &deployment,
+    )
+    .await?;
+
     let log_key = LogKey::Deployment {
         app_slug: app.slug.clone(),
         deployment_id: deployment.id.clone(),
