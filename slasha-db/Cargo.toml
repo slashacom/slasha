@@ -3,8 +3,17 @@ name = "slasha-db"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# Statically link SQLite into the binary instead of dynamically linking the
+# host's libsqlite3. Used by the release build so the published binary runs on
+# any server regardless of the installed SQLite version. libsqlite3-sys is
+# already pulled in transitively by diesel; declaring it here lets us toggle
+# its `bundled` feature.
+bundled-sqlite = ["libsqlite3-sys/bundled"]
+
 [dependencies]
 diesel = { version = "2.2.0", features = ["sqlite", "returning_clauses_for_sqlite_3_35", "r2d2", "chrono"] }
+libsqlite3-sys = "0.36"
 rand = "0.9"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
