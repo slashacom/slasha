@@ -1,0 +1,117 @@
+name: Release
+
+# Build the self-contained `slasha` binary and publish a GitHub Release
+# whenever a version tag is pushed:
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Each release ships one tarball per server architecture plus a SHA256SUMS
+# file; scripts/install.sh (install.sh at the repo root) consumes them.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build deps for the vendored release build:
+      #   - libdbus-1-dev: keyring crate links libdbus at build time
+      #   - cmake + perl: compile vendored libgit2 + OpenSSL from source
+      # libssl-dev / libsqlite3-dev are intentionally absent — OpenSSL and
+      # SQLite are statically linked via the `vendored` cargo feature.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libdbus-1-dev cmake perl
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      # serve-bundle embeds web/build/client via rust-embed, so the frontend
+      # must be built before cargo compiles the binary.
+      - name: Build web frontend
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          NODE_ENV=production bun run build
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # Stamp the binary's version (`slasha --version`) with the tag.
+      - name: Set crate version from tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          sed -i "0,/^version = .*/s//version = \"$version\"/" slasha-cli/Cargo.toml
+
+      - name: Build binary
+        run: |
+          cargo build --release \
+            -p slasha-cli \
+            --features serve-bundle,vendored \
+            --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          asset="slasha-${{ matrix.target }}.tar.gz"
+          tar -czf "$asset" -C "target/${{ matrix.target }}/release" slasha
+          echo "ASSET=$asset" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.ASSET }}
+          retention-days: 1
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum slasha-*.tar.gz > SHA256SUMS
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/slasha-*.tar.gz
+            dist/SHA256SUMS
+          generate_release_notes: true
+          fail_on_unmatched_files: true

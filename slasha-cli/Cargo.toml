@@ -12,6 +12,10 @@ path = "src/main.rs"
 default = []
 serve = ["slasha-server"]
 serve-bundle = ["serve", "slasha-server/bundle"]
+# Self-contained release build: statically link OpenSSL + SQLite. Pair with
+# serve-bundle in CI (`--features serve-bundle,vendored`). The `?` means the
+# server's vendored feature is only applied when the server is also compiled in.
+vendored = ["slasha-db/bundled-sqlite", "slasha-server?/vendored"]
 
 [dependencies]
 anyhow = "1.0.102"
