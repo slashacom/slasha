@@ -70,7 +70,10 @@ impl IntoResponse for HttpError {
         if self.status.is_server_error()
             && let Some(cause) = &self.cause
         {
-            tracing::error!("Internal server error: {:?}", cause);
+            tracing::error!(
+                error = ?cause,
+                "Internal server error"
+            );
         }
 
         let mut res = (self.status, Json(json!({ "error": self.message }))).into_response();

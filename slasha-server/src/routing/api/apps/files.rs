@@ -160,7 +160,11 @@ async fn get_file_content(
     AuthUser(user): AuthUser,
     Path((slug, file_path)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    tracing::info!("File content: {:#?}", file_path);
+    tracing::debug!(
+        app_slug = %slug,
+        file_path = %file_path,
+        "fetching file content"
+    );
 
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 

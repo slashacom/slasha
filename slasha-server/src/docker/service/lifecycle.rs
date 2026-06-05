@@ -82,14 +82,24 @@ pub async fn delete_service(
         service_name: service.name.clone(),
     };
 
-    ignore_not_found(
-        docker
-            .remove_container(
-                &container_name,
-                Some(RemoveContainerOptionsBuilder::new().force(true).build()),
-            )
-            .await,
-    )?;
+    let res = docker
+        .remove_container(
+            &container_name,
+            Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+        )
+        .await;
+
+    let was_removed = res.is_ok();
+    ignore_not_found(res)?;
+
+    if was_removed {
+        tracing::info!(
+            container = %container_name,
+            app_slug = %app.slug,
+            service_id = %service.id,
+            "container destroyed"
+        );
+    }
 
     ignore_not_found(
         docker

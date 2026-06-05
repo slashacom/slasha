@@ -20,10 +20,9 @@ pub use error::{HttpError, HttpResult};
 pub use state::AppState;
 use tokio::net::TcpListener;
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    docker::{service::spawn_service_reconciler, sync::startup_container_sync},
+    docker::sync::startup_container_sync,
     proxy::container::ensure_caddy_ready,
     state::{Clients, Config, Env, Runtime, Storage},
 };
@@ -31,12 +30,10 @@ use crate::{
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../slasha-db/migrations");
 
 fn setup_tracing() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "debug".into()),
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
-        .with(tracing_subscriber::fmt::layer())
         .init();
 }
 
@@ -113,8 +110,6 @@ pub async fn start_server() -> anyhow::Result<()> {
         &state.runtime,
     )
     .await?;
-
-    spawn_service_reconciler(state.clients.docker.clone(), state.storage.db_pool.clone());
 
     state.runtime.proxy_sync_trigger.notify_one();
 

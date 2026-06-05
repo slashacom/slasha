@@ -78,7 +78,11 @@ pub async fn ensure_caddy_ready(docker: &Docker) -> ProxyResult<()> {
 
     while let Some(result) = stream.next().await {
         if let Err(e) = result {
-            tracing::warn!("Failed to pull {IMAGE}: {e}");
+            tracing::warn!(
+                image = %IMAGE,
+                error = ?e,
+                "Failed to pull image"
+            );
         }
     }
 
@@ -143,6 +147,11 @@ pub async fn ensure_caddy_ready(docker: &Docker) -> ProxyResult<()> {
             ..Default::default()
         },
     ).await?;
+
+    tracing::info!(
+        container = %PROXY_CONTAINER_NAME,
+        "container created"
+    );
 
     docker
         .start_container(

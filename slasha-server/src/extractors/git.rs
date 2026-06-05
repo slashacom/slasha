@@ -95,7 +95,7 @@ where
             .await
             .map_err(|_| GitError::RepoNotFound)?;
 
-        tracing::info!(user_id = %user.id, app_slug = %app.slug, "git auth ok");
+        tracing::debug!(user_id = %user.id, app_slug = %app.slug, "git auth ok");
 
         Ok(GitAuth { user, app })
     }

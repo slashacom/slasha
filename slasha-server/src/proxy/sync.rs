@@ -59,7 +59,10 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
         {
             Some(p) => p,
             None => {
-                tracing::warn!("Missing or invalid slasha.container_port for {}", app_slug);
+                tracing::warn!(
+                    app_slug = %app_slug,
+                    "Missing or invalid slasha.container_port"
+                );
                 continue;
             }
         };
@@ -75,9 +78,9 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
             Some(ip) => ip.to_string(),
             None => {
                 tracing::warn!(
-                    "Container {} is not attached to the {} network",
-                    app_slug,
-                    PROXY_NETWORK_NAME
+                    app_slug = %app_slug,
+                    network = %PROXY_NETWORK_NAME,
+                    "Container is not attached to the network"
                 );
                 continue;
             }
@@ -111,7 +114,7 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
         .collect();
 
     clients.caddy.apply_routes(&routes, config.env).await?;
-    tracing::info!("Synced proxy routes: {:#?}", routes);
+    tracing::debug!(routes = ?routes, "synced proxy routes");
 
     Ok(())
 }
@@ -128,7 +131,10 @@ pub fn spawn_route_syncer(clients: Clients, db_pool: DbPool, config: Config) -> 
                     tokio::select! {
                         _ = sleep(Duration::from_millis(500)) => {
                             if let Err(e) = sync_routes(&clients, &db_pool, &config).await {
-                                tracing::error!("Proxy route sync failed: {:?}", e);
+                                tracing::error!(
+                                    error = ?e,
+                                    "Proxy route sync failed"
+                                );
                             }
                             break;
                         }

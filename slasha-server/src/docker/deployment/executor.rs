@@ -208,6 +208,12 @@ pub async fn run_deployment(
     app: App,
     deployment: Deployment,
 ) -> DeploymentResult<()> {
+    tracing::info!(
+        app_slug = %app.slug,
+        deployment_id = %deployment.id,
+        "deployment start"
+    );
+
     let log_key = LogKey::Deployment {
         app_slug: app.slug.clone(),
         deployment_id: deployment.id.clone(),
@@ -227,7 +233,13 @@ pub async fn run_deployment(
     )
     .await
     {
-        tracing::error!("Deployment {} failed: {:?}", deployment.id, e);
+        tracing::info!(
+            app_slug = %app.slug,
+            deployment_id = %deployment.id,
+            status = "failed",
+            error = ?e,
+            "deployment finish"
+        );
         log.send(format!("Deployment failed: {}", e)).await?;
 
         rollback.execute().await;
@@ -238,6 +250,13 @@ pub async fn run_deployment(
 
         return Ok(());
     }
+
+    tracing::info!(
+        app_slug = %app.slug,
+        deployment_id = %deployment.id,
+        status = "success",
+        "deployment finish"
+    );
 
     rollback.disarm();
     Ok(())
@@ -383,9 +402,10 @@ async fn run_deployment_inner(
         .await
         {
             tracing::warn!(
-                "Failed to stop previous deployment {}: {:?}",
-                active_dep.id,
-                e
+                app_slug = %app.slug,
+                deployment_id = %active_dep.id,
+                error = ?e,
+                "Failed to stop previous deployment"
             );
         }
     }

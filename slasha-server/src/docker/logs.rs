@@ -144,6 +144,21 @@ impl LogManager {
         self.channels.remove(&k);
         self.files.remove(&k);
     }
+
+    pub async fn delete_app_logs(&self, app_slug: &str) -> std::io::Result<()> {
+        let d_prefix = format!("d:{}:", app_slug);
+        let s_prefix = format!("s:{}:", app_slug);
+        self.channels
+            .retain(|k, _| !k.starts_with(&d_prefix) && !k.starts_with(&s_prefix));
+        self.files
+            .retain(|k, _| !k.starts_with(&d_prefix) && !k.starts_with(&s_prefix));
+
+        let app_dir = self.logs_dir.join(app_slug);
+        if app_dir.exists() {
+            tokio::fs::remove_dir_all(app_dir).await?;
+        }
+        Ok(())
+    }
 }
 
 impl Log {
@@ -223,8 +238,15 @@ pub fn stream_container_logs(
     prefix: Option<String>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        if let Err(e) = stream_container_logs_inner(docker_client, log, container, prefix).await {
-            tracing::warn!("Log stream failed: {:?}", e);
+        if let Err(e) =
+            stream_container_logs_inner(docker_client, log.clone(), container.clone(), prefix).await
+        {
+            tracing::warn!(
+                container = %container,
+                key = %log.key(),
+                error = ?e,
+                "Log stream failed"
+            );
         }
     })
 }
@@ -263,7 +285,11 @@ pub async fn stream_container_logs_inner(
             }
             Err(e) => {
                 let msg = format!("log stream error for {}: {}", log.key(), e);
-                tracing::warn!("{}", msg);
+                tracing::warn!(
+                    key = %log.key(),
+                    error = %e,
+                    "log stream error"
+                );
                 log.send(msg).await?;
                 break;
             }
@@ -278,7 +304,10 @@ pub async fn stream_container_logs_inner(
         log.send(formatted).await?;
     }
 
-    tracing::info!("Runtime log stream ended for {}", log.key());
+    tracing::info!(
+        key = %log.key(),
+        "Runtime log stream ended"
+    );
 
     Ok(())
 }

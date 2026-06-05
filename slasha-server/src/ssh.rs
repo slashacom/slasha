@@ -27,14 +27,14 @@ pub async fn regenerate_authorized_keys(storage: &Storage) -> anyhow::Result<()>
         .context("Failed to get home directory")?
         .join(".ssh");
 
-    tracing::info!("SSH directory: {}", ssh_dir.display());
+    tracing::debug!(path = %ssh_dir.display(), "ensuring ssh directory exists");
 
     if !ssh_dir.exists() {
         fs::create_dir_all(&ssh_dir).context("Failed to create .ssh directory")?;
     }
 
     let auth_keys_path = ssh_dir.join("authorized_keys");
-    tracing::info!("Writing authorized_keys to: {}", auth_keys_path.display());
+    tracing::debug!(path = %auth_keys_path.display(), "writing authorized_keys");
     atomic_write(&auth_keys_path, &content)?;
 
     Ok(())
