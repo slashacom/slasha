@@ -92,7 +92,13 @@ pub async fn provision_service(
     )
     .await
     {
-        tracing::error!("Service provision failed: {:?}", e);
+        tracing::error!(
+            app_id = %service.app_id,
+            service_id = %service.id,
+            service_name = %service.name,
+            error = ?e,
+            "Service provision failed"
+        );
         let _ = log.send(format!("Service provision failed: {}", e)).await;
         rollback.execute().await;
         let _ = ServiceRepo::update_status(&db_pool, &service.id, ServiceStatus::Failed).await;
@@ -276,6 +282,13 @@ async fn create_service_container(
             },
         )
         .await?;
+
+    tracing::info!(
+        container = %container_name,
+        app_id = %app.id,
+        service_id = %service.id,
+        "container created"
+    );
 
     rollback.register({
         let container_name = container_name.to_string();

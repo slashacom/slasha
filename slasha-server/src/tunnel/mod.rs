@@ -65,8 +65,8 @@ pub async fn handle_tunnel(
             tracing::warn!(
                 user_id = %user_id,
                 service_id = %service.id,
-                "tunnel rejected: {}",
-                e
+                error = %e,
+                "tunnel rejected"
             );
             close_with_reason(socket, &e.to_string()).await;
             return;
@@ -80,8 +80,8 @@ pub async fn handle_tunnel(
             tracing::warn!(
                 user_id = %user_id,
                 service_id = %service.id,
-                "tunnel target resolution failed: {}",
-                e
+                error = %e,
+                "tunnel target resolution failed"
             );
             close_with_reason(socket, &e.to_string()).await;
             return;
@@ -106,8 +106,8 @@ pub async fn handle_tunnel(
             tracing::warn!(
                 user_id = %user_id,
                 service_id = %service.id,
-                "tunnel exec create failed: {}",
-                e
+                error = %e,
+                "tunnel exec create failed"
             );
             close_with_reason(socket, &format!("exec create failed: {e}")).await;
             return;
@@ -139,8 +139,8 @@ pub async fn handle_tunnel(
             user_id = %user_id,
             service_id = %service.id,
             duration_ms = elapsed.as_millis() as u64,
-            "tunnel closed with error: {}",
-            e
+            error = %e,
+            "tunnel closed with error"
         ),
     }
 

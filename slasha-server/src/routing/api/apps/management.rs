@@ -146,7 +146,11 @@ async fn delete_app(
 
     for svc in app_services {
         if let Err(e) = delete_service(&docker, &db_pool, &runtime.log_manager, &app, &svc).await {
-            tracing::warn!("Failed to delete service {}: {}", svc.id, e);
+            tracing::warn!(
+                service_id = %svc.id,
+                error = %e,
+                "Failed to delete service"
+            );
         }
     }
 
@@ -163,9 +167,9 @@ async fn delete_app(
         .await
         {
             tracing::warn!(
-                "Failed to delete container for deployment {}: {}",
-                dep.id,
-                e
+                deployment_id = %dep.id,
+                error = %e,
+                "Failed to delete container for deployment"
             );
         }
     }
@@ -173,7 +177,19 @@ async fn delete_app(
     delete_app_network(&docker, &app.id).await?;
 
     if let Err(e) = delete_app_volumes(&docker, &app.id).await {
-        tracing::warn!("Failed to clean up volumes for app {}: {:?}", app.id, e);
+        tracing::warn!(
+            app_id = %app.id,
+            error = ?e,
+            "Failed to clean up volumes for app"
+        );
+    }
+
+    if let Err(e) = runtime.log_manager.delete_app_logs(&app.slug).await {
+        tracing::warn!(
+            app_slug = %app.slug,
+            error = ?e,
+            "Failed to delete logs for app"
+        );
     }
 
     let repo_path = std::path::Path::new(&app.repo_path);

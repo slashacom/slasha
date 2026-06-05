@@ -149,7 +149,7 @@ pub async fn create_process_container(
     docker_client
         .create_container(
             Some(CreateContainerOptions {
-                name: Some(container_name),
+                name: Some(container_name.clone()),
                 ..Default::default()
             }),
             ContainerCreateBody {
@@ -183,6 +183,14 @@ pub async fn create_process_container(
             },
         )
         .await?;
+
+    tracing::info!(
+        container = %container_name,
+        app_id = %app.id,
+        deployment_id = %deployment.id,
+        process_type = %process_type,
+        "container created"
+    );
 
     Ok(())
 }
@@ -252,7 +260,11 @@ pub async fn stop_deployment_processes(
             )
             .await
         {
-            tracing::warn!("Failed to stop container {}: {:?}", process.name, e);
+            tracing::warn!(
+                container = %process.name,
+                error = ?e,
+                "Failed to stop container"
+            );
         }
     }
 
@@ -313,14 +325,26 @@ pub async fn delete_deployment_processes(
     let processes = list_deployment_processes(docker_client, &deployment.id).await?;
 
     for process in processes {
-        if let Err(e) = docker_client
+        let res = docker_client
             .remove_container(
                 &process.name,
                 Some(RemoveContainerOptionsBuilder::new().force(true).build()),
             )
-            .await
-        {
-            tracing::warn!("Failed to remove container {}: {:?}", process.name, e);
+            .await;
+
+        if let Err(e) = res {
+            tracing::warn!(
+                container = %process.name,
+                error = ?e,
+                "Failed to remove container"
+            );
+        } else {
+            tracing::info!(
+                container = %process.name,
+                app_slug = %app.slug,
+                deployment_id = %deployment.id,
+                "container destroyed"
+            );
         }
     }
 
@@ -359,7 +383,11 @@ pub async fn delete_app_volumes(docker_client: &Docker, app_id: &str) -> Deploym
             .remove_volume(&name, None::<RemoveVolumeOptions>)
             .await
         {
-            tracing::warn!("Failed to remove volume {}: {:?}", name, e);
+            tracing::warn!(
+                volume = %name,
+                error = ?e,
+                "Failed to remove volume"
+            );
         }
     }
 
@@ -472,17 +500,25 @@ pub async fn run_release_container(
 
     let exit_code = wait_res.status_code;
 
-    if let Err(e) = docker_client
+    let remove_res = docker_client
         .remove_container(
             &container_name,
             Some(RemoveContainerOptionsBuilder::new().force(true).build()),
         )
-        .await
-    {
+        .await;
+
+    if let Err(e) = remove_res {
         tracing::warn!(
-            "Failed to remove release container {}: {:?}",
-            container_name,
-            e
+            container = %container_name,
+            error = ?e,
+            "Failed to remove release container"
+        );
+    } else {
+        tracing::info!(
+            container = %container_name,
+            app_id = %app.id,
+            deployment_id = %deployment.id,
+            "container destroyed"
         );
     }
 

@@ -94,7 +94,10 @@ async fn pump_ws_to_exec(
             }
 
             Message::Close(frame) => {
-                tracing::debug!("client closed websocket: {:?}", frame);
+                tracing::debug!(
+                    close_frame = ?frame,
+                    "client closed websocket"
+                );
                 break;
             }
 
