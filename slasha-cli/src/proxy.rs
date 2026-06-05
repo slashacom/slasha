@@ -38,9 +38,16 @@ pub async fn handle_proxy(
     let local_addr = listener.local_addr()?;
 
     let ws_url = build_ws_url(state.api_client.base_url(), slug, &resolved.id)?;
-    let token = get_auth_token()?.ok_or_else(|| anyhow!("Not authenticated. Run `slasha login`."))?;
+    let token =
+        get_auth_token()?.ok_or_else(|| anyhow!("Not authenticated. Run `slasha login`."))?;
 
-    print_banner(&resolved, &env_vars, BIND_HOST, local_addr.port(), no_secret);
+    print_banner(
+        &resolved,
+        &env_vars,
+        BIND_HOST,
+        local_addr.port(),
+        no_secret,
+    );
 
     loop {
         let (socket, peer) = listener.accept().await?;
@@ -63,14 +70,18 @@ struct ResolvedService {
     kind: ServiceKind,
 }
 
-async fn resolve_service(state: &AppState, slug: &str, name_or_id: &str) -> Result<ResolvedService> {
+async fn resolve_service(
+    state: &AppState,
+    slug: &str,
+    name_or_id: &str,
+) -> Result<ResolvedService> {
     let body = state
         .api_client
         .get(&format!("/api/apps/{}/services", slug))
         .await?;
 
-    let services: Vec<Service> = serde_json::from_value(body["services"].clone())
-        .context("Failed to parse services")?;
+    let services: Vec<Service> =
+        serde_json::from_value(body["services"].clone()).context("Failed to parse services")?;
 
     for svc in services {
         if svc.name == name_or_id || svc.id == name_or_id {
@@ -95,19 +106,21 @@ async fn fetch_service_env(
         .get(&format!("/api/apps/{}/services/{}/env", slug, service_id))
         .await?;
 
-    serde_json::from_value(body["env_vars"].clone())
-        .context("Failed to parse service env vars")
+    serde_json::from_value(body["env_vars"].clone()).context("Failed to parse service env vars")
 }
 
 fn build_ws_url(base_url: &str, slug: &str, service_id: &str) -> Result<String> {
-    let url = url::Url::parse(base_url).with_context(|| format!("Invalid base URL: {}", base_url))?;
+    let url =
+        url::Url::parse(base_url).with_context(|| format!("Invalid base URL: {}", base_url))?;
     let ws_scheme = match url.scheme() {
         "https" => "wss",
         "http" => "ws",
         other => anyhow::bail!("Unsupported base URL scheme: {}", other),
     };
 
-    let host = url.host_str().ok_or_else(|| anyhow!("Base URL has no host"))?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| anyhow!("Base URL has no host"))?;
     let mut origin = format!("{}://{}", ws_scheme, host);
     if let Some(p) = url.port() {
         origin.push_str(&format!(":{}", p));
@@ -132,7 +145,7 @@ async fn forward_connection(
         HeaderValue::from_str(&format!("Bearer {}", token))?,
     );
 
-    let (ws_stream, _resp) = tokio::time::timeout(
+    let (ws_stream, _) = tokio::time::timeout(
         std::time::Duration::from_secs(WS_CONNECT_TIMEOUT_SECS),
         connect_async(request),
     )
@@ -148,12 +161,12 @@ async fn forward_connection(
             match msg? {
                 Message::Binary(bytes) => tcp_wr.write_all(&bytes).await?,
                 Message::Close(_) => break,
-                Message::Ping(_) | Message::Pong(_) => {}
-                Message::Text(_) | Message::Frame(_) => {}
+                _ => {}
             }
         }
+
         tcp_wr.shutdown().await.ok();
-        Ok::<(), anyhow::Error>(())
+        Ok(())
     };
 
     let tcp_to_ws = async {
@@ -168,7 +181,7 @@ async fn forward_connection(
                 .await?;
         }
         ws_tx.send(Message::Close(None)).await.ok();
-        Ok::<(), anyhow::Error>(())
+        Ok(())
     };
 
     tokio::select! {
@@ -245,4 +258,3 @@ fn build_dsn(
         ),
     }
 }
-

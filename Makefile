@@ -36,7 +36,7 @@ clean:
 	@rm -rf repos/
 
 format:
-	@cargo fmt
+	@cargo +nightly fmt
 	@cd web && bun run format
 
 lint:
