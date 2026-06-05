@@ -234,7 +234,7 @@ async fn tunnel_handler(
 
     let user_id = user.id.clone();
     Ok(ws.on_upgrade(move |socket| async move {
-        tunnel::handle_tunnel(socket, docker, svc, user_id).await;
+        tunnel::handle_tunnel(socket, docker, db_pool, svc, user_id).await;
     }))
 }
 

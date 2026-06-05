@@ -102,12 +102,23 @@ impl ServiceKind {
         }
     }
 
-    pub fn container_port(&self) -> u16 {
+    pub fn default_container_port(&self) -> u16 {
         match self {
             ServiceKind::PostgreSQL => 5432,
             ServiceKind::MySQL => 3306,
             ServiceKind::MongoDB => 27017,
             ServiceKind::Redis => 6379,
+        }
+    }
+
+    pub fn exec_tunnel_cmd(&self, port: u16) -> Vec<String> {
+        match self {
+            ServiceKind::Redis => vec!["nc".to_string(), "127.0.0.1".to_string(), port.to_string()],
+            _ => vec![
+                "bash".to_string(),
+                "-c".to_string(),
+                format!("exec 3<>/dev/tcp/127.0.0.1/{port}; cat <&3 & cat >&3; wait"),
+            ],
         }
     }
 
@@ -216,7 +227,6 @@ impl ServiceKind {
         };
         vec!["CMD-SHELL".to_string(), cmd.to_string()]
     }
-
 }
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]

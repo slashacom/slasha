@@ -808,9 +808,9 @@ function ConnectModal({
         </DialogHeader>
         <VStack space={4} className="mt-4">
           <p className="text-xs text-text-tertiary">
-            Run this on your machine to open a secure tunnel to{' '}
-            {service.kind}. The tunnel rides the existing HTTPS connection — no
-            firewall rules required.
+            Run this on your machine to open a secure tunnel to {service.kind}.
+            The tunnel rides the existing HTTPS connection — no firewall rules
+            required.
           </p>
           <div className="rounded-lg border border-border bg-black/40 p-3 font-mono text-[12px] text-text relative">
             <code className="select-all break-all pr-10">{command}</code>
