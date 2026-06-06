@@ -30,6 +30,21 @@ diesel::table! {
 }
 
 diesel::table! {
+    app_metrics (id) {
+        id -> Text,
+        app_id -> Text,
+        cpu_usage -> Float,
+        memory_used -> Integer,
+        memory_limit -> Integer,
+        network_rx_bps -> Float,
+        network_tx_bps -> Float,
+        disk_read_bps -> Float,
+        disk_write_bps -> Float,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     app_scale (id) {
         id -> Text,
         app_id -> Text,
@@ -112,6 +127,7 @@ diesel::joinable!(app_domains -> apps (app_id));
 diesel::joinable!(app_env_vars -> apps (app_id));
 diesel::joinable!(app_members -> apps (app_id));
 diesel::joinable!(app_members -> users (user_id));
+diesel::joinable!(app_metrics -> apps (app_id));
 diesel::joinable!(app_scale -> apps (app_id));
 diesel::joinable!(deployments -> apps (app_id));
 diesel::joinable!(service_env_vars -> services (service_id));
@@ -122,6 +138,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     app_domains,
     app_env_vars,
     app_members,
+    app_metrics,
     app_scale,
     apps,
     deployments,

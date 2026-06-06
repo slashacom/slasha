@@ -55,9 +55,16 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+export function parseUTC(str: string): Date {
+  if (!str.endsWith('Z') && !str.includes('+')) {
+    return new Date(str + 'Z');
+  }
+  return new Date(str);
+}
+
 export function formatRelativeTime(date: string | Date): string {
   const now = new Date();
-  const then = typeof date === 'string' ? new Date(date + 'Z') : date; // Add Z to NaiveDateTime if missing
+  const then = typeof date === 'string' ? parseUTC(date) : date;
   const seconds = Math.floor((now.getTime() - then.getTime()) / 1000);
 
   if (seconds < 60) return 'just now';

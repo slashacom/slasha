@@ -4,8 +4,10 @@ pub mod auth;
 pub mod docker;
 pub mod error;
 pub mod extractors;
+pub mod metrics;
 pub mod middleware;
 pub mod proxy;
+
 pub mod routing;
 pub mod ssh;
 pub mod state;
@@ -21,11 +23,7 @@ pub use state::AppState;
 use tokio::net::TcpListener;
 use tracing::info;
 
-use crate::{
-    docker::sync::startup_container_sync,
-    proxy::container::ensure_caddy_ready,
-    state::{Clients, Config, Env, Runtime, Storage},
-};
+use crate::state::{Clients, Config, Env, Runtime, Storage};
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../slasha-db/migrations");
 
@@ -92,19 +90,21 @@ pub async fn start_server() -> anyhow::Result<()> {
     let docker_client =
         bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");
 
-    ensure_caddy_ready(&docker_client).await?;
+    proxy::container::ensure_caddy_ready(&docker_client).await?;
 
     let clients = Clients::new(docker_client.clone());
     let storage = Storage::new(&db_path, repos_dir)?;
 
     run_migrations(&storage);
 
+    metrics::spawn_metrics_collector(storage.db_pool.clone(), docker_client.clone());
+
     let proxy_sync_trigger =
         proxy::spawn_route_syncer(clients.clone(), storage.db_pool.clone(), config.clone());
     let runtime = Runtime::new(&logs_dir, proxy_sync_trigger).await?;
     let state = AppState::new(config, clients, storage, runtime);
 
-    startup_container_sync(
+    docker::sync::startup_container_sync(
         &state.clients.docker,
         &state.storage.db_pool,
         &state.runtime,

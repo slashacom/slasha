@@ -1,5 +1,6 @@
 pub mod app;
 pub mod app_domain;
+pub mod app_metrics;
 pub mod app_scale;
 pub mod deployment;
 pub mod service;

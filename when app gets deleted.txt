@@ -1,0 +1,2 @@
+- when app gets deleted logs don't get removed and web shows stale app need to reload
+- cleanup service and deployment code where service has ignore_if_not_exist and look for similar issues
