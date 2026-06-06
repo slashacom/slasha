@@ -5,4 +5,4 @@ pub mod repos;
 
 pub use connection::{DbPool, create_pool};
 pub use error::{DbError, DbResult};
-pub use models::{app, deployment, schema, service, ssh_keys, user};
+pub use models::{app, app_metrics, deployment, schema, service, ssh_keys, user};

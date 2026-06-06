@@ -4,6 +4,8 @@ import type { App } from '~/models/app';
 import type { AppScale } from '~/models/app_scale';
 import type { AppDomain } from '~/models/app';
 
+import type { AppMetrics } from '~/models/app_metrics';
+
 export function getAppsOptions() {
   return queryOptions({
     queryKey: ['apps'],
@@ -93,5 +95,15 @@ export function useDeleteAppDomain() {
   return useMutation({
     mutationFn: (data: { appSlug: string; domainId: string }) =>
       httpDelete(`apps/${data.appSlug}/domains/${data.domainId}`),
+  });
+}
+
+export function getAppMetricsOptions(appSlug: string, hours?: number) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'metrics', { hours }],
+    queryFn: () =>
+      httpGet<{ metrics: AppMetrics[] }>(
+        `apps/${appSlug}/metrics${hours ? `?hours=${hours}` : ''}`
+      ),
   });
 }

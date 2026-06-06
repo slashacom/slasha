@@ -252,21 +252,26 @@ pub async fn stop_deployment_processes(
 ) -> DeploymentResult<()> {
     let processes = list_deployment_processes(docker_client, &deployment.id).await?;
 
-    for process in processes {
-        if let Err(e) = docker_client
-            .stop_container(
-                &process.name,
-                Some(StopContainerOptionsBuilder::new().t(10).build()),
-            )
-            .await
-        {
-            tracing::warn!(
-                container = %process.name,
-                error = ?e,
-                "Failed to stop container"
-            );
+    let stop_futures = processes.into_iter().map(|process| {
+        let docker = docker_client.clone();
+        async move {
+            if let Err(e) = docker
+                .stop_container(
+                    &process.name,
+                    Some(StopContainerOptionsBuilder::new().t(10).build()),
+                )
+                .await
+            {
+                tracing::warn!(
+                    container = %process.name,
+                    error = ?e,
+                    "Failed to stop container"
+                );
+            }
         }
-    }
+    });
+
+    futures_util::future::join_all(stop_futures).await;
 
     log_manager.remove(&LogKey::Deployment {
         app_slug: app.slug.clone(),
@@ -324,29 +329,36 @@ pub async fn delete_deployment_processes(
 ) -> DeploymentResult<()> {
     let processes = list_deployment_processes(docker_client, &deployment.id).await?;
 
-    for process in processes {
-        let res = docker_client
-            .remove_container(
-                &process.name,
-                Some(RemoveContainerOptionsBuilder::new().force(true).build()),
-            )
-            .await;
+    let delete_futures = processes.into_iter().map(|process| {
+        let docker = docker_client.clone();
+        let app_slug = app.slug.clone();
+        let dep_id = deployment.id.clone();
+        async move {
+            let res = docker
+                .remove_container(
+                    &process.name,
+                    Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+                )
+                .await;
 
-        if let Err(e) = res {
-            tracing::warn!(
-                container = %process.name,
-                error = ?e,
-                "Failed to remove container"
-            );
-        } else {
-            tracing::info!(
-                container = %process.name,
-                app_slug = %app.slug,
-                deployment_id = %deployment.id,
-                "container destroyed"
-            );
+            if let Err(e) = res {
+                tracing::warn!(
+                    container = %process.name,
+                    error = ?e,
+                    "Failed to remove container"
+                );
+            } else {
+                tracing::info!(
+                    container = %process.name,
+                    app_slug = %app_slug,
+                    deployment_id = %dep_id,
+                    "container destroyed"
+                );
+            }
         }
-    }
+    });
+
+    futures_util::future::join_all(delete_futures).await;
 
     log_manager.remove(&LogKey::Deployment {
         app_slug: app.slug.clone(),

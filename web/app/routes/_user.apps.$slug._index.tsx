@@ -22,6 +22,7 @@ import { CodeViewer } from '~/components/apps/code-viewer';
 import { FolderViewer } from '~/components/apps/folder-viewer';
 import { DeploymentsView } from '~/components/apps/deployments';
 import { ServicesView } from '~/components/apps/services';
+import { AppMetricsView } from '~/components/apps/metrics';
 import { AppEnvEditor } from '~/components/apps/env-editor';
 import { DomainManager } from '~/components/apps/domain-manager';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
@@ -153,7 +154,7 @@ export default function AppIndexPage() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<
-    'files' | 'deployments' | 'services' | 'settings'
+    'files' | 'deployments' | 'services' | 'metrics' | 'settings'
   >('files');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -278,6 +279,17 @@ export default function AppIndexPage() {
             Services
           </button>
           <button
+            onClick={() => setActiveTab('metrics')}
+            className={cn(
+              'h-10 text-[13px] font-medium transition-colors border-b-2 -mb-[2px]',
+              activeTab === 'metrics'
+                ? 'border-white text-text'
+                : 'border-transparent text-text-tertiary hover:text-text-secondary'
+            )}
+          >
+            Metrics
+          </button>
+          <button
             onClick={() => setActiveTab('settings')}
             className={cn(
               'h-10 text-[13px] font-medium transition-colors border-b-2 -mb-[2px]',
@@ -345,6 +357,8 @@ export default function AppIndexPage() {
         <DeploymentsView appSlug={slug!} />
       ) : activeTab === 'services' ? (
         <ServicesView appSlug={slug!} />
+      ) : activeTab === 'metrics' ? (
+        <AppMetricsView appSlug={slug!} />
       ) : !hasCommits ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <div className="rounded-full border border-border p-3">
