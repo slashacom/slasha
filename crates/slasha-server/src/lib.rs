@@ -97,7 +97,7 @@ pub async fn start_server() -> anyhow::Result<()> {
 
     run_migrations(&storage);
 
-    metrics::spawn_metrics_collector(storage.db_pool.clone(), docker_client.clone());
+    metrics::spawn_app_metrics_collector(storage.db_pool.clone(), docker_client.clone());
 
     let proxy_sync_trigger =
         proxy::spawn_route_syncer(clients.clone(), storage.db_pool.clone(), config.clone());

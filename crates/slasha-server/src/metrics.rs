@@ -31,7 +31,7 @@ struct AppAggregate {
     disk_write_bps: f64,
 }
 
-pub fn spawn_metrics_collector(db_pool: DbPool, docker: Docker) {
+pub fn spawn_app_metrics_collector(db_pool: DbPool, docker: Docker) {
     tokio::spawn(async move {
         let mut prev: HashMap<String, PrevCounters> = HashMap::new();
         tracing::info!("app metrics collector started");

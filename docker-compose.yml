@@ -3,12 +3,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-      - "22:22"
+    image: slasha:latest
+    container_name: slasha
+    network_mode: host
     volumes:
-      - ./data/.slasha:/home/slasha/.slasha
-      - ./data/.ssh:/home/slasha/.ssh
+      - /var/run/docker.sock:/var/run/docker.sock
+      - slasha-data:/home/slasha/.slasha
+      - slasha-ssh:/home/slasha/.ssh
     env_file:
       - .env
     restart: unless-stopped
+
+volumes:
+  slasha-data:
+  slasha-ssh:

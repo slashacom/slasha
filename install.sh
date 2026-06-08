@@ -11,7 +11,6 @@
 # Environment overrides:
 #   SLASHA_VERSION      tag to install (e.g. v0.2.0). Default: latest release.
 #   SLASHA_INSTALL_DIR  install directory. Default: /usr/local/bin.
-#   GITHUB_TOKEN        used for the GitHub API call (avoids rate limits).
 
 set -eu
 

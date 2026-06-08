@@ -71,7 +71,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           echo "VERSION=$version" >> "$GITHUB_ENV"
-          sed -i "0,/^version = .*/s//version = \"$version\"/" slasha-cli/Cargo.toml
+          sed -i "0,/^version = .*/s//version = \"$version\"/" crates/slasha-cli/Cargo.toml
 
       - name: Build binary
         run: |
