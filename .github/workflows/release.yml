@@ -69,11 +69,7 @@ jobs:
         run: bun run scripts/replace-version.cjs
 
       - name: Build binary
-        run: |
-          cargo build --release \
-            -p slasha-cli \
-            --features serve-bundle,vendored \
-            --target ${{ matrix.target }}
+        run: cargo build --release -p slasha-cli --features "serve-bundle,vendored" --target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: matrix.os != 'windows'
