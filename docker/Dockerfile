@@ -44,7 +44,7 @@ RUN mkdir /var/run/sshd \
  && rm -f /etc/ssh/ssh_host_*
 
 COPY --from=builder /app/target/release/slasha /usr/local/bin/slasha
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/slasha /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 3000 2222

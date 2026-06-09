@@ -1,8 +1,8 @@
 services:
   slasha:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     image: slasha:latest
     container_name: slasha
     network_mode: host
@@ -11,7 +11,7 @@ services:
       - slasha-data:/home/slasha/.slasha
       - slasha-ssh:/home/slasha/.ssh
     env_file:
-      - .env
+      - ../.env
     restart: unless-stopped
 
 volumes:

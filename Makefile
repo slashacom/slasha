@@ -24,10 +24,10 @@ dev-bundle:
 	cargo run -p slasha-cli --features serve-bundle -- serve
 
 docker-up:
-	docker compose up --build
+	docker compose -f docker/docker-compose.yml up --build
 
 docker-logs:
-	docker compose logs -f
+	docker compose -f docker/docker-compose.yml logs -f
 
 clean:
 	@cargo clean
