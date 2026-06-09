@@ -1,6 +1,6 @@
 [package]
 name = "slasha-server"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2024"
 
 [dependencies]
@@ -47,7 +47,4 @@ sha2 = "0.10"
 
 [features]
 bundle = ["rust-embed", "mime_guess"]
-# Statically link OpenSSL (via git2/libgit2) and SQLite so the release binary
-# is self-contained. Off by default — local and Docker builds keep linking the
-# host libraries, which avoids needing perl/cmake to compile OpenSSL from source.
 vendored = ["git2/vendored-openssl", "slasha-db/bundled-sqlite"]

@@ -1,13 +1,5 @@
 name: Release
 
-# Build the self-contained `slasha` binary and publish a GitHub Release
-# whenever a version tag is pushed:
-#
-#   git tag v0.2.0 && git push origin v0.2.0
-#
-# Each release ships one tarball per server architecture plus a SHA256SUMS
-# file; scripts/install.sh (install.sh at the repo root) consumes them.
-
 on:
   push:
     tags:
@@ -22,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    name: build ${{ matrix.target }}
+    name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -30,17 +22,24 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-22.04
+            os: linux
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-22.04-arm
+            os: linux
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            os: macos
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            os: macos
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            os: windows
     steps:
       - uses: actions/checkout@v4
 
-      # Build deps for the vendored release build:
-      #   - libdbus-1-dev: keyring crate links libdbus at build time
-      #   - cmake + perl: compile vendored libgit2 + OpenSSL from source
-      # libssl-dev / libsqlite3-dev are intentionally absent — OpenSSL and
-      # SQLite are statically linked via the `vendored` cargo feature.
-      - name: Install build dependencies
+      - name: Install build dependencies (Linux)
+        if: matrix.os == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -49,13 +48,11 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
 
-      # serve-bundle embeds web/build/client via rust-embed, so the frontend
-      # must be built before cargo compiles the binary.
       - name: Build web frontend
         working-directory: web
         run: |
           bun install --frozen-lockfile
-          NODE_ENV=production bun run build
+          bun run build
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -66,12 +63,10 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      # Stamp the binary's version (`slasha --version`) with the tag.
-      - name: Set crate version from tag
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          sed -i "0,/^version = .*/s//version = \"$version\"/" crates/slasha-cli/Cargo.toml
+      - name: Set crate version
+        env:
+          SLASHA_VERSION: ${{ github.ref_name }}
+        run: bun run scripts/replace-version.cjs
 
       - name: Build binary
         run: |
@@ -80,11 +75,20 @@ jobs:
             --features serve-bundle,vendored \
             --target ${{ matrix.target }}
 
-      - name: Package
+      - name: Package (Unix)
+        if: matrix.os != 'windows'
         run: |
           asset="slasha-${{ matrix.target }}.tar.gz"
           tar -czf "$asset" -C "target/${{ matrix.target }}/release" slasha
           echo "ASSET=$asset" >> "$GITHUB_ENV"
+
+      - name: Package (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $asset = "slasha-${{ matrix.target }}.zip"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/slasha.exe" -DestinationPath $asset
+          echo "ASSET=$asset" >> $env:GITHUB_ENV
 
       - uses: actions/upload-artifact@v4
         with:
@@ -105,13 +109,14 @@ jobs:
 
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum slasha-*.tar.gz > SHA256SUMS
+        run: sha256sum slasha-*.tar.gz slasha-*.zip > SHA256SUMS
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/slasha-*.tar.gz
+            dist/slasha-*.zip
             dist/SHA256SUMS
           generate_release_notes: true
           fail_on_unmatched_files: true

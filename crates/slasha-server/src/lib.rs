@@ -73,7 +73,7 @@ pub async fn start_server() -> anyhow::Result<()> {
 
     let (db_path, repos_dir, logs_dir) = setup_dirs();
 
-    let env = Env::from_str_or_default(
+    let slasha_env = Env::from_str_or_default(
         &std::env::var("SLASHA_ENV").unwrap_or_else(|_| "development".to_string()),
     );
 
@@ -85,7 +85,7 @@ pub async fn start_server() -> anyhow::Result<()> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(3000);
 
-    let config = Config::new(env, jwt_secret, platform_domain, logs_dir.clone(), port);
+    let config = Config::new(slasha_env, jwt_secret, platform_domain, logs_dir.clone(), port);
 
     let docker_client =
         bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");
