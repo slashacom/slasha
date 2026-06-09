@@ -91,14 +91,14 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
             port: container_port,
         };
 
-        // Add default domain
+        // add default domain
         let default_domain = format!("{}.{}", app_slug, config.platform_domain);
         domain_upstreams
             .entry(default_domain)
             .or_default()
             .push(upstream.clone());
 
-        // Add custom domains
+        // add custom domains
         let custom_domains = AppDomainRepo::list_for_app(db_pool, app_id).await?;
         for domain in custom_domains {
             domain_upstreams

@@ -1,123 +1,168 @@
-#!/bin/sh
+#!/usr/bin/env bash
 #
-# Install the slasha CLI/server binary on a Linux server.
+# install the slasha cli on linux or macos.
 #
-#   curl -fsSL https://raw.githubusercontent.com/slashacom/slasha/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/slashacom/slasha/main/install.sh | bash
 #
-# Downloads the latest release binary from GitHub, verifies its checksum, and
-# installs it to /usr/local/bin/slasha. Once installed, run `slasha serve` to
-# start the server (Docker must be installed and running).
-#
-# Environment overrides:
-#   SLASHA_VERSION      tag to install (e.g. v0.2.0). Default: latest release.
-#   SLASHA_INSTALL_DIR  install directory. Default: /usr/local/bin.
+# environment overrides:
+#   SLASHA_VERSION      tag to install - default: latest.
+#   SLASHA_INSTALL_DIR  install directory - default: ~/.local/bin.
 
-set -eu
+set -euo pipefail
 
 REPO="slashacom/slasha"
 BIN="slasha"
-INSTALL_DIR="${SLASHA_INSTALL_DIR:-/usr/local/bin}"
-VERSION="${SLASHA_VERSION:-latest}"
+INSTALL_DIR="${SLASHA_INSTALL_DIR:-$HOME/.local/bin}"
 
-err() {
-  echo "slasha install: $*" >&2
-  exit 1
+COLOR_OFF=''
+COLOR_RED=''
+COLOR_GREEN=''
+COLOR_DIM=''
+COLOR_YELLOW=''
+
+if [[ -t 1 ]]; then
+    COLOR_OFF='\033[0m'
+    COLOR_RED='\033[0;31m'
+    COLOR_GREEN='\033[0;32m'
+    COLOR_DIM='\033[0;2m'
+    COLOR_YELLOW='\033[0;33m'
+fi
+
+err()     { echo -e "${COLOR_RED}error${COLOR_OFF}: $*" >&2; exit 1; }
+info()    { echo -e "${COLOR_DIM}$*${COLOR_OFF}"; }
+success() { echo -e "${COLOR_GREEN}$*${COLOR_OFF}"; }
+warn()    { echo -e "${COLOR_YELLOW}$*${COLOR_OFF}"; }
+
+detect_target() {
+    local os arch
+    os="$(uname -s)"
+    arch="$(uname -m)"
+
+    case "$os" in
+        Linux)
+            case "$arch" in
+                x86_64 | amd64)  echo "x86_64-unknown-linux-gnu" ;;
+                aarch64 | arm64) echo "aarch64-unknown-linux-gnu" ;;
+                *) err "unsupported linux architecture: $arch" ;;
+            esac
+            ;;
+        Darwin)
+            case "$arch" in
+                x86_64) echo "x86_64-apple-darwin" ;;
+                arm64)  echo "aarch64-apple-darwin" ;;
+                *) err "unsupported macos architecture: $arch" ;;
+            esac
+            ;;
+        MINGW* | MSYS* | CYGWIN*)
+            err "windows is not supported by this installer. download the .zip from https://github.com/$REPO/releases"
+            ;;
+        *)
+            err "unsupported os: $os"
+            ;;
+    esac
 }
 
-# --- platform detection ---------------------------------------------------
-os="$(uname -s)"
-[ "$os" = "Linux" ] || err "only Linux servers are supported (detected: $os).
-For macOS/Windows use the CLI from your package manager or build from source."
+get_latest_version() {
+    local body tag
+    if command -v curl &>/dev/null; then
+        body="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest")"
+    elif command -v wget &>/dev/null; then
+        body="$(wget -qO- "https://api.github.com/repos/$REPO/releases/latest")"
+    else
+        err "curl or wget is required."
+    fi
+    tag="$(printf '%s' "$body" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[^"]*"([^"]+)".*/\1/')"
+    [[ -n "$tag" ]] || err "could not determine the latest release tag."
+    echo "$tag"
+}
 
-case "$(uname -m)" in
-  x86_64 | amd64) target="x86_64-unknown-linux-gnu" ;;
-  aarch64 | arm64) target="aarch64-unknown-linux-gnu" ;;
-  *) err "unsupported architecture: $(uname -m) (need x86_64 or arm64)." ;;
-esac
+tmpdir=""
+cleanup() { [[ -n "$tmpdir" ]] && rm -rf "$tmpdir"; }
+trap cleanup EXIT
 
-# --- http helper ----------------------------------------------------------
-if command -v curl >/dev/null 2>&1; then
-  fetch() { curl -fsSL "$1"; }
-  fetch_to() { curl -fsSL -o "$2" "$1"; }
-elif command -v wget >/dev/null 2>&1; then
-  fetch() { wget -qO- "$1"; }
-  fetch_to() { wget -qO "$2" "$1"; }
+download_and_install() {
+    local tag="$1" target="$2"
+    local asset="slasha-$target.tar.gz"
+    local base="https://github.com/$REPO/releases/download/$tag"
+
+    tmpdir="$(mktemp -d)"
+
+    info "downloading $BIN $tag for $target..."
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$base/$asset" -o "$tmpdir/$asset" || err "download failed: $base/$asset"
+    else
+        wget -q "$base/$asset" -O "$tmpdir/$asset" || err "download failed: $base/$asset"
+    fi
+
+    info "verifying checksum..."
+    if curl -fsSL "$base/SHA256SUMS" -o "$tmpdir/SHA256SUMS" 2>/dev/null || \
+       wget -q "$base/SHA256SUMS" -O "$tmpdir/SHA256SUMS" 2>/dev/null; then
+        local expected actual
+        expected="$(grep " $asset\$" "$tmpdir/SHA256SUMS" | awk '{print $1}')"
+        [[ -n "$expected" ]] || err "no checksum entry for $asset in SHA256SUMS."
+        if command -v sha256sum &>/dev/null; then
+            actual="$(sha256sum "$tmpdir/$asset" | awk '{print $1}')"
+        elif command -v shasum &>/dev/null; then
+            actual="$(shasum -a 256 "$tmpdir/$asset" | awk '{print $1}')"
+        fi
+        [[ -z "${actual:-}" ]] || [[ "$actual" == "$expected" ]] || \
+            err "checksum mismatch (expected $expected, got $actual)."
+    else
+        warn "SHA256SUMS not available — skipping checksum verification."
+    fi
+
+    info "extracting..."
+    tar -xzf "$tmpdir/$asset" -C "$tmpdir"
+    [[ -f "$tmpdir/$BIN" ]] || err "binary '$BIN' not found in archive."
+
+    info "installing to $INSTALL_DIR..."
+    mkdir -p "$INSTALL_DIR"
+    install -m 0755 "$tmpdir/$BIN" "$INSTALL_DIR/$BIN"
+}
+
+is_upgrade=false
+installed_version=""
+if [[ -x "$INSTALL_DIR/$BIN" ]]; then
+    is_upgrade=true
+    installed_version="$("$INSTALL_DIR/$BIN" --version 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+    info "existing installation found: $INSTALL_DIR/$BIN${installed_version:+ (v$installed_version)}"
+fi
+
+if [[ -n "${SLASHA_VERSION:-}" ]]; then
+    tag="$SLASHA_VERSION"
 else
-  err "need curl or wget installed."
+    info "fetching latest version..."
+    tag="$(get_latest_version)"
 fi
 
-# --- resolve the release tag ----------------------------------------------
-if [ "$VERSION" = "latest" ]; then
-  api="https://api.github.com/repos/$REPO/releases/latest"
-  if [ -n "${GITHUB_TOKEN:-}" ] && command -v curl >/dev/null 2>&1; then
-    body="$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" "$api")"
-  else
-    body="$(fetch "$api")"
-  fi
-  tag="$(printf '%s' "$body" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[^"]*"([^"]+)".*/\1/')"
-  [ -n "$tag" ] || err "could not determine the latest release tag from GitHub."
+info "latest version: $tag"
+
+if [[ "$is_upgrade" == true && "${installed_version:-}" == "${tag#v}" ]]; then
+    success "$BIN is already up to date (v${installed_version})."
+    exit 0
+fi
+
+info "detecting platform..."
+target="$(detect_target)"
+info "target: $target"
+
+if [[ "$is_upgrade" == true ]]; then
+    info "upgrading $BIN to $tag..."
 else
-  tag="$VERSION"
+    info "installing $BIN $tag..."
 fi
 
-asset="slasha-$target.tar.gz"
-base="https://github.com/$REPO/releases/download/$tag"
+download_and_install "$tag" "$target"
 
-echo "slasha install: $tag ($target) -> $INSTALL_DIR/$BIN"
-
-# --- download into a temp dir ---------------------------------------------
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT INT TERM
-
-fetch_to "$base/$asset" "$tmp/$asset" || err "download failed: $base/$asset"
-
-# --- verify checksum ------------------------------------------------------
-if fetch_to "$base/SHA256SUMS" "$tmp/SHA256SUMS" 2>/dev/null; then
-  expected="$(grep " $asset\$" "$tmp/SHA256SUMS" | awk '{print $1}')"
-  [ -n "$expected" ] || err "no checksum for $asset in SHA256SUMS."
-
-  if command -v sha256sum >/dev/null 2>&1; then
-    actual="$(sha256sum "$tmp/$asset" | awk '{print $1}')"
-  elif command -v shasum >/dev/null 2>&1; then
-    actual="$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')"
-  else
-    actual=""
-  fi
-
-  if [ -n "$actual" ] && [ "$actual" != "$expected" ]; then
-    err "checksum mismatch for $asset (expected $expected, got $actual)."
-  fi
+if [[ "$is_upgrade" == true ]]; then
+    success "$BIN upgraded to $tag successfully!"
 else
-  echo "slasha install: SHA256SUMS not found, skipping checksum verification." >&2
+    success "$BIN $tag installed successfully!"
 fi
-
-# --- extract --------------------------------------------------------------
-tar -xzf "$tmp/$asset" -C "$tmp"
-[ -f "$tmp/$BIN" ] || err "archive did not contain a '$BIN' binary."
-chmod +x "$tmp/$BIN"
-
-# --- install (escalate only if needed) ------------------------------------
-sudo=""
-if [ ! -d "$INSTALL_DIR" ] || [ ! -w "$INSTALL_DIR" ]; then
-  if [ "$(id -u)" -ne 0 ]; then
-    command -v sudo >/dev/null 2>&1 || err "$INSTALL_DIR is not writable and sudo is unavailable. Re-run as root or set SLASHA_INSTALL_DIR."
-    sudo="sudo"
-  fi
-fi
-
-$sudo mkdir -p "$INSTALL_DIR"
-$sudo install -m 0755 "$tmp/$BIN" "$INSTALL_DIR/$BIN"
-
-# --- report ---------------------------------------------------------------
-echo "slasha install: installed $("$INSTALL_DIR/$BIN" --version 2>/dev/null || echo "$BIN $tag")"
 
 case ":$PATH:" in
-  *":$INSTALL_DIR:"*) ;;
-  *) echo "slasha install: note — $INSTALL_DIR is not on your PATH." >&2 ;;
+    *":$INSTALL_DIR:"*) ;;
+    *) warn "note: add $INSTALL_DIR to your PATH (e.g. export PATH=\"\$PATH:$INSTALL_DIR\")" ;;
 esac
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "slasha install: note — 'slasha serve' requires Docker, which was not found on this host." >&2
-fi
-
-echo "slasha install: done. Run 'slasha serve' to start the server."
+info "run '$BIN --help' to get started."
