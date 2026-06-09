@@ -42,19 +42,19 @@ pub async fn detect_build_strategy(
     .map_err(|_| DeploymentError::SpawnBlockingPanicked)?
 }
 
-pub fn parse_expose(dockerfile_content: &str) -> u16 {
+pub fn parse_expose(dockerfile_content: &str) -> Option<u16> {
     for line in dockerfile_content.lines() {
         let trimmed = line.trim();
         if trimmed.to_uppercase().starts_with("EXPOSE ") {
             let rest = trimmed["EXPOSE ".len()..].trim();
             let port_str = rest.split('/').next().unwrap_or("").trim();
             if let Ok(port) = port_str.parse::<u16>() {
-                return port;
+                return Some(port);
             }
         }
     }
 
-    8080
+    None
 }
 
 pub fn parse_volumes(dockerfile_content: &str) -> Vec<String> {

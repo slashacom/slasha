@@ -76,7 +76,7 @@ pub struct LogManager {
 }
 
 #[derive(Clone)]
-pub struct Log {
+pub struct LogHandle {
     key: String,
     path: PathBuf,
     tx: broadcast::Sender<String>,
@@ -92,14 +92,14 @@ impl LogManager {
         }
     }
 
-    pub async fn get_logger(&self, key: &LogKey) -> DeploymentResult<Log> {
+    pub async fn get_logger(&self, key: &LogKey) -> DeploymentResult<LogHandle> {
         let map_key = key.as_map_key();
         let path = key.as_path(&self.logs_dir);
 
         self.build_log_handle(map_key, path).await
     }
 
-    async fn build_log_handle(&self, key: String, path: PathBuf) -> DeploymentResult<Log> {
+    async fn build_log_handle(&self, key: String, path: PathBuf) -> DeploymentResult<LogHandle> {
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
@@ -131,7 +131,7 @@ impl LogManager {
             })
             .clone();
 
-        Ok(Log {
+        Ok(LogHandle {
             key,
             path,
             tx,
@@ -161,7 +161,7 @@ impl LogManager {
     }
 }
 
-impl Log {
+impl LogHandle {
     pub async fn send(&self, line: impl Into<String>) -> DeploymentResult<()> {
         let line = line.into();
         let _ = self.tx.send(line.clone()); // no one may be listening
@@ -231,12 +231,13 @@ impl Log {
     }
 }
 
+// optionally return the result if the caller cares
 pub fn stream_container_logs(
     docker_client: Docker,
-    log: Log,
+    log: LogHandle,
     container: String,
     prefix: Option<String>,
-) -> tokio::task::JoinHandle<()> {
+) -> tokio::task::JoinHandle<DeploymentResult<()>> {
     tokio::spawn(async move {
         if let Err(e) =
             stream_container_logs_inner(docker_client, log.clone(), container.clone(), prefix).await
@@ -247,13 +248,17 @@ pub fn stream_container_logs(
                 error = ?e,
                 "Log stream failed"
             );
+
+            return Err(e);
         }
+
+        Ok(())
     })
 }
 
-pub async fn stream_container_logs_inner(
+async fn stream_container_logs_inner(
     docker_client: Docker,
-    log: Log,
+    log: LogHandle,
     container: String,
     prefix: Option<String>,
 ) -> DeploymentResult<()> {

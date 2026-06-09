@@ -26,7 +26,7 @@ use uuid::Uuid;
 use crate::{
     docker::{
         deployment::{
-            delete_deployment_processes, list_deployment_processes, restart_deployment_processes,
+            list_deployment_processes, remove_deployment_processes, restart_deployment_processes,
             run_deployment, scale_deployment_process, stop_deployment_processes,
         },
         logs::{LogKey, LogManager},
@@ -72,7 +72,7 @@ struct TriggerDeployReq {
 }
 
 async fn trigger_deploy(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
@@ -121,7 +121,7 @@ async fn trigger_deploy(
     let deployment = DeploymentRepo::create(&db_pool, deployment).await?;
 
     tokio::spawn(run_deployment(
-        docker,
+        docker_client,
         db_pool,
         log_manager,
         proxy_sync_trigger,
@@ -157,7 +157,7 @@ async fn get_deployment(
 }
 
 async fn stop_deployment(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
@@ -178,7 +178,7 @@ async fn stop_deployment(
     }
 
     stop_deployment_processes(
-        &docker,
+        &docker_client,
         &db_pool,
         &runtime.proxy_sync_trigger,
         &runtime.log_manager,
@@ -194,7 +194,7 @@ async fn stop_deployment(
 }
 
 async fn redeploy_deployment(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
@@ -205,8 +205,8 @@ async fn redeploy_deployment(
 
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
-    delete_deployment_processes(
-        &docker,
+    remove_deployment_processes(
+        &docker_client,
         &proxy_sync_trigger,
         &log_manager,
         &app,
@@ -219,7 +219,7 @@ async fn redeploy_deployment(
         DeploymentRepo::reset_to_pending(&db_pool, &deployment.id, now).await?;
 
     tokio::spawn(run_deployment(
-        docker,
+        docker_client,
         db_pool,
         log_manager,
         proxy_sync_trigger,
@@ -233,7 +233,7 @@ async fn redeploy_deployment(
 }
 
 async fn restart_deployment(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
@@ -244,7 +244,7 @@ async fn restart_deployment(
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     restart_deployment_processes(
-        &docker,
+        &docker_client,
         &log_manager,
         &proxy_sync_trigger,
         &app,
@@ -300,7 +300,7 @@ async fn stream_logs(
 }
 
 async fn delete_deployment(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
@@ -311,8 +311,8 @@ async fn delete_deployment(
 
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
-    delete_deployment_processes(
-        &docker,
+    remove_deployment_processes(
+        &docker_client,
         &proxy_sync_trigger,
         &log_manager,
         &app,
@@ -335,7 +335,7 @@ struct ScaleDeploymentReq {
 }
 
 async fn scale_deployment(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
@@ -361,10 +361,11 @@ async fn scale_deployment(
         app_slug: app.slug.clone(),
         deployment_id: deployment.id.clone(),
     };
+
     let log = log_manager.get_logger(&log_key).await?;
 
     scale_deployment_process(
-        &docker,
+        &docker_client,
         &db_pool,
         &proxy_sync_trigger,
         &log,
@@ -384,7 +385,7 @@ async fn scale_deployment(
 }
 
 async fn list_processes(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
@@ -392,7 +393,7 @@ async fn list_processes(
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
-    let processes = list_deployment_processes(&docker, &deployment.id).await?;
+    let processes = list_deployment_processes(&docker_client, &deployment.id).await?;
 
     Ok(Json(serde_json::json!({ "processes": processes })))
 }

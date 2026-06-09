@@ -1,7 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
-use bollard::{Docker, query_parameters::RemoveContainerOptionsBuilder};
-use futures_util::{StreamExt, TryStreamExt};
+use bollard::{
+    Docker,
+    query_parameters::{RemoveContainerOptionsBuilder, StopContainerOptionsBuilder},
+};
+use futures_util::future::try_join_all;
 use slasha_db::{
     DbPool,
     app::App,
@@ -16,14 +19,14 @@ use super::{
     executor::resolve_deployment_context,
 };
 use crate::docker::{
-    DeploymentError, DeploymentResult, Rollback, logs::Log, naming::process_container_name,
+    DeploymentError, DeploymentResult, Rollback, logs::LogHandle, naming::process_container_name,
 };
 
 pub async fn scale_deployment_process(
     docker_client: &Docker,
     db_pool: &DbPool,
     proxy_sync_trigger: &Arc<Notify>,
-    log: &Log,
+    log: &LogHandle,
     app: &App,
     deployment: &Deployment,
     process_type: ProcessType,
@@ -31,10 +34,9 @@ pub async fn scale_deployment_process(
     scaling_lock: Arc<tokio::sync::Mutex<()>>,
 ) -> DeploymentResult<()> {
     let _guard = scaling_lock.lock().await;
-
     let mut rollback = Rollback::new();
 
-    if let Err(e) = scale_deployment_process_inner(
+    if let Err(e) = scale_inner(
         docker_client,
         db_pool,
         proxy_sync_trigger,
@@ -53,17 +55,16 @@ pub async fn scale_deployment_process(
     }
 
     rollback.disarm();
-
     AppScaleRepo::upsert(db_pool, &app.id, process_type, target_count as i32).await?;
 
     Ok(())
 }
 
-async fn scale_deployment_process_inner(
+async fn scale_inner(
     docker_client: &Docker,
     db_pool: &DbPool,
     proxy_sync_trigger: &Arc<Notify>,
-    log: &Log,
+    log: &LogHandle,
     app: &App,
     deployment: &Deployment,
     process_type: ProcessType,
@@ -80,25 +81,17 @@ async fn scale_deployment_process_inner(
         return Err(DeploymentError::ScaleError("Cannot scale to 0".to_string()));
     }
 
-    let processes = list_deployment_processes(docker_client, &deployment.id).await?;
-    let existing_map: HashMap<u32, ProcessStatus> = processes
-        .into_iter()
-        .filter(|p| p.process_type == process_type)
-        .map(|p| (p.instance_index, p.status))
-        .collect();
+    let existing = existing_processes(docker_client, &deployment.id, process_type).await?;
 
-    if target_count == existing_map.len() as u32 {
+    if target_count == existing.len() as u32 {
         return Ok(());
     }
 
-    let deployment_context = resolve_deployment_context(db_pool, app, deployment).await?;
-    let command = deployment_context
+    let context = resolve_deployment_context(db_pool, app, deployment).await?;
+    let command = context
         .procfile
         .as_ref()
         .and_then(|pf| pf.commands.get(&process_type).cloned());
-
-    let current_max_idx = existing_map.keys().copied().max();
-    let end_idx = current_max_idx.unwrap_or(0).max(target_count - 1);
 
     log.send(format!(
         "Reconciling {} replicas to target count: {}",
@@ -106,138 +99,138 @@ async fn scale_deployment_process_inner(
     ))
     .await?;
 
-    let (comp_tx, mut comp_rx) = tokio::sync::mpsc::unbounded_channel();
-    let deployment_context = Arc::new(deployment_context);
-    let app = Arc::new(app.clone());
-    let deployment = Arc::new(deployment.clone());
-    let existing_map = Arc::new(existing_map);
+    let max_idx = existing
+        .keys()
+        .copied()
+        .max()
+        .unwrap_or(0)
+        .max(target_count - 1);
 
-    let reconciliation_result = futures_util::stream::iter(0..=end_idx)
-        .map(Ok)
-        .try_for_each_concurrent(None, |index| {
-            let docker_client = docker_client.clone();
-            let log = log.clone();
-            let app = app.clone();
-            let deployment = deployment.clone();
-            let deployment_context = deployment_context.clone();
-            let existing_map = existing_map.clone();
-            let command = command.clone();
-            let comp_tx = comp_tx.clone();
-
-            async move {
-                let process_status = existing_map.get(&index);
-
-                if index < target_count {
-                    if process_status.is_none() {
-                        log.send(format!("Creating replica {}.{}", process_type, index))
-                            .await?;
-
-                        create_process_container(
-                            &docker_client,
-                            &app,
-                            &deployment,
-                            process_type,
-                            index,
-                            deployment_context.container_port,
-                            command,
-                            deployment_context.env_map.clone(),
-                            deployment_context.volume_paths.clone(),
-                        )
-                        .await?;
-
-                        let container_name = process_container_name(
-                            &app.id,
-                            &deployment.id,
-                            &process_type.to_string().to_lowercase(),
-                            index,
-                        );
-
-                        let dc = docker_client.clone();
-                        let cn = container_name.clone();
-                        let _ = comp_tx.send(Box::new(move || {
-                            Box::pin(async move {
-                                let _ = dc
-                                    .remove_container(
-                                        &cn,
-                                        Some(
-                                            RemoveContainerOptionsBuilder::new()
-                                                .force(true)
-                                                .build(),
-                                        ),
-                                    )
-                                    .await;
-                            })
-                                as futures_util::future::BoxFuture<'static, ()>
-                        }));
-
-                        start_process_container(
-                            &docker_client,
-                            &log,
-                            &app,
-                            &deployment,
-                            process_type,
-                            index,
-                        )
-                        .await?;
-                    } else if let Some(ProcessStatus::Stopped) = process_status {
-                        log.send(format!("Restarting replica {}.{}", process_type, index))
-                            .await?;
-
-                        start_process_container(
-                            &docker_client,
-                            &log,
-                            &app,
-                            &deployment,
-                            process_type,
-                            index,
-                        )
-                        .await?;
-                    }
-                } else if process_status.is_some() {
-                    log.send(format!(
-                        "Removing excess replica {}.{}",
-                        process_type, index
-                    ))
+    for index in 0..target_count {
+        match existing.get(&index) {
+            None => {
+                log.send(format!("Creating replica {}.{}", process_type, index))
                     .await?;
 
-                    let container_name = process_container_name(
-                        &app.id,
-                        &deployment.id,
-                        &process_type.to_string().to_lowercase(),
-                        index,
-                    );
+                create_process_container(
+                    docker_client,
+                    app,
+                    deployment,
+                    process_type,
+                    index,
+                    Some(context.container_port),
+                    command.clone(),
+                    context.env_map.clone(),
+                    context.volume_paths.clone(),
+                )
+                .await?;
 
-                    let _ = docker_client
-                        .stop_container(
-                            &container_name,
-                            Some(
-                                bollard::query_parameters::StopContainerOptionsBuilder::new()
-                                    .t(10)
-                                    .build(),
-                            ),
-                        )
-                        .await;
+                let container_name = process_container_name(
+                    &app.id,
+                    &deployment.id,
+                    &process_type.to_string().to_lowercase(),
+                    index,
+                );
 
-                    docker_client
-                        .remove_container(
-                            &container_name,
-                            Some(RemoveContainerOptionsBuilder::new().force(true).build()),
-                        )
-                        .await?;
+                rollback.register({
+                    let docker = docker_client.clone();
+                    let name = container_name.clone();
+                    move || {
+                        Box::pin(async move {
+                            if let Err(e) = docker
+                                .remove_container(
+                                    &name,
+                                    Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+                                )
+                                .await
+                            {
+                                tracing::warn!(
+                                    container = %name,
+                                    error = ?e,
+                                    "Failed to remove container during rollback"
+                                );
+                            }
+                        })
+                    }
+                });
+
+                start_process_container(docker_client, log, app, deployment, process_type, index)
+                    .await?;
+            }
+
+            Some(ProcessStatus::Stopped) => {
+                log.send(format!("Restarting replica {}.{}", process_type, index))
+                    .await?;
+
+                start_process_container(docker_client, log, app, deployment, process_type, index)
+                    .await?;
+            }
+
+            Some(ProcessStatus::Running) => {}
+        }
+    }
+
+    let remove_futures: Vec<_> = ((target_count)..=max_idx)
+        .filter(|index| existing.contains_key(index))
+        .map(|index| {
+            let docker_client = docker_client.clone();
+            let name = process_container_name(
+                &app.id,
+                &deployment.id,
+                &process_type.to_string().to_lowercase(),
+                index,
+            );
+            let log = log.clone();
+
+            async move {
+                log.send(format!(
+                    "Removing excess replica {}.{}",
+                    process_type, index
+                ))
+                .await?;
+
+                if let Err(e) = docker_client
+                    .stop_container(
+                        &name,
+                        Some(StopContainerOptionsBuilder::new().t(10).build()),
+                    )
+                    .await
+                {
+                    tracing::warn!(container = %name, error = ?e, "Failed to stop container");
+                }
+
+                if let Err(e) = docker_client
+                    .remove_container(
+                        &name,
+                        Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+                    )
+                    .await
+                {
+                    tracing::warn!(container = %name, error = ?e, "Failed to remove container");
                 }
 
                 Ok::<(), DeploymentError>(())
             }
         })
-        .await;
+        .collect();
 
-    while let Ok(comp) = comp_rx.try_recv() {
-        rollback.register(comp);
-    }
-
-    reconciliation_result?;
+    try_join_all(remove_futures).await?;
 
     proxy_sync_trigger.notify_one();
 
     Ok(())
+}
+
+async fn existing_processes(
+    docker_client: &Docker,
+    deployment_id: &str,
+    process_type: ProcessType,
+) -> DeploymentResult<HashMap<u32, ProcessStatus>> {
+    let processes = list_deployment_processes(docker_client, deployment_id).await?;
+
+    Ok(processes
+        .into_iter()
+        .filter(|p| p.process_type == process_type)
+        .map(|p| (p.instance_index, p.status))
+        .collect())
 }

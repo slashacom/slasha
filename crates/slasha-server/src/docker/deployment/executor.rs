@@ -31,7 +31,7 @@ use crate::docker::{
     rollback::Rollback,
 };
 
-pub const DEFAULT_RAILPACK_CONTAINER_PORT: u16 = 8080;
+pub const DEFAULT_CONTAINER_PORT: u16 = 8080;
 
 pub struct DeploymentContext {
     pub strategy: BuildStrategy,
@@ -69,21 +69,23 @@ fn resolve_container_port(
     env_map: &mut HashMap<String, String>,
 ) -> DeploymentResult<u16> {
     if let Some(port_str) = env_map.get("PORT") {
-        return port_str
+        let port = port_str
             .parse::<u16>()
-            .map_err(|e| DeploymentError::EnvResolveFailed(e.to_string()));
+            .map_err(|e| DeploymentError::EnvResolveFailed(e.to_string()))?;
+
+        return Ok(port);
     }
 
-    match strategy {
-        BuildStrategy::Dockerfile { content } => Ok(parse_expose(content)),
-        BuildStrategy::Railpack => {
-            env_map.insert(
-                "PORT".to_string(),
-                DEFAULT_RAILPACK_CONTAINER_PORT.to_string(),
-            );
-            Ok(DEFAULT_RAILPACK_CONTAINER_PORT)
-        }
-    }
+    let port = match strategy {
+        BuildStrategy::Dockerfile { content } => parse_expose(content),
+        BuildStrategy::Railpack => None,
+    };
+
+    let port = port.unwrap_or(DEFAULT_CONTAINER_PORT);
+
+    env_map.insert("PORT".to_string(), port.to_string());
+
+    Ok(port)
 }
 
 fn resolve_volume_paths(strategy: &BuildStrategy) -> Vec<String> {
@@ -306,7 +308,7 @@ async fn run_deployment_inner(
 
         move || {
             Box::pin(async move {
-                let _ = docker_client
+                if let Err(e) = docker_client
                     .remove_image(
                         &tag,
                         Some(RemoveImageOptions {
@@ -315,7 +317,10 @@ async fn run_deployment_inner(
                         }),
                         None,
                     )
-                    .await;
+                    .await
+                {
+                    tracing::warn!(image_tag = %tag, error = ?e, "Failed to remove image");
+                }
             })
         }
     });
@@ -349,7 +354,7 @@ async fn run_deployment_inner(
                 deployment,
                 target.process_type,
                 i,
-                deployment_context.container_port,
+                Some(deployment_context.container_port),
                 target.command.clone(),
                 deployment_context.env_map.clone(),
                 deployment_context.volume_paths.clone(),
@@ -367,12 +372,19 @@ async fn run_deployment_inner(
 
                 move || {
                     Box::pin(async move {
-                        let _ = docker_client
+                        if let Err(e) = docker_client
                             .remove_container(
                                 &container_name,
                                 Some(RemoveContainerOptionsBuilder::new().force(true).build()),
                             )
-                            .await;
+                            .await
+                        {
+                            tracing::warn!(
+                                container = %container_name,
+                                error = ?e,
+                                "Failed to remove service container"
+                            );
+                        }
                     })
                 }
             });

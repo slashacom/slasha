@@ -27,7 +27,7 @@ pub async fn startup_container_sync(
         let name = service_container_name(&svc.id);
 
         if svc.status == ServiceStatus::Provisioning {
-            let _ = docker_client
+            if let Err(e) = docker_client
                 .remove_container(
                     &name,
                     Some(
@@ -36,7 +36,10 @@ pub async fn startup_container_sync(
                             .build(),
                     ),
                 )
-                .await;
+                .await
+            {
+                tracing::warn!(container = %name, error = ?e, "Failed to remove service container");
+            }
             ServiceRepo::update_status(db_pool, &svc.id, ServiceStatus::Failed).await?;
         } else if svc.status == ServiceStatus::Running {
             match docker_client.inspect_container(&name, None).await {

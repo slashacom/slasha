@@ -15,7 +15,7 @@ use tokio::{
 
 use crate::docker::{
     DeploymentError, DeploymentResult,
-    logs::Log,
+    logs::LogHandle,
     naming::{image_name, image_tag},
 };
 
@@ -77,10 +77,10 @@ async fn tag_image_latest(
 
 async fn stream_command_output(
     mut child: tokio::process::Child,
-    log: &Log,
+    log: &LogHandle,
     phase_label: &str,
 ) -> DeploymentResult<()> {
-    async fn drain<R>(reader: Option<BufReader<R>>, log: &Log) -> DeploymentResult<()>
+    async fn drain<R>(reader: Option<BufReader<R>>, log: &LogHandle) -> DeploymentResult<()>
     where
         R: tokio::io::AsyncRead + Unpin,
     {
@@ -112,7 +112,7 @@ async fn stream_command_output(
 
 pub async fn build_docker(
     docker_client: &Docker,
-    log: &Log,
+    log: &LogHandle,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
@@ -171,7 +171,7 @@ pub async fn build_docker(
 
 pub async fn build_railpack(
     docker_client: &Docker,
-    log: &Log,
+    log: &LogHandle,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {

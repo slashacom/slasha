@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use bollard::{
     Docker,
     query_parameters::{RemoveContainerOptionsBuilder, StopContainerOptionsBuilder},
@@ -10,7 +8,6 @@ use slasha_db::{
     repos::service::ServiceRepo,
     service::{Service, ServiceStatus},
 };
-use tokio::sync::Notify;
 
 use crate::docker::{
     DeploymentResult,
@@ -18,7 +15,7 @@ use crate::docker::{
     naming::{service_container_name, service_volume_name},
 };
 
-pub async fn stop_service(
+pub async fn stop_service_container(
     docker: &Docker,
     db_pool: &DbPool,
     log_manager: &LogManager,
@@ -44,11 +41,10 @@ pub async fn stop_service(
     Ok(())
 }
 
-pub async fn restart_service(
+pub async fn restart_service_container(
     docker: &Docker,
     db_pool: &DbPool,
     log_manager: &LogManager,
-    proxy_sync_trigger: &Arc<Notify>,
     app: &App,
     service: &Service,
 ) -> DeploymentResult<()> {
@@ -64,16 +60,17 @@ pub async fn restart_service(
     stream_container_logs(docker.clone(), log, container_name, None);
 
     ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Running).await?;
-    proxy_sync_trigger.notify_one();
+
     Ok(())
 }
 
-pub async fn delete_service(
+// does not delete the db entry
+pub async fn remove_service_container(
     docker: &Docker,
-    db_pool: &DbPool,
     log_manager: &LogManager,
     app: &App,
     service: &Service,
+    remove_volume: bool,
 ) -> DeploymentResult<()> {
     let container_name = service_container_name(&service.id);
     let volume_name = service_volume_name(&service.id);
@@ -82,48 +79,29 @@ pub async fn delete_service(
         service_name: service.name.clone(),
     };
 
-    let res = docker
+    if let Err(e) = docker
         .remove_container(
             &container_name,
             Some(RemoveContainerOptionsBuilder::new().force(true).build()),
         )
-        .await;
-
-    let was_removed = res.is_ok();
-    ignore_not_found(res)?;
-
-    if was_removed {
-        tracing::info!(
-            container = %container_name,
-            app_slug = %app.slug,
-            service_id = %service.id,
-            "container destroyed"
-        );
+        .await
+    {
+        tracing::warn!(container = %container_name, error = ?e, "Failed to remove container");
     }
 
-    ignore_not_found(
-        docker
+    if remove_volume {
+        if let Err(e) = docker
             .remove_volume(
                 &volume_name,
                 None::<bollard::query_parameters::RemoveVolumeOptions>,
             )
-            .await,
-    )?;
+            .await
+        {
+            tracing::warn!(volume = %volume_name, error = ?e, "Failed to remove volume");
+        }
+    }
 
-    ServiceRepo::delete(db_pool, &service.id).await?;
     log_manager.remove(&log_key);
 
     Ok(())
-}
-
-fn ignore_not_found<T>(
-    res: Result<T, bollard::errors::Error>,
-) -> Result<(), bollard::errors::Error> {
-    match res {
-        Ok(_) => Ok(()),
-        Err(bollard::errors::Error::DockerResponseServerError {
-            status_code: 404, ..
-        }) => Ok(()),
-        Err(e) => Err(e),
-    }
 }

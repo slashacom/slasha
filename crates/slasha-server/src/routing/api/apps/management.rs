@@ -18,9 +18,9 @@ use uuid::Uuid;
 
 use crate::{
     docker::{
-        deployment::{delete_app_volumes, delete_deployment_processes},
-        network::{create_app_network, delete_app_network},
-        service::delete_service,
+        deployment::{remove_app_volumes, remove_deployment_processes},
+        network::{create_app_network, remove_app_network},
+        service::remove_service_container,
     },
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
@@ -144,20 +144,24 @@ async fn delete_app(
 
     let app_services = ServiceRepo::list_for_app(&db_pool, &app.id).await?;
 
-    for svc in app_services {
-        if let Err(e) = delete_service(&docker, &db_pool, &runtime.log_manager, &app, &svc).await {
+    for service in app_services {
+        if let Err(e) =
+            remove_service_container(&docker, &runtime.log_manager, &app, &service, true).await
+        {
             tracing::warn!(
-                service_id = %svc.id,
+                service_id = %service.id,
                 error = %e,
                 "Failed to delete service"
             );
         }
+
+        ServiceRepo::delete(&db_pool, &service.id).await?;
     }
 
     let deployments = AppRepo::delete(&db_pool, &app.id).await?;
 
     for dep in deployments {
-        if let Err(e) = delete_deployment_processes(
+        if let Err(e) = remove_deployment_processes(
             &docker,
             &runtime.proxy_sync_trigger,
             &runtime.log_manager,
@@ -169,14 +173,14 @@ async fn delete_app(
             tracing::warn!(
                 deployment_id = %dep.id,
                 error = %e,
-                "Failed to delete container for deployment"
+                "Failed to remove deployment processes"
             );
         }
     }
 
-    delete_app_network(&docker, &app.id).await?;
+    remove_app_network(&docker, &app.id).await?;
 
-    if let Err(e) = delete_app_volumes(&docker, &app.id).await {
+    if let Err(e) = remove_app_volumes(&docker, &app.id).await {
         tracing::warn!(
             app_id = %app.id,
             error = ?e,

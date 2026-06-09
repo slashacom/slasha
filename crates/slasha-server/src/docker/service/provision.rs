@@ -30,7 +30,7 @@ use crate::docker::{
     DeploymentError, DeploymentResult,
     env::{RefSource, resolve_env_value, topo_sort_vars},
     log_driver::default_log_config,
-    logs::{Log, LogKey, LogManager, stream_container_logs},
+    logs::{LogHandle, LogKey, LogManager, stream_container_logs},
     naming::{app_network_name, service_container_name, service_volume_name},
     rollback::Rollback,
 };
@@ -116,7 +116,7 @@ async fn provision_inner(
     app: &App,
     service: &Service,
     initial_env: Option<HashMap<String, String>>,
-    log: &Log,
+    log: &LogHandle,
     rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
     log.send(format!(
@@ -124,6 +124,8 @@ async fn provision_inner(
         service.name, service.kind
     ))
     .await?;
+
+    ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Provisioning).await?;
 
     let mut stream = docker.create_image(
         Some(CreateImageOptions {
@@ -163,12 +165,15 @@ async fn provision_inner(
         let volume_name = volume_name.clone();
         move || {
             Box::pin(async move {
-                let _ = docker
+                if let Err(e) = docker
                     .remove_volume(
                         &volume_name,
                         None::<bollard::query_parameters::RemoveVolumeOptions>,
                     )
-                    .await;
+                    .await
+                {
+                    tracing::warn!(volume = %volume_name, error = ?e, "Failed to remove volume");
+                }
             })
         }
     });
@@ -296,12 +301,15 @@ async fn create_service_container(
 
         move || {
             Box::pin(async move {
-                let _ = docker_client
+                if let Err(e) = docker_client
                     .remove_container(
                         &container_name,
                         Some(RemoveContainerOptionsBuilder::new().force(true).build()),
                     )
-                    .await;
+                    .await
+                {
+                    tracing::warn!(container = %container_name, error = ?e, "Failed to remove container");
+                }
             })
         }
     });
@@ -312,7 +320,7 @@ async fn create_service_container(
 async fn start_and_wait_healthy(
     docker_client: &Docker,
     service: &Service,
-    log: &Log,
+    log: &LogHandle,
 ) -> DeploymentResult<()> {
     let container_name = service_container_name(&service.id);
 
@@ -339,7 +347,7 @@ async fn wait_until_healthy(
     docker: &Docker,
     container_name: &str,
     service_name: &str,
-    log: &Log,
+    log: &LogHandle,
 ) -> DeploymentResult<()> {
     let _ = log
         .send(format!("Waiting for {} to become healthy...", service_name))

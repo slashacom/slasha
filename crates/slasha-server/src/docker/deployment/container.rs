@@ -27,7 +27,7 @@ use crate::{
     docker::{
         DeploymentError, DeploymentResult, image_tag,
         log_driver::default_log_config,
-        logs::{Log, LogKey, LogManager, stream_container_logs, stream_container_logs_inner},
+        logs::{LogHandle, LogKey, LogManager, stream_container_logs},
         naming::{
             app_network_name, app_volume_name, app_volume_prefix, process_container_name,
             release_container_name,
@@ -93,7 +93,7 @@ pub async fn create_process_container(
     deployment: &Deployment,
     process_type: ProcessType,
     instance_index: u32,
-    container_port: u16,
+    container_port: Option<u16>,
     cmd: Option<String>,
     env_map: HashMap<String, String>,
     volume_paths: Vec<String>,
@@ -112,7 +112,9 @@ pub async fn create_process_container(
     labels.insert("slasha.app_id".into(), app.id.clone());
     labels.insert("slasha.deployment_id".into(), deployment.id.clone());
     labels.insert("slasha.app_slug".into(), app.slug.clone());
-    if process_type == ProcessType::Web {
+    if let Some(container_port) = container_port
+        && process_type == ProcessType::Web
+    {
         labels.insert("slasha.container_port".into(), container_port.to_string());
     }
     labels.insert("slasha.process_type".into(), process_type.to_string());
@@ -199,7 +201,7 @@ pub async fn start_deployment_processes(
     docker_client: &Docker,
     db_pool: &DbPool,
     proxy_sync_trigger: &Arc<Notify>,
-    log: &Log,
+    log: &LogHandle,
     deployment_id: &str,
 ) -> DeploymentResult<()> {
     let processes = list_deployment_processes(docker_client, deployment_id).await?;
@@ -221,7 +223,7 @@ pub async fn start_deployment_processes(
 
 pub async fn start_process_container(
     docker_client: &Docker,
-    log: &Log,
+    log: &LogHandle,
     app: &App,
     deployment: &Deployment,
     process_type: ProcessType,
@@ -320,7 +322,7 @@ pub async fn restart_deployment_processes(
     Ok(())
 }
 
-pub async fn delete_deployment_processes(
+pub async fn remove_deployment_processes(
     docker_client: &Docker,
     proxy_sync_trigger: &Arc<Notify>,
     log_manager: &LogManager,
@@ -330,18 +332,15 @@ pub async fn delete_deployment_processes(
     let processes = list_deployment_processes(docker_client, &deployment.id).await?;
 
     let delete_futures = processes.into_iter().map(|process| {
-        let docker = docker_client.clone();
-        let app_slug = app.slug.clone();
-        let dep_id = deployment.id.clone();
+        let docker_client = docker_client.clone();
         async move {
-            let res = docker
+            if let Err(e) = docker_client
                 .remove_container(
                     &process.name,
                     Some(RemoveContainerOptionsBuilder::new().force(true).build()),
                 )
-                .await;
-
-            if let Err(e) = res {
+                .await
+            {
                 tracing::warn!(
                     container = %process.name,
                     error = ?e,
@@ -350,9 +349,7 @@ pub async fn delete_deployment_processes(
             } else {
                 tracing::info!(
                     container = %process.name,
-                    app_slug = %app_slug,
-                    deployment_id = %dep_id,
-                    "container destroyed"
+                    "Container destroyed"
                 );
             }
         }
@@ -370,7 +367,7 @@ pub async fn delete_deployment_processes(
     Ok(())
 }
 
-pub async fn delete_app_volumes(docker_client: &Docker, app_id: &str) -> DeploymentResult<()> {
+pub async fn remove_app_volumes(docker_client: &Docker, app_id: &str) -> DeploymentResult<()> {
     let prefix = app_volume_prefix(app_id);
 
     let mut filters: HashMap<String, Vec<String>> = HashMap::new();
@@ -408,7 +405,7 @@ pub async fn delete_app_volumes(docker_client: &Docker, app_id: &str) -> Deploym
 
 async fn start_and_stream(
     docker_client: &Docker,
-    log: &Log,
+    log: &LogHandle,
     container_name: String,
     prefix: Option<String>,
 ) -> DeploymentResult<()> {
@@ -456,13 +453,13 @@ async fn build_mounts(
 
 pub async fn run_release_container(
     docker_client: &Docker,
-    log: &Log,
+    log: &LogHandle,
     app: &App,
     deployment: &Deployment,
     cmd: String,
     env_map: HashMap<String, String>,
 ) -> DeploymentResult<()> {
-    let container_name = release_container_name(&app.id, &deployment.id);
+    let release_container_name = release_container_name(&app.id, &deployment.id);
 
     log.send(format!("Running release command: {}", cmd))
         .await?;
@@ -473,7 +470,7 @@ pub async fn run_release_container(
         deployment,
         ProcessType::Release,
         0,
-        0,
+        None,
         Some(cmd),
         env_map,
         Vec::new(),
@@ -482,22 +479,26 @@ pub async fn run_release_container(
 
     docker_client
         .start_container(
-            &container_name,
+            &release_container_name,
             Some(StartContainerOptionsBuilder::new().build()),
         )
         .await?;
 
-    stream_container_logs_inner(
+    let stream_handle = stream_container_logs(
         docker_client.clone(),
         log.clone(),
-        container_name.clone(),
+        release_container_name.clone(),
         Some("[release]".to_string()),
-    )
-    .await?;
+    );
+
+    match stream_handle.await {
+        Ok(deployment_result) => deployment_result?,
+        _ => {}
+    };
 
     let wait_res = docker_client
         .wait_container(
-            &container_name,
+            &release_container_name,
             Some(WaitContainerOptions {
                 condition: "not-running".to_string(),
             }),
@@ -512,26 +513,20 @@ pub async fn run_release_container(
 
     let exit_code = wait_res.status_code;
 
-    let remove_res = docker_client
+    if let Err(e) = docker_client
         .remove_container(
-            &container_name,
+            &release_container_name,
             Some(RemoveContainerOptionsBuilder::new().force(true).build()),
         )
-        .await;
-
-    if let Err(e) = remove_res {
+        .await
+    {
         tracing::warn!(
-            container = %container_name,
+            container = %release_container_name,
             error = ?e,
             "Failed to remove release container"
         );
     } else {
-        tracing::info!(
-            container = %container_name,
-            app_id = %app.id,
-            deployment_id = %deployment.id,
-            "container destroyed"
-        );
+        tracing::info!(container = %release_container_name, "Container destroyed");
     }
 
     if exit_code != 0 {

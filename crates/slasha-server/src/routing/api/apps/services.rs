@@ -18,15 +18,16 @@ use slasha_db::{
     repos::{app::AppRepo, service::ServiceRepo},
     service::{Service, ServiceKind, ServiceResources, ServiceStatus},
 };
-use tokio::sync::Notify;
 use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
 use crate::{
     docker::{
         logs::{LogKey, LogManager},
-        naming::service_container_name,
-        service::{delete_service, provision_service, restart_service, stop_service},
+        service::{
+            provision_service, remove_service_container, restart_service_container,
+            stop_service_container,
+        },
     },
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
@@ -61,7 +62,10 @@ const MIN_NANO_CPUS: i64 = 100_000_000;
 const MIN_SHM_BYTES: i64 = 64 * 1024 * 1024;
 const MIN_PIDS_LIMIT: i64 = 64;
 
-async fn validate_resources(docker: &Docker, resources: &ServiceResources) -> HttpResult<()> {
+async fn validate_resources(
+    docker_client: &Docker,
+    resources: &ServiceResources,
+) -> HttpResult<()> {
     if let Some(mem) = resources.memory_bytes
         && mem < MIN_MEMORY_BYTES
     {
@@ -92,7 +96,7 @@ async fn validate_resources(docker: &Docker, resources: &ServiceResources) -> Ht
         )));
     }
 
-    let info = docker
+    let info = docker_client
         .info()
         .await
         .map_err(|e| HttpError::internal(anyhow::anyhow!(e)))?;
@@ -147,7 +151,7 @@ async fn list_services(
 }
 
 async fn create_service(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     AuthUser(user): AuthUser,
@@ -184,7 +188,7 @@ async fn create_service(
     }
 
     if let Some(ref resources) = payload.resources {
-        validate_resources(&docker, resources).await?;
+        validate_resources(&docker_client, resources).await?;
     }
 
     let now = Utc::now().naive_utc();
@@ -205,7 +209,7 @@ async fn create_service(
     let new_service = ServiceRepo::create(&db_pool, new_service).await?;
 
     tokio::spawn(provision_service(
-        docker,
+        docker_client,
         db_pool,
         log_manager,
         app,
@@ -220,83 +224,57 @@ async fn create_service(
 
 async fn tunnel_handler(
     ws: WebSocketUpgrade,
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
-    if svc.status != ServiceStatus::Running {
+    if service.status != ServiceStatus::Running {
         return Err(HttpError::bad_request("Service is not running"));
     }
 
     let user_id = user.id.clone();
     Ok(ws.on_upgrade(move |socket| async move {
-        tunnel::handle_tunnel(socket, docker, db_pool, svc, user_id).await;
+        tunnel::handle_tunnel(socket, docker_client, db_pool, service, user_id).await;
     }))
 }
 
 async fn restart_service_handler(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    State(proxy_sync_trigger): State<Arc<Notify>>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
-    restart_service(
-        &docker,
-        &db_pool,
-        &log_manager,
-        &proxy_sync_trigger,
-        &app,
-        &svc,
-    )
-    .await?;
+    restart_service_container(&docker_client, &db_pool, &log_manager, &app, &service).await?;
 
     Ok(Json(serde_json::json!({ "restarted": true })))
 }
 
 async fn redeploy_service_handler(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
-    let container_name = service_container_name(&svc.id);
-    let _ = docker
-        .remove_container(
-            &container_name,
-            Some(
-                bollard::query_parameters::RemoveContainerOptionsBuilder::new()
-                    .force(true)
-                    .build(),
-            ),
-        )
-        .await;
-
-    log_manager.remove(&LogKey::Service {
-        app_slug: slug,
-        service_name: svc.name.clone(),
-    });
-
-    ServiceRepo::update_status(&db_pool, &svc.id, ServiceStatus::Provisioning).await?;
+    remove_service_container(&docker_client, &log_manager, &app, &service, false).await?;
 
     tokio::spawn(provision_service(
-        docker,
+        docker_client,
         db_pool,
         log_manager,
         app,
-        svc,
+        service,
         None,
     ));
 
@@ -304,41 +282,43 @@ async fn redeploy_service_handler(
 }
 
 async fn stop_service_handler(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
-    if svc.status != ServiceStatus::Running {
+    if service.status != ServiceStatus::Running {
         return Err(HttpError::bad_request("Service is not running"));
     }
 
-    stop_service(&docker, &db_pool, &log_manager, &app, &svc).await?;
+    stop_service_container(&docker_client, &db_pool, &log_manager, &app, &service).await?;
 
     Ok(Json(serde_json::json!({ "stopped": true })))
 }
 
 async fn delete_service_handler(
-    State(docker): State<Docker>,
+    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     AuthUser(user): AuthUser,
     Path((slug, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
-    if svc.status != ServiceStatus::Stopped && svc.status != ServiceStatus::Failed {
+    if service.status != ServiceStatus::Stopped && service.status != ServiceStatus::Failed {
         return Err(HttpError::bad_request(
             "Cannot delete a running or provisioning service. Please stop it first.",
         ));
     }
 
-    delete_service(&docker, &db_pool, &log_manager, &app, &svc).await?;
+    remove_service_container(&docker_client, &log_manager, &app, &service, true).await?;
+
+    ServiceRepo::delete(&db_pool, &service.id).await?;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
@@ -352,12 +332,12 @@ async fn stream_logs(
     Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
 > {
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-    let svc = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
     let log = log_manager
         .get_logger(&LogKey::Service {
             app_slug: app.slug.clone(),
-            service_name: svc.name.clone(),
+            service_name: service.name.clone(),
         })
         .await
         .map_err(HttpError::internal)?;

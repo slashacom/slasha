@@ -17,7 +17,7 @@ pub async fn create_app_network(docker_client: &Docker, app_id: &str) -> Deploym
     }
 }
 
-pub async fn delete_app_network(docker_client: &Docker, app_id: &str) -> DeploymentResult<()> {
+pub async fn remove_app_network(docker_client: &Docker, app_id: &str) -> DeploymentResult<()> {
     let network_name = app_network_name(app_id);
 
     match docker_client.remove_network(&network_name).await {
