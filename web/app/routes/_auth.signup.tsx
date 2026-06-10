@@ -37,7 +37,7 @@ export default function Signup() {
     toast.promise(promise, {
       loading: 'Creating admin account...',
       success: () => {
-        navigate('/');
+        navigate('/apps');
         return `Welcome aboard, ${email}`;
       },
       error: (err) => err.message || 'Failed to set up.',

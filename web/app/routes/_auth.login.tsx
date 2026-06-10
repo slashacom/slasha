@@ -36,7 +36,7 @@ export default function Login() {
     toast.promise(promise, {
       loading: 'Signing in...',
       success: () => {
-        navigate('/');
+        navigate('/apps');
         return `Welcome back, ${email}`;
       },
       error: (err) =>
