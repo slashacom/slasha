@@ -1,8 +1,6 @@
 name: Deploy to production
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -14,19 +12,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Set up SSH agent (slasha-infra deploy key)
+      - name: Set up SSH agent (infra deploy key)
         uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.INFRA_DEPLOY_KEY }}
 
-      - name: Clone slasha-infra
+      - name: Clone infra
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          git clone --depth 1 git@github.com:slashacom/slasha-infra.git
+          git clone --depth 1 git@github.com:slashacom/infra.git
 
       - name: Deploy
         env:
           SLASHA_REF: ${{ github.sha }}
-        working-directory: slasha-infra
+        working-directory: infra
         run: ./scripts/deploy.sh
