@@ -84,8 +84,8 @@ pub async fn startup_container_sync(
             for scale in app_scales {
                 scale_deployment_process(
                     ScaleDeps {
-                        docker_client: docker_client,
-                        db_pool: db_pool,
+                        docker_client,
+                        db_pool,
                         proxy_sync: &runtime.proxy_sync_trigger,
                         log: &log,
                     },
