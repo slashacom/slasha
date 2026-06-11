@@ -2,7 +2,7 @@
 #
 # install the slasha cli on linux or macos.
 #
-#   curl -fsSL https://raw.githubusercontent.com/slashacom/slasha/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/slashacom/slasha/main/scripts/install.sh | bash
 #
 # environment overrides:
 #   SLASHA_VERSION      tag to install - default: latest.
@@ -52,9 +52,6 @@ detect_target() {
                 arm64)  echo "aarch64-apple-darwin" ;;
                 *) err "unsupported macos architecture: $arch" ;;
             esac
-            ;;
-        MINGW* | MSYS* | CYGWIN*)
-            err "windows is not supported by this installer. download the .zip from https://github.com/$REPO/releases"
             ;;
         *)
             err "unsupported os: $os"
