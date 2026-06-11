@@ -32,9 +32,6 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-latest
             os: macos
-          - target: x86_64-pc-windows-msvc
-            runner: windows-latest
-            os: windows
     steps:
       - uses: actions/checkout@v4
 
@@ -71,20 +68,11 @@ jobs:
       - name: Build binary
         run: cargo build --release -p slasha-cli --features "serve-bundle,vendored" --target ${{ matrix.target }}
 
-      - name: Package (Unix)
-        if: matrix.os != 'windows'
+      - name: Package
         run: |
           asset="slasha-${{ matrix.target }}.tar.gz"
           tar -czf "$asset" -C "target/${{ matrix.target }}/release" slasha
           echo "ASSET=$asset" >> "$GITHUB_ENV"
-
-      - name: Package (Windows)
-        if: matrix.os == 'windows'
-        shell: pwsh
-        run: |
-          $asset = "slasha-${{ matrix.target }}.zip"
-          Compress-Archive -Path "target/${{ matrix.target }}/release/slasha.exe" -DestinationPath $asset
-          echo "ASSET=$asset" >> $env:GITHUB_ENV
 
       - uses: actions/upload-artifact@v4
         with:
@@ -105,14 +93,13 @@ jobs:
 
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum slasha-*.tar.gz slasha-*.zip > SHA256SUMS
+        run: sha256sum slasha-*.tar.gz > SHA256SUMS
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/slasha-*.tar.gz
-            dist/slasha-*.zip
             dist/SHA256SUMS
           generate_release_notes: true
           fail_on_unmatched_files: true
