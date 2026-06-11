@@ -58,7 +58,7 @@ fn run_migrations(storage: &Storage) {
 }
 
 pub async fn run_server(address: SocketAddr, state: AppState) -> anyhow::Result<()> {
-    info!("🚀 Slasha server starting on http://{}", address);
+    info!("server starting on http://{}", address);
 
     let app = routing::router(state.clone()).with_state(state);
     let listener = TcpListener::bind(address).await?;
@@ -67,7 +67,7 @@ pub async fn run_server(address: SocketAddr, state: AppState) -> anyhow::Result<
     Ok(())
 }
 
-pub async fn start_server() -> anyhow::Result<()> {
+pub async fn serve() -> anyhow::Result<()> {
     dotenv().ok();
     setup_tracing();
 
@@ -85,7 +85,13 @@ pub async fn start_server() -> anyhow::Result<()> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(3000);
 
-    let config = Config::new(slasha_env, jwt_secret, platform_domain, logs_dir.clone(), port);
+    let config = Config::new(
+        slasha_env,
+        jwt_secret,
+        platform_domain,
+        logs_dir.clone(),
+        port,
+    );
 
     let docker_client =
         bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");

@@ -31,7 +31,7 @@ struct AppAggregate {
     disk_write_bps: f64,
 }
 
-pub fn spawn_app_metrics_collector(db_pool: DbPool, docker: Docker) {
+pub fn spawn_app_metrics_collector(db_pool: DbPool, docker_client: Docker) {
     tokio::spawn(async move {
         let mut prev: HashMap<String, PrevCounters> = HashMap::new();
         tracing::info!("app metrics collector started");
@@ -39,7 +39,7 @@ pub fn spawn_app_metrics_collector(db_pool: DbPool, docker: Docker) {
         loop {
             sleep(Duration::from_secs(10)).await;
 
-            if let Err(err) = tick(&db_pool, &docker, &mut prev).await {
+            if let Err(err) = tick(&db_pool, &docker_client, &mut prev).await {
                 tracing::error!(error = ?err, "metrics collection failed");
             }
         }
@@ -48,14 +48,14 @@ pub fn spawn_app_metrics_collector(db_pool: DbPool, docker: Docker) {
 
 async fn tick(
     db_pool: &DbPool,
-    docker: &Docker,
+    docker_client: &Docker,
     prev: &mut HashMap<String, PrevCounters>,
 ) -> anyhow::Result<()> {
     let mut filters = HashMap::new();
     filters.insert("label".to_string(), vec!["slasha.managed=true".to_string()]);
     filters.insert("status".to_string(), vec!["running".to_string()]);
 
-    let containers = docker
+    let containers = docker_client
         .list_containers(Some(
             ListContainersOptionsBuilder::new()
                 .all(true)
@@ -82,7 +82,7 @@ async fn tick(
             .and_then(|l| l.get("slasha.app_id"))
             .cloned()?;
 
-        let docker = docker.clone();
+        let docker = docker_client.clone();
         let cid = container_id.to_string();
         let opts = stats_opts.clone();
 

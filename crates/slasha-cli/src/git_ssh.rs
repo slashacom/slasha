@@ -2,7 +2,7 @@ use std::{env, process::Command};
 
 use anyhow::{Context, Result};
 use slasha_db::{
-    create_pool,
+    create_pool_with_max_size,
     repos::{app::AppRepo, user::UserRepo},
 };
 
@@ -12,7 +12,7 @@ pub async fn handle(user_id: String) -> Result<i32> {
         .join(".slasha")
         .join("slasha.db");
 
-    let pool = create_pool(db_path.to_str().context("Invalid DB path")?)
+    let pool = create_pool_with_max_size(db_path.to_str().context("Invalid DB path")?, 1)
         .context("Failed to create database pool")?;
 
     let user = UserRepo::find_by_id(&pool, &user_id)

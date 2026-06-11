@@ -90,13 +90,14 @@ pub async fn remove_service_container(
     }
 
     if remove_volume {
-        if let Err(e) = docker
+        let res = docker
             .remove_volume(
                 &volume_name,
                 None::<bollard::query_parameters::RemoveVolumeOptions>,
             )
-            .await
-        {
+            .await;
+
+        if let Err(e) = res {
             tracing::warn!(volume = %volume_name, error = ?e, "Failed to remove volume");
         }
     }

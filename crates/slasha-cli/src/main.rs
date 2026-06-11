@@ -71,7 +71,7 @@ async fn run(cli: ClapApp) -> anyhow::Result<i32> {
 
     match command {
         #[cfg(feature = "serve")]
-        Command::Serve => slasha_server::start_server().await?,
+        Command::Serve => slasha_server::serve().await?,
         #[cfg(feature = "serve")]
         Command::GitSsh { user_id } => return git_ssh::handle(user_id).await,
 

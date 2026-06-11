@@ -69,6 +69,8 @@ async fn info_refs(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoRes
         .await
         .context("Failed to read git output")?;
 
+    let _ = child.wait().await;
+
     let len = service.len() + 15;
     let content_type = if service == "git-upload-pack" {
         "application/x-git-upload-pack-advertisement"
@@ -135,6 +137,10 @@ async fn handle_git_service(
 
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
+
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
 
     let body_bytes = axum::body::to_bytes(req.into_body(), 100 * 1024 * 1024)
         .await

@@ -13,4 +13,4 @@ pub use container::{
 pub use dockerfile_parser::{BuildStrategy, detect_build_strategy, parse_expose, parse_volumes};
 pub use executor::run_deployment;
 pub use procfile_parser::{Procfile, load_procfile, parse_procfile_content};
-pub use scale::scale_deployment_process;
+pub use scale::{ScaleDeps, scale_deployment_process};

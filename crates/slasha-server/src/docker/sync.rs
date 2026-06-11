@@ -9,7 +9,7 @@ use slasha_db::{
 };
 
 use super::{
-    deployment::{list_deployment_processes, scale_deployment_process},
+    deployment::{ScaleDeps, list_deployment_processes, scale_deployment_process},
     logs::{LogKey, stream_container_logs},
     naming::service_container_name,
 };
@@ -83,10 +83,12 @@ pub async fn startup_container_sync(
         if deployment.status == DeploymentStatus::Running {
             for scale in app_scales {
                 scale_deployment_process(
-                    docker_client,
-                    db_pool,
-                    &runtime.proxy_sync_trigger,
-                    &log,
+                    ScaleDeps {
+                        docker_client: docker_client,
+                        db_pool: db_pool,
+                        proxy_sync: &runtime.proxy_sync_trigger,
+                        log: &log,
+                    },
                     &app,
                     &deployment,
                     scale.process_type,

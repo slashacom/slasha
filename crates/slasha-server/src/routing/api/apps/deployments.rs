@@ -26,8 +26,9 @@ use uuid::Uuid;
 use crate::{
     docker::{
         deployment::{
-            list_deployment_processes, remove_deployment_processes, restart_deployment_processes,
-            run_deployment, scale_deployment_process, stop_deployment_processes,
+            ScaleDeps, list_deployment_processes, remove_deployment_processes,
+            restart_deployment_processes, run_deployment, scale_deployment_process,
+            stop_deployment_processes,
         },
         logs::{LogKey, LogManager},
     },
@@ -335,11 +336,7 @@ struct ScaleDeploymentReq {
 }
 
 async fn scale_deployment(
-    State(docker_client): State<Docker>,
-    State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
-    State(proxy_sync_trigger): State<Arc<Notify>>,
-    State(runtime): State<Runtime>,
+    State(app_state): State<AppState>,
     AuthUser(user): AuthUser,
     Path((slug, deployment_id)): Path<(String, String)>,
     Json(payload): Json<ScaleDeploymentReq>,
@@ -347,6 +344,10 @@ async fn scale_deployment(
     if payload.count <= 0 {
         return Err(HttpError::bad_request("Count must be greater than 0"));
     }
+
+    let docker_client = app_state.clients.docker;
+    let db_pool = app_state.storage.db_pool;
+    let app_runtime = app_state.runtime;
 
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
@@ -362,18 +363,20 @@ async fn scale_deployment(
         deployment_id: deployment.id.clone(),
     };
 
-    let log = log_manager.get_logger(&log_key).await?;
+    let log = app_runtime.log_manager.get_logger(&log_key).await?;
 
     scale_deployment_process(
-        &docker_client,
-        &db_pool,
-        &proxy_sync_trigger,
-        &log,
+        ScaleDeps {
+            docker_client: &docker_client,
+            db_pool: &db_pool,
+            proxy_sync: &app_runtime.proxy_sync_trigger,
+            log: &log,
+        },
         &app,
         &deployment,
         payload.process_type,
         payload.count as u32,
-        runtime.get_scaling_lock(&deployment.id),
+        app_runtime.get_scaling_lock(&deployment.id),
     )
     .await?;
 

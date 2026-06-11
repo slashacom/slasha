@@ -21,8 +21,13 @@ impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for WalCustomize
 }
 
 pub fn create_pool(db_path: &str) -> DbResult<DbPool> {
+    create_pool_with_max_size(db_path, 10)
+}
+
+pub fn create_pool_with_max_size(db_path: &str, max_size: u32) -> DbResult<DbPool> {
     let manager = ConnectionManager::<SqliteConnection>::new(db_path);
     Pool::builder()
+        .max_size(max_size)
         .connection_customizer(Box::new(WalCustomizer))
         .build(manager)
         .map_err(DbError::Pool)

@@ -87,44 +87,55 @@ pub async fn list_deployment_processes(
     Ok(processes)
 }
 
+pub struct CreateContainerContext {
+    pub process_type: ProcessType,
+    pub instance_index: u32,
+    pub container_port: Option<u16>,
+    pub cmd: Option<String>,
+    pub env_map: HashMap<String, String>,
+    pub volume_paths: Vec<String>,
+}
+
 pub async fn create_process_container(
     docker_client: &Docker,
     app: &App,
     deployment: &Deployment,
-    process_type: ProcessType,
-    instance_index: u32,
-    container_port: Option<u16>,
-    cmd: Option<String>,
-    env_map: HashMap<String, String>,
-    volume_paths: Vec<String>,
+    context: CreateContainerContext,
 ) -> DeploymentResult<()> {
     let container_name = process_container_name(
         &app.id,
         &deployment.id,
-        &process_type.to_string().to_lowercase(),
-        instance_index,
+        &context.process_type.to_string().to_lowercase(),
+        context.instance_index,
     );
 
-    let mounts = build_mounts(docker_client, &app.id, &volume_paths).await?;
+    let mounts = build_mounts(docker_client, &app.id, &context.volume_paths).await?;
 
     let mut labels: HashMap<String, String> = HashMap::new();
     labels.insert("slasha.managed".into(), "true".into());
     labels.insert("slasha.app_id".into(), app.id.clone());
     labels.insert("slasha.deployment_id".into(), deployment.id.clone());
     labels.insert("slasha.app_slug".into(), app.slug.clone());
-    if let Some(container_port) = container_port
-        && process_type == ProcessType::Web
+    if let Some(container_port) = context.container_port
+        && context.process_type == ProcessType::Web
     {
         labels.insert("slasha.container_port".into(), container_port.to_string());
     }
-    labels.insert("slasha.process_type".into(), process_type.to_string());
-    labels.insert("slasha.instance_index".into(), instance_index.to_string());
+    labels.insert(
+        "slasha.process_type".into(),
+        context.process_type.to_string(),
+    );
+    labels.insert(
+        "slasha.instance_index".into(),
+        context.instance_index.to_string(),
+    );
 
-    let env: Option<Vec<String>> = if env_map.is_empty() {
+    let env: Option<Vec<String>> = if context.env_map.is_empty() {
         None
     } else {
         Some(
-            env_map
+            context
+                .env_map
                 .into_iter()
                 .map(|(k, v)| format!("{}={}", k, v))
                 .collect(),
@@ -158,9 +169,11 @@ pub async fn create_process_container(
                 image: Some(image_tag(&app.slug, &deployment.commit_sha)),
                 labels: Some(labels),
                 env,
-                cmd: cmd.map(|c| vec!["sh".to_string(), "-c".to_string(), c]),
+                cmd: context
+                    .cmd
+                    .map(|c| vec!["sh".to_string(), "-c".to_string(), c]),
                 host_config: Some(HostConfig {
-                    restart_policy: Some(match process_type {
+                    restart_policy: Some(match context.process_type {
                         ProcessType::Release => RestartPolicy {
                             name: Some(RestartPolicyNameEnum::EMPTY),
                             maximum_retry_count: None,
@@ -190,7 +203,7 @@ pub async fn create_process_container(
         container = %container_name,
         app_id = %app.id,
         deployment_id = %deployment.id,
-        process_type = %process_type,
+        process_type = %context.process_type,
         "container created"
     );
 
@@ -468,12 +481,14 @@ pub async fn run_release_container(
         docker_client,
         app,
         deployment,
-        ProcessType::Release,
-        0,
-        None,
-        Some(cmd),
-        env_map,
-        Vec::new(),
+        CreateContainerContext {
+            process_type: ProcessType::Release,
+            instance_index: 0,
+            container_port: None,
+            cmd: Some(cmd),
+            env_map,
+            volume_paths: Vec::new(),
+        },
     )
     .await?;
 
@@ -491,10 +506,9 @@ pub async fn run_release_container(
         Some("[release]".to_string()),
     );
 
-    match stream_handle.await {
-        Ok(deployment_result) => deployment_result?,
-        _ => {}
-    };
+    if let Ok(deployment_result) = stream_handle.await {
+        deployment_result?;
+    }
 
     let wait_res = docker_client
         .wait_container(

@@ -24,7 +24,7 @@ use super::{
 };
 use crate::docker::{
     DeploymentError, DeploymentResult,
-    deployment::stop_deployment_processes,
+    deployment::{container::CreateContainerContext, stop_deployment_processes},
     env::{RefSource, resolve_env_value, topo_sort_vars},
     logs::{LogKey, LogManager},
     naming::{app_network_name, image_tag, process_container_name, service_container_name},
@@ -352,12 +352,14 @@ async fn run_deployment_inner(
                 docker_client,
                 app,
                 deployment,
-                target.process_type,
-                i,
-                Some(deployment_context.container_port),
-                target.command.clone(),
-                deployment_context.env_map.clone(),
-                deployment_context.volume_paths.clone(),
+                CreateContainerContext {
+                    process_type: target.process_type,
+                    instance_index: i,
+                    container_port: Some(deployment_context.container_port),
+                    cmd: target.command.clone(),
+                    env_map: deployment_context.env_map.clone(),
+                    volume_paths: deployment_context.volume_paths.clone(),
+                },
             )
             .await?;
 

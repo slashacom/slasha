@@ -201,6 +201,7 @@ pub async fn build_railpack(
         .arg(&info_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()?;
 
     stream_command_output(prepare_child, log, "railpack prepare").await?;
@@ -220,6 +221,7 @@ pub async fn build_railpack(
         .arg(format!("type=docker,name={}", image_tag))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()?;
 
     stream_command_output(buildx_child, log, "docker buildx build").await?;

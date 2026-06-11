@@ -44,10 +44,10 @@ fn read_password(from_stdin: bool) -> Result<String> {
         return Ok(password);
     }
 
-    if let Ok(env_password) = std::env::var(PASSWORD_ENV) {
-        if !env_password.is_empty() {
-            return Ok(env_password);
-        }
+    if let Ok(env_password) = std::env::var(PASSWORD_ENV)
+        && !env_password.is_empty()
+    {
+        return Ok(env_password);
     }
 
     if !std::io::stdin().is_terminal() {
