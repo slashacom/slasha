@@ -66,6 +66,7 @@ async fn status(State(storage): State<Storage>) -> HttpResult<impl IntoResponse>
 pub struct SignupReq {
     pub email: String,
     pub password: String,
+    pub confirm_password: String,
 }
 
 async fn signup(
@@ -77,6 +78,10 @@ async fn signup(
 
     if admin_count > 0 {
         return Err(HttpError::bad_request("An admin already exists"));
+    }
+
+    if payload.password != payload.confirm_password {
+        return Err(HttpError::bad_request("Passwords do not match"));
     }
 
     let hashed = hash_password(&payload.password)?;

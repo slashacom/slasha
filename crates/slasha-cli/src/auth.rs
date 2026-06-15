@@ -101,7 +101,11 @@ async fn handle_signup(state: &AppState) -> Result<()> {
             .api_client
             .post(
                 "/api/auth/signup",
-                &json!({ "email": email, "password": password }),
+                &json!({
+                    "email": email,
+                    "password": password,
+                    "confirm_password": password, // inquire already handles confirmation
+                }),
             )
             .await?,
     ) {

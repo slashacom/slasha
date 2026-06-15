@@ -31,8 +31,18 @@ export default function Signup() {
     const formData = new FormData(e.currentTarget);
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
+    const confirmPassword = formData.get('confirmPassword') as string;
 
-    const promise = signup.mutateAsync({ email, password });
+    if (password !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
+    const promise = signup.mutateAsync({
+      email,
+      password,
+      confirm_password: confirmPassword,
+    });
 
     toast.promise(promise, {
       loading: 'Creating admin account...',
@@ -104,6 +114,29 @@ export default function Signup() {
             <p className="text-[12px] text-text-tertiary">
               Must be at least 8 characters.
             </p>
+          </VStack>
+
+          <VStack space={2}>
+            <Label
+              htmlFor="confirmPassword"
+              className="text-[13px] font-medium text-text-secondary"
+            >
+              Confirm password
+            </Label>
+            <div className="relative">
+              <KeyRoundIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
+              <Input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                required
+                pattern=".{8,}"
+                title="8 characters minimum"
+                className="h-11 border-border bg-surface pl-9 text-text placeholder:text-text-tertiary transition-all focus-visible:border-text-secondary focus-visible:ring-0"
+                placeholder="Confirm password"
+                autoComplete="new-password"
+              />
+            </div>
           </VStack>
 
           <Button
