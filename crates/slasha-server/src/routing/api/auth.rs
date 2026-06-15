@@ -52,6 +52,7 @@ pub fn router() -> Router<AppState> {
         .merge(auth_routes)
         .route("/me", get(me))
         .route("/status", get(status))
+        .route("/update", post(update_profile))
 }
 
 async fn status(State(storage): State<Storage>) -> HttpResult<impl IntoResponse> {
@@ -152,5 +153,80 @@ async fn login(
 async fn me(AuthUser(user): AuthUser) -> HttpResult<impl IntoResponse> {
     Ok(Json(serde_json::json!({
         "user": user
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct UpdateProfileReq {
+    pub email: Option<String>,
+    pub current_password: Option<String>,
+    pub new_password: Option<String>,
+    pub confirm_new_password: Option<String>,
+}
+
+async fn update_profile(
+    AuthUser(user): AuthUser,
+    State(storage): State<Storage>,
+    State(config): State<Config>,
+    Json(payload): Json<UpdateProfileReq>,
+) -> HttpResult<impl IntoResponse> {
+    if payload.email.is_some() || payload.new_password.is_some() {
+        let current_pwd = payload.current_password.as_deref().ok_or_else(|| {
+            HttpError::bad_request("Current password is required to update settings")
+        })?;
+
+        let is_valid = verify_password(current_pwd, &user.password_hash)?;
+        if !is_valid {
+            return Err(HttpError::bad_request("Invalid current password"));
+        }
+    }
+
+    let mut new_email = None;
+    let mut new_pwd_hash = None;
+
+    if let Some(ref email) = payload.email {
+        if email != &user.email {
+            if UserRepo::find_by_email(&storage.db_pool, email)
+                .await?
+                .is_some()
+            {
+                return Err(HttpError::bad_request("Email is already in use"));
+            }
+            new_email = Some(email.clone());
+        }
+    }
+
+    if let Some(ref new_pwd) = payload.new_password {
+        if new_pwd.len() < 8 {
+            return Err(HttpError::bad_request(
+                "New password must be at least 8 characters",
+            ));
+        }
+        let confirm_pwd = payload
+            .confirm_new_password
+            .as_deref()
+            .ok_or_else(|| HttpError::bad_request("Confirm new password is required"))?;
+        if new_pwd != confirm_pwd {
+            return Err(HttpError::bad_request("New passwords do not match"));
+        }
+        let hashed = hash_password(new_pwd)?;
+        new_pwd_hash = Some(hashed);
+    }
+
+    let updated_user =
+        UserRepo::update_profile(&storage.db_pool, &user.id, new_email, new_pwd_hash).await?;
+
+    let exp = Utc::now().timestamp() as usize + EXP_TIME;
+    let token_payload = TokenPayload {
+        id: updated_user.id.clone(),
+        email: updated_user.email.clone(),
+        exp,
+    };
+
+    let token = create_jwt(&token_payload, &config.jwt_secret)?;
+
+    Ok(Json(serde_json::json!({
+        "token": token,
+        "user": updated_user,
     })))
 }

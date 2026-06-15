@@ -77,3 +77,23 @@ export function useLogin() {
     queryClient
   );
 }
+
+export function useUpdateProfile() {
+  return useMutation(
+    {
+      mutationKey: ['update-profile'],
+      mutationFn: (body: Record<string, any>) =>
+        httpPost<AuthTokenResponse>('auth/update', body),
+      onSuccess: (data) => {
+        setAuthToken(data.token);
+        queryClient.invalidateQueries({
+          queryKey: getAuthMeOptions().queryKey,
+        });
+        queryClient.setQueryData(getAuthMeOptions().queryKey, {
+          user: data.user,
+        });
+      },
+    },
+    queryClient
+  );
+}

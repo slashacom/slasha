@@ -127,9 +127,7 @@ export default function DeploymentDetailPage() {
           <section>
             <HStack space={2} alignItems="center" className="mb-5">
               <Layers className="size-4 text-text-tertiary" />
-              <h3 className="text-sm font-semibold text-text">
-                Horizontal Scaling
-              </h3>
+              <h3 className="text-sm font-semibold text-text">Scaling</h3>
             </HStack>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Object.keys(processGroups)

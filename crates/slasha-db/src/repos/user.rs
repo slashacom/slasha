@@ -120,4 +120,35 @@ impl UserRepo {
         })
         .await?
     }
+
+    pub async fn update_profile(
+        pool: &DbPool,
+        id: &str,
+        email: Option<String>,
+        password_hash: Option<String>,
+    ) -> DbResult<User> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let updated_at = Utc::now().naive_utc();
+
+            if let Some(e) = email {
+                diesel::update(users::table.filter(users::id.eq(&id)))
+                    .set((users::email.eq(e), users::updated_at.eq(updated_at)))
+                    .execute(&mut conn)?;
+            }
+
+            if let Some(p) = password_hash {
+                diesel::update(users::table.filter(users::id.eq(&id)))
+                    .set((users::password_hash.eq(p), users::updated_at.eq(updated_at)))
+                    .execute(&mut conn)?;
+            }
+
+            Ok(users::table
+                .filter(users::id.eq(&id))
+                .first::<User>(&mut conn)?)
+        })
+        .await?
+    }
 }
