@@ -1,56 +1,44 @@
 #!/usr/bin/env bash
-#
-# PID 1 inside the slasha container.
-# Runs sshd (port 2222, for git push) and `slasha serve` side by side.
 
 set -euo pipefail
 
-# Match the in-container 'docker' group GID to the host's, so the slasha user
-# can talk to the bind-mounted /var/run/docker.sock. The host's GID varies
-# between distros, so we read it at runtime.
+SSH_KEY_TYPES=(rsa ecdsa ed25519)
+
+# sync docker socket's gid and add slasha user to it
 if [[ -S /var/run/docker.sock ]]; then
   sock_gid=$(stat -c '%g' /var/run/docker.sock)
-  if getent group docker >/dev/null; then
-    groupmod -g "$sock_gid" docker >/dev/null
-  else
-    groupadd -g "$sock_gid" docker >/dev/null
-  fi
-  if ! id -nG slasha | grep -qw docker; then
-    usermod -aG docker slasha
-  fi
+  groupadd -g "$sock_gid" -f docker
+  usermod -aG docker slasha
 fi
 
-# Persist sshd host keys in the slasha-data named volume. Without this, every
-# image rebuild would generate fresh keys and clients would see "host key
-# changed" warnings on git push — training people to ignore those warnings is
-# a real MITM risk.
+# persist ssh host keys
 HOST_KEY_DIR=/home/slasha/.slasha/sshd-host-keys
-mkdir -p "$HOST_KEY_DIR"
-chmod 700 "$HOST_KEY_DIR"
-for type in rsa ecdsa ed25519; do
-  key="$HOST_KEY_DIR/ssh_host_${type}_key"
-  if [[ ! -f "$key" ]]; then
-    ssh-keygen -q -t "$type" -N "" -f "$key" -C "slasha-host-${type}"
-  fi
-done
-chown -R slasha:slasha "$HOST_KEY_DIR"
+install -d -m 700 -o slasha -g slasha "$HOST_KEY_DIR"
 
-# sshd reads /etc/ssh/sshd_config.d/*.conf in addition to the main config.
+for type in "${SSH_KEY_TYPES[@]}"; do
+  key="$HOST_KEY_DIR/ssh_host_${type}_key"
+  [[ -f "$key" ]] || ssh-keygen -q -t "$type" -N "" -f "$key"
+done
+
+# sshd config
 {
-  echo "Port 2222"
-  echo "AllowUsers slasha"
-  echo "PermitRootLogin no"
-  echo "PasswordAuthentication no"
-  echo "ChallengeResponseAuthentication no"
-  echo "KbdInteractiveAuthentication no"
-  echo "PubkeyAuthentication yes"
-  for type in rsa ecdsa ed25519; do
+  cat <<EOF
+Port 2222
+AllowUsers slasha
+PermitRootLogin no
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+EOF
+
+  for type in "${SSH_KEY_TYPES[@]}"; do
     echo "HostKey $HOST_KEY_DIR/ssh_host_${type}_key"
   done
 } > /etc/ssh/sshd_config.d/slasha.conf
 
-# Run sshd as root in the background.
+# start sshd as root in the background
 /usr/sbin/sshd -D &
 
-# Drop privileges and run the HTTP server in the foreground.
+# run app as slasha user
 exec runuser -u slasha -- /usr/local/bin/slasha serve
