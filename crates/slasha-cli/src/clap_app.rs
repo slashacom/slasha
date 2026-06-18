@@ -141,20 +141,6 @@ pub enum Command {
         command: ServicesCommand,
     },
 
-    #[command(
-        name = "proxy",
-        about = "Tunnel a remote service to a local TCP port over HTTPS"
-    )]
-    Proxy {
-        #[arg(long, value_name = "SLUG")]
-        app: Option<String>,
-        #[arg(value_name = "NAME_OR_ID")]
-        service: String,
-        #[arg(short = 'p', long, value_name = "PORT")]
-        port: Option<u16>,
-        #[arg(long, help = "Mask passwords in printed connection string")]
-        no_secret: bool,
-    },
 
     #[command(name = "env", about = "Manage app env vars")]
     AppEnv {
@@ -313,6 +299,18 @@ pub enum ServicesCommand {
             help = "Write dump to file instead of stdout"
         )]
         file: Option<String>,
+    },
+    #[command(
+        name = "proxy",
+        about = "Tunnel a remote service to a local TCP port over HTTPS"
+    )]
+    Proxy {
+        #[arg(value_name = "NAME_OR_ID")]
+        service: String,
+        #[arg(short = 'p', long, value_name = "PORT")]
+        port: Option<u16>,
+        #[arg(long, help = "Mask passwords in printed connection string")]
+        no_secret: bool,
     },
 }
 

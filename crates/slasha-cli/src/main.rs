@@ -134,12 +134,6 @@ async fn run(cli: ClapApp) -> anyhow::Result<i32> {
             services::dispatch(&state, &resolve_app(app)?, command).await?
         }
 
-        Command::Proxy {
-            app,
-            service,
-            port,
-            no_secret,
-        } => proxy::handle_proxy(&state, &resolve_app(app)?, &service, port, no_secret).await?,
 
         Command::Scale { app, pairs } => {
             scale::handle_scale(&state, &resolve_app(app)?, pairs).await?

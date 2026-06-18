@@ -32,6 +32,11 @@ pub async fn dispatch(state: &AppState, slug: &str, cmd: ServicesCommand) -> Res
         ServicesCommand::Backup { service, file } => {
             handle_backup(state, slug, &service, file).await
         }
+        ServicesCommand::Proxy {
+            service,
+            port,
+            no_secret,
+        } => crate::proxy::handle_proxy(state, slug, &service, port, no_secret).await,
     }
 }
 
