@@ -298,6 +298,22 @@ pub enum ServicesCommand {
         #[command(subcommand)]
         command: ServiceEnvCommand,
     },
+
+    #[command(
+        name = "backup",
+        about = "Stream a service data dump to stdout or a file"
+    )]
+    Backup {
+        #[arg(value_name = "NAME_OR_ID")]
+        service: String,
+        #[arg(
+            short = 'f',
+            long = "file",
+            value_name = "FILE",
+            help = "Write dump to file instead of stdout"
+        )]
+        file: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

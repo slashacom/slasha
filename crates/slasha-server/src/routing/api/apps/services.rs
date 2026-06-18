@@ -2,14 +2,19 @@ use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     Json, Router,
+    body::Body,
     extract::{Path, State, WebSocketUpgrade},
+    http::header,
     response::{
-        IntoResponse,
+        IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
     },
     routing::{delete, get, post},
 };
-use bollard::Docker;
+use bollard::{
+    Docker,
+    exec::{CreateExecOptions, StartExecOptions, StartExecResults},
+};
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
 use serde::Deserialize;
@@ -24,9 +29,10 @@ use uuid::Uuid;
 use crate::{
     docker::{
         logs::{LogKey, LogManager},
+        naming::service_container_name,
         service::{
-            provision_service, remove_service_container, restart_service_container,
-            stop_service_container,
+            provision::resolve_env_vars, provision_service, remove_service_container,
+            restart_service_container, stop_service_container,
         },
     },
     error::{HttpError, HttpResult},
@@ -40,6 +46,7 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list_services))
         .route("/", post(create_service))
         .route("/{id}/logs", get(stream_logs))
+        .route("/{id}/backup", get(backup_service_handler))
         .route("/{id}/tunnel", get(tunnel_handler))
         .route("/{id}/restart", post(restart_service_handler))
         .route("/{id}/redeploy", post(redeploy_service_handler))
@@ -321,6 +328,75 @@ async fn delete_service_handler(
     ServiceRepo::delete(&db_pool, &service.id).await?;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+async fn backup_service_handler(
+    State(docker_client): State<Docker>,
+    State(db_pool): State<DbPool>,
+    AuthUser(user): AuthUser,
+    Path((slug, id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+
+    if service.status != ServiceStatus::Running {
+        return Err(HttpError::bad_request("Service is not running"));
+    }
+
+    let env_vars = ServiceRepo::get_env_vars(&db_pool, &service.id).await?;
+    let resolved = resolve_env_vars(env_vars, &service)?;
+
+    let cmd = service.kind.backup_cmd(&resolved);
+    let container_name = service_container_name(&service.id);
+
+    let exec_id = docker_client
+        .create_exec(
+            &container_name,
+            CreateExecOptions {
+                attach_stdout: Some(true),
+                attach_stderr: Some(false),
+                cmd: Some(cmd),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|e| HttpError::internal(anyhow::anyhow!(e)))?;
+
+    let output_stream = match docker_client
+        .start_exec(&exec_id.id, None::<StartExecOptions>)
+        .await
+        .map_err(|e| HttpError::internal(anyhow::anyhow!(e)))?
+    {
+        StartExecResults::Attached { output, .. } => output,
+        StartExecResults::Detached => {
+            return Err(HttpError::internal(anyhow::anyhow!(
+                "exec returned detached"
+            )));
+        }
+    };
+
+    let byte_stream = output_stream.filter_map(|item| async move {
+        match item {
+            Ok(bollard::container::LogOutput::StdOut { message }) => {
+                Some(Ok::<_, std::io::Error>(message))
+            }
+            _ => None,
+        }
+    });
+
+    let timestamp = Utc::now().format("%Y%m%d%H%M%S");
+    let filename = format!("{}-{}.dump", service.name, timestamp);
+
+    let response = Response::builder()
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", filename),
+        )
+        .body(Body::from_stream(byte_stream))
+        .map_err(|e| HttpError::internal(anyhow::anyhow!(e)))?;
+
+    Ok(response)
 }
 
 async fn stream_logs(

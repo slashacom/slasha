@@ -4,6 +4,10 @@ use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use serde_json::json;
 use slasha_db::service::{Service, ServiceKind, ServiceStatus};
+use tokio::{
+    fs::File,
+    io::{AsyncWriteExt, stdout},
+};
 
 use crate::{
     clap_app::ServicesCommand,
@@ -24,6 +28,9 @@ pub async fn dispatch(state: &AppState, slug: &str, cmd: ServicesCommand) -> Res
         }
         ServicesCommand::Env { service, command } => {
             service_env::dispatch(state, slug, &service, command).await
+        }
+        ServicesCommand::Backup { service, file } => {
+            handle_backup(state, slug, &service, file).await
         }
     }
 }
@@ -280,4 +287,53 @@ async fn fetch_default_env(
     }
 
     Ok(Default::default())
+}
+
+pub async fn handle_backup(
+    state: &AppState,
+    slug: &str,
+    service: &str,
+    file_path: Option<String>,
+) -> Result<()> {
+    let service_id = resolve_service_id(state, slug, service).await?;
+
+    let res = state
+        .api_client
+        .get_stream(&format!(
+            "/api/apps/{}/services/{}/backup",
+            slug, service_id
+        ))
+        .await?;
+
+    let mut stream = res.bytes_stream();
+
+    match file_path {
+        Some(path) => {
+            let mut file = File::create(&path)
+                .await
+                .with_context(|| format!("Failed to create file: {}", path))?;
+
+            println!("Writing backup to {}…", path);
+            let mut total: u64 = 0;
+
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.context("Stream error")?;
+                total += chunk.len() as u64;
+                file.write_all(&chunk).await.context("Write error")?;
+            }
+
+            file.flush().await.context("Flush error")?;
+            println!("Done. {} bytes written.", total);
+        }
+        None => {
+            let mut out = stdout();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.context("Stream error")?;
+                out.write_all(&chunk).await.context("Write error")?;
+            }
+            out.flush().await.context("Flush error")?;
+        }
+    }
+
+    Ok(())
 }

@@ -227,6 +227,43 @@ impl ServiceKind {
         };
         vec!["CMD-SHELL".to_string(), cmd.to_string()]
     }
+
+    pub fn backup_cmd(&self, env: &std::collections::HashMap<String, String>) -> Vec<String> {
+        let get = |key: &str| env.get(key).map(String::as_str).unwrap_or("");
+        match self {
+            ServiceKind::PostgreSQL => vec![
+                "pg_dump".to_string(),
+                "-U".to_string(),
+                get("POSTGRES_USER").to_string(),
+                get("POSTGRES_DB").to_string(),
+            ],
+            ServiceKind::MySQL => vec![
+                "mysqldump".to_string(),
+                format!("-u{}", get("MYSQL_USER")),
+                format!("-p{}", get("MYSQL_PASSWORD")),
+                get("MYSQL_DATABASE").to_string(),
+            ],
+            ServiceKind::MongoDB => vec![
+                "mongodump".to_string(),
+                "--username".to_string(),
+                get("MONGO_INITDB_ROOT_USERNAME").to_string(),
+                "--password".to_string(),
+                get("MONGO_INITDB_ROOT_PASSWORD").to_string(),
+                "--authenticationDatabase".to_string(),
+                "admin".to_string(),
+                "--archive".to_string(),
+                "--gzip".to_string(),
+            ],
+            ServiceKind::Redis => vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                format!(
+                    "redis-cli -a '{}' --no-auth-warning --rdb /dev/stdout",
+                    get("REDIS_PASSWORD")
+                ),
+            ],
+        }
+    }
 }
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
