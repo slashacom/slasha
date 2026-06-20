@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
@@ -10,9 +11,19 @@ export function meta() {
   return [{ title: 'New app · slasha' }];
 }
 
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 export default function NewApp() {
   const navigate = useNavigate();
   const createApp = useCreateApp();
+  const [name, setName] = useState('');
+  const slug = slugify(name);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -61,9 +72,20 @@ export default function NewApp() {
                 placeholder="my-awesome-app"
                 autoFocus
                 className="h-10"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
               />
               <p className="text-xs text-text-tertiary">
-                Used to generate the slug and git repository name.
+                {slug ? (
+                  <>
+                    Repository:{' '}
+                    <span className="font-mono text-text-secondary">
+                      {slug}.git
+                    </span>
+                  </>
+                ) : (
+                  'Used to generate the slug and git repository name.'
+                )}
               </p>
             </div>
 

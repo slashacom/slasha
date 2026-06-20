@@ -11,6 +11,7 @@ import {
 import { Settings as SettingsIcon } from 'lucide-react';
 import { AppEnvEditor } from '~/components/apps/app-env-editor';
 import { DomainManager } from '~/components/apps/domain-manager';
+import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { SectionHeader } from '~/components/interface/section-header';
 import { queryClient } from '~/utils/query-client';
@@ -64,12 +65,13 @@ export default function AppSettingsPage() {
                   be certain.
                 </p>
               </div>
-              <button
+              <Button
+                label="Delete App"
+                color="error"
+                size="sm"
+                className="shrink-0"
                 onClick={() => setShowDeleteConfirm(true)}
-                className="shrink-0 rounded-md bg-red-600 px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-red-500"
-              >
-                Delete App
-              </button>
+              />
             </div>
           </div>
         </div>
