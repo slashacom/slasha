@@ -45,7 +45,7 @@ export function ServicesView(props: ServicesViewProps) {
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <SectionHeader
         icon={Server}
-        title="Service Infrastructure"
+        title="Services"
         actions={
           <Button
             label="Provision Service"

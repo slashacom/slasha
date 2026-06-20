@@ -1,15 +1,15 @@
 import { useParams } from 'react-router';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
-import { Box, Layers } from 'lucide-react';
+import { Layers } from 'lucide-react';
 import {
   getDeploymentsOptions,
   getProcessesOptions,
 } from '~/queries/deployments';
 import { getScalesOptions } from '~/queries/apps';
 import type { ProcessType } from '~/models/app-scale';
-import { SectionHeader } from '~/components/interface/section-header';
 import { EmptyPage } from '~/components/global/empty-page';
-import { HStack, VStack } from '~/components/interface/stacks';
+import { VStack } from '~/components/interface/stacks';
+import { SectionHeader } from '~/components/interface/section-header';
 import { ScaleCard } from '~/components/apps/scale-card';
 import { ProcessExplorer } from '~/components/apps/process-explorer';
 import { queryClient } from '~/utils/query-client';
@@ -44,15 +44,12 @@ export default function AppScalingPage() {
 
   if (!runningDeployment) {
     return (
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-        <SectionHeader icon={Layers} title="Scaling" />
-        <EmptyPage
-          className="flex-1"
-          icon={Layers}
-          title="App is not running"
-          subtitle="Scaling controls become available once a deployment is running. Deploy your app to manage process replicas."
-        />
-      </div>
+      <EmptyPage
+        className="flex-1"
+        icon={Layers}
+        title="App is not running"
+        subtitle="Scaling controls become available once a deployment is running. Deploy your app to manage process replicas."
+      />
     );
   }
 
@@ -60,8 +57,7 @@ export default function AppScalingPage() {
   for (const p of processes) {
     if (p.process_type !== 'release') {
       processGroups[p.process_type] =
-        (processGroups[p.process_type] ?? 0) +
-        (p.status === 'Running' ? 1 : 0);
+        (processGroups[p.process_type] ?? 0) + (p.status === 'Running' ? 1 : 0);
     }
   }
   for (const s of scales) {
@@ -81,29 +77,43 @@ export default function AppScalingPage() {
 
       <div className="p-8">
         <VStack space={6}>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {scalableTypes.map((type) => (
-              <ScaleCard
-                key={type}
-                appSlug={slug!}
-                deploymentId={runningDeployment.id}
-                processType={type}
-                desiredCount={
-                  scales.find((s) => s.process_type === type)?.desired ??
-                  Math.max(1, processGroups[type])
-                }
-                runningCount={processGroups[type]}
-              />
-            ))}
-          </div>
+          <VStack space={3}>
+            <VStack space={1}>
+              <h3 className="text-sm font-semibold text-text">Replicas</h3>
+              <p className="text-[12px] text-text-tertiary">
+                How many containers run for each process type.{' '}
+                <span className="font-mono text-text-secondary">web</span>{' '}
+                serves HTTP traffic;{' '}
+                <span className="font-mono text-text-secondary">worker</span>{' '}
+                runs background jobs.
+              </p>
+            </VStack>
+            <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(15rem,18rem))]">
+              {scalableTypes.map((type) => (
+                <ScaleCard
+                  key={type}
+                  appSlug={slug!}
+                  deploymentId={runningDeployment.id}
+                  processType={type}
+                  desiredCount={
+                    scales.find((s) => s.process_type === type)?.desired ??
+                    Math.max(1, processGroups[type])
+                  }
+                  runningCount={processGroups[type]}
+                />
+              ))}
+            </div>
+          </VStack>
 
-          <VStack space={4}>
-            <HStack space={2} alignItems="center">
-              <Box className="size-4 text-text-tertiary" />
+          <VStack space={3}>
+            <VStack space={1}>
               <h3 className="text-sm font-semibold text-text">
                 Process Explorer
               </h3>
-            </HStack>
+              <p className="text-[12px] text-text-tertiary">
+                Live containers for the running deployment.
+              </p>
+            </VStack>
             <ProcessExplorer
               processes={processes}
               deploymentStatus={runningDeployment.status}

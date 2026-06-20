@@ -104,17 +104,20 @@ export function AppMetricsView(props: AppMetricsViewProps) {
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <SectionHeader
+        className="shrink-0"
         icon={Activity}
         title="System Metrics"
-        className="shrink-0"
-        badge={
-          <span
-            className="inline-flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse ml-1"
-            title="Real-time monitoring active"
-          />
-        }
         actions={
           <>
+            <HStack space={1.5} alignItems="center">
+              <span
+                className="inline-flex size-2 rounded-full bg-emerald-500 animate-pulse"
+                title="Real-time monitoring active"
+              />
+              <span className="text-[11px] font-medium text-text-tertiary">
+                Live
+              </span>
+            </HStack>
             <HStack
               space={1}
               className="rounded border border-border bg-surface p-0.5"

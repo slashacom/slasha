@@ -54,7 +54,7 @@ export function DeploymentsView(props: DeploymentsViewProps) {
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <SectionHeader
         icon={History}
-        title="Deployment History"
+        title="Deployments"
         actions={
           <>
             <Button

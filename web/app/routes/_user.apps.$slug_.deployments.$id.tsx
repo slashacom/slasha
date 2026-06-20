@@ -33,7 +33,12 @@ function formatDuration(start: string, end: string): string {
   return `${minutes}m ${rem}s`;
 }
 
-function MetaItem(props: { label: string; children: React.ReactNode }) {
+type MetaItemProps = {
+  label: string;
+  children: React.ReactNode;
+};
+
+function MetaItem(props: MetaItemProps) {
   const { label, children } = props;
   return (
     <VStack space={1}>
@@ -127,7 +132,9 @@ export default function DeploymentDetailPage() {
         <VStack space={3} className="flex min-h-0 flex-1 flex-col">
           <HStack space={2} alignItems="center">
             <Terminal className="size-4 text-text-tertiary" />
-            <h3 className="text-sm font-semibold text-text">Build & runtime logs</h3>
+            <h3 className="text-sm font-semibold text-text">
+              Build & runtime logs
+            </h3>
           </HStack>
           <LogStream
             url={`/api/apps/${slug}/deployments/${id}/logs`}

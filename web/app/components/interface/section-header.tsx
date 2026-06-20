@@ -1,28 +1,43 @@
 import type { LucideIcon } from 'lucide-react';
-import { HStack } from '~/components/interface/stacks';
+import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
 
 type SectionHeaderProps = {
-  icon: LucideIcon;
-  title: string;
-  badge?: React.ReactNode;
+  icon?: LucideIcon;
+  title?: string;
+  description?: string;
   actions?: React.ReactNode;
   className?: string;
 };
 
 export function SectionHeader(props: SectionHeaderProps) {
-  const { icon: Icon, title, badge, actions, className } = props;
+  const { icon: Icon, title, description, actions, className } = props;
   return (
     <HStack
       justifyContent="between"
-      className={cn('border-b border-border px-8 py-4', className)}
+      alignItems="center"
+      className={cn('gap-4 border-b border-border px-8 py-4', className)}
     >
-      <HStack space={2}>
-        <Icon className="size-4 text-text-tertiary" />
-        <h2 className="text-sm font-semibold text-text">{title}</h2>
-        {badge}
+      <HStack space={2} alignItems={description ? 'start' : 'center'}>
+        {Icon ? (
+          <Icon
+            className={cn('size-4 text-text-tertiary', description && 'mt-0.5')}
+          />
+        ) : null}
+        <VStack space={0.5}>
+          {title ? (
+            <h2 className="text-sm font-semibold text-text">{title}</h2>
+          ) : null}
+          {description ? (
+            <p className="text-[12px] text-text-tertiary">{description}</p>
+          ) : null}
+        </VStack>
       </HStack>
-      {actions ? <HStack space={2}>{actions}</HStack> : null}
+      {actions ? (
+        <HStack space={2} alignItems="center" className="shrink-0">
+          {actions}
+        </HStack>
+      ) : null}
     </HStack>
   );
 }

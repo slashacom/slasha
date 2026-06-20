@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { FileText, GitBranch } from 'lucide-react';
+import { FileText, FolderTree, GitBranch } from 'lucide-react';
 import { findNodeByPath, getFileTreeOptions } from '~/queries/files';
 import type { FileTreeNode } from '~/queries/files';
 import { FileTree } from '~/components/apps/file-tree';
 import { CodeViewer } from '~/components/apps/code-viewer';
 import { FolderViewer } from '~/components/apps/folder-viewer';
 import { EmptyPage } from '~/components/global/empty-page';
+import { SectionHeader } from '~/components/interface/section-header';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader(args: { params: { slug: string } }) {
@@ -65,41 +66,47 @@ export default function AppFilesPage() {
 
   if (!hasCommits) {
     return (
-      <EmptyPage
-        className="flex-1"
-        icon={GitBranch}
-        title="No commits yet"
-        subtitle="Push code to this repository to see the file tree."
-      />
+      <div className="flex h-full min-h-0 flex-1 flex-col">
+        <SectionHeader icon={FolderTree} title="Source" />
+        <EmptyPage
+          className="flex-1"
+          icon={GitBranch}
+          title="No commits yet"
+          subtitle="Push code to this repository to see the file tree."
+        />
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden">
-      <FileTree
-        tree={tree}
-        selectedPath={selectedPath}
-        onSelect={handleSelect}
-        expandedPaths={expandedPaths}
-        onToggle={handleToggle}
-      />
-      <div className="flex-1 min-w-0 overflow-hidden">
-        {selectedNode ? (
-          selectedNode.node_type === 'directory' ? (
-            <FolderViewer node={selectedNode} onSelect={handleSelect} />
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <SectionHeader icon={FolderTree} title="Source" />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <FileTree
+          tree={tree}
+          selectedPath={selectedPath}
+          onSelect={handleSelect}
+          expandedPaths={expandedPaths}
+          onToggle={handleToggle}
+        />
+        <div className="flex-1 min-w-0 overflow-hidden">
+          {selectedNode ? (
+            selectedNode.node_type === 'directory' ? (
+              <FolderViewer node={selectedNode} onSelect={handleSelect} />
+            ) : (
+              <CodeViewer
+                slug={slug!}
+                filePath={selectedNode.path}
+                onNavigate={handleSelect}
+              />
+            )
           ) : (
-            <CodeViewer
-              slug={slug!}
-              filePath={selectedNode.path}
-              onNavigate={handleSelect}
-            />
-          )
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
-            <FileText className="size-6" />
-            <p className="text-xs">Select a file to view its contents</p>
-          </div>
-        )}
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
+              <FileText className="size-6" />
+              <p className="text-xs">Select a file to view its contents</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
