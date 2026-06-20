@@ -15,6 +15,7 @@ use futures_util::{StreamExt, stream};
 use serde::Deserialize;
 use slasha_db::{
     DbPool,
+    app::App,
     deployment::{Deployment, DeploymentStatus},
     models::app_scale::ProcessType,
     repos::{app::AppRepo, deployment::DeploymentRepo},
@@ -43,7 +44,10 @@ fn resolve_commit_message(repo_path: &str, sha: &str) -> anyhow::Result<String> 
     Ok(commit.summary().unwrap_or("").to_string())
 }
 
-fn resolve_head_commit(repo_path: &str, branch: &str) -> anyhow::Result<(String, String)> {
+pub(crate) fn resolve_head_commit(
+    repo_path: &str,
+    branch: &str,
+) -> anyhow::Result<(String, String)> {
     let repo = git2::Repository::open(repo_path)?;
     let branch = repo.find_branch(branch, git2::BranchType::Local)?;
     let commit = branch.get().peel_to_commit()?;
@@ -52,6 +56,59 @@ fn resolve_head_commit(repo_path: &str, branch: &str) -> anyhow::Result<(String,
         commit.id().to_string(),
         commit.summary().unwrap_or("").to_string(),
     ))
+}
+
+/// Create a deployment and kick off its build in the background. Returns
+/// `Ok(None)` if a build is already in progress for the app (no-op). Shared by
+/// the manual deploy endpoint and the git push auto-deploy path.
+pub async fn start_deployment(
+    docker_client: Docker,
+    db_pool: DbPool,
+    log_manager: Arc<LogManager>,
+    proxy_sync_trigger: Arc<Notify>,
+    app: App,
+    commit_sha: Option<String>,
+) -> anyhow::Result<Option<Deployment>> {
+    let active_deployments =
+        DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
+    let is_building = active_deployments
+        .iter()
+        .any(|d| d.status == DeploymentStatus::Building);
+    if is_building {
+        return Ok(None);
+    }
+
+    let (commit_sha, commit_message) = match commit_sha {
+        Some(sha) => {
+            let msg = resolve_commit_message(&app.repo_path, &sha)?;
+            (sha, msg)
+        }
+        None => resolve_head_commit(&app.repo_path, &app.default_branch)?,
+    };
+
+    let now = Utc::now().naive_utc();
+    let deployment = Deployment {
+        id: Uuid::new_v4().to_string(),
+        app_id: app.id.clone(),
+        commit_sha,
+        commit_message,
+        status: DeploymentStatus::Pending,
+        created_at: now,
+        updated_at: now,
+    };
+
+    let deployment = DeploymentRepo::create(&db_pool, deployment).await?;
+
+    tokio::spawn(run_deployment(
+        docker_client,
+        db_pool,
+        log_manager,
+        proxy_sync_trigger,
+        app,
+        deployment.clone(),
+    ));
+
+    Ok(Some(deployment))
 }
 
 pub fn router() -> Router<AppState> {
@@ -83,54 +140,23 @@ async fn trigger_deploy(
 ) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
-    let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
-    let is_building = active_deployments
-        .iter()
-        .any(|d| d.status == DeploymentStatus::Building);
-
-    if is_building {
-        return Err(HttpError::bad_request(
-            "A deployment is already building for this app",
-        ));
-    }
-
-    let (commit_sha, commit_message) = match payload.commit_sha {
-        Some(sha) => {
-            let msg = resolve_commit_message(&app.repo_path, &sha)
-                .map_err(|e| HttpError::bad_request(format!("Invalid commit SHA: {}", e)))?;
-            (sha, msg)
-        }
-        None => resolve_head_commit(&app.repo_path, &app.default_branch).map_err(|e| {
-            HttpError::bad_request(format!(
-                "Failed to resolve HEAD of '{}': {}",
-                app.default_branch, e
-            ))
-        })?,
-    };
-
-    let now = Utc::now().naive_utc();
-    let deployment = Deployment {
-        id: Uuid::new_v4().to_string(),
-        app_id: app.id.clone(),
-        commit_sha,
-        commit_message,
-        status: DeploymentStatus::Pending,
-        created_at: now,
-        updated_at: now,
-    };
-
-    let deployment = DeploymentRepo::create(&db_pool, deployment).await?;
-
-    tokio::spawn(run_deployment(
+    let deployment = start_deployment(
         docker_client,
         db_pool,
         log_manager,
         proxy_sync_trigger,
         app,
-        deployment.clone(),
-    ));
+        payload.commit_sha,
+    )
+    .await
+    .map_err(|e| HttpError::bad_request(format!("Failed to start deployment: {}", e)))?;
 
-    Ok(Json(serde_json::json!({ "deployment": deployment })))
+    match deployment {
+        Some(deployment) => Ok(Json(serde_json::json!({ "deployment": deployment }))),
+        None => Err(HttpError::bad_request(
+            "A deployment is already building for this app",
+        )),
+    }
 }
 
 async fn list_deployments(

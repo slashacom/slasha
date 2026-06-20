@@ -1,25 +1,74 @@
-use std::{io::Read, process::Stdio};
+use std::{io::Read, process::Stdio, sync::Arc};
 
 use anyhow::Context;
 use axum::{
     Router,
     body::Body,
+    extract::State,
     http::{Request, header},
     response::IntoResponse,
     routing::{get, post},
 };
+use bollard::Docker;
 use flate2::read::GzDecoder;
+use slasha_db::{DbPool, app::App, repos::deployment::DeploymentRepo};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     process::Command,
+    sync::Notify,
 };
 use tokio_util::io::ReaderStream;
 
 use crate::{
     AppState,
+    docker::logs::LogManager,
     error::HttpResult,
     extractors::git::{GitAuth, GitError},
+    routing::api::apps::deployments::{resolve_head_commit, start_deployment},
 };
+
+/// Context for auto-deploying after a successful `git push`.
+struct AutoDeploy {
+    docker: Docker,
+    db_pool: DbPool,
+    log_manager: Arc<LogManager>,
+    proxy_sync_trigger: Arc<Notify>,
+    app: App,
+}
+
+async fn run_auto_deploy(ctx: AutoDeploy) {
+    // Only deploy when the default branch tip actually changed (ignores pushes
+    // to other branches and re-pushes of the same commit).
+    let head = match resolve_head_commit(&ctx.app.repo_path, &ctx.app.default_branch) {
+        Ok((sha, _)) => sha,
+        Err(_) => return,
+    };
+
+    if let Ok(deployments) = DeploymentRepo::list_for_app(&ctx.db_pool, &ctx.app.id).await
+        && deployments.first().map(|d| d.commit_sha.as_str()) == Some(head.as_str())
+    {
+        return;
+    }
+
+    match start_deployment(
+        ctx.docker,
+        ctx.db_pool,
+        ctx.log_manager,
+        ctx.proxy_sync_trigger,
+        ctx.app,
+        Some(head),
+    )
+    .await
+    {
+        Ok(Some(deployment)) => {
+            tracing::info!(deployment_id = %deployment.id, "auto-deploy triggered from push")
+        }
+        Ok(None) => {
+            tracing::info!("auto-deploy skipped: a build is already in progress")
+        }
+        Err(e) => tracing::warn!(error = %e, "auto-deploy from push failed"),
+    }
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -96,17 +145,32 @@ async fn info_refs(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoRes
 }
 
 async fn upload_pack(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoResponse> {
-    handle_git_service("upload-pack", auth, req).await
+    handle_git_service("upload-pack", auth, req, None).await
 }
 
-async fn receive_pack(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoResponse> {
-    handle_git_service("receive-pack", auth, req).await
+async fn receive_pack(
+    State(docker): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
+    State(proxy_sync_trigger): State<Arc<Notify>>,
+    auth: GitAuth,
+    req: Request<Body>,
+) -> HttpResult<impl IntoResponse> {
+    let auto_deploy = AutoDeploy {
+        docker,
+        db_pool,
+        log_manager,
+        proxy_sync_trigger,
+        app: auth.app.clone(),
+    };
+    handle_git_service("receive-pack", auth, req, Some(auto_deploy)).await
 }
 
 async fn handle_git_service(
     service: &str,
     auth: GitAuth,
     req: Request<Body>,
+    auto_deploy: Option<AutoDeploy>,
 ) -> HttpResult<impl IntoResponse> {
     let git_protocol = req
         .headers()
@@ -139,7 +203,12 @@ async fn handle_git_service(
     let stdout = child.stdout.take().unwrap();
 
     tokio::spawn(async move {
-        let _ = child.wait().await;
+        let status = child.wait().await;
+        if let Some(ctx) = auto_deploy
+            && matches!(&status, Ok(s) if s.success())
+        {
+            run_auto_deploy(ctx).await;
+        }
     });
 
     let body_bytes = axum::body::to_bytes(req.into_body(), 100 * 1024 * 1024)

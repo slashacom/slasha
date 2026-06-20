@@ -1,4 +1,4 @@
-mod deployments;
+pub(crate) mod deployments;
 mod domains;
 mod env;
 mod files;
