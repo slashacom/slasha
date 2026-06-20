@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { Play, Square, Terminal, RotateCcw, Trash2 } from 'lucide-react';
+import { Play, Square, RotateCcw, Trash2 } from 'lucide-react';
 import type { Deployment } from '~/models/deployment';
 import {
   useStopDeployment,
@@ -19,11 +19,10 @@ import { toast } from 'sonner';
 type DeploymentRowProps = {
   deployment: Deployment;
   appSlug: string;
-  onShowLogs: () => void;
 };
 
 export function DeploymentRow(props: DeploymentRowProps) {
-  const { deployment, appSlug, onShowLogs } = props;
+  const { deployment, appSlug } = props;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const stopDeployment = useStopDeployment();
@@ -116,14 +115,6 @@ export function DeploymentRow(props: DeploymentRowProps) {
         </VStack>
 
         <HStack space={2} onClick={(e) => e.stopPropagation()}>
-          <Button
-            label="Logs"
-            icon={<Terminal className="size-3.5" />}
-            variant="ghost"
-            size="sm"
-            color="neutral"
-            onClick={onShowLogs}
-          />
           {(deployment.status === 'Running' ||
             deployment.status === 'Building') && (
             <Button

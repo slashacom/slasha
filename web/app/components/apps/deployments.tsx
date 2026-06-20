@@ -8,7 +8,6 @@ import { VStack } from '~/components/interface/stacks';
 import { toast } from 'sonner';
 import { CommitSelector } from '~/components/apps/commit-selector';
 import { DeploymentRow } from '~/components/apps/deployment-row';
-import { LogStreamDialog } from '~/components/apps/log-stream-dialog';
 
 type DeploymentsViewProps = {
   appSlug: string;
@@ -19,7 +18,6 @@ export function DeploymentsView(props: DeploymentsViewProps) {
   const { data, isLoading } = useQuery(getDeploymentsOptions(appSlug));
   const triggerDeploy = useTriggerDeploy();
   const queryClient = useQueryClient();
-  const [activeLogsId, setActiveLogsId] = useState<string | null>(null);
   const [showCommitSelector, setShowCommitSelector] = useState(false);
 
   const deployments = data?.deployments ?? [];
@@ -30,6 +28,7 @@ export function DeploymentsView(props: DeploymentsViewProps) {
       queryClient.invalidateQueries({
         queryKey: ['apps', appSlug, 'deployments'],
       });
+      toast.success('Deployment triggered');
     } catch (e) {
       toast.error('Failed to trigger deploy: ' + e);
     }
@@ -102,19 +101,10 @@ export function DeploymentsView(props: DeploymentsViewProps) {
                 key={deployment.id}
                 deployment={deployment}
                 appSlug={appSlug}
-                onShowLogs={() => setActiveLogsId(deployment.id)}
               />
             ))}
           </div>
         </div>
-      )}
-
-      {activeLogsId && (
-        <LogStreamDialog
-          url={`/api/apps/${appSlug}/deployments/${activeLogsId}/logs`}
-          title="Logs"
-          onClose={() => setActiveLogsId(null)}
-        />
       )}
 
       <CommitSelector
