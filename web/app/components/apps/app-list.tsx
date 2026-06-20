@@ -1,8 +1,8 @@
 import { AppCard } from './app-card';
-import type { App } from '~/models/app';
+import type { AppListItem } from '~/queries/apps';
 
 type AppListProps = {
-  apps: App[];
+  apps: AppListItem[];
 };
 
 export function AppList(props: AppListProps) {
@@ -19,8 +19,8 @@ export function AppList(props: AppListProps) {
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {apps.map((app) => (
-        <AppCard key={app.id} app={app} />
+      {apps.map((item) => (
+        <AppCard key={item.app.id} item={item} />
       ))}
     </div>
   );

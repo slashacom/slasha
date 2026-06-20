@@ -1,7 +1,7 @@
 import { Suspense, useMemo, useState } from 'react';
 import { Outlet, useParams } from 'react-router';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
-import { Check, Copy, Folder, GitBranch } from 'lucide-react';
+import { ArrowUpRight, Check, Copy, Folder, GitBranch } from 'lucide-react';
 import { getAppOptions } from '~/queries/apps';
 import { getDeploymentsOptions } from '~/queries/deployments';
 import type { App } from '~/models/app';
@@ -28,10 +28,11 @@ type Protocol = 'https' | 'ssh';
 type AppToolbarProps = {
   app: App;
   status: AppRuntimeStatus;
+  url: string;
 };
 
 function AppToolbar(props: AppToolbarProps) {
-  const { app, status } = props;
+  const { app, status, url: appUrl } = props;
   const [protocol, setProtocol] = useState<Protocol>('https');
   const [copied, setCopied] = useState(false);
 
@@ -75,6 +76,17 @@ function AppToolbar(props: AppToolbarProps) {
           {app.default_branch}
         </span>
         <AppRuntimeBadge status={status} />
+        {status.tone === 'live' ? (
+          <a
+            href={appUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 rounded border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-text-secondary !no-underline transition-colors hover:bg-white/5 hover:text-text"
+          >
+            Visit
+            <ArrowUpRight className="size-3" />
+          </a>
+        ) : null}
       </div>
 
       <div className="flex items-center rounded border border-border bg-surface">
@@ -147,7 +159,7 @@ export default function AppLayout() {
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
-      <AppToolbar app={app} status={status} />
+      <AppToolbar app={app} status={status} url={data.url} />
 
       <TabNav
         className="shrink-0 bg-surface/30 px-8"

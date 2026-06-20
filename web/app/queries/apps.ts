@@ -6,6 +6,12 @@ import type { AppDomain } from '~/models/app';
 
 import type { AppMetrics } from '~/models/app-metrics';
 
+export type AppListItem = {
+  app: App;
+  url: string;
+  runtime_status: string;
+};
+
 type CreateAppPayload = { name: string };
 
 type UpdateAppEnvVarsPayload = {
@@ -20,14 +26,14 @@ type DeleteAppDomainPayload = { appSlug: string; domainId: string };
 export function getAppsOptions() {
   return queryOptions({
     queryKey: ['apps'],
-    queryFn: () => httpGet<{ apps: App[] }>('apps'),
+    queryFn: () => httpGet<{ apps: AppListItem[] }>('apps'),
   });
 }
 
 export function getAppOptions(slug: string) {
   return queryOptions({
     queryKey: ['apps', slug],
-    queryFn: () => httpGet<{ app: App }>(`apps/${slug}`),
+    queryFn: () => httpGet<{ app: App; url: string }>(`apps/${slug}`),
   });
 }
 

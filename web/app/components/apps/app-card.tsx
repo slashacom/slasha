@@ -1,19 +1,17 @@
 import { Link } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
-import { GitBranchIcon } from 'lucide-react';
-import type { App } from '~/models/app';
-import { getDeploymentsOptions } from '~/queries/deployments';
+import { ArrowUpRight, GitBranchIcon } from 'lucide-react';
+import type { AppListItem } from '~/queries/apps';
 import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
-import { deriveAppStatus } from '~/utils/app-status';
+import { statusFromRuntime } from '~/utils/app-status';
 
 type AppCardProps = {
-  app: App;
+  item: AppListItem;
 };
 
 export function AppCard(props: AppCardProps) {
-  const { app } = props;
-  const { data } = useQuery(getDeploymentsOptions(app.slug));
-  const status = deriveAppStatus(data?.deployments ?? []);
+  const { item } = props;
+  const { app, url, runtime_status } = item;
+  const status = statusFromRuntime(runtime_status);
 
   return (
     <Link
@@ -32,11 +30,25 @@ export function AppCard(props: AppCardProps) {
         <AppRuntimeBadge status={status} />
       </div>
 
-      <div className="mt-4 flex items-center gap-1.5 text-[12px] text-text-tertiary">
-        <GitBranchIcon className="size-3.5" />
-        <span>{app.default_branch}</span>
-        <span className="px-1">·</span>
-        <span>{new Date(app.created_at).toLocaleDateString()}</span>
+      <div className="mt-4 flex items-center justify-between text-[12px] text-text-tertiary">
+        <div className="flex items-center gap-1.5">
+          <GitBranchIcon className="size-3.5" />
+          <span>{app.default_branch}</span>
+          <span className="px-1">·</span>
+          <span>{new Date(app.created_at).toLocaleDateString()}</span>
+        </div>
+        {status.tone === 'live' ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-0.5 text-text-tertiary !no-underline opacity-0 transition-all hover:text-text group-hover:opacity-100"
+          >
+            Visit
+            <ArrowUpRight className="size-3" />
+          </a>
+        ) : null}
       </div>
     </Link>
   );

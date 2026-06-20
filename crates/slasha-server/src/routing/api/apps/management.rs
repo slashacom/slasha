@@ -11,7 +11,11 @@ use serde::Deserialize;
 use slasha_db::{
     DbPool,
     app::{App, AppMember, AppMemberRole},
-    repos::{app::AppRepo, app_scale::AppScaleRepo, service::ServiceRepo},
+    deployment::{Deployment, DeploymentStatus},
+    repos::{
+        app::AppRepo, app_scale::AppScaleRepo, deployment::DeploymentRepo,
+        service::ServiceRepo,
+    },
 };
 use tokio::process::Command;
 use uuid::Uuid;
@@ -24,7 +28,7 @@ use crate::{
     },
     error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
-    state::{AppState, Runtime, Storage},
+    state::{AppState, Config, Runtime, Storage},
     utils::slugify,
 };
 
@@ -119,13 +123,22 @@ async fn create_app(
 
 async fn get_app(
     State(storage): State<Storage>,
+    State(config): State<Config>,
     AuthUser(user): AuthUser,
     Path(slug): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
+    let scheme = if config.platform_domain.contains("localhost") {
+        "http"
+    } else {
+        "https"
+    };
+    let url = format!("{}://{}.{}", scheme, app.slug, config.platform_domain);
+
     Ok(Json(serde_json::json!({
         "app": app,
+        "url": url,
     })))
 }
 
@@ -209,14 +222,49 @@ async fn delete_app(
     })))
 }
 
+fn derive_runtime_status(deployments: &[Deployment]) -> &'static str {
+    if deployments
+        .iter()
+        .any(|d| d.status == DeploymentStatus::Running)
+    {
+        return "running";
+    }
+    match deployments.first().map(|d| d.status) {
+        Some(DeploymentStatus::Building) | Some(DeploymentStatus::Pending) => {
+            "deploying"
+        }
+        Some(DeploymentStatus::Failed) => "failed",
+        _ => "idle",
+    }
+}
+
 async fn list_apps(
     State(storage): State<Storage>,
+    State(config): State<Config>,
     AuthUser(user): AuthUser,
 ) -> HttpResult<impl IntoResponse> {
     let user_apps = AppRepo::list_for_user(&storage.db_pool, &user.id).await?;
 
+    let scheme = if config.platform_domain.contains("localhost") {
+        "http"
+    } else {
+        "https"
+    };
+
+    let mut items = Vec::with_capacity(user_apps.len());
+    for app in user_apps {
+        let deployments =
+            DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
+        let url = format!("{}://{}.{}", scheme, app.slug, config.platform_domain);
+        items.push(serde_json::json!({
+            "app": app,
+            "url": url,
+            "runtime_status": derive_runtime_status(&deployments),
+        }));
+    }
+
     Ok(Json(serde_json::json!({
-        "apps": user_apps,
+        "apps": items,
     })))
 }
 

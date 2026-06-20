@@ -8,6 +8,19 @@ export type AppRuntimeStatus = {
   tone: AppRuntimeTone;
 };
 
+export function statusFromRuntime(runtimeStatus: string): AppRuntimeStatus {
+  switch (runtimeStatus) {
+    case 'running':
+      return { label: 'Live', tone: 'live' };
+    case 'deploying':
+      return { label: 'Deploying', tone: 'deploying' };
+    case 'failed':
+      return { label: 'Failed', tone: 'failed' };
+    default:
+      return { label: 'Idle', tone: 'idle' };
+  }
+}
+
 export function deriveAppStatus(deployments: Deployment[]): AppRuntimeStatus {
   if (deployments.some((d) => d.status === 'Running')) {
     return { label: 'Live', tone: 'live' };
