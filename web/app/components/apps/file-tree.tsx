@@ -11,7 +11,7 @@ type TreeNodeProps = {
   onSelect: (path: string) => void;
   expandedPaths: Set<string>;
   onToggle: (path: string) => void;
-}
+};
 
 function TreeNode(props: TreeNodeProps) {
   const { node, depth, selectedPath, onSelect, expandedPaths, onToggle } =
@@ -138,7 +138,7 @@ type FileTreeProps = {
   onSelect: (path: string) => void;
   expandedPaths: Set<string>;
   onToggle: (path: string) => void;
-}
+};
 
 export function FileTree(props: FileTreeProps) {
   const { tree, selectedPath, onSelect, expandedPaths, onToggle } = props;

@@ -12,7 +12,8 @@ import { Button } from '~/components/interface/button';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
 
-export function DomainManager({ appSlug }: { appSlug: string }) {
+export function DomainManager(props: { appSlug: string }) {
+  const { appSlug } = props;
   const queryClient = useQueryClient();
   const { data: domainsData, isLoading: domainsLoading } = useQuery(
     getAppDomainsOptions(appSlug)
@@ -24,7 +25,9 @@ export function DomainManager({ appSlug }: { appSlug: string }) {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newDomain.trim()) return;
+    if (!newDomain.trim()) {
+      return;
+    }
 
     try {
       await addDomain.mutateAsync({ appSlug, domain: newDomain.trim() });

@@ -61,7 +61,7 @@ type SuggestionListProps = {
   items: FlatItem[];
   command: (props: { id: string; label: string }) => void;
   handlerBox: HandlerBox;
-}
+};
 
 function SuggestionList(props: SuggestionListProps) {
   const items = props.items;
@@ -171,17 +171,18 @@ export type RichValueInputProps = {
   readOnly?: boolean;
   onPasteRaw?: (text: string) => boolean;
   className?: string;
-}
+};
 
-export function RichValueInput({
-  value,
-  onChange,
-  groups,
-  placeholder,
-  readOnly = false,
-  onPasteRaw,
-  className,
-}: RichValueInputProps) {
+export function RichValueInput(props: RichValueInputProps) {
+  const {
+    value,
+    onChange,
+    groups,
+    placeholder,
+    readOnly = false,
+    onPasteRaw,
+    className,
+  } = props;
   const editor = useEditor(
     {
       extensions: [

@@ -25,7 +25,8 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
-export function Layout({ children }: { children: React.ReactNode }) {
+export function Layout(props: { children: React.ReactNode }) {
+  const { children } = props;
   return (
     <html lang="en">
       <head>
@@ -67,7 +68,8 @@ export default function App() {
   return <Outlet />;
 }
 
-export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+export function ErrorBoundary(props: Route.ErrorBoundaryProps) {
+  const { error } = props;
   return (
     <div className="flex items-center justify-center flex-grow h-screen">
       <ErrorView error={error} />

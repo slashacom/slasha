@@ -25,11 +25,10 @@ import { formatRelativeTime } from '~/utils/format';
 import { toast } from 'sonner';
 import { queryClient } from '~/utils/query-client';
 
-export async function clientLoader({
-  params,
-}: {
+export async function clientLoader(args: {
   params: { slug: string; id: string };
 }) {
+  const { params } = args;
   await Promise.all([
     queryClient.ensureQueryData(getAppOptions(params.slug)),
     queryClient.ensureQueryData(getDeploymentOptions(params.slug, params.id)),
@@ -63,7 +62,9 @@ export default function DeploymentDetailPage() {
   // Group processes by type
   const processGroups = processes.reduce(
     (acc, p) => {
-      if (!acc[p.process_type]) acc[p.process_type] = [];
+      if (!acc[p.process_type]) {
+        acc[p.process_type] = [];
+      }
       acc[p.process_type].push(p);
       return acc;
     },
@@ -242,19 +243,15 @@ export default function DeploymentDetailPage() {
   );
 }
 
-function ScaleCard({
-  appSlug,
-  deploymentId,
-  processType,
-  desiredCount,
-  runningCount,
-}: {
+function ScaleCard(props: {
   appSlug: string;
   deploymentId: string;
   processType: string;
   desiredCount: number;
   runningCount: number;
 }) {
+  const { appSlug, deploymentId, processType, desiredCount, runningCount } =
+    props;
   const [countStr, setCountStr] = useState(desiredCount.toString());
   const scale = useScaleDeployment();
 

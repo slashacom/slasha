@@ -7,7 +7,7 @@ import { PathBreadcrumb } from './path-breadcrumb';
 type FolderViewerProps = {
   node: FileTreeNode;
   onSelect: (path: string) => void;
-}
+};
 
 export function FolderViewer(props: FolderViewerProps) {
   const { node, onSelect } = props;

@@ -4,9 +4,10 @@ import type { SshKey } from '~/models/ssh-key';
 type SshKeyRowProps = {
   sshKey: SshKey;
   onDelete: (key: SshKey) => void;
-}
+};
 
-export function SshKeyRow({ sshKey, onDelete }: SshKeyRowProps) {
+export function SshKeyRow(props: SshKeyRowProps) {
+  const { sshKey, onDelete } = props;
   return (
     <tr className="group transition-colors hover:bg-white/[0.01]">
       <td className="py-4 pr-4 align-top">

@@ -10,16 +10,17 @@ type UserFormProps = {
   isPending: boolean;
   showPassword?: boolean;
   submitLabel: string;
-}
+};
 
-export function UserForm({
-  initialData,
-  onSubmit,
-  onCancel,
-  isPending,
-  showPassword = false,
-  submitLabel,
-}: UserFormProps) {
+export function UserForm(props: UserFormProps) {
+  const {
+    initialData,
+    onSubmit,
+    onCancel,
+    isPending,
+    showPassword = false,
+    submitLabel,
+  } = props;
   return (
     <form onSubmit={onSubmit} className="w-full max-w-md">
       <div className="space-y-5">

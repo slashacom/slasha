@@ -2,10 +2,10 @@ import * as React from 'react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { cn } from '~/utils/classname';
 
-function TooltipProvider({
-  delayDuration = 0,
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
+function TooltipProvider(
+  componentProps: React.ComponentProps<typeof TooltipPrimitive.Provider>
+) {
+  const { delayDuration = 0, ...props } = componentProps;
   return (
     <TooltipPrimitive.Provider
       data-slot="tooltip-provider"
@@ -15,9 +15,10 @@ function TooltipProvider({
   );
 }
 
-function Tooltip({
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+function Tooltip(
+  componentProps: React.ComponentProps<typeof TooltipPrimitive.Root>
+) {
+  const { ...props } = componentProps;
   return (
     <TooltipProvider>
       <TooltipPrimitive.Root data-slot="tooltip" {...props} />
@@ -25,18 +26,17 @@ function Tooltip({
   );
 }
 
-function TooltipTrigger({
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+function TooltipTrigger(
+  componentProps: React.ComponentProps<typeof TooltipPrimitive.Trigger>
+) {
+  const { ...props } = componentProps;
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
 }
 
-function TooltipContent({
-  className,
-  sideOffset = 0,
-  children,
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+function TooltipContent(
+  componentProps: React.ComponentProps<typeof TooltipPrimitive.Content>
+) {
+  const { className, sideOffset = 0, children, ...props } = componentProps;
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content

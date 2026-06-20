@@ -7,7 +7,8 @@ import { getUserOptions, useUpdateUser } from '~/queries/users';
 import { UserForm } from '~/components/users/user-form';
 import { Spinner } from '~/components/icons/spinner';
 
-export async function clientLoader({ params }: { params: { id: string } }) {
+export async function clientLoader(args: { params: { id: string } }) {
+  const { params } = args;
   const me = await queryClient.ensureQueryData(getAuthMeOptions());
   if (me.user.role !== 'admin') {
     return redirect('/apps');

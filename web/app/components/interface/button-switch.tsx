@@ -1,19 +1,16 @@
 type Option = {
   id: string;
   value: string;
-}
+};
 
 type ButtonSwitchProps = {
   options: Option[];
   selectedOption: string;
   onSelect: (optionId: string) => void;
-}
+};
 
-export function ButtonSwitch({
-  options,
-  selectedOption,
-  onSelect,
-}: ButtonSwitchProps) {
+export function ButtonSwitch(props: ButtonSwitchProps) {
+  const { options, selectedOption, onSelect } = props;
   return (
     <div className="flex items-center border border-neutral-200 overflow-hidden rounded-lg text-xs text-neutral-400">
       {options.map((option) => (

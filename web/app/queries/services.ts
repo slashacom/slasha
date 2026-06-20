@@ -7,13 +7,13 @@ export type ResourcesPayload = {
   nano_cpus: number | null;
   pids_limit: number | null;
   shm_size: number | null;
-}
+};
 
 export type ServiceKindMeta = {
   name: ServiceKind;
   supported_versions: string[];
   default_env_vars: Record<string, string>;
-}
+};
 
 export function getServiceKindsOptions() {
   return queryOptions({

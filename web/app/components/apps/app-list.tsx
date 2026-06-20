@@ -1,7 +1,8 @@
 import { AppCard } from './app-card';
 import type { App } from '~/models/app';
 
-export function AppList({ apps }: { apps: App[] }) {
+export function AppList(props: { apps: App[] }) {
+  const { apps } = props;
   if (apps.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-surface/40 px-6 py-16 text-center">

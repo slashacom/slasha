@@ -39,7 +39,14 @@ export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> &
   };
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  (componentProps, ref) => {
+    const {
+      className,
+      variant,
+      size,
+      asChild = false,
+      ...props
+    } = componentProps;
     const Comp = asChild ? Slot : 'button';
     return (
       // @ts-expect-error - Slot is not a valid JSX element type

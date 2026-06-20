@@ -7,12 +7,12 @@ export type FileTreeNode = {
   node_type: 'file' | 'directory';
   size?: number;
   children?: FileTreeNode[];
-}
+};
 
 export type FileTreeResponse = {
   tree: FileTreeNode[];
   has_commits: boolean;
-}
+};
 
 export function findNodeByPath(
   tree: FileTreeNode[],
@@ -39,7 +39,7 @@ export type FileContentResponse = {
   is_binary: boolean;
   is_truncated: boolean;
   content: string | null;
-}
+};
 
 export function getFileTreeOptions(slug: string) {
   return queryOptions({

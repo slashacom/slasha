@@ -6,16 +6,16 @@ import type { User } from '~/models/user';
 
 export type AuthStatusResponse = {
   has_admin: boolean;
-}
+};
 
 export type AuthMeResponse = {
   user: User;
-}
+};
 
 export type AuthTokenResponse = {
   token: string;
   user: User;
-}
+};
 
 export function getAuthStatusOptions() {
   return queryOptions({

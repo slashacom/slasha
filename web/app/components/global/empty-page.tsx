@@ -8,7 +8,7 @@ type EmptyPageProps = {
   buttonLabel: string;
   buttonColor?: ButtonColor;
   onButtonClick?: () => void;
-}
+};
 
 export function EmptyPage(props: EmptyPageProps) {
   const {

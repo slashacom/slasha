@@ -5,7 +5,7 @@ type PathBreadcrumbProps = {
   path: string;
   isDirectory: boolean;
   onNavigate: (path: string) => void;
-}
+};
 
 export function PathBreadcrumb(props: PathBreadcrumbProps) {
   const { path, isDirectory, onNavigate } = props;

@@ -13,7 +13,7 @@ type CodeViewerProps = {
   slug: string;
   filePath: string;
   onNavigate: (path: string) => void;
-}
+};
 
 export function CodeViewer(props: CodeViewerProps) {
   const { slug, filePath, onNavigate } = props;

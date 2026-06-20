@@ -32,7 +32,8 @@ import { getDeploymentsOptions } from '~/queries/deployments';
 import { getAppServicesOptions } from '~/queries/services';
 import { HStack } from '~/components/interface/stacks';
 
-export async function clientLoader({ params }: { params: { slug: string } }) {
+export async function clientLoader(args: { params: { slug: string } }) {
+  const { params } = args;
   await Promise.all([
     queryClient.ensureQueryData(getAppOptions(params.slug)),
     queryClient.ensureQueryData(getFileTreeOptions(params.slug)),

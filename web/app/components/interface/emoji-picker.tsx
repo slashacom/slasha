@@ -25,7 +25,7 @@ type EmojiPickerComponentProps = Omit<
   height?: number;
   emojisPerRow?: number;
   emojiSize?: number;
-}
+};
 
 const EmojiPickerComponent = React.forwardRef<
   React.ComponentRef<typeof PopoverTrigger>,

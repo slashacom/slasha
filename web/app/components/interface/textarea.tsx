@@ -4,7 +4,8 @@ import { type TextareaHTMLAttributes, forwardRef } from 'react';
 type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement>;
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, ...props }, ref) => {
+  (componentProps, ref) => {
+    const { className, ...props } = componentProps;
     return (
       <textarea
         className={cn(

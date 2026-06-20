@@ -8,14 +8,10 @@ type SshKeyListProps = {
   isLoading: boolean;
   onDelete: (key: SshKey) => void;
   onAddFirst: () => void;
-}
+};
 
-export function SshKeyList({
-  keys,
-  isLoading,
-  onDelete,
-  onAddFirst,
-}: SshKeyListProps) {
+export function SshKeyList(props: SshKeyListProps) {
+  const { keys, isLoading, onDelete, onAddFirst } = props;
   return (
     <div className="mt-2 min-w-0 flex-1 overflow-x-auto">
       {isLoading ? (

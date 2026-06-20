@@ -10,9 +10,10 @@ import { isRouteErrorResponse } from 'react-router';
 
 type ErrorViewProps = {
   error: unknown;
-}
+};
 
-export function ErrorView({ error }: ErrorViewProps) {
+export function ErrorView(props: ErrorViewProps) {
+  const { error } = props;
   let title = 'Something went wrong';
   let message = 'An unexpected error occurred. Please try again.';
   let stack: string | undefined;

@@ -3,7 +3,8 @@ import { GitBranchIcon } from 'lucide-react';
 import { cn } from '~/utils/classname';
 import type { App } from '~/models/app';
 
-export function AppCard({ app }: { app: App }) {
+export function AppCard(props: { app: App }) {
+  const { app } = props;
   return (
     <Link
       to={`/apps/${app.slug}`}

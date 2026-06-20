@@ -29,7 +29,8 @@ const TIME_RANGES: TimeRange[] = [
   { label: '7 Days', hours: 168 },
 ];
 
-export function AppMetricsView({ appSlug }: { appSlug: string }) {
+export function AppMetricsView(props: { appSlug: string }) {
+  const { appSlug } = props;
   const [selectedRange, setSelectedRange] = useState<TimeRange>(TIME_RANGES[0]);
 
   const { data, isLoading } = useQuery({
@@ -45,13 +46,17 @@ export function AppMetricsView({ appSlug }: { appSlug: string }) {
   );
 
   const formatTime = (isoString: any) => {
-    if (!isoString) return '';
+    if (!isoString) {
+      return '';
+    }
     try {
       const d =
         typeof isoString === 'string'
           ? parseUTC(isoString)
           : new Date(isoString);
-      if (isNaN(d.getTime())) return '';
+      if (isNaN(d.getTime())) {
+        return '';
+      }
       if (selectedRange.hours > 24) {
         return d.toLocaleDateString(undefined, {
           month: 'short',
@@ -71,7 +76,9 @@ export function AppMetricsView({ appSlug }: { appSlug: string }) {
   };
 
   const formatBytes = (bytes: number, decimals = 1) => {
-    if (bytes === 0) return '0 B';
+    if (bytes === 0) {
+      return '0 B';
+    }
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));

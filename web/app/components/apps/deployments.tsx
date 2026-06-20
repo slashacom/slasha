@@ -43,7 +43,8 @@ import { formatRelativeTime } from '~/utils/format';
 import { getAuthToken } from '~/utils/jwt';
 import { toast } from 'sonner';
 
-export function DeploymentsView({ appSlug }: { appSlug: string }) {
+export function DeploymentsView(props: { appSlug: string }) {
+  const { appSlug } = props;
   const { data, isLoading } = useQuery(getDeploymentsOptions(appSlug));
   const triggerDeploy = useTriggerDeploy();
   const queryClient = useQueryClient();
@@ -172,19 +173,14 @@ export function DeploymentsView({ appSlug }: { appSlug: string }) {
   );
 }
 
-function CommitSelector({
-  open,
-  onOpenChange,
-  appSlug,
-  onSelect,
-  isDeploying,
-}: {
+function CommitSelector(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   appSlug: string;
   onSelect: (sha: string) => void;
   isDeploying: boolean;
 }) {
+  const { open, onOpenChange, appSlug, onSelect, isDeploying } = props;
   const { data, isLoading } = useQuery(getCommitsOptions(appSlug));
   const [search, setSearch] = useState('');
   const commits = data?.commits ?? [];
@@ -262,7 +258,8 @@ function CommitSelector({
   );
 }
 
-function StatusBadge({ status }: { status: DeploymentStatus }) {
+function StatusBadge(props: { status: DeploymentStatus }) {
+  const { status } = props;
   const configs: Record<
     DeploymentStatus,
     { icon: any; color: string; bg: string }
@@ -302,15 +299,12 @@ function StatusBadge({ status }: { status: DeploymentStatus }) {
   );
 }
 
-function DeploymentRow({
-  deployment,
-  appSlug,
-  onShowLogs,
-}: {
+function DeploymentRow(props: {
   deployment: Deployment;
   appSlug: string;
   onShowLogs: () => void;
 }) {
+  const { deployment, appSlug, onShowLogs } = props;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const stopDeployment = useStopDeployment();
@@ -475,15 +469,12 @@ function DeploymentRow({
   );
 }
 
-function LogModal({
-  deploymentId,
-  appSlug,
-  onClose,
-}: {
+function LogModal(props: {
   deploymentId: string;
   appSlug: string;
   onClose: () => void;
 }) {
+  const { deploymentId, appSlug, onClose } = props;
   const [logs, setLogs] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -517,7 +508,9 @@ function LogModal({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);

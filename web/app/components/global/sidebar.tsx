@@ -13,9 +13,10 @@ type SidebarItemProps = {
   to: string;
   icon: React.ComponentType<{ className?: string }>;
   label: string;
-}
+};
 
-function SidebarItem({ to, icon: Icon, label }: SidebarItemProps) {
+function SidebarItem(props: SidebarItemProps) {
+  const { to, icon: Icon, label } = props;
   const location = useLocation();
   const isActive = location.pathname.startsWith(to);
 

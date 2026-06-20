@@ -26,7 +26,9 @@ export default function SshKeys() {
   const [pendingDelete, setPendingDelete] = useState<SshKey | null>(null);
 
   const handleConfirmDelete = async () => {
-    if (!pendingDelete) return;
+    if (!pendingDelete) {
+      return;
+    }
 
     const promise = deleteKey.mutateAsync(pendingDelete.id);
 

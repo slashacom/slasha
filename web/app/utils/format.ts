@@ -41,17 +41,24 @@ const EXT_TO_LANG: Record<string, string> = {
 
 export function inferLang(filename: string): string {
   const lower = filename.toLowerCase();
-  if (lower === 'dockerfile' || lower.startsWith('dockerfile.'))
+  if (lower === 'dockerfile' || lower.startsWith('dockerfile.')) {
     return 'dockerfile';
-  if (lower === 'makefile' || lower === 'gnumakefile') return 'makefile';
+  }
+  if (lower === 'makefile' || lower === 'gnumakefile') {
+    return 'makefile';
+  }
 
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   return EXT_TO_LANG[ext] ?? 'text';
 }
 
 export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
@@ -67,11 +74,17 @@ export function formatRelativeTime(date: string | Date): string {
   const then = typeof date === 'string' ? parseUTC(date) : date;
   const seconds = Math.floor((now.getTime() - then.getTime()) / 1000);
 
-  if (seconds < 60) return 'just now';
+  if (seconds < 60) {
+    return 'just now';
+  }
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
 }

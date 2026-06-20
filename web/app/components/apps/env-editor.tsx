@@ -132,21 +132,22 @@ export type EnvEditorProps = {
   readOnly?: boolean;
   variant?: 'default' | 'embedded';
   extraGroups?: SuggestionGroup[];
-}
+};
 
-export function EnvEditor({
-  title = 'Environment Variables',
-  description = 'Define environment variables. These will be injected at runtime.',
-  initialVars,
-  isLoading,
-  isSaving,
-  onSave,
-  onChange,
-  onCancel,
-  readOnly = false,
-  variant = 'default',
-  extraGroups,
-}: EnvEditorProps) {
+export function EnvEditor(props: EnvEditorProps) {
+  const {
+    title = 'Environment Variables',
+    description = 'Define environment variables. These will be injected at runtime.',
+    initialVars,
+    isLoading,
+    isSaving,
+    onSave,
+    onChange,
+    onCancel,
+    readOnly = false,
+    variant = 'default',
+    extraGroups,
+  } = props;
   const [vars, setVars] = useState<EnvVar[]>(() => fromEnvRecord(initialVars));
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [mode, setMode] = useState<'table' | 'raw'>('table');
@@ -645,15 +646,12 @@ export function EnvEditor({
   );
 }
 
-function EmptyState({
-  readOnly,
-  onAdd,
-  onPaste,
-}: {
+function EmptyState(props: {
   readOnly: boolean;
   onAdd: () => void;
   onPaste: (e: React.ClipboardEvent<HTMLDivElement>) => void;
 }) {
+  const { readOnly, onAdd, onPaste } = props;
   return (
     <div
       onPaste={onPaste}
@@ -682,15 +680,12 @@ function EmptyState({
   );
 }
 
-function RawEditor({
-  value,
-  onChange,
-  readOnly,
-}: {
+function RawEditor(props: {
   value: string;
   onChange: (v: string) => void;
   readOnly: boolean;
 }) {
+  const { value, onChange, readOnly } = props;
   const ref = useRef<HTMLTextAreaElement>(null);
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface/10">
@@ -715,7 +710,8 @@ function RawEditor({
   );
 }
 
-export function AppEnvEditor({ appSlug }: { appSlug: string }) {
+export function AppEnvEditor(props: { appSlug: string }) {
+  const { appSlug } = props;
   const queryClient = useQueryClient();
   const { data: envData, isLoading: envLoading } = useQuery(
     getAppEnvVarsOptions(appSlug)
@@ -765,14 +761,7 @@ export function AppEnvEditor({ appSlug }: { appSlug: string }) {
   );
 }
 
-export function ServiceEnvEditor({
-  appSlug,
-  serviceId,
-  serviceName,
-  readOnly = false,
-  onSaveSuccess,
-  onCancel,
-}: {
+export function ServiceEnvEditor(props: {
   appSlug: string;
   serviceId: string;
   serviceName: string;
@@ -780,6 +769,14 @@ export function ServiceEnvEditor({
   onSaveSuccess?: () => void;
   onCancel?: () => void;
 }) {
+  const {
+    appSlug,
+    serviceId,
+    serviceName,
+    readOnly = false,
+    onSaveSuccess,
+    onCancel,
+  } = props;
   const queryClient = useQueryClient();
   const { data: envData, isLoading: envLoading } = useQuery(
     getServiceEnvVarsOptions(appSlug, serviceId)

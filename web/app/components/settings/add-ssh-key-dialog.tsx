@@ -16,12 +16,10 @@ import { useCreateSshKey } from '~/queries/ssh-keys';
 type AddSshKeyDialogProps = {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-}
+};
 
-export function AddSshKeyDialog({
-  isOpen,
-  onOpenChange,
-}: AddSshKeyDialogProps) {
+export function AddSshKeyDialog(props: AddSshKeyDialogProps) {
+  const { isOpen, onOpenChange } = props;
   const createKey = useCreateSshKey();
 
   const handleAddKey = async (e: React.FormEvent<HTMLFormElement>) => {

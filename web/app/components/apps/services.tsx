@@ -48,7 +48,8 @@ import {
 import { TextInput } from '~/components/interface/text-input';
 import { EnvEditor, ServiceEnvEditor } from '~/components/apps/env-editor';
 
-export function ServicesView({ appSlug }: { appSlug: string }) {
+export function ServicesView(props: { appSlug: string }) {
+  const { appSlug } = props;
   const { data, isLoading } = useQuery(getAppServicesOptions(appSlug));
   const [isProvisionModalOpen, setProvisionModalOpen] = useState(false);
   const [activeLogsId, setActiveLogsId] = useState<{
@@ -147,7 +148,8 @@ export function ServicesView({ appSlug }: { appSlug: string }) {
   );
 }
 
-function StatusBadge({ status }: { status: ServiceStatus }) {
+function StatusBadge(props: { status: ServiceStatus }) {
+  const { status } = props;
   const configs: Record<
     ServiceStatus,
     { icon: any; color: string; bg: string }
@@ -188,15 +190,12 @@ function StatusBadge({ status }: { status: ServiceStatus }) {
   );
 }
 
-function ServiceRow({
-  service,
-  appSlug,
-  onShowLogs,
-}: {
+function ServiceRow(props: {
   service: Service;
   appSlug: string;
   onShowLogs: () => void;
 }) {
+  const { service, appSlug, onShowLogs } = props;
   const queryClient = useQueryClient();
   const stopService = useStopService();
   const deleteService = useDeleteService();
@@ -503,13 +502,11 @@ function buildResourcesPayload(
   };
 }
 
-function ProvisionServiceModal({
-  appSlug,
-  onClose,
-}: {
+function ProvisionServiceModal(props: {
   appSlug: string;
   onClose: () => void;
 }) {
+  const { appSlug, onClose } = props;
   const queryClient = useQueryClient();
   const { data } = useQuery(getServiceKindsOptions());
   const provisionService = useProvisionService();
@@ -680,18 +677,7 @@ function ProvisionServiceModal({
   );
 }
 
-function AdvancedResourcesSection({
-  isOpen,
-  onToggle,
-  memoryMb,
-  cpuCores,
-  shmMb,
-  pidsLimit,
-  onMemoryChange,
-  onCpuChange,
-  onShmChange,
-  onPidsChange,
-}: {
+function AdvancedResourcesSection(props: {
   isOpen: boolean;
   onToggle: () => void;
   memoryMb: string;
@@ -703,6 +689,18 @@ function AdvancedResourcesSection({
   onShmChange: (v: string) => void;
   onPidsChange: (v: string) => void;
 }) {
+  const {
+    isOpen,
+    onToggle,
+    memoryMb,
+    cpuCores,
+    shmMb,
+    pidsLimit,
+    onMemoryChange,
+    onCpuChange,
+    onShmChange,
+    onPidsChange,
+  } = props;
   return (
     <VStack space={2} className="mt-4">
       <button
@@ -778,15 +776,12 @@ function AdvancedResourcesSection({
   );
 }
 
-function ConnectModal({
-  appSlug,
-  service,
-  onClose,
-}: {
+function ConnectModal(props: {
   appSlug: string;
   service: Service;
   onClose: () => void;
 }) {
+  const { appSlug, service, onClose } = props;
   const command = `slasha proxy --app ${appSlug} ${service.name}`;
   const [copied, setCopied] = useState(false);
 
@@ -841,15 +836,12 @@ function ConnectModal({
   );
 }
 
-function ServiceConfigModal({
-  appSlug,
-  service,
-  onClose,
-}: {
+function ServiceConfigModal(props: {
   appSlug: string;
   service: Service;
   onClose: () => void;
 }) {
+  const { appSlug, service, onClose } = props;
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl border-none bg-transparent p-0 shadow-none">
@@ -865,17 +857,13 @@ function ServiceConfigModal({
   );
 }
 
-function ServiceLogModal({
-  serviceId,
-  serviceName,
-  appSlug,
-  onClose,
-}: {
+function ServiceLogModal(props: {
   serviceId: string;
   serviceName: string;
   appSlug: string;
   onClose: () => void;
 }) {
+  const { serviceId, serviceName, appSlug, onClose } = props;
   const [logs, setLogs] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -909,7 +897,9 @@ function ServiceLogModal({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);

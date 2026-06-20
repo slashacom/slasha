@@ -7,7 +7,7 @@ type ConfirmationDialogProps = {
   description: string;
   confirmLabel?: string;
   onConfirm: () => void;
-}
+};
 
 export function ConfirmationDialog(props: ConfirmationDialogProps) {
   const {
