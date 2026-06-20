@@ -112,7 +112,7 @@ export default function DeploymentDetailPage() {
         <HStack space={3} alignItems="center">
           <button
             onClick={() => navigate(`/apps/${slug}/deployments`)}
-            className="group flex size-7 items-center justify-center rounded border border-border bg-surface transition-all hover:bg-surface-hover"
+            className="group flex size-7 items-center justify-center rounded border border-border bg-surface transition-all hover:bg-white/[0.06]"
           >
             <ArrowLeft className="size-3.5 text-text-tertiary group-hover:text-text" />
           </button>
@@ -120,7 +120,7 @@ export default function DeploymentDetailPage() {
             <span className="text-[13px] font-medium text-text">
               {app.name}
             </span>
-            <ChevronRight className="size-3 text-text-quaternary" />
+            <ChevronRight className="size-3 text-text-tertiary" />
             <CommitButton sha={deployment.commit_sha} />
           </HStack>
         </HStack>

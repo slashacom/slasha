@@ -28,7 +28,7 @@ export function ServicesView(props: ServicesViewProps) {
   if (isLoading) {
     return (
       <VStack className="p-8" space={4}>
-        <div className="h-4 w-32 animate-pulse rounded bg-surface-hover" />
+        <div className="h-4 w-32 animate-pulse rounded bg-white/[0.06]" />
         <VStack space={2}>
           {[1, 2].map((i) => (
             <div

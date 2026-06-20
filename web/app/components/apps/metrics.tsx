@@ -80,7 +80,7 @@ export function AppMetricsView(props: AppMetricsViewProps) {
   if (isLoading && metrics.length === 0) {
     return (
       <VStack className="p-8" space={4}>
-        <div className="h-4 w-32 animate-pulse rounded bg-surface-hover" />
+        <div className="h-4 w-32 animate-pulse rounded bg-white/[0.06]" />
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => (
             <div
