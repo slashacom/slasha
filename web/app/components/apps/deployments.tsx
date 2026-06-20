@@ -8,7 +8,7 @@ import { VStack } from '~/components/interface/stacks';
 import { toast } from 'sonner';
 import { CommitSelector } from '~/components/apps/commit-selector';
 import { DeploymentRow } from '~/components/apps/deployment-row';
-import { LogModal } from '~/components/apps/deployment-log-modal';
+import { LogStreamDialog } from '~/components/apps/log-stream-dialog';
 
 type DeploymentsViewProps = {
   appSlug: string;
@@ -110,9 +110,9 @@ export function DeploymentsView(props: DeploymentsViewProps) {
       )}
 
       {activeLogsId && (
-        <LogModal
-          deploymentId={activeLogsId}
-          appSlug={appSlug}
+        <LogStreamDialog
+          url={`/api/apps/${appSlug}/deployments/${activeLogsId}/logs`}
+          title="Logs"
           onClose={() => setActiveLogsId(null)}
         />
       )}

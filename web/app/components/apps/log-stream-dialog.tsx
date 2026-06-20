@@ -1,25 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal, CircleDashed } from 'lucide-react';
-import { Button } from '~/components/interface/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '~/components/interface/dialog';
 import { HStack } from '~/components/interface/stacks';
 import { getAuthToken } from '~/utils/jwt';
 
-type LogModalProps = {
-  deploymentId: string;
-  appSlug: string;
+type LogStreamDialogProps = {
+  url: string;
+  title: string;
   onClose: () => void;
 };
 
-export function LogModal(props: LogModalProps) {
-  const { deploymentId, appSlug, onClose } = props;
+export function LogStreamDialog(props: LogStreamDialogProps) {
+  const { url, title, onClose } = props;
   const [logs, setLogs] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const token = getAuthToken();
-    const url = `/api/apps/${appSlug}/deployments/${deploymentId}/logs?token=${token}`;
-    const es = new EventSource(url);
+    const es = new EventSource(`${url}?token=${token}`);
 
     es.onmessage = (event) => {
       const data = event.data;
@@ -35,7 +37,7 @@ export function LogModal(props: LogModalProps) {
     return () => {
       es.close();
     };
-  }, [appSlug, deploymentId]);
+  }, [url]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -43,31 +45,17 @@ export function LogModal(props: LogModalProps) {
     }
   }, [logs]);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-8 backdrop-blur-sm">
-      <div
-        ref={containerRef}
-        className="flex h-full w-full max-w-4xl flex-col rounded-lg border border-border bg-bg shadow-2xl"
-      >
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="flex h-[80vh] w-full max-w-4xl flex-col gap-0 border-border bg-bg p-0">
         <HStack
           justifyContent="between"
           className="shrink-0 border-b border-border p-4"
         >
           <HStack space={3}>
             <Terminal className="size-4 text-text-tertiary" />
-            <h3 className="text-sm font-semibold text-text">Logs</h3>
+            <DialogTitle className="text-sm">{title}</DialogTitle>
           </HStack>
-          <Button label="Close" variant="ghost" size="sm" onClick={onClose} />
         </HStack>
 
         <div
@@ -75,7 +63,7 @@ export function LogModal(props: LogModalProps) {
           className="flex-1 overflow-auto bg-black/40 p-6 font-mono text-[13px] leading-relaxed selection:bg-white/10"
         >
           {logs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-text-tertiary">
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
               <CircleDashed className="size-5 animate-spin" />
               <p>Establishing log stream...</p>
             </div>
@@ -84,9 +72,9 @@ export function LogModal(props: LogModalProps) {
               {logs.map((log, i) => (
                 <div
                   key={i}
-                  className="text-text-secondary whitespace-pre-wrap break-all"
+                  className="whitespace-pre-wrap break-all text-text-secondary"
                 >
-                  <span className="text-text-tertiary mr-3 select-none">
+                  <span className="mr-3 select-none text-text-tertiary">
                     {i + 1}
                   </span>
                   {log}
@@ -95,7 +83,7 @@ export function LogModal(props: LogModalProps) {
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

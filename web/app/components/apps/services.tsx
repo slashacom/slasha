@@ -7,7 +7,7 @@ import { SectionHeader } from '~/components/interface/section-header';
 import { VStack } from '~/components/interface/stacks';
 import { ServiceRow } from '~/components/apps/service-row';
 import { ProvisionServiceModal } from '~/components/apps/provision-service-modal';
-import { ServiceLogModal } from '~/components/apps/service-modals';
+import { LogStreamDialog } from '~/components/apps/log-stream-dialog';
 
 type ServicesViewProps = {
   appSlug: string;
@@ -97,10 +97,9 @@ export function ServicesView(props: ServicesViewProps) {
         />
       )}
       {activeLogsId && (
-        <ServiceLogModal
-          serviceId={activeLogsId.id}
-          serviceName={activeLogsId.name}
-          appSlug={appSlug}
+        <LogStreamDialog
+          url={`/api/apps/${appSlug}/services/${activeLogsId.id}/logs`}
+          title={`Service Logs — ${activeLogsId.name}`}
           onClose={() => setActiveLogsId(null)}
         />
       )}
