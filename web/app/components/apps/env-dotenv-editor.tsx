@@ -180,7 +180,7 @@ export function DotenvEditor(props: DotenvEditorProps) {
         Mention.configure({
           HTMLAttributes: {
             class:
-              'whitespace-nowrap font-mono text-[13px] text-blue-300',
+              'whitespace-nowrap rounded-[3px] bg-blue-500/10 px-0.5 font-mono text-[13px] text-blue-300',
           },
           renderText({ node }) {
             return `\${{ ${node.attrs.id} }}`;
