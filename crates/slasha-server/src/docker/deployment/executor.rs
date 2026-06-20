@@ -10,7 +10,8 @@ use slasha_db::{
     deployment::{Deployment, DeploymentStatus},
     models::app_scale::ProcessType,
     repos::{
-        app::AppRepo, app_scale::AppScaleRepo, deployment::DeploymentRepo, service::ServiceRepo,
+        app::AppRepo, app_backup::AppBackupRepo, app_scale::AppScaleRepo,
+        deployment::DeploymentRepo, service::ServiceRepo,
     },
     service::{Service, ServiceStatus},
 };
@@ -18,8 +19,12 @@ use tokio::sync::Notify;
 
 use super::{
     build::{build_docker, build_railpack},
-    container::{create_process_container, run_release_container, start_process_container},
+    container::{
+        MANAGED_DATA_PATH, create_process_container, run_release_container,
+        start_process_container,
+    },
     dockerfile_parser::{BuildStrategy, detect_build_strategy, parse_expose, parse_volumes},
+    litestream,
     procfile_parser::{Procfile, load_procfile},
 };
 use crate::docker::{
@@ -157,6 +162,8 @@ pub async fn resolve_app_env(
 
         resolved.insert(var.key.clone(), value);
     }
+
+    resolved.insert("SLASHA_DATA_DIR".to_string(), MANAGED_DATA_PATH.to_string());
 
     Ok(resolved)
 }
@@ -344,6 +351,27 @@ async fn run_deployment_inner(
     let scale_configs = AppScaleRepo::list_for_app(db_pool, &app.id).await?;
     let targets = resolve_process_targets(&deployment_context.procfile, &scale_configs);
 
+    let backup = AppBackupRepo::get(db_pool, &app.id).await.ok().flatten();
+
+    // When backups are on, make sure the shared litestream binary volume is
+    // populated before any container that needs it is created. Best-effort:
+    // if it fails (e.g. offline), the app still deploys, just without replication.
+    let litestream_volume = if backup.as_ref().is_some_and(|b| b.enabled) {
+        match litestream::ensure_litestream_volume(docker_client).await {
+            Ok(volume) => Some(volume),
+            Err(e) => {
+                let _ = log
+                    .send(format!(
+                        "Warning: could not prepare litestream binary, skipping backups: {e}"
+                    ))
+                    .await;
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let mut created_containers = Vec::new();
 
     for target in targets {
@@ -359,6 +387,8 @@ async fn run_deployment_inner(
                     cmd: target.command.clone(),
                     env_map: deployment_context.env_map.clone(),
                     volume_paths: deployment_context.volume_paths.clone(),
+                    backup: backup.clone(),
+                    litestream_volume: litestream_volume.clone(),
                 },
             )
             .await?;
@@ -397,6 +427,17 @@ async fn run_deployment_inner(
 
     for (pt, i) in created_containers {
         start_process_container(docker_client, &log, app, deployment, pt, i).await?;
+    }
+
+    // A pending restore is consumed by the new web container's boot; clear the
+    // flag so subsequent deploys don't keep discarding the live database.
+    if backup.as_ref().is_some_and(|b| b.enabled && b.restore_pending) {
+        let _ = log
+            .send("Restored SQLite database from backup replica".to_string())
+            .await;
+        if let Err(e) = AppBackupRepo::set_restore_pending(db_pool, &app.id, false).await {
+            tracing::warn!(app_id = %app.id, error = ?e, "Failed to clear restore_pending");
+        }
     }
 
     let active_deployments = DeploymentRepo::list_active_for_app(db_pool, &app.id).await?;

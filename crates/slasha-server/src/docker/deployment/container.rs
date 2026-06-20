@@ -17,6 +17,7 @@ use futures_util::StreamExt;
 use slasha_db::{
     DbPool,
     app::App,
+    app_backup::AppBackup,
     deployment::{Deployment, DeploymentStatus},
     models::app_scale::{ProcessContainer, ProcessStatus, ProcessType},
     repos::deployment::DeploymentRepo,
@@ -35,6 +36,10 @@ use crate::{
     },
     proxy::container::PROXY_NETWORK_NAME,
 };
+
+/// Per-app persistent volume mount path, mounted into every process container
+/// and exposed to the app as `SLASHA_DATA_DIR`.
+pub const MANAGED_DATA_PATH: &str = "/data";
 
 pub async fn list_deployment_processes(
     docker_client: &Docker,
@@ -87,6 +92,30 @@ pub async fn list_deployment_processes(
     Ok(processes)
 }
 
+/// Whether the app has at least one running web container — the process
+/// Litestream replication is wrapped around.
+pub async fn is_web_running(docker_client: &Docker, app_id: &str) -> DeploymentResult<bool> {
+    let mut filters = HashMap::new();
+    filters.insert(
+        "label".to_string(),
+        vec![
+            format!("slasha.app_id={}", app_id),
+            "slasha.process_type=web".to_string(),
+        ],
+    );
+    filters.insert("status".to_string(), vec!["running".to_string()]);
+
+    let containers = docker_client
+        .list_containers(Some(ListContainersOptions {
+            all: false,
+            filters: Some(filters),
+            ..Default::default()
+        }))
+        .await?;
+
+    Ok(!containers.is_empty())
+}
+
 pub struct CreateContainerContext {
     pub process_type: ProcessType,
     pub instance_index: u32,
@@ -94,6 +123,9 @@ pub struct CreateContainerContext {
     pub cmd: Option<String>,
     pub env_map: HashMap<String, String>,
     pub volume_paths: Vec<String>,
+    pub backup: Option<AppBackup>,
+    /// Name of the shared litestream volume, when its binary has been ensured.
+    pub litestream_volume: Option<String>,
 }
 
 pub async fn create_process_container(
@@ -109,7 +141,36 @@ pub async fn create_process_container(
         context.instance_index,
     );
 
-    let mounts = build_mounts(docker_client, &app.id, &context.volume_paths).await?;
+    let mut mounts = build_mounts(docker_client, &app.id, &context.volume_paths).await?;
+
+    let mut cmd = context.cmd;
+    let mut env_map = context.env_map;
+
+    // Wrap the primary web instance with Litestream so its SQLite database is
+    // restored on boot and continuously replicated. Litestream must be a single
+    // writer, so only web instance 0 is ever wrapped.
+    if let Some(backup) = &context.backup
+        && backup.enabled
+        && context.process_type == ProcessType::Web
+        && context.instance_index == 0
+    {
+        match (&cmd, &context.litestream_volume) {
+            (Some(original_cmd), Some(_volume)) => {
+                let plan = super::litestream::plan(backup, original_cmd, backup.restore_pending);
+                cmd = Some(plan.command);
+                env_map.extend(plan.env);
+                mounts.push(super::litestream::binary_mount());
+            }
+            (None, _) => tracing::warn!(
+                app_id = %app.id,
+                "backups enabled but the web process has no start command; skipping replication"
+            ),
+            (_, None) => tracing::warn!(
+                app_id = %app.id,
+                "backups enabled but the litestream binary is unavailable; skipping replication"
+            ),
+        }
+    }
 
     let mut labels: HashMap<String, String> = HashMap::new();
     labels.insert("slasha.managed".into(), "true".into());
@@ -130,12 +191,11 @@ pub async fn create_process_container(
         context.instance_index.to_string(),
     );
 
-    let env: Option<Vec<String>> = if context.env_map.is_empty() {
+    let env: Option<Vec<String>> = if env_map.is_empty() {
         None
     } else {
         Some(
-            context
-                .env_map
+            env_map
                 .into_iter()
                 .map(|(k, v)| format!("{}={}", k, v))
                 .collect(),
@@ -169,9 +229,7 @@ pub async fn create_process_container(
                 image: Some(image_tag(&app.slug, &deployment.commit_sha)),
                 labels: Some(labels),
                 env,
-                cmd: context
-                    .cmd
-                    .map(|c| vec!["sh".to_string(), "-c".to_string(), c]),
+                cmd: cmd.map(|c| vec!["sh".to_string(), "-c".to_string(), c]),
                 host_config: Some(HostConfig {
                     restart_policy: Some(match context.process_type {
                         ProcessType::Release => RestartPolicy {
@@ -442,9 +500,20 @@ async fn build_mounts(
     app_id: &str,
     volume_paths: &[String],
 ) -> DeploymentResult<Vec<Mount>> {
-    let mut mounts = Vec::with_capacity(volume_paths.len());
-
+    // Every app gets a managed persistent volume at MANAGED_DATA_PATH so data
+    // (e.g. a SQLite database) survives redeploys without requiring a Dockerfile
+    // VOLUME. Dockerfile-declared paths are layered on top, deduped so a repo
+    // that also declares /data doesn't double-mount.
+    let mut paths: Vec<String> = vec![MANAGED_DATA_PATH.to_string()];
     for path in volume_paths {
+        if path != MANAGED_DATA_PATH {
+            paths.push(path.clone());
+        }
+    }
+
+    let mut mounts = Vec::with_capacity(paths.len());
+
+    for path in &paths {
         let volume_name = app_volume_name(app_id, path);
         docker_client
             .create_volume(VolumeCreateRequest {
@@ -488,6 +557,8 @@ pub async fn run_release_container(
             cmd: Some(cmd),
             env_map,
             volume_paths: Vec::new(),
+            backup: None,
+            litestream_volume: None,
         },
     )
     .await?;

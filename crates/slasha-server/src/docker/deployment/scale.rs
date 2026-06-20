@@ -126,6 +126,11 @@ async fn scale_inner(
                         cmd: command.clone(),
                         env_map: deployment_ctx.env_map.clone(),
                         volume_paths: deployment_ctx.volume_paths.clone(),
+                        // Litestream is bound to the deploy path, not scale
+                        // reconciliation, to avoid an accidental destructive
+                        // restore when replicas churn.
+                        backup: None,
+                        litestream_volume: None,
                     },
                 )
                 .await?;

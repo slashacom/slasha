@@ -10,10 +10,13 @@ import {
 } from '~/queries/apps';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { AppEnvEditor } from '~/components/apps/app-env-editor';
+import { BackupManager } from '~/components/apps/backup-manager';
 import { DomainManager } from '~/components/apps/domain-manager';
+import { StorageManager } from '~/components/apps/storage-manager';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { SectionHeader } from '~/components/interface/section-header';
+import { getBackupOptions, getVolumesOptions } from '~/queries/storage';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader(args: { params: { slug: string } }) {
@@ -23,6 +26,8 @@ export async function clientLoader(args: { params: { slug: string } }) {
     queryClient.ensureQueryData(getAppEnvVarsOptions(params.slug)),
     queryClient.ensureQueryData(getAppEnvSuggestionsOptions(params.slug)),
     queryClient.ensureQueryData(getAppDomainsOptions(params.slug)),
+    queryClient.ensureQueryData(getVolumesOptions(params.slug)),
+    queryClient.ensureQueryData(getBackupOptions(params.slug)),
   ]);
 }
 
@@ -45,8 +50,14 @@ export default function AppSettingsPage() {
         <div className="max-w-3xl mb-8">
           <AppEnvEditor appSlug={slug!} />
         </div>
-        <div className="max-w-3xl mb-12">
+        <div className="max-w-3xl mb-8">
           <DomainManager appSlug={slug!} />
+        </div>
+        <div className="max-w-3xl mb-8">
+          <StorageManager appSlug={slug!} />
+        </div>
+        <div className="max-w-3xl mb-12">
+          <BackupManager appSlug={slug!} />
         </div>
         <div className="max-w-2xl">
           <h3 className="text-[14px] font-semibold text-text">Danger Zone</h3>

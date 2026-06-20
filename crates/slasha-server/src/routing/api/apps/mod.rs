@@ -1,3 +1,4 @@
+mod backups;
 pub(crate) mod deployments;
 mod domains;
 mod env;
@@ -6,6 +7,7 @@ mod management;
 mod metrics;
 mod service_env;
 mod services;
+mod volumes;
 
 use axum::{
     Json, Router,
@@ -70,6 +72,8 @@ pub fn router() -> Router<AppState> {
         .route("/{slug}/commits", get(list_commits))
         .nest("/{slug}/deployments", deployments::router())
         .nest("/{slug}/domains", domains::router())
+        .nest("/{slug}/backups", backups::router())
+        .nest("/{slug}/volumes", volumes::router())
         .nest("/{slug}/services", services::router())
         .route("/{slug}/metrics", get(metrics::get_metrics))
         .nest("/{slug}/services/{service_id}/env", service_env::router())

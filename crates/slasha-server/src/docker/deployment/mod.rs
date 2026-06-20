@@ -2,6 +2,7 @@ pub mod build;
 pub mod container;
 pub mod dockerfile_parser;
 pub mod executor;
+pub mod litestream;
 pub mod procfile_parser;
 pub mod scale;
 
