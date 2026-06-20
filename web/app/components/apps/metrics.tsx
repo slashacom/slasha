@@ -16,18 +16,13 @@ import { getAppMetricsOptions } from '~/queries/apps';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
 import { parseUTC } from '~/utils/format';
-
-type TimeRange = {
-  label: string;
-  hours: number;
-};
-
-const TIME_RANGES: TimeRange[] = [
-  { label: '1 Hour', hours: 1 },
-  { label: '6 Hours', hours: 6 },
-  { label: '24 Hours', hours: 24 },
-  { label: '7 Days', hours: 168 },
-];
+import {
+  type TimeRange,
+  TIME_RANGES,
+  formatBytes,
+  formatBps,
+  formatMiB,
+} from '~/components/apps/metrics-utils';
 
 export function AppMetricsView(props: { appSlug: string }) {
   const { appSlug } = props;
@@ -73,29 +68,6 @@ export function AppMetricsView(props: { appSlug: string }) {
     } catch {
       return '';
     }
-  };
-
-  const formatBytes = (bytes: number, decimals = 1) => {
-    if (bytes === 0) {
-      return '0 B';
-    }
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return (
-      parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i]
-    );
-  };
-
-  const formatBps = (bytesPerSec: number, decimals = 1) => {
-    return formatBytes(bytesPerSec, decimals) + '/s';
-  };
-
-  const formatMiB = (mib: number) => {
-    if (mib >= 1024) {
-      return `${(mib / 1024).toFixed(1)} GiB`;
-    }
-    return `${mib} MiB`;
   };
 
   const latest = metrics[metrics.length - 1];
