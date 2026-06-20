@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { Play, Square, RotateCcw, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Play, RotateCcw, Square, Trash2 } from 'lucide-react';
 import type { Deployment } from '~/models/deployment';
 import {
   useStopDeployment,
@@ -9,8 +9,14 @@ import {
   useRestartDeployment,
   useRedeployDeployment,
 } from '~/queries/deployments';
-import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '~/components/interface/dropdown-menu';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
 import { formatRelativeTime } from '~/utils/format';
@@ -31,45 +37,42 @@ export function DeploymentRow(props: DeploymentRowProps) {
   const redeployDeployment = useRedeployDeployment();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const handleStop = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const invalidate = () => {
+    queryClient.invalidateQueries({
+      queryKey: ['apps', appSlug, 'deployments'],
+    });
+  };
+
+  const handleStop = async () => {
     try {
       await stopDeployment.mutateAsync({
         appSlug,
         deploymentId: deployment.id,
       });
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'deployments'],
-      });
+      invalidate();
     } catch {}
   };
 
-  const handleRestart = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleRestart = async () => {
     try {
       await restartDeployment.mutateAsync({
         appSlug,
         deploymentId: deployment.id,
       });
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'deployments'],
-      });
+      invalidate();
       toast.success('Container started');
     } catch (e) {
       toast.error('Failed to start container: ' + e);
     }
   };
 
-  const handleRedeploy = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleRedeploy = async () => {
     try {
       await redeployDeployment.mutateAsync({
         appSlug,
         deploymentId: deployment.id,
       });
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'deployments'],
-      });
+      invalidate();
       toast.success('Redeploy triggered');
     } catch (e) {
       toast.error('Failed to redeploy: ' + e);
@@ -82,14 +85,22 @@ export function DeploymentRow(props: DeploymentRowProps) {
         appSlug,
         deploymentId: deployment.id,
       });
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'deployments'],
-      });
+      invalidate();
       setShowDeleteConfirm(false);
     } catch (e) {
       toast.error('Failed to delete deployment: ' + e);
     }
   };
+
+  const canStop =
+    deployment.status === 'Running' || deployment.status === 'Building';
+  const canRestart =
+    deployment.status === 'Running' || deployment.status === 'Stopped';
+  const canRedeploy =
+    deployment.status === 'Running' ||
+    deployment.status === 'Stopped' ||
+    deployment.status === 'Failed';
+  const canDelete = deployment.status !== 'Building';
 
   return (
     <>
@@ -101,7 +112,7 @@ export function DeploymentRow(props: DeploymentRowProps) {
       >
         <VStack space={1.5}>
           <HStack space={3}>
-            <span className="font-mono text-[12px] font-semibold text-text group-hover:text-primary transition-colors">
+            <span className="font-mono text-[12px] font-semibold text-text transition-colors group-hover:text-primary">
               {deployment.commit_sha.slice(0, 7)}
             </span>
             <StatusBadge status={deployment.status} />
@@ -109,62 +120,56 @@ export function DeploymentRow(props: DeploymentRowProps) {
               {formatRelativeTime(deployment.created_at)}
             </span>
           </HStack>
-          <p className="text-[13px] text-text-secondary line-clamp-1">
+          <p className="line-clamp-1 text-[13px] text-text-secondary">
             {deployment.commit_message}
           </p>
         </VStack>
 
-        <HStack space={2} onClick={(e) => e.stopPropagation()}>
-          {(deployment.status === 'Running' ||
-            deployment.status === 'Building') && (
-            <Button
-              label="Stop"
-              icon={<Square className="size-3.5" />}
-              variant="ghost"
-              size="sm"
-              color="error"
-              onClick={handleStop}
-              isLoading={stopDeployment.isPending}
-            />
-          )}
-          {(deployment.status === 'Running' ||
-            deployment.status === 'Stopped') && (
-            <Button
-              label="Restart"
-              icon={<Play className="size-3.5" />}
-              variant="ghost"
-              size="sm"
-              color="neutral"
-              onClick={handleRestart}
-              isLoading={restartDeployment.isPending}
-            />
-          )}
-          {(deployment.status === 'Running' ||
-            deployment.status === 'Stopped' ||
-            deployment.status === 'Failed') && (
-            <Button
-              label="Redeploy"
-              icon={<RotateCcw className="size-3.5" />}
-              variant="ghost"
-              size="sm"
-              color="neutral"
-              onClick={handleRedeploy}
-              isLoading={redeployDeployment.isPending}
-            />
-          )}
-          <Button
-            label="Delete"
-            icon={<Trash2 className="size-3.5" />}
-            variant="ghost"
-            size="sm"
-            color="error"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowDeleteConfirm(true);
-            }}
-            isLoading={deleteDeployment.isPending}
-          />
-        </HStack>
+        <div onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Deployment actions"
+                className="flex size-7 items-center justify-center rounded-md text-text-tertiary opacity-60 transition-all hover:bg-white/5 hover:text-text group-hover:opacity-100 data-[state=open]:bg-white/5 data-[state=open]:text-text data-[state=open]:opacity-100"
+              >
+                <MoreHorizontal className="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {canStop ? (
+                <DropdownMenuItem onClick={handleStop}>
+                  <Square className="size-3.5" />
+                  Stop
+                </DropdownMenuItem>
+              ) : null}
+              {canRestart ? (
+                <DropdownMenuItem onClick={handleRestart}>
+                  <Play className="size-3.5" />
+                  Restart
+                </DropdownMenuItem>
+              ) : null}
+              {canRedeploy ? (
+                <DropdownMenuItem onClick={handleRedeploy}>
+                  <RotateCcw className="size-3.5" />
+                  Redeploy
+                </DropdownMenuItem>
+              ) : null}
+              {canDelete ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    <Trash2 className="size-3.5" />
+                    Delete
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       <ConfirmationDialog

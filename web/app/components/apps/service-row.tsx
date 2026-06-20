@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  MoreHorizontal,
+  Plug,
+  RefreshCw,
+  RotateCcw,
+  Settings,
+  Square,
   Terminal,
   Trash2,
-  Settings,
-  Plug,
-  Square,
-  RotateCcw,
-  RefreshCw,
 } from 'lucide-react';
 import type { Service } from '~/models/service';
 import {
@@ -16,8 +17,14 @@ import {
   useRestartService,
   useRedeployService,
 } from '~/queries/services';
-import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '~/components/interface/dropdown-menu';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
 import { formatRelativeTime } from '~/utils/format';
@@ -42,16 +49,14 @@ export function ServiceRow(props: ServiceRowProps) {
   const [showConfig, setShowConfig] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
 
-  const handleStop = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['apps', appSlug, 'services'] });
+  };
+
+  const handleStop = async () => {
     try {
-      await stopService.mutateAsync({
-        appSlug,
-        serviceId: service.id,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'services'],
-      });
+      await stopService.mutateAsync({ appSlug, serviceId: service.id });
+      invalidate();
     } catch (err) {
       toast.error('Failed to stop service: ' + err);
     }
@@ -59,50 +64,38 @@ export function ServiceRow(props: ServiceRowProps) {
 
   const handleDelete = async () => {
     try {
-      await deleteService.mutateAsync({
-        appSlug,
-        serviceId: service.id,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'services'],
-      });
+      await deleteService.mutateAsync({ appSlug, serviceId: service.id });
+      invalidate();
       setShowDeleteConfirm(false);
     } catch (e) {
       toast.error('Failed to delete service: ' + e);
     }
   };
 
-  const handleRestart = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleRestart = async () => {
     try {
-      await restartService.mutateAsync({
-        appSlug,
-        serviceId: service.id,
-      });
+      await restartService.mutateAsync({ appSlug, serviceId: service.id });
       toast.success('Service restart triggered.');
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'services'],
-      });
+      invalidate();
     } catch (err) {
       toast.error('Failed to restart service: ' + err);
     }
   };
 
-  const handleRedeploy = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleRedeploy = async () => {
     try {
-      await redeployService.mutateAsync({
-        appSlug,
-        serviceId: service.id,
-      });
+      await redeployService.mutateAsync({ appSlug, serviceId: service.id });
       toast.success('Service redeploy started.');
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'services'],
-      });
+      invalidate();
     } catch (err) {
       toast.error('Failed to redeploy service: ' + err);
     }
   };
+
+  const isRunning = service.status === 'Running';
+  const canRestart = isRunning || service.status === 'Stopped';
+  const canRedeploy =
+    isRunning || service.status === 'Stopped' || service.status === 'Failed';
 
   return (
     <>
@@ -112,7 +105,7 @@ export function ServiceRow(props: ServiceRowProps) {
             <span className="font-mono text-[13px] font-semibold text-text">
               {service.name}
             </span>
-            <span className="text-[11px] font-medium text-text-secondary bg-surface-hover px-1.5 py-0.5 rounded">
+            <span className="rounded bg-white/5 px-1.5 py-0.5 text-[11px] font-medium text-text-secondary">
               {service.kind} {service.version}
             </span>
             <StatusBadge status={service.status} />
@@ -127,86 +120,62 @@ export function ServiceRow(props: ServiceRowProps) {
           </HStack>
         </VStack>
 
-        <HStack space={2}>
-          <Button
-            label="Logs"
-            icon={<Terminal className="size-3.5" />}
-            variant="ghost"
-            size="sm"
-            color="neutral"
-            onClick={onShowLogs}
-          />
-          {service.status === 'Running' && (
-            <Button
-              label="Connect"
-              icon={<Plug className="size-3.5" />}
-              variant="ghost"
-              size="sm"
-              color="neutral"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowConnectModal(true);
-              }}
-            />
-          )}
-          {(service.status === 'Running' || service.status === 'Stopped') && (
-            <Button
-              label="Restart"
-              icon={<RefreshCw className="size-3.5" />}
-              variant="ghost"
-              size="sm"
-              color="neutral"
-              onClick={handleRestart}
-              isLoading={restartService.isPending}
-            />
-          )}
-          {(service.status === 'Running' ||
-            service.status === 'Stopped' ||
-            service.status === 'Failed') && (
-            <Button
-              label="Redeploy"
-              icon={<RotateCcw className="size-3.5" />}
-              variant="ghost"
-              size="sm"
-              color="neutral"
-              onClick={handleRedeploy}
-              isLoading={redeployService.isPending}
-            />
-          )}
-          {service.status === 'Running' && (
-            <Button
-              label="Stop"
-              icon={<Square className="size-3.5" />}
-              variant="ghost"
-              size="sm"
-              color="error"
-              onClick={handleStop}
-              isLoading={stopService.isPending}
-            />
-          )}
-          <Button
-            label="Settings"
-            icon={<Settings className="size-3.5" />}
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowConfig(true);
-            }}
-          />
-          <Button
-            label="Delete"
-            icon={<Trash2 className="size-3.5" />}
-            variant="ghost"
-            size="sm"
-            color="error"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowDeleteConfirm(true);
-            }}
-            isLoading={deleteService.isPending}
-          />
-        </HStack>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="Service actions"
+              className="flex size-7 items-center justify-center rounded-md text-text-tertiary opacity-60 transition-all hover:bg-white/5 hover:text-text group-hover:opacity-100 data-[state=open]:bg-white/5 data-[state=open]:text-text data-[state=open]:opacity-100"
+            >
+              <MoreHorizontal className="size-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onShowLogs}>
+              <Terminal className="size-3.5" />
+              Logs
+            </DropdownMenuItem>
+            {isRunning ? (
+              <DropdownMenuItem onClick={() => setShowConnectModal(true)}>
+                <Plug className="size-3.5" />
+                Connect
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuItem onClick={() => setShowConfig(true)}>
+              <Settings className="size-3.5" />
+              Configuration
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+            {canRestart ? (
+              <DropdownMenuItem onClick={handleRestart}>
+                <RefreshCw className="size-3.5" />
+                Restart
+              </DropdownMenuItem>
+            ) : null}
+            {canRedeploy ? (
+              <DropdownMenuItem onClick={handleRedeploy}>
+                <RotateCcw className="size-3.5" />
+                Redeploy
+              </DropdownMenuItem>
+            ) : null}
+            {isRunning ? (
+              <DropdownMenuItem onClick={handleStop}>
+                <Square className="size-3.5" />
+                Stop
+              </DropdownMenuItem>
+            ) : null}
+
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => setShowDeleteConfirm(true)}
+            >
+              <Trash2 className="size-3.5" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <ConfirmationDialog
