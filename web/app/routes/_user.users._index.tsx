@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useSuspenseQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { PlusIcon } from 'lucide-react';
 import { Button } from '~/components/interface/button';
-import { Skeleton } from '~/components/interface/skeleton';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { queryClient } from '~/utils/query-client';
 import { getUsersOptions, useDeleteUser } from '~/queries/users';
@@ -17,7 +16,7 @@ export async function clientLoader() {
 
 export default function UsersPage() {
   const navigate = useNavigate();
-  const { data: usersData, isLoading } = useQuery(getUsersOptions());
+  const { data: usersData } = useSuspenseQuery(getUsersOptions());
   const deleteUser = useDeleteUser();
   const [pendingDelete, setPendingDelete] = useState<User | null>(null);
 
@@ -58,16 +57,7 @@ export default function UsersPage() {
       </div>
 
       <div className="mt-6 overflow-x-auto">
-        {isLoading ? (
-          <div className="space-y-2">
-            {[...Array(3)].map((_, i) => (
-              <Skeleton
-                key={i}
-                className="h-10 w-full rounded border border-border bg-surface"
-              />
-            ))}
-          </div>
-        ) : usersData?.users.length === 0 ? (
+        {usersData.users.length === 0 ? (
           <p className="text-sm text-text-secondary">No users yet.</p>
         ) : (
           <table className="w-full text-sm">
@@ -80,7 +70,7 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {usersData?.users.map((user: User) => (
+              {usersData.users.map((user: User) => (
                 <tr
                   key={user.id}
                   className="border-b border-border last:border-0"

@@ -4,7 +4,7 @@ import { Users, Key, Settings } from 'lucide-react';
 
 import { LayoutGrid } from '../icons/layout';
 
-import { useQuery } from '@tanstack/react-query';
+import { useSuspenseQuery } from '@tanstack/react-query';
 import { cn } from '~/utils/classname';
 import { getAuthMeOptions } from '~/queries/auth';
 import { removeAuthToken } from '~/utils/jwt';
@@ -38,8 +38,8 @@ function SidebarItem(props: SidebarItemProps) {
 
 export function Sidebar() {
   const navigate = useNavigate();
-  const { data } = useQuery(getAuthMeOptions());
-  const isAdmin = data?.user?.role === 'admin';
+  const { data } = useSuspenseQuery(getAuthMeOptions());
+  const isAdmin = data.user?.role === 'admin';
 
   const handleLogout = () => {
     removeAuthToken();

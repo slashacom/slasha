@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useSuspenseQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Box,
@@ -41,23 +41,19 @@ export default function DeploymentDetailPage() {
   const { slug, id } = useParams();
   const navigate = useNavigate();
 
-  const { data: appData } = useQuery(getAppOptions(slug!));
-  const { data: deploymentData } = useQuery(getDeploymentOptions(slug!, id!));
-  const { data: processesData } = useQuery(getProcessesOptions(slug!, id!));
-  const { data: scalesData } = useQuery(getScalesOptions(slug!));
+  const { data: appData } = useSuspenseQuery(getAppOptions(slug!));
+  const { data: deploymentData } = useSuspenseQuery(
+    getDeploymentOptions(slug!, id!)
+  );
+  const { data: processesData } = useSuspenseQuery(
+    getProcessesOptions(slug!, id!)
+  );
+  const { data: scalesData } = useSuspenseQuery(getScalesOptions(slug!));
 
-  const app = appData?.app;
-  const deployment = deploymentData?.deployment;
-  const processes = processesData?.processes ?? [];
-  const scales = scalesData?.scales ?? [];
-
-  if (!app || !deployment) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-20">
-        <CircleDashed className="size-6 animate-spin text-text-tertiary" />
-      </div>
-    );
-  }
+  const app = appData.app;
+  const deployment = deploymentData.deployment;
+  const processes = processesData.processes ?? [];
+  const scales = scalesData.scales ?? [];
 
   // Group processes by type
   const processGroups = processes.reduce(

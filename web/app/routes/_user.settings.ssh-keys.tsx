@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useSuspenseQuery } from '@tanstack/react-query';
 import { PlusIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
@@ -19,7 +19,7 @@ export async function clientLoader() {
 }
 
 export default function SshKeys() {
-  const { data, isLoading } = useQuery(getSshKeysOptions());
+  const { data } = useSuspenseQuery(getSshKeysOptions());
   const deleteKey = useDeleteSshKey();
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -61,8 +61,8 @@ export default function SshKeys() {
       </div>
 
       <SshKeyList
-        keys={data?.keys ?? []}
-        isLoading={isLoading}
+        keys={data.keys ?? []}
+        isLoading={false}
         onDelete={setPendingDelete}
         onAddFirst={() => setIsAddDialogOpen(true)}
       />

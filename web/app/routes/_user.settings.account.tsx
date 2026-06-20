@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useSuspenseQuery } from '@tanstack/react-query';
 import { MailIcon, KeyRoundIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
@@ -6,16 +6,22 @@ import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
 import { VStack } from '~/components/interface/stacks';
 import { getAuthMeOptions, useUpdateProfile } from '~/queries/auth';
+import { queryClient } from '~/utils/query-client';
 
 export function meta() {
   return [{ title: 'Account Settings · slasha' }];
 }
 
+export async function clientLoader() {
+  await queryClient.ensureQueryData(getAuthMeOptions());
+  return null;
+}
+
 export default function AccountSettings() {
-  const { data } = useQuery(getAuthMeOptions());
+  const { data } = useSuspenseQuery(getAuthMeOptions());
   const updateProfile = useUpdateProfile();
 
-  const user = data?.user;
+  const user = data.user;
 
   const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -28,7 +34,7 @@ export default function AccountSettings() {
 
     const payload: Record<string, any> = {};
 
-    if (email && email !== user?.email) {
+    if (email && email !== user.email) {
       payload.email = email;
     }
 
@@ -97,8 +103,8 @@ export default function AccountSettings() {
                 name="email"
                 type="email"
                 required
-                key={user?.email || ''}
-                defaultValue={user?.email || ''}
+                key={user.email || ''}
+                defaultValue={user.email || ''}
                 className="h-11 border-border bg-surface pl-9 text-text placeholder:text-text-tertiary transition-all focus-visible:border-text-secondary focus-visible:ring-0"
                 placeholder="admin@slasha.app"
                 autoComplete="email"

@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { Outlet, redirect, useLocation, useParams } from 'react-router';
 import { Sidebar } from '~/components/global/sidebar';
 import { getAuthMeOptions } from '~/queries/auth';
@@ -59,12 +60,16 @@ export default function UserLayout() {
         </header>
         {isFullWidth ? (
           <main className="flex flex-1 flex-col overflow-hidden">
-            <Outlet />
+            <Suspense fallback={null}>
+              <Outlet />
+            </Suspense>
           </main>
         ) : (
           <main className="flex-1 overflow-y-auto p-6">
             <div className="max-w-4xl">
-              <Outlet />
+              <Suspense fallback={null}>
+                <Outlet />
+              </Suspense>
             </div>
           </main>
         )}

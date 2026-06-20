@@ -1,8 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useSuspenseQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { PlusIcon } from 'lucide-react';
 import { Button } from '~/components/interface/button';
-import { Skeleton } from '~/components/interface/skeleton';
 import { AppList } from '~/components/apps/app-list';
 import { getAppsOptions } from '~/queries/apps';
 import { queryClient } from '~/utils/query-client';
@@ -13,7 +12,7 @@ export async function clientLoader() {
 
 export default function AppsIndex() {
   const navigate = useNavigate();
-  const { data, isLoading } = useQuery(getAppsOptions());
+  const { data } = useSuspenseQuery(getAppsOptions());
 
   return (
     <div>
@@ -32,18 +31,7 @@ export default function AppsIndex() {
       </div>
 
       <div className="mt-6">
-        {isLoading ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {[...Array(6)].map((_, i) => (
-              <Skeleton
-                key={i}
-                className="h-28 rounded-lg border border-border bg-surface"
-              />
-            ))}
-          </div>
-        ) : (
-          <AppList apps={data?.apps ?? []} />
-        )}
+        <AppList apps={data.apps ?? []} />
       </div>
     </div>
   );

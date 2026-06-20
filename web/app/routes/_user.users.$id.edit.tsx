@@ -1,11 +1,10 @@
 import { useNavigate, useParams, redirect } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useSuspenseQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getUserOptions, useUpdateUser } from '~/queries/users';
 import { UserForm } from '~/components/users/user-form';
-import { Spinner } from '~/components/icons/spinner';
 
 export async function clientLoader(args: { params: { id: string } }) {
   const { params } = args;
@@ -24,7 +23,7 @@ export function meta() {
 export default function EditUser() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: userData, isLoading } = useQuery(getUserOptions(id!));
+  const { data: userData } = useSuspenseQuery(getUserOptions(id!));
   const updateUser = useUpdateUser(id!);
 
   const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
@@ -45,14 +44,6 @@ export default function EditUser() {
       error: (err) => err.message || 'Failed to update user.',
     });
   };
-
-  if (isLoading || !userData) {
-    return (
-      <div className="flex min-h-[300px] items-center justify-center">
-        <Spinner className="size-5" />
-      </div>
-    );
-  }
 
   const { user } = userData;
 
