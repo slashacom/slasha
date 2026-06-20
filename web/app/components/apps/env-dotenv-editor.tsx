@@ -180,7 +180,7 @@ export function DotenvEditor(props: DotenvEditorProps) {
         Mention.configure({
           HTMLAttributes: {
             class:
-              'inline-block whitespace-nowrap rounded bg-blue-500/15 px-1 py-px align-middle font-mono text-[12px] text-blue-300 ring-1 ring-blue-500/25',
+              'whitespace-nowrap font-mono text-[13px] text-blue-300',
           },
           renderText({ node }) {
             return `\${{ ${node.attrs.id} }}`;
@@ -228,7 +228,6 @@ export function DotenvEditor(props: DotenvEditorProps) {
                   type: 'mention',
                   attrs: { id: props.id, label: props.label },
                 })
-                .insertContent(' ')
                 .run();
             },
             items: ({ query }) => {

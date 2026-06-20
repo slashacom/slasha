@@ -130,7 +130,7 @@ export function EnvEditor(props: EnvEditorProps) {
   ) : (
     <div
       className={cn(
-        'px-3.5 py-3',
+        'px-3 py-2',
         !isEmbedded &&
           'rounded-lg border border-border bg-bg/40 focus-within:border-text-tertiary/30'
       )}

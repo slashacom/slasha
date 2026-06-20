@@ -114,9 +114,7 @@ a:not(nav a) {
 }
 
 .env-dotenv-editor [data-mention] {
-  display: inline-block;
   white-space: nowrap;
-  vertical-align: middle;
 }
 
 .env-dotenv-editor p.is-editor-empty:first-child::before {
