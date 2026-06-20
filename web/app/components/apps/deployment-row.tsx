@@ -1,19 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  Play,
-  Square,
-  Terminal,
-  Clock,
-  AlertCircle,
-  CheckCircle2,
-  XCircle,
-  CircleDashed,
-  RotateCcw,
-  Trash2,
-} from 'lucide-react';
-import type { Deployment, DeploymentStatus } from '~/models/deployment';
+import { Play, Square, Terminal, RotateCcw, Trash2 } from 'lucide-react';
+import type { Deployment } from '~/models/deployment';
 import {
   useStopDeployment,
   useDeleteDeployment,
@@ -23,54 +12,9 @@ import {
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { HStack, VStack } from '~/components/interface/stacks';
-import { cn } from '~/utils/classname';
+import { StatusBadge } from '~/components/interface/status-badge';
 import { formatRelativeTime } from '~/utils/format';
 import { toast } from 'sonner';
-
-type StatusBadgeProps = {
-  status: DeploymentStatus;
-};
-
-function StatusBadge(props: StatusBadgeProps) {
-  const { status } = props;
-  const configs: Record<
-    DeploymentStatus,
-    { icon: any; color: string; bg: string }
-  > = {
-    Pending: { icon: Clock, color: 'text-text-tertiary', bg: 'bg-white/5' },
-    Building: {
-      icon: CircleDashed,
-      color: 'text-sky-400',
-      bg: 'bg-sky-400/10',
-    },
-    Running: {
-      icon: CheckCircle2,
-      color: 'text-emerald-400',
-      bg: 'bg-emerald-400/10',
-    },
-    Failed: { icon: XCircle, color: 'text-red-400', bg: 'bg-red-400/10' },
-    Stopped: {
-      icon: AlertCircle,
-      color: 'text-text-tertiary',
-      bg: 'bg-white/5',
-    },
-  };
-
-  const { icon: Icon, color, bg } = configs[status];
-
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium',
-        color,
-        bg
-      )}
-    >
-      <Icon className={cn('size-3', status === 'Building' && 'animate-spin')} />
-      {status}
-    </span>
-  );
-}
 
 type DeploymentRowProps = {
   deployment: Deployment;

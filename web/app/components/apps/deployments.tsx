@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Play, History, RotateCcw } from 'lucide-react';
 import { getDeploymentsOptions, useTriggerDeploy } from '~/queries/deployments';
 import { Button } from '~/components/interface/button';
-import { HStack, VStack } from '~/components/interface/stacks';
+import { SectionHeader } from '~/components/interface/section-header';
+import { VStack } from '~/components/interface/stacks';
 import { toast } from 'sonner';
 import { CommitSelector } from '~/components/apps/commit-selector';
 import { DeploymentRow } from '~/components/apps/deployment-row';
@@ -52,32 +53,27 @@ export function DeploymentsView(props: DeploymentsViewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <HStack
-        justifyContent="between"
-        className="border-b border-border px-8 py-4"
-      >
-        <HStack space={2}>
-          <History className="size-4 text-text-tertiary" />
-          <h2 className="text-sm font-semibold text-text">
-            Deployment History
-          </h2>
-        </HStack>
-        <HStack space={2}>
-          <Button
-            label="Deploy Commit"
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowCommitSelector(true)}
-          />
-          <Button
-            label="Deploy Latest"
-            icon={<Play className="size-3.5" />}
-            size="sm"
-            onClick={handleDeploy}
-            isLoading={triggerDeploy.isPending}
-          />
-        </HStack>
-      </HStack>
+      <SectionHeader
+        icon={History}
+        title="Deployment History"
+        actions={
+          <>
+            <Button
+              label="Deploy Commit"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowCommitSelector(true)}
+            />
+            <Button
+              label="Deploy Latest"
+              icon={<Play className="size-3.5" />}
+              size="sm"
+              onClick={handleDeploy}
+              isLoading={triggerDeploy.isPending}
+            />
+          </>
+        }
+      />
 
       {deployments.length === 0 ? (
         <VStack className="flex-1 items-center justify-center" space={4}>

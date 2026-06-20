@@ -1,10 +1,6 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  AlertCircle,
-  CheckCircle2,
-  XCircle,
-  CircleDashed,
   Terminal,
   Trash2,
   Settings,
@@ -13,7 +9,7 @@ import {
   RotateCcw,
   RefreshCw,
 } from 'lucide-react';
-import type { Service, ServiceStatus } from '~/models/service';
+import type { Service } from '~/models/service';
 import {
   useStopService,
   useDeleteService,
@@ -23,59 +19,13 @@ import {
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { HStack, VStack } from '~/components/interface/stacks';
-import { cn } from '~/utils/classname';
+import { StatusBadge } from '~/components/interface/status-badge';
 import { formatRelativeTime } from '~/utils/format';
 import { toast } from 'sonner';
 import {
   ConnectModal,
   ServiceConfigModal,
 } from '~/components/apps/service-modals';
-
-type StatusBadgeProps = {
-  status: ServiceStatus;
-};
-
-function StatusBadge(props: StatusBadgeProps) {
-  const { status } = props;
-  const configs: Record<
-    ServiceStatus,
-    { icon: any; color: string; bg: string }
-  > = {
-    Provisioning: {
-      icon: CircleDashed,
-      color: 'text-sky-400',
-      bg: 'bg-sky-400/10',
-    },
-    Running: {
-      icon: CheckCircle2,
-      color: 'text-emerald-400',
-      bg: 'bg-emerald-400/10',
-    },
-    Failed: { icon: XCircle, color: 'text-red-400', bg: 'bg-red-400/10' },
-    Stopped: {
-      icon: AlertCircle,
-      color: 'text-text-tertiary',
-      bg: 'bg-white/5',
-    },
-  };
-
-  const { icon: Icon, color, bg } = configs[status];
-
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium',
-        color,
-        bg
-      )}
-    >
-      <Icon
-        className={cn('size-3', status === 'Provisioning' && 'animate-spin')}
-      />
-      {status}
-    </span>
-  );
-}
 
 type ServiceRowProps = {
   service: Service;

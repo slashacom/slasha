@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { Activity, Cpu, Database, Globe, HardDrive } from 'lucide-react';
 import { getAppMetricsOptions } from '~/queries/apps';
+import { SectionHeader } from '~/components/interface/section-header';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
 import { parseUTC } from '~/utils/format';
@@ -102,38 +103,40 @@ export function AppMetricsView(props: AppMetricsViewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <HStack
-        justifyContent="between"
-        className="border-b border-border px-8 py-4 shrink-0"
-      >
-        <HStack space={2}>
-          <Activity className="size-4 text-text-tertiary" />
-          <h2 className="text-sm font-semibold text-text">System Metrics</h2>
+      <SectionHeader
+        icon={Activity}
+        title="System Metrics"
+        className="shrink-0"
+        badge={
           <span
             className="inline-flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse ml-1"
             title="Real-time monitoring active"
           />
-        </HStack>
-        <HStack
-          space={1}
-          className="rounded border border-border bg-surface p-0.5"
-        >
-          {TIME_RANGES.map((range) => (
-            <button
-              key={range.hours}
-              onClick={() => setSelectedRange(range)}
-              className={cn(
-                'h-7 px-3 rounded text-[11px] font-medium transition-colors',
-                selectedRange.hours === range.hours
-                  ? 'bg-white/[0.08] text-text'
-                  : 'text-text-tertiary hover:text-text'
-              )}
+        }
+        actions={
+          <>
+            <HStack
+              space={1}
+              className="rounded border border-border bg-surface p-0.5"
             >
-              {range.label}
-            </button>
-          ))}
-        </HStack>
-      </HStack>
+              {TIME_RANGES.map((range) => (
+                <button
+                  key={range.hours}
+                  onClick={() => setSelectedRange(range)}
+                  className={cn(
+                    'h-7 px-3 rounded text-[11px] font-medium transition-colors',
+                    selectedRange.hours === range.hours
+                      ? 'bg-white/[0.08] text-text'
+                      : 'text-text-tertiary hover:text-text'
+                  )}
+                >
+                  {range.label}
+                </button>
+              ))}
+            </HStack>
+          </>
+        }
+      />
 
       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         {metrics.length === 0 ? (

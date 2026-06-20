@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Database, Server, Plus } from 'lucide-react';
 import { getAppServicesOptions } from '~/queries/services';
 import { Button } from '~/components/interface/button';
-import { HStack, VStack } from '~/components/interface/stacks';
+import { SectionHeader } from '~/components/interface/section-header';
+import { VStack } from '~/components/interface/stacks';
 import { ServiceRow } from '~/components/apps/service-row';
 import { ProvisionServiceModal } from '~/components/apps/provision-service-modal';
 import { ServiceLogModal } from '~/components/apps/service-modals';
@@ -41,23 +42,18 @@ export function ServicesView(props: ServicesViewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <HStack
-        justifyContent="between"
-        className="border-b border-border px-8 py-4"
-      >
-        <HStack space={2}>
-          <Server className="size-4 text-text-tertiary" />
-          <h2 className="text-sm font-semibold text-text">
-            Service Infrastructure
-          </h2>
-        </HStack>
-        <Button
-          label="Provision Service"
-          icon={<Plus className="size-3.5" />}
-          size="sm"
-          onClick={() => setProvisionModalOpen(true)}
-        />
-      </HStack>
+      <SectionHeader
+        icon={Server}
+        title="Service Infrastructure"
+        actions={
+          <Button
+            label="Provision Service"
+            icon={<Plus className="size-3.5" />}
+            size="sm"
+            onClick={() => setProvisionModalOpen(true)}
+          />
+        }
+      />
 
       {services.length === 0 ? (
         <VStack className="flex-1 items-center justify-center" space={4}>
