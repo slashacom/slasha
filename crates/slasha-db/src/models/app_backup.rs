@@ -17,6 +17,9 @@ pub struct AppBackup {
     pub secret_access_key: String,
     pub restore_pending: bool,
     pub last_synced_at: Option<chrono::NaiveDateTime>,
+    pub last_checked_at: Option<chrono::NaiveDateTime>,
+    pub last_check_ok: Option<bool>,
+    pub last_check_error: Option<String>,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
 }

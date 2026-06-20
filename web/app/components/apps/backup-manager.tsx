@@ -5,7 +5,6 @@ import {
   DatabaseBackup,
   History,
   Loader2,
-  RefreshCw,
   Save,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -13,11 +12,12 @@ import { toast } from 'sonner';
 import {
   getBackupOptions,
   getBackupStatusOptions,
+  getReplicaHealthOptions,
   getVolumesOptions,
-  useRefreshBackupStatus,
   useRestoreBackup,
   useSaveBackup,
 } from '~/queries/storage';
+import { BackupStatusStrip } from '~/components/apps/backup-status-strip';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { FieldLabel } from '~/components/interface/field-label';
@@ -25,7 +25,6 @@ import { Input } from '~/components/interface/input';
 import { Switch } from '~/components/interface/switch';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
-import { formatRelativeTime } from '~/utils/format';
 
 const DEFAULT_DB_PATH = '/data/app.db';
 
@@ -53,13 +52,23 @@ export function BackupManager(props: BackupManagerProps) {
 
   const backup = data?.backup ?? null;
   const savedEnabled = backup?.enabled ?? false;
+  // Show the body (form/footer) when the toggle is on, or when an enabled backup
+  // is being toggled off and still needs a save to persist.
+  const hasBody = enabled || savedEnabled;
 
   const { data: statusData } = useQuery({
     ...getBackupStatusOptions(appSlug),
     refetchInterval: savedEnabled ? 10000 : false,
   });
   const status = statusData?.status;
-  const refreshStatus = useRefreshBackupStatus();
+
+  const healthProbe = useQuery({
+    ...getReplicaHealthOptions(appSlug),
+    enabled: savedEnabled,
+    refetchInterval: savedEnabled ? 60000 : false,
+    refetchOnWindowFocus: false,
+  });
+  const health = healthProbe.data;
 
   useEffect(() => {
     if (!backup) {
@@ -112,17 +121,6 @@ export function BackupManager(props: BackupManagerProps) {
     }
   };
 
-  const handleRefresh = async () => {
-    try {
-      await refreshStatus.mutateAsync(appSlug);
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'backups', 'status'],
-      });
-    } catch {
-      // Best-effort; the polled status still reflects whether it's replicating.
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="flex h-32 items-center justify-center text-text-tertiary">
@@ -134,19 +132,24 @@ export function BackupManager(props: BackupManagerProps) {
   return (
     <VStack space={6}>
       <div className="overflow-hidden rounded-xl border border-border bg-surface/50 shadow-sm backdrop-blur-sm">
-        <div className="border-b border-border bg-surface/50 px-6 py-5">
-          <HStack justifyContent="between">
+        <div
+          className={cn(
+            'bg-surface/50 px-6 py-5',
+            hasBody && 'border-b border-border'
+          )}
+        >
+          <HStack justifyContent="between" alignItems="start">
             <HStack space={3}>
               <div className="rounded-lg bg-white/5 p-2 text-text-secondary">
                 <DatabaseBackup className="size-5" />
               </div>
-              <div>
+              <div className="max-w-md">
                 <h3 className="text-[15px] font-semibold text-text">
-                  SQLite backups
+                  Litestream backups
                 </h3>
                 <p className="mt-0.5 text-[13px] text-text-tertiary">
-                  Continuously replicate a SQLite database to S3-compatible
-                  storage (Litestream).
+                  Replicate a SQLite DB to object storage for offsite,
+                  point-in-time recovery.
                 </p>
               </div>
             </HStack>
@@ -154,47 +157,13 @@ export function BackupManager(props: BackupManagerProps) {
           </HStack>
         </div>
 
-        {savedEnabled && status ? (
-          <div className="flex items-center justify-between gap-3 border-b border-border px-6 py-3">
-            <HStack space={2}>
-              <span
-                className={cn(
-                  'size-2 rounded-full',
-                  status.restore_pending
-                    ? 'bg-amber-500'
-                    : status.web_running
-                      ? 'animate-pulse bg-emerald-500'
-                      : 'bg-text-tertiary'
-                )}
-              />
-              <span className="text-[12px] text-text-secondary">
-                {status.restore_pending
-                  ? 'Restore queued for next deploy'
-                  : status.web_running
-                    ? 'Replicating'
-                    : 'Idle — deploy to start replicating'}
-              </span>
-              {status.last_synced_at ? (
-                <span className="text-[12px] text-text-tertiary">
-                  · last synced {formatRelativeTime(status.last_synced_at)}
-                </span>
-              ) : null}
-            </HStack>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={refreshStatus.isPending}
-              className="inline-flex items-center gap-1 text-[11px] text-text-tertiary transition-colors hover:text-text disabled:opacity-50"
-            >
-              <RefreshCw
-                className={cn(
-                  'size-3',
-                  refreshStatus.isPending && 'animate-spin'
-                )}
-              />
-              Check replica
-            </button>
-          </div>
+        {enabled && savedEnabled && status ? (
+          <BackupStatusStrip
+            status={status}
+            health={health}
+            isChecking={healthProbe.isFetching}
+            onCheck={() => healthProbe.refetch()}
+          />
         ) : null}
 
         {enabled ? (
@@ -285,41 +254,44 @@ export function BackupManager(props: BackupManagerProps) {
             </div>
 
             <p className="text-[11px] leading-5 text-text-tertiary">
-              Backups require the web process at a single instance — Litestream
-              must be the only writer to the database.
+              slasha puts the database in WAL mode automatically. Backups
+              require the web process at a single instance — Litestream must be
+              the only writer. For best concurrency, set{' '}
+              <span className="font-mono">busy_timeout</span> and{' '}
+              <span className="font-mono">synchronous=NORMAL</span> in your app.
             </p>
           </div>
-        ) : (
-          <div className="px-6 py-5 text-[13px] text-text-tertiary">
-            Backups are off. Data written to the{' '}
-            <span className="font-mono text-text-secondary">/data</span> volume
-            still persists across deploys; enable backups for offsite,
-            point-in-time recovery.
+        ) : savedEnabled ? (
+          <div className="px-6 py-4 text-[13px] text-text-tertiary">
+            Backups will be turned off when you save. The replica in object
+            storage is kept.
           </div>
-        )}
+        ) : null}
 
-        <div className="flex items-center justify-between gap-4 border-t border-border bg-surface/30 px-6 py-4">
-          {backup?.enabled && secretSet ? (
-            <button
-              type="button"
-              onClick={() => setShowRestoreConfirm(true)}
-              disabled={restoreBackup.isPending}
-              className="inline-flex items-center gap-1.5 text-[12px] text-text-tertiary transition-colors hover:text-text disabled:opacity-50"
-            >
-              <History className="size-3.5" />
-              {backup.restore_pending ? 'Restore queued' : 'Restore latest'}
-            </button>
-          ) : (
-            <span />
-          )}
-          <Button
-            label="Save Changes"
-            icon={<Save className="size-3.5" />}
-            size="sm"
-            onClick={handleSave}
-            isLoading={saveBackup.isPending}
-          />
-        </div>
+        {hasBody ? (
+          <div className="flex items-center justify-between gap-4 border-t border-border bg-surface/30 px-6 py-4">
+            {backup?.enabled && secretSet ? (
+              <button
+                type="button"
+                onClick={() => setShowRestoreConfirm(true)}
+                disabled={restoreBackup.isPending}
+                className="inline-flex items-center gap-1.5 text-[12px] text-text-tertiary transition-colors hover:text-text disabled:opacity-50"
+              >
+                <History className="size-3.5" />
+                {backup.restore_pending ? 'Restore queued' : 'Restore latest'}
+              </button>
+            ) : (
+              <span />
+            )}
+            <Button
+              label="Save Changes"
+              icon={<Save className="size-3.5" />}
+              size="sm"
+              onClick={handleSave}
+              isLoading={saveBackup.isPending}
+            />
+          </div>
+        ) : null}
       </div>
 
       <ConfirmationDialog

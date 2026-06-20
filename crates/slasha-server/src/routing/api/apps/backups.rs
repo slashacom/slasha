@@ -86,6 +86,29 @@ struct SaveBackupRequest {
     secret_access_key: Option<String>,
 }
 
+/// A fresh backup row with system-managed fields defaulted; the caller fills in
+/// the user-editable fields.
+fn new_backup(app_id: &str, now: chrono::NaiveDateTime) -> AppBackup {
+    AppBackup {
+        id: Uuid::new_v4().to_string(),
+        app_id: app_id.to_string(),
+        enabled: false,
+        db_path: String::new(),
+        bucket: String::new(),
+        endpoint: String::new(),
+        path_prefix: None,
+        access_key_id: String::new(),
+        secret_access_key: String::new(),
+        restore_pending: false,
+        last_synced_at: None,
+        last_checked_at: None,
+        last_check_ok: None,
+        last_check_error: None,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
 async fn save_backup(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
@@ -95,6 +118,7 @@ async fn save_backup(
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let existing = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
+    // Keep the current secret when the request omits it (it's never sent back).
     let secret_access_key = match payload.secret_access_key {
         Some(s) if !s.is_empty() => s,
         _ => existing
@@ -129,25 +153,19 @@ async fn save_backup(
         ));
     }
 
+    // Start from the existing row (preserving system-managed fields like
+    // restore_pending and health) or a fresh default, then apply the editable
+    // fields from the request.
     let now = Utc::now().naive_utc();
-    let backup = AppBackup {
-        id: existing
-            .as_ref()
-            .map(|b| b.id.clone())
-            .unwrap_or_else(|| Uuid::new_v4().to_string()),
-        app_id: app.id.clone(),
-        enabled: payload.enabled,
-        db_path: payload.db_path,
-        bucket: payload.bucket,
-        endpoint: payload.endpoint,
-        path_prefix: payload.path_prefix.filter(|p| !p.is_empty()),
-        access_key_id: payload.access_key_id,
-        secret_access_key,
-        restore_pending: existing.as_ref().map(|b| b.restore_pending).unwrap_or(false),
-        last_synced_at: existing.as_ref().and_then(|b| b.last_synced_at),
-        created_at: existing.as_ref().map(|b| b.created_at).unwrap_or(now),
-        updated_at: now,
-    };
+    let mut backup = existing.unwrap_or_else(|| new_backup(&app.id, now));
+    backup.enabled = payload.enabled;
+    backup.db_path = payload.db_path;
+    backup.bucket = payload.bucket;
+    backup.endpoint = payload.endpoint;
+    backup.path_prefix = payload.path_prefix.filter(|p| !p.is_empty());
+    backup.access_key_id = payload.access_key_id;
+    backup.secret_access_key = secret_access_key;
+    backup.updated_at = now;
 
     let saved = AppBackupRepo::upsert(&storage.db_pool, backup).await?;
 
@@ -195,6 +213,27 @@ struct BackupStatus {
     /// its lifetime).
     web_running: bool,
     last_synced_at: Option<chrono::NaiveDateTime>,
+    /// When the replica was last probed.
+    last_checked_at: Option<chrono::NaiveDateTime>,
+    /// Result of the last probe: Some(true) reachable, Some(false) failing,
+    /// None never checked.
+    healthy: Option<bool>,
+    /// Why the replica was unreachable, when applicable.
+    health_error: Option<String>,
+}
+
+impl BackupStatus {
+    fn disabled() -> Self {
+        BackupStatus {
+            enabled: false,
+            restore_pending: false,
+            web_running: false,
+            last_synced_at: None,
+            last_checked_at: None,
+            healthy: None,
+            health_error: None,
+        }
+    }
 }
 
 async fn backup_status(
@@ -207,14 +246,7 @@ async fn backup_status(
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
     let Some(backup) = backup else {
-        return Ok(Json(serde_json::json!({
-            "status": BackupStatus {
-                enabled: false,
-                restore_pending: false,
-                web_running: false,
-                last_synced_at: None,
-            },
-        })));
+        return Ok(Json(serde_json::json!({ "status": BackupStatus::disabled() })));
     };
 
     let web_running = is_web_running(&docker, &app.id).await.unwrap_or(false);
@@ -225,13 +257,16 @@ async fn backup_status(
             restore_pending: backup.restore_pending,
             web_running,
             last_synced_at: backup.last_synced_at,
+            last_checked_at: backup.last_checked_at,
+            healthy: backup.last_check_ok,
+            health_error: backup.last_check_error,
         },
     })))
 }
 
-/// Query the replica for the latest replicated timestamp and persist it. This
-/// runs a one-shot container against object storage, so it's an explicit action
-/// rather than part of the cheap polling status.
+/// Probe the replica directly (reachability + freshness) and persist the result.
+/// This runs a one-shot container against object storage, so it's an explicit
+/// action rather than part of the cheap polling status.
 async fn refresh_status(
     State(storage): State<Storage>,
     State(docker): State<Docker>,
@@ -245,13 +280,23 @@ async fn refresh_status(
         return Err(HttpError::bad_request("Backups are not enabled for this app"));
     };
 
-    let last_synced = litestream::probe_last_synced(&docker, &backup)
+    let probe = litestream::probe_replica(&docker, &backup)
         .await
-        .map_err(|e| HttpError::internal(anyhow::anyhow!("Failed to read replica: {e}")))?;
+        .map_err(|e| HttpError::internal(anyhow::anyhow!("Failed to probe replica: {e}")))?;
 
-    if let Some(synced_at) = last_synced {
-        AppBackupRepo::set_last_synced(&storage.db_pool, &app.id, synced_at).await?;
-    }
+    AppBackupRepo::set_health(
+        &storage.db_pool,
+        &app.id,
+        Utc::now().naive_utc(),
+        probe.reachable,
+        probe.error.clone(),
+        probe.last_synced_at,
+    )
+    .await?;
 
-    Ok(Json(serde_json::json!({ "last_synced_at": last_synced })))
+    Ok(Json(serde_json::json!({
+        "healthy": probe.reachable,
+        "health_error": probe.error,
+        "last_synced_at": probe.last_synced_at,
+    })))
 }

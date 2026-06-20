@@ -18,7 +18,7 @@ use slasha_db::{
     app::App,
     deployment::{Deployment, DeploymentStatus},
     models::app_scale::ProcessType,
-    repos::{app::AppRepo, deployment::DeploymentRepo},
+    repos::{app::AppRepo, app_backup::AppBackupRepo, deployment::DeploymentRepo},
 };
 use tokio::sync::Notify;
 use tokio_stream::wrappers::BroadcastStream;
@@ -376,6 +376,21 @@ async fn scale_deployment(
     let app_runtime = app_state.runtime;
 
     let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
+
+    // Litestream requires a single writer to the SQLite database. Running more
+    // than one web container would let multiple processes write the same file on
+    // the shared volume and corrupt it, so block it while backups are enabled.
+    if payload.process_type == ProcessType::Web && payload.count > 1 {
+        let backups_on = AppBackupRepo::get(&db_pool, &app.id)
+            .await?
+            .is_some_and(|b| b.enabled);
+        if backups_on {
+            return Err(HttpError::bad_request(
+                "Backups require a single web instance (Litestream must be the only writer). Disable backups to scale web beyond 1.",
+            ));
+        }
+    }
+
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     if deployment.status != DeploymentStatus::Running {

@@ -74,18 +74,40 @@ impl AppBackupRepo {
         .await?
     }
 
-    pub async fn set_last_synced(
+    /// Record the result of a replica health probe. `last_synced_at` is only
+    /// overwritten when a fresh value is available (a failed probe keeps the
+    /// previously-known sync time).
+    pub async fn set_health(
         pool: &DbPool,
         app_id: &str,
-        synced_at: chrono::NaiveDateTime,
+        checked_at: chrono::NaiveDateTime,
+        ok: bool,
+        error: Option<String>,
+        last_synced_at: Option<chrono::NaiveDateTime>,
     ) -> DbResult<()> {
         let pool = pool.clone();
         let app_id = app_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            diesel::update(app_backups::table.filter(app_backups::app_id.eq(&app_id)))
-                .set(app_backups::last_synced_at.eq(synced_at))
-                .execute(&mut conn)?;
+            let query =
+                diesel::update(app_backups::table.filter(app_backups::app_id.eq(&app_id)));
+            match last_synced_at {
+                Some(synced) => query
+                    .set((
+                        app_backups::last_checked_at.eq(checked_at),
+                        app_backups::last_check_ok.eq(ok),
+                        app_backups::last_check_error.eq(error),
+                        app_backups::last_synced_at.eq(synced),
+                    ))
+                    .execute(&mut conn)?,
+                None => query
+                    .set((
+                        app_backups::last_checked_at.eq(checked_at),
+                        app_backups::last_check_ok.eq(ok),
+                        app_backups::last_check_error.eq(error),
+                    ))
+                    .execute(&mut conn)?,
+            };
             Ok(())
         })
         .await?

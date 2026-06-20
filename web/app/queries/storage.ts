@@ -74,6 +74,9 @@ export type BackupStatus = {
   restore_pending: boolean;
   web_running: boolean;
   last_synced_at: string | null;
+  last_checked_at: string | null;
+  healthy: boolean | null;
+  health_error: string | null;
 };
 
 export function getBackupStatusOptions(appSlug: string) {
@@ -84,12 +87,19 @@ export function getBackupStatusOptions(appSlug: string) {
   });
 }
 
-export function useRefreshBackupStatus() {
-  return useMutation({
-    mutationFn: (appSlug: string) =>
-      httpPost<{ last_synced_at: string | null }>(
-        `apps/${appSlug}/backups/status/refresh`,
-        {}
-      ),
+export type ReplicaHealth = {
+  healthy: boolean;
+  health_error: string | null;
+  last_synced_at: string | null;
+};
+
+// Probes the object-storage replica directly (reachability + freshness). This
+// runs a one-shot container server-side, so it's polled on a slow cadence, not
+// the cheap status poll.
+export function getReplicaHealthOptions(appSlug: string) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'backups', 'probe'],
+    queryFn: () =>
+      httpPost<ReplicaHealth>(`apps/${appSlug}/backups/status/refresh`, {}),
   });
 }

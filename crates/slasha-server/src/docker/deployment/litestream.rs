@@ -24,16 +24,25 @@ use uuid::Uuid;
 const CONFIG_PATH: &str = "/etc/litestream.yml";
 
 /// Directory the shared litestream volume is mounted at inside app containers,
-/// and the absolute path of the binary within it.
+/// and the absolute paths of the bundled binaries within it.
 pub const CONTAINER_MOUNT_DIR: &str = "/slasha";
 pub const CONTAINER_BINARY_PATH: &str = "/slasha/litestream";
+/// Statically-linked sqlite3 CLI, used to put the database in WAL mode (required
+/// by litestream) without the user having to configure it in their app.
+pub const CONTAINER_SQLITE_PATH: &str = "/slasha/sqlite3";
+/// MinIO client (static), used to probe the replica's reachability and freshness
+/// for the health signal.
+pub const CONTAINER_MC_PATH: &str = "/slasha/mc";
 
-/// Shared, read-only docker volume holding the litestream binary. A single
-/// volume is reused across all apps; it is populated once from the pinned
-/// GitHub release (see [`ensure_litestream_volume`]).
+/// Shared, read-only docker volume holding the litestream and sqlite3 binaries.
+/// A single volume is reused across all apps; it is populated once (see
+/// [`ensure_litestream_volume`]).
 pub const LITESTREAM_VOLUME: &str = "slasha-litestream";
 
 const LITESTREAM_VERSION: &str = "v0.3.13";
+const SQLITE_AMALGAMATION_URL: &str =
+    "https://sqlite.org/2024/sqlite-amalgamation-3460100.zip";
+const SQLITE_AMALGAMATION_DIR: &str = "sqlite-amalgamation-3460100";
 const HELPER_IMAGE: &str = "alpine:3.20";
 
 const ACCESS_KEY_ENV: &str = "LITESTREAM_ACCESS_KEY_ID";
@@ -78,21 +87,57 @@ fn shell_single_quote(value: &str) -> String {
 /// the database is only restored if it is missing — the normal boot path.
 pub fn plan(backup: &AppBackup, original_cmd: &str, restore_pending: bool) -> LitestreamPlan {
     let bin = CONTAINER_BINARY_PATH;
+    let sqlite = CONTAINER_SQLITE_PATH;
     let cfg = CONFIG_PATH;
     let db = shell_single_quote(&backup.db_path);
     let yaml = config_yaml(backup);
     let exec_cmd = shell_single_quote(original_cmd);
 
     let restore = if restore_pending {
+        // Forced point-in-time restore. Never touch the live database until a
+        // verified replacement exists: restore to a temp path, integrity-check
+        // it, then swap atomically. Any failure keeps the existing database.
         format!(
-            "rm -f {db}* 2>/dev/null || true\n{bin} restore -if-replica-exists -config {cfg} {db} || true"
+            "TMP={db}.slasha-restore\n\
+             rm -f \"$TMP\" \"$TMP\"-wal \"$TMP\"-shm 2>/dev/null || true\n\
+             if {bin} restore -o \"$TMP\" -if-replica-exists -config {cfg} {db}; then\n\
+             if [ -f \"$TMP\" ] && {sqlite} \"$TMP\" 'PRAGMA integrity_check;' 2>/dev/null | head -1 | grep -qx ok; then\n\
+             mv -f \"$TMP\" {db}\n\
+             rm -f {db}-wal {db}-shm 2>/dev/null || true\n\
+             echo 'slasha: restored database from replica'\n\
+             else\n\
+             rm -f \"$TMP\" 2>/dev/null || true\n\
+             echo 'slasha: no valid replica to restore; keeping existing database' >&2\n\
+             fi\n\
+             else\n\
+             rm -f \"$TMP\" 2>/dev/null || true\n\
+             echo 'slasha: restore failed; keeping existing database' >&2\n\
+             fi"
         )
     } else {
-        format!("{bin} restore -if-db-not-exists -if-replica-exists -config {cfg} {db} || true")
+        // Normal boot: only restore when the database is missing. If a restore
+        // genuinely errors (a replica likely exists but is unreachable), abort
+        // rather than start empty and replicate an empty database over a good
+        // backup — the container restarts and retries.
+        format!(
+            "if [ ! -f {db} ]; then\n\
+             if {bin} restore -if-replica-exists -config {cfg} {db}; then :; else\n\
+             echo 'slasha: database missing and restore failed; aborting to avoid replicating an empty database' >&2\n\
+             exit 1\n\
+             fi\n\
+             fi"
+        )
     };
 
+    // Litestream only replicates WAL-mode databases. Put the database in WAL
+    // mode if it already exists (after restore, or once the app has created it
+    // on a prior boot) so the user doesn't have to set it in their app. This is
+    // a no-op when the database is already WAL.
+    let ensure_wal =
+        format!("if [ -f {db} ]; then {sqlite} {db} 'PRAGMA journal_mode=WAL;' >/dev/null 2>&1 || true; fi");
+
     let command = format!(
-        "set -e\nmkdir -p \"$(dirname {db})\"\ncat > {cfg} <<'SLASHA_LITESTREAM_EOF'\n{yaml}SLASHA_LITESTREAM_EOF\n{restore}\nexec {bin} replicate -config {cfg} -exec {exec_cmd}"
+        "set -e\nmkdir -p \"$(dirname {db})\"\ncat > {cfg} <<'SLASHA_LITESTREAM_EOF'\n{yaml}SLASHA_LITESTREAM_EOF\n{restore}\n{ensure_wal}\nexec {bin} replicate -config {cfg} -exec {exec_cmd}"
     );
 
     let mut env = HashMap::new();
@@ -100,18 +145,6 @@ pub fn plan(backup: &AppBackup, original_cmd: &str, restore_pending: bool) -> Li
     env.insert(SECRET_KEY_ENV.to_string(), backup.secret_access_key.clone());
 
     LitestreamPlan { command, env }
-}
-
-/// Parse the most recent replicated timestamp from `litestream generations`
-/// output. The `end` column holds the time of the last replicated WAL; we take
-/// the latest RFC3339 timestamp anywhere in the output to stay tolerant of
-/// formatting changes across litestream versions.
-pub fn parse_last_synced(output: &str) -> Option<chrono::NaiveDateTime> {
-    output
-        .split_whitespace()
-        .filter_map(|token| chrono::DateTime::parse_from_rfc3339(token).ok())
-        .map(|dt| dt.naive_utc())
-        .max()
 }
 
 /// Read-only mount of the shared litestream volume for an app container.
@@ -129,15 +162,23 @@ pub fn binary_mount() -> Mount {
 /// litestream release for the host architecture into the shared volume. Idempotent.
 fn populate_script() -> String {
     let ver = LITESTREAM_VERSION;
+    let sqlite_url = SQLITE_AMALGAMATION_URL;
+    let sqlite_dir = SQLITE_AMALGAMATION_DIR;
     format!(
         "set -e\n\
-         if [ -f /dst/litestream ]; then exit 0; fi\n\
-         apk add -q --no-cache wget tar >/dev/null 2>&1\n\
+         if [ -f /dst/litestream ] && [ -f /dst/sqlite3 ] && [ -f /dst/mc ]; then exit 0; fi\n\
+         apk add -q --no-cache wget tar unzip gcc musl-dev >/dev/null 2>&1\n\
          ARCH=$(uname -m)\n\
          case \"$ARCH\" in x86_64) A=amd64;; aarch64) A=arm64;; *) echo \"unsupported arch $ARCH\" >&2; exit 1;; esac\n\
          wget -qO /tmp/ls.tar.gz \"https://github.com/benbjohnson/litestream/releases/download/{ver}/litestream-{ver}-linux-${{A}}.tar.gz\"\n\
          tar -xzf /tmp/ls.tar.gz -C /dst litestream\n\
-         chmod +x /dst/litestream\n"
+         chmod +x /dst/litestream\n\
+         wget -qO /dst/mc \"https://dl.min.io/client/mc/release/linux-${{A}}/mc\"\n\
+         chmod +x /dst/mc\n\
+         wget -qO /tmp/sqlite.zip \"{sqlite_url}\"\n\
+         unzip -q /tmp/sqlite.zip -d /tmp\n\
+         gcc -Os -static -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -o /dst/sqlite3 /tmp/{sqlite_dir}/shell.c /tmp/{sqlite_dir}/sqlite3.c -lm\n\
+         chmod +x /dst/sqlite3\n"
     )
 }
 
@@ -227,21 +268,37 @@ async fn run_setup_container(docker: &Docker, container_name: &str) -> anyhow::R
     Ok(())
 }
 
-/// Query the replica for the time of the last replicated WAL by running
-/// `litestream generations` in a one-shot container. Best-effort: returns `None`
-/// when nothing has been replicated yet or the replica can't be read.
-pub async fn probe_last_synced(
-    docker: &Docker,
-    backup: &AppBackup,
-) -> anyhow::Result<Option<chrono::NaiveDateTime>> {
+/// Result of checking the object-storage replica directly.
+pub struct ReplicaProbe {
+    /// Whether the bucket could be listed with the configured credentials —
+    /// this is the real health signal (catches bad creds, wrong bucket,
+    /// unreachable endpoint), unlike "the process is running".
+    pub reachable: bool,
+    /// A short error excerpt when not reachable.
+    pub error: Option<String>,
+    /// Time of the most recently written replica object, when any exist.
+    pub last_synced_at: Option<chrono::NaiveDateTime>,
+}
+
+const PROBE_OK_MARKER: &str = "SLASHA_REACHABLE";
+
+/// Probe the replica directly via the bundled `mc` client: list the bucket
+/// prefix. A successful list means credentials/bucket/endpoint are valid (the
+/// thing the "process is up" signal can't tell you); the newest object's time
+/// approximates the last sync.
+pub async fn probe_replica(docker: &Docker, backup: &AppBackup) -> anyhow::Result<ReplicaProbe> {
     ensure_litestream_volume(docker).await?;
 
-    let bin = CONTAINER_BINARY_PATH;
-    let cfg = CONFIG_PATH;
-    let yaml = config_yaml(backup);
-    let db = shell_single_quote(&backup.db_path);
+    let mc = CONTAINER_MC_PATH;
+    let endpoint = shell_single_quote(&backup.endpoint);
+    let bucket = shell_single_quote(&backup.bucket);
+    let prefix = shell_single_quote(&replica_path(backup));
+    // Credentials come from the environment; the secret is never in the script.
     let script = format!(
-        "cat > {cfg} <<'SLASHA_LITESTREAM_EOF'\n{yaml}SLASHA_LITESTREAM_EOF\n{bin} generations -config {cfg} {db} 2>/dev/null || true"
+        "OUT=$({mc} alias set slasha {endpoint} \"${ACCESS_KEY_ENV}\" \"${SECRET_KEY_ENV}\" 2>&1 \
+         && {mc} ls --recursive --json slasha/{bucket}/{prefix}/ 2>&1)\n\
+         RC=$?\n\
+         if [ $RC -eq 0 ]; then printf '{PROBE_OK_MARKER}\\n%s\\n' \"$OUT\"; else printf '%s\\n' \"$OUT\"; fi"
     );
     let env = vec![
         format!("{ACCESS_KEY_ENV}={}", backup.access_key_id),
@@ -249,7 +306,36 @@ pub async fn probe_last_synced(
     ];
 
     let output = run_capture_container(docker, &script, env).await?;
-    Ok(parse_last_synced(&output))
+
+    if let Some(rest) = output.strip_prefix(PROBE_OK_MARKER).or_else(|| {
+        output
+            .find(PROBE_OK_MARKER)
+            .map(|i| &output[i + PROBE_OK_MARKER.len()..])
+    }) {
+        Ok(ReplicaProbe {
+            reachable: true,
+            error: None,
+            last_synced_at: parse_last_modified(rest),
+        })
+    } else {
+        let error = output.trim();
+        Ok(ReplicaProbe {
+            reachable: false,
+            error: (!error.is_empty()).then(|| error.chars().take(300).collect()),
+            last_synced_at: None,
+        })
+    }
+}
+
+/// Extract the newest `"lastModified":"<rfc3339>"` value from `mc ls --json` output.
+pub fn parse_last_modified(output: &str) -> Option<chrono::NaiveDateTime> {
+    output
+        .split("\"lastModified\":\"")
+        .skip(1)
+        .filter_map(|chunk| chunk.split('"').next())
+        .filter_map(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
+        .map(|dt| dt.naive_utc())
+        .max()
 }
 
 /// Run a short alpine command with the litestream binary mounted and capture its
@@ -339,6 +425,9 @@ mod tests {
             secret_access_key: "SECRET".into(),
             restore_pending: false,
             last_synced_at: None,
+            last_checked_at: None,
+            last_check_ok: None,
+            last_check_error: None,
             created_at: Utc::now().naive_utc(),
             updated_at: Utc::now().naive_utc(),
         }
@@ -355,23 +444,38 @@ mod tests {
     }
 
     #[test]
-    fn normal_boot_restores_only_if_missing_and_execs_original() {
+    fn normal_boot_restores_only_if_missing_and_aborts_on_error() {
         let plan = plan(&backup(), "node server.js", false);
-        assert!(plan.command.contains("restore -if-db-not-exists -if-replica-exists"));
+        // Only restores when the DB is missing, and never deletes anything.
+        assert!(plan.command.contains("if [ ! -f '/data/app.db' ]"));
+        assert!(plan.command.contains("restore -if-replica-exists"));
         assert!(!plan.command.contains("rm -f"));
+        // Aborts instead of starting empty when a restore genuinely fails.
+        assert!(plan.command.contains("aborting to avoid replicating an empty database"));
+        assert!(plan.command.contains("exit 1"));
         assert!(
             plan.command
                 .contains(&format!("exec {CONTAINER_BINARY_PATH} replicate"))
         );
         assert!(plan.command.contains("-exec 'node server.js'"));
+        assert!(
+            plan.command
+                .contains(&format!("{CONTAINER_SQLITE_PATH} '/data/app.db' 'PRAGMA journal_mode=WAL;'"))
+        );
     }
 
     #[test]
-    fn restore_pending_discards_local_db_first() {
+    fn forced_restore_never_destroys_live_db_before_verified_swap() {
         let plan = plan(&backup(), "node server.js", true);
-        assert!(plan.command.contains("rm -f '/data/app.db'*"));
-        assert!(plan.command.contains("restore -if-replica-exists"));
-        assert!(!plan.command.contains("-if-db-not-exists"));
+        // Restores to a temp path, integrity-checks, then swaps — never rm's the
+        // live DB up front.
+        assert!(plan.command.contains("'/data/app.db'.slasha-restore"));
+        assert!(plan.command.contains("restore -o \"$TMP\" -if-replica-exists"));
+        assert!(plan.command.contains("PRAGMA integrity_check;"));
+        assert!(plan.command.contains("mv -f \"$TMP\" '/data/app.db'"));
+        assert!(plan.command.contains("keeping existing database"));
+        // The dangerous original pattern (delete live DB first) must be gone.
+        assert!(!plan.command.contains("rm -f '/data/app.db'*"));
     }
 
     #[test]
@@ -389,18 +493,43 @@ mod tests {
     }
 
     #[test]
-    fn parses_last_synced_from_generations_output() {
-        // Real `litestream generations` output (v0.3.13).
-        let output = "name  generation        lag  start                 end\n\
-             s3    8caab87c2367a2a8  -1s  2026-06-20T16:30:08Z  2026-06-20T16:30:12Z\n";
-        let parsed = parse_last_synced(output).unwrap();
-        assert_eq!(parsed.to_string(), "2026-06-20 16:30:12");
+    fn generated_command_is_valid_posix_shell() {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        for pending in [false, true] {
+            let plan = plan(&backup(), "node server.js", pending);
+            let mut child = Command::new("sh")
+                .arg("-n")
+                .stdin(Stdio::piped())
+                .spawn()
+                .expect("spawn sh");
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(plan.command.as_bytes())
+                .unwrap();
+            assert!(
+                child.wait().unwrap().success(),
+                "generated shell is not valid (restore_pending={pending}):\n{}",
+                plan.command
+            );
+        }
     }
 
     #[test]
-    fn parses_none_when_no_generations() {
-        assert!(parse_last_synced("no generations available\n").is_none());
-        assert!(parse_last_synced("").is_none());
+    fn parses_newest_last_modified_from_mc_json() {
+        // Real `mc ls --recursive --json` lines.
+        let output = "{\"status\":\"success\",\"type\":\"file\",\"lastModified\":\"2026-06-21T00:26:59.357Z\",\"size\":368}\n\
+             {\"status\":\"success\",\"type\":\"file\",\"lastModified\":\"2026-06-21T00:27:03.341Z\",\"size\":4120}\n";
+        let parsed = parse_last_modified(output).unwrap();
+        assert_eq!(parsed.to_string(), "2026-06-21 00:27:03.341");
+    }
+
+    #[test]
+    fn parses_no_last_modified_when_empty() {
+        assert!(parse_last_modified("").is_none());
+        assert!(parse_last_modified("{\"status\":\"success\"}\n").is_none());
     }
 
     #[tokio::test]
