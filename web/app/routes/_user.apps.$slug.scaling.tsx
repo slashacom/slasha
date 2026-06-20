@@ -81,11 +81,7 @@ export default function AppScalingPage() {
             <VStack space={1}>
               <h3 className="text-sm font-semibold text-text">Replicas</h3>
               <p className="text-[12px] text-text-tertiary">
-                How many containers run for each process type.{' '}
-                <span className="font-mono text-text-secondary">web</span>{' '}
-                serves HTTP traffic;{' '}
-                <span className="font-mono text-text-secondary">worker</span>{' '}
-                runs background jobs.
+                Number of containers to run for each process type.
               </p>
             </VStack>
             <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(15rem,18rem))]">

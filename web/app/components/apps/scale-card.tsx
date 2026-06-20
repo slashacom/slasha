@@ -1,11 +1,22 @@
 import { useEffect, useState } from 'react';
-import { Minus, Plus } from 'lucide-react';
+import { Info, Minus, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ProcessType } from '~/models/app-scale';
 import { useScaleDeployment } from '~/queries/deployments';
 import { Button } from '~/components/interface/button';
 import { HStack, VStack } from '~/components/interface/stacks';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '~/components/interface/tooltip';
 import { cn } from '~/utils/classname';
+
+const PROCESS_TYPE_HELP: Record<ProcessType, string> = {
+  web: 'Serves HTTP traffic — requests are routed here by the proxy.',
+  worker: 'Runs background jobs. Does not receive HTTP traffic.',
+  release: 'Runs once before each deploy (e.g. migrations).',
+};
 
 type ScaleCardProps = {
   appSlug: string;
@@ -59,6 +70,20 @@ export function ScaleCard(props: ScaleCardProps) {
             <h4 className="text-[13px] font-semibold uppercase tracking-wide text-text">
               {processType}
             </h4>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`What is ${processType}?`}
+                  className="text-text-tertiary transition-colors hover:text-text"
+                >
+                  <Info className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[220px]">
+                {PROCESS_TYPE_HELP[processType]}
+              </TooltipContent>
+            </Tooltip>
           </HStack>
           <span className="text-[11px] font-medium text-text-tertiary">
             {runningCount} / {desiredCount} up
