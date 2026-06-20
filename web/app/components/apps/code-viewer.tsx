@@ -9,7 +9,7 @@ import { Button } from '~/components/interface/button';
 import { inferLang, formatFileSize } from '~/utils/format';
 import { PathBreadcrumb } from './path-breadcrumb';
 
-interface CodeViewerProps {
+type CodeViewerProps = {
   slug: string;
   filePath: string;
   onNavigate: (path: string) => void;

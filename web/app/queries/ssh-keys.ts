@@ -4,7 +4,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { httpGet, httpPost, httpDelete } from '~/utils/http';
-import type { SshKey } from '~/models/ssh_key';
+import type { SshKey } from '~/models/ssh-key';
 
 export function getSshKeysOptions() {
   return queryOptions({

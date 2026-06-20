@@ -9,7 +9,7 @@ import { cn } from '~/utils/classname';
 import { getAuthMeOptions } from '~/queries/auth';
 import { removeAuthToken } from '~/utils/jwt';
 
-interface SidebarItemProps {
+type SidebarItemProps = {
   to: string;
   icon: React.ComponentType<{ className?: string }>;
   label: string;

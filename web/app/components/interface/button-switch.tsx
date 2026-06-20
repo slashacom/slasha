@@ -1,9 +1,9 @@
-interface Option {
+type Option = {
   id: string;
   value: string;
 }
 
-interface ButtonSwitchProps {
+type ButtonSwitchProps = {
   options: Option[];
   selectedOption: string;
   onSelect: (optionId: string) => void;

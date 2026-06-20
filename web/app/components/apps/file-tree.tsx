@@ -4,7 +4,7 @@ import { cn } from '~/utils/classname';
 import { getFileIcon } from '~/utils/file-icon';
 import type { FileTreeNode } from '~/queries/files';
 
-interface TreeNodeProps {
+type TreeNodeProps = {
   node: FileTreeNode;
   depth: number;
   selectedPath: string | null;
@@ -132,7 +132,7 @@ function filterTree(
   return { nodes: walk(nodes), matchedDirs };
 }
 
-interface FileTreeProps {
+type FileTreeProps = {
   tree: FileTreeNode[];
   selectedPath: string | null;
   onSelect: (path: string) => void;

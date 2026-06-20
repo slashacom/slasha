@@ -9,10 +9,10 @@ import {
 import { Button } from '~/components/interface/variant-button';
 import { Hash } from 'lucide-react';
 
-interface EmojiPickerComponentProps extends Omit<
+type EmojiPickerComponentProps = Omit<
   React.ComponentPropsWithoutRef<typeof PopoverTrigger>,
   'onSelect' | 'onOpenChange'
-> {
+> & {
   value?: string;
   defaultValue?: string;
   onValueChange?: (value: string) => void;

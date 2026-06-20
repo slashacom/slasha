@@ -3,7 +3,7 @@ import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
 import type { User } from '~/models/user';
 
-interface UserFormProps {
+type UserFormProps = {
   initialData?: User;
   onSubmit: (e: React.SubmitEvent<HTMLFormElement>) => void;
   onCancel: () => void;

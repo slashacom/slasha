@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { isRouteErrorResponse } from 'react-router';
 
-interface ErrorViewProps {
+type ErrorViewProps = {
   error: unknown;
 }
 

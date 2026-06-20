@@ -19,9 +19,9 @@ const gapClasses = {
   6: 'gap-6',
 };
 
-interface HStackProps extends BaseStackProps {
+type HStackProps = BaseStackProps & {
   children?: ReactNode;
-}
+};
 
 export const HStack = forwardRef(function HStack(
   { className, space, children, alignItems = 'center', ...props }: HStackProps,

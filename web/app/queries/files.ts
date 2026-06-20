@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import { httpGet } from '~/utils/http';
 
-export interface FileTreeNode {
+export type FileTreeNode = {
   name: string;
   path: string;
   node_type: 'file' | 'directory';
@@ -9,7 +9,7 @@ export interface FileTreeNode {
   children?: FileTreeNode[];
 }
 
-export interface FileTreeResponse {
+export type FileTreeResponse = {
   tree: FileTreeNode[];
   has_commits: boolean;
 }
@@ -32,7 +32,7 @@ export function findNodeByPath(
   return null;
 }
 
-export interface FileContentResponse {
+export type FileContentResponse = {
   path: string;
   name: string;
   size: number;

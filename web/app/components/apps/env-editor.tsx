@@ -120,7 +120,7 @@ const noAutofillProps = {
   'data-form-type': 'other',
 } as const;
 
-export interface EnvEditorProps {
+export type EnvEditorProps = {
   title?: string;
   description?: string;
   initialVars: Record<string, string>;

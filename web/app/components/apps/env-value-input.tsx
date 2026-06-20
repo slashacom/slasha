@@ -57,7 +57,7 @@ function valueToContent(value: string) {
 
 type HandlerBox = { current: (event: KeyboardEvent) => boolean };
 
-interface SuggestionListProps {
+type SuggestionListProps = {
   items: FlatItem[];
   command: (props: { id: string; label: string }) => void;
   handlerBox: HandlerBox;
@@ -163,7 +163,7 @@ function positionPopup(el: HTMLDivElement, rect: DOMRect | null) {
   el.style.left = `${left}px`;
 }
 
-export interface RichValueInputProps {
+export type RichValueInputProps = {
   value: string;
   onChange: (val: string) => void;
   groups: SuggestionGroup[];

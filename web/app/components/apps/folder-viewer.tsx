@@ -4,7 +4,7 @@ import { getFileIcon } from '~/utils/file-icon';
 import type { FileTreeNode } from '~/queries/files';
 import { PathBreadcrumb } from './path-breadcrumb';
 
-interface FolderViewerProps {
+type FolderViewerProps = {
   node: FileTreeNode;
   onSelect: (path: string) => void;
 }

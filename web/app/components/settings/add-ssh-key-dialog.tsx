@@ -13,7 +13,7 @@ import {
 } from '../interface/dialog';
 import { useCreateSshKey } from '~/queries/ssh-keys';
 
-interface AddSshKeyDialogProps {
+type AddSshKeyDialogProps = {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
 }

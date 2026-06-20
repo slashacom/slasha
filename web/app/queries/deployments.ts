@@ -5,7 +5,7 @@ import {
 } from '@tanstack/react-query';
 import { httpGet, httpPost, httpDelete } from '~/utils/http';
 import type { Deployment } from '~/models/deployment';
-import type { ProcessContainer, ProcessType } from '~/models/app_scale';
+import type { ProcessContainer, ProcessType } from '~/models/app-scale';
 
 export type CommitInfo = {
   sha: string;

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Button, type ButtonColor } from '~/components/interface/button';
 
-interface EmptyPageProps {
+type EmptyPageProps = {
   icon: ReactNode;
   message: string;
   buttonIcon: ReactNode;

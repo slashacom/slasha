@@ -1,10 +1,10 @@
 import { queryOptions, useMutation } from '@tanstack/react-query';
 import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
 import type { App } from '~/models/app';
-import type { AppScale } from '~/models/app_scale';
+import type { AppScale } from '~/models/app-scale';
 import type { AppDomain } from '~/models/app';
 
-import type { AppMetrics } from '~/models/app_metrics';
+import type { AppMetrics } from '~/models/app-metrics';
 
 export function getAppsOptions() {
   return queryOptions({

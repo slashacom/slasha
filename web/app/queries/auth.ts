@@ -4,15 +4,15 @@ import { queryClient } from '~/utils/query-client';
 import { setAuthToken } from '~/utils/jwt';
 import type { User } from '~/models/user';
 
-export interface AuthStatusResponse {
+export type AuthStatusResponse = {
   has_admin: boolean;
 }
 
-export interface AuthMeResponse {
+export type AuthMeResponse = {
   user: User;
 }
 
-export interface AuthTokenResponse {
+export type AuthTokenResponse = {
   token: string;
   user: User;
 }

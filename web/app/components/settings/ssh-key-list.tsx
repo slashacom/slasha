@@ -1,9 +1,9 @@
 import { KeyIcon } from 'lucide-react';
-import type { SshKey } from '~/models/ssh_key';
+import type { SshKey } from '~/models/ssh-key';
 import { SshKeyRow } from './ssh-key-row';
 import { Button } from '../interface/button';
 
-interface SshKeyListProps {
+type SshKeyListProps = {
   keys: SshKey[];
   isLoading: boolean;
   onDelete: (key: SshKey) => void;

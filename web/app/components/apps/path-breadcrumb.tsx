@@ -1,7 +1,7 @@
 import { ChevronRight, Folder } from 'lucide-react';
 import { getFileIcon } from '~/utils/file-icon';
 
-interface PathBreadcrumbProps {
+type PathBreadcrumbProps = {
   path: string;
   isDirectory: boolean;
   onNavigate: (path: string) => void;

@@ -1,7 +1,7 @@
 import { KeyIcon, Trash2Icon } from 'lucide-react';
-import type { SshKey } from '~/models/ssh_key';
+import type { SshKey } from '~/models/ssh-key';
 
-interface SshKeyRowProps {
+type SshKeyRowProps = {
   sshKey: SshKey;
   onDelete: (key: SshKey) => void;
 }

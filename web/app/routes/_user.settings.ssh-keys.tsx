@@ -6,7 +6,7 @@ import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { getSshKeysOptions, useDeleteSshKey } from '~/queries/ssh-keys';
 import { queryClient } from '~/utils/query-client';
-import type { SshKey } from '~/models/ssh_key';
+import type { SshKey } from '~/models/ssh-key';
 import { SshKeyList } from '~/components/settings/ssh-key-list';
 import { AddSshKeyDialog } from '~/components/settings/add-ssh-key-dialog';
 
