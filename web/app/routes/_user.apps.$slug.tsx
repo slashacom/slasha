@@ -1,10 +1,10 @@
 import { Suspense, useMemo, useState } from 'react';
-import { NavLink, Outlet, useParams } from 'react-router';
+import { Outlet, useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Check, Copy, Folder, GitBranch } from 'lucide-react';
 import { getAppOptions } from '~/queries/apps';
 import type { App } from '~/models/app';
-import { HStack } from '~/components/interface/stacks';
+import { TabNav } from '~/components/interface/tab-nav';
 import { cn } from '~/utils/classname';
 import { queryClient } from '~/utils/query-client';
 
@@ -116,32 +116,6 @@ function AppToolbar(props: AppToolbarProps) {
   );
 }
 
-type TabLinkProps = {
-  to: string;
-  end?: boolean;
-  children: React.ReactNode;
-};
-
-function TabLink(props: TabLinkProps) {
-  const { to, end, children } = props;
-  return (
-    <NavLink
-      to={to}
-      end={end}
-      className={({ isActive }) =>
-        cn(
-          'flex h-10 items-center text-[13px] font-medium transition-colors border-b-2 -mb-[2px]',
-          isActive
-            ? 'border-white text-text'
-            : 'border-transparent text-text-tertiary hover:text-text-secondary'
-        )
-      }
-    >
-      {children}
-    </NavLink>
-  );
-}
-
 export default function AppLayout() {
   const { slug } = useParams();
   const { data } = useSuspenseQuery(getAppOptions(slug!));
@@ -162,17 +136,16 @@ export default function AppLayout() {
     <div className="flex flex-1 flex-col min-h-0">
       <AppToolbar app={app} />
 
-      <div className="flex shrink-0 border-b border-border bg-surface/30 px-8">
-        <HStack space={6}>
-          <TabLink to={`/apps/${slug}`} end>
-            Files
-          </TabLink>
-          <TabLink to={`/apps/${slug}/deployments`}>Deployments</TabLink>
-          <TabLink to={`/apps/${slug}/services`}>Services</TabLink>
-          <TabLink to={`/apps/${slug}/metrics`}>Metrics</TabLink>
-          <TabLink to={`/apps/${slug}/settings`}>Settings</TabLink>
-        </HStack>
-      </div>
+      <TabNav
+        className="shrink-0 bg-surface/30 px-8"
+        items={[
+          { label: 'Files', to: `/apps/${slug}`, end: true },
+          { label: 'Deployments', to: `/apps/${slug}/deployments` },
+          { label: 'Services', to: `/apps/${slug}/services` },
+          { label: 'Metrics', to: `/apps/${slug}/metrics` },
+          { label: 'Settings', to: `/apps/${slug}/settings` },
+        ]}
+      />
 
       <Suspense fallback={null}>
         <Outlet />
