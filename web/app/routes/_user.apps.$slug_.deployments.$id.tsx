@@ -74,13 +74,19 @@ export default function DeploymentDetailPage() {
     }
   });
 
+  const scalableTypes = Object.keys(processGroups).filter(
+    (type) => type !== 'Release'
+  );
+  const isProvisioning =
+    deployment.status === 'Pending' || deployment.status === 'Building';
+
   return (
     <div className="flex flex-1 flex-col min-h-0 bg-bg">
       {/* Header Toolbar */}
       <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-8 py-3 bg-surface/30">
         <HStack space={3} alignItems="center">
           <button
-            onClick={() => navigate(`/apps/${slug}`)}
+            onClick={() => navigate(`/apps/${slug}/deployments`)}
             className="group flex h-7 w-7 items-center justify-center rounded border border-border bg-surface transition-all hover:bg-surface-hover"
           >
             <ArrowLeft className="size-3.5 text-text-tertiary group-hover:text-text" />
@@ -119,17 +125,16 @@ export default function DeploymentDetailPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-8">
-        <div className="mx-auto max-w-5xl space-y-10">
+        <div className="max-w-5xl space-y-10">
           {/* Scaling Section */}
-          <section>
-            <HStack space={2} alignItems="center" className="mb-5">
-              <Layers className="size-4 text-text-tertiary" />
-              <h3 className="text-sm font-semibold text-text">Scaling</h3>
-            </HStack>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {Object.keys(processGroups)
-                .filter((type) => type !== 'Release')
-                .map((type) => (
+          {scalableTypes.length > 0 && (
+            <section>
+              <HStack space={2} alignItems="center" className="mb-5">
+                <Layers className="size-4 text-text-tertiary" />
+                <h3 className="text-sm font-semibold text-text">Scaling</h3>
+              </HStack>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {scalableTypes.map((type) => (
                   <ScaleCard
                     key={type}
                     appSlug={slug!}
@@ -144,8 +149,9 @@ export default function DeploymentDetailPage() {
                     }
                   />
                 ))}
-            </div>
-          </section>
+              </div>
+            </section>
+          )}
 
           {/* Processes Explorer */}
           <section>
@@ -177,12 +183,22 @@ export default function DeploymentDetailPage() {
                   {processes.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="px-6 py-12 text-center">
-                        <VStack space={2} alignItems="center">
-                          <CircleDashed className="size-5 animate-spin text-text-tertiary" />
+                        {isProvisioning ? (
+                          <VStack space={2} alignItems="center">
+                            <CircleDashed className="size-5 animate-spin text-text-tertiary" />
+                            <p className="text-xs text-text-tertiary">
+                              Initializing processes...
+                            </p>
+                          </VStack>
+                        ) : (
                           <p className="text-xs text-text-tertiary">
-                            Initializing processes...
+                            {deployment.status === 'Failed'
+                              ? 'This deployment failed — no processes are running.'
+                              : deployment.status === 'Stopped'
+                                ? 'This deployment is stopped.'
+                                : 'No processes are running.'}
                           </p>
-                        </VStack>
+                        )}
                       </td>
                     </tr>
                   ) : (
