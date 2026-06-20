@@ -1,8 +1,5 @@
 import type { Service } from '~/models/service';
-import {
-  Dialog,
-  DialogContent,
-} from '~/components/interface/dialog';
+import { Dialog, DialogContent } from '~/components/interface/dialog';
 import { ServiceEnvEditor } from '~/components/apps/service-env-editor';
 
 type ServiceConfigModalProps = {

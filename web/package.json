@@ -7,8 +7,8 @@
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc",
-    "format": "prettier --write .",
-    "lint": "prettier --check ."
+    "format": "biome format --write .",
+    "lint": "biome check ."
   },
   "dependencies": {
     "@ferrucc-io/emoji-picker": "^0.0.48",
@@ -47,12 +47,12 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.0",
     "@react-router/dev": "7.13.2",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^22",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "prettier": "^3.8.1",
     "shiki": "^4.0.2",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
