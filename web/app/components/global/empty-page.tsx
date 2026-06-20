@@ -1,37 +1,61 @@
-import type { ReactNode } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { Button, type ButtonColor } from '~/components/interface/button';
+import { VStack } from '~/components/interface/stacks';
+import { cn } from '~/utils/classname';
 
 type EmptyPageProps = {
-  icon: ReactNode;
-  message: string;
-  buttonIcon: ReactNode;
-  buttonLabel: string;
-  buttonColor?: ButtonColor;
-  onButtonClick?: () => void;
+  icon: LucideIcon;
+  title: string;
+  subtitle?: string;
+  actionLabel?: string;
+  actionIcon?: React.ReactNode;
+  actionColor?: ButtonColor;
+  onAction?: () => void;
+  dashed?: boolean;
+  className?: string;
 };
 
 export function EmptyPage(props: EmptyPageProps) {
   const {
-    icon,
-    message,
-    buttonIcon,
-    buttonLabel,
-    buttonColor = 'neutral',
-    onButtonClick,
+    icon: Icon,
+    title,
+    subtitle,
+    actionLabel,
+    actionIcon,
+    actionColor = 'neutral',
+    onAction,
+    dashed = false,
+    className,
   } = props;
 
   return (
-    <div className="flex flex-col items-center justify-center h-full flex-grow">
-      {icon}
-      <p className="text-sm text-neutral-500 mb-5">{message}</p>
-      {onButtonClick && (
+    <VStack
+      alignItems="center"
+      space={4}
+      className={cn(
+        'justify-center px-6 py-12 text-center',
+        dashed && 'rounded-lg border border-dashed border-border',
+        className
+      )}
+    >
+      <div className="rounded-full border border-border p-4">
+        <Icon className="size-8 text-text-tertiary" />
+      </div>
+      <VStack alignItems="center" space={1}>
+        <p className="text-sm font-medium text-text">{title}</p>
+        {subtitle && (
+          <p className="max-w-[280px] text-xs text-text-tertiary">{subtitle}</p>
+        )}
+      </VStack>
+      {onAction && actionLabel && (
         <Button
-          icon={buttonIcon}
-          color={buttonColor}
-          label={buttonLabel}
-          onClick={onButtonClick}
+          label={actionLabel}
+          icon={actionIcon}
+          color={actionColor}
+          size="sm"
+          onClick={onAction}
         />
       )}
-    </div>
+    </VStack>
   );
 }

@@ -20,11 +20,13 @@ type FlatItem = {
   group: string;
 };
 
+type MentionCommandArg = { id: string; label: string };
+
 function lineToContent(line: string) {
   const content: {
     type: string;
     text?: string;
-    attrs?: { id: string; label: string };
+    attrs?: MentionCommandArg;
   }[] = [];
   let last = 0;
   let m: RegExpExecArray | null;
@@ -56,7 +58,7 @@ type HandlerBox = { current: (event: KeyboardEvent) => boolean };
 
 type SuggestionListProps = {
   items: FlatItem[];
-  command: (props: { id: string; label: string }) => void;
+  command: (props: MentionCommandArg) => void;
   handlerBox: HandlerBox;
 };
 

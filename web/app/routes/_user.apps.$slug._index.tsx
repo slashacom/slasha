@@ -7,6 +7,7 @@ import type { FileTreeNode } from '~/queries/files';
 import { FileTree } from '~/components/apps/file-tree';
 import { CodeViewer } from '~/components/apps/code-viewer';
 import { FolderViewer } from '~/components/apps/folder-viewer';
+import { EmptyPage } from '~/components/global/empty-page';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader(args: { params: { slug: string } }) {
@@ -64,15 +65,12 @@ export default function AppFilesPage() {
 
   if (!hasCommits) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3">
-        <div className="rounded-full border border-border p-3">
-          <GitBranch className="size-5 text-text-tertiary" />
-        </div>
-        <p className="text-sm font-medium text-text">No commits yet</p>
-        <p className="text-xs text-text-tertiary">
-          Push code to this repository to see the file tree.
-        </p>
-      </div>
+      <EmptyPage
+        className="flex-1"
+        icon={GitBranch}
+        title="No commits yet"
+        subtitle="Push code to this repository to see the file tree."
+      />
     );
   }
 

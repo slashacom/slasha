@@ -7,6 +7,7 @@ import {
   useProvisionService,
 } from '~/queries/services';
 import { Button } from '~/components/interface/button';
+import { Select } from '~/components/interface/select';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { toast } from 'sonner';
 import {
@@ -121,36 +122,34 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
               <label className="text-xs font-medium text-text-secondary">
                 Type
               </label>
-              <select
+              <Select
                 value={kindName}
                 onChange={(e) =>
                   handleKindChange(e.target.value as ServiceKind)
                 }
-                className="flex w-full cursor-pointer items-center rounded-lg border border-gray-300 px-3 py-[9px] text-sm focus-within:border-gray-400/90 outline-none bg-transparent"
               >
                 {kinds.map((k) => (
                   <option key={k.name} value={k.name}>
                     {k.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </VStack>
 
             <VStack space={1.5} className="w-1/3">
               <label className="text-xs font-medium text-text-secondary">
                 Version
               </label>
-              <select
+              <Select
                 value={version}
                 onChange={(e) => setVersion(e.target.value)}
-                className="flex w-full cursor-pointer items-center rounded-lg border border-gray-300 px-3 py-[9px] text-sm focus-within:border-gray-400/90 outline-none bg-transparent"
               >
                 {selectedKind?.supported_versions.map((v) => (
                   <option key={v} value={v}>
                     {v}
                   </option>
                 ))}
-              </select>
+              </Select>
             </VStack>
           </HStack>
 

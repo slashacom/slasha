@@ -15,6 +15,23 @@ export type ServiceKindMeta = {
   default_env_vars: Record<string, string>;
 };
 
+type ProvisionServicePayload = {
+  appSlug: string;
+  kind: ServiceKind;
+  name: string;
+  version: string;
+  envVars: Record<string, string>;
+  resources?: ResourcesPayload | null;
+};
+
+type ServiceRef = { appSlug: string; serviceId: string };
+
+type UpdateServiceEnvVarsPayload = {
+  appSlug: string;
+  serviceId: string;
+  vars: Record<string, string>;
+};
+
 export function getServiceKindsOptions() {
   return queryOptions({
     queryKey: ['services', 'kinds'],
@@ -31,14 +48,7 @@ export function getAppServicesOptions(appSlug: string) {
 
 export function useProvisionService() {
   return useMutation({
-    mutationFn: (data: {
-      appSlug: string;
-      kind: ServiceKind;
-      name: string;
-      version: string;
-      envVars: Record<string, string>;
-      resources?: ResourcesPayload | null;
-    }) =>
+    mutationFn: (data: ProvisionServicePayload) =>
       httpPost<{ service: Service }>(`apps/${data.appSlug}/services`, {
         kind: data.kind,
         name: data.name,
@@ -51,7 +61,7 @@ export function useProvisionService() {
 
 export function useRestartService() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; serviceId: string }) =>
+    mutationFn: (data: ServiceRef) =>
       httpPost<{ restarted: boolean }>(
         `apps/${data.appSlug}/services/${data.serviceId}/restart`,
         {}
@@ -61,7 +71,7 @@ export function useRestartService() {
 
 export function useRedeployService() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; serviceId: string }) =>
+    mutationFn: (data: ServiceRef) =>
       httpPost<{ redeploying: boolean }>(
         `apps/${data.appSlug}/services/${data.serviceId}/redeploy`,
         {}
@@ -71,7 +81,7 @@ export function useRedeployService() {
 
 export function useStopService() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; serviceId: string }) =>
+    mutationFn: (data: ServiceRef) =>
       httpPost<{ stopped: boolean }>(
         `apps/${data.appSlug}/services/${data.serviceId}/stop`,
         {}
@@ -81,7 +91,7 @@ export function useStopService() {
 
 export function useDeleteService() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; serviceId: string }) =>
+    mutationFn: (data: ServiceRef) =>
       httpDelete<{ deleted: boolean }>(
         `apps/${data.appSlug}/services/${data.serviceId}`
       ),
@@ -100,11 +110,7 @@ export function getServiceEnvVarsOptions(appSlug: string, serviceId: string) {
 
 export function useUpdateServiceEnvVars() {
   return useMutation({
-    mutationFn: (data: {
-      appSlug: string;
-      serviceId: string;
-      vars: Record<string, string>;
-    }) =>
+    mutationFn: (data: UpdateServiceEnvVarsPayload) =>
       httpPut<{ env_vars: Record<string, string> }>(
         `apps/${data.appSlug}/services/${data.serviceId}/env`,
         { vars: data.vars }

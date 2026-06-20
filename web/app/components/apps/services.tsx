@@ -4,6 +4,7 @@ import { Database, Server, Plus } from 'lucide-react';
 import { getAppServicesOptions } from '~/queries/services';
 import { Button } from '~/components/interface/button';
 import { SectionHeader } from '~/components/interface/section-header';
+import { EmptyPage } from '~/components/global/empty-page';
 import { VStack } from '~/components/interface/stacks';
 import { ServiceRow } from '~/components/apps/service-row';
 import { ProvisionServiceModal } from '~/components/apps/provision-service-modal';
@@ -56,23 +57,14 @@ export function ServicesView(props: ServicesViewProps) {
       />
 
       {services.length === 0 ? (
-        <VStack className="flex-1 items-center justify-center" space={4}>
-          <div className="rounded-full border border-border p-4">
-            <Database className="size-8 text-text-tertiary" />
-          </div>
-          <VStack alignItems="center" space={1}>
-            <p className="text-sm font-medium text-text">No services running</p>
-            <p className="text-xs text-text-tertiary text-center max-w-[280px]">
-              Provision databases and auxiliary services to attach them to your
-              application.
-            </p>
-          </VStack>
-          <Button
-            label="Provision First Service"
-            size="sm"
-            onClick={() => setProvisionModalOpen(true)}
-          />
-        </VStack>
+        <EmptyPage
+          className="flex-1"
+          icon={Database}
+          title="No services running"
+          subtitle="Provision databases and auxiliary services to attach them to your application."
+          actionLabel="Provision First Service"
+          onAction={() => setProvisionModalOpen(true)}
+        />
       ) : (
         <div className="flex-1 overflow-auto">
           <div className="divide-y divide-border">

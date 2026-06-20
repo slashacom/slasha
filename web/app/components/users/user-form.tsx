@@ -1,6 +1,7 @@
 import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
+import { Select } from '~/components/interface/select';
 import type { User } from '~/models/user';
 
 type UserFormProps = {
@@ -70,16 +71,15 @@ export function UserForm(props: UserFormProps) {
           >
             Role
           </Label>
-          <select
+          <Select
             id="role"
             name="role"
             required
             defaultValue={initialData?.role || 'user'}
-            className="flex h-10 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-text-secondary disabled:cursor-not-allowed disabled:opacity-60"
           >
             <option value="user">User</option>
             <option value="admin">Admin</option>
-          </select>
+          </Select>
         </div>
 
         <div className="flex items-center justify-end gap-2 pt-2">

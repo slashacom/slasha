@@ -12,6 +12,17 @@ export type CommitInfo = {
   message: string;
 };
 
+type TriggerDeployPayload = { appSlug: string; commitSha?: string };
+
+type DeploymentRef = { appSlug: string; deploymentId: string };
+
+type ScaleDeploymentPayload = {
+  appSlug: string;
+  deploymentId: string;
+  processType: ProcessType;
+  count: number;
+};
+
 export function getCommitsOptions(appSlug: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'commits'],
@@ -50,7 +61,7 @@ export function getProcessesOptions(appSlug: string, deploymentId: string) {
 
 export function useTriggerDeploy() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; commitSha?: string }) =>
+    mutationFn: (data: TriggerDeployPayload) =>
       httpPost<{ deployment: Deployment }>(`apps/${data.appSlug}/deployments`, {
         commit_sha: data.commitSha,
       }),
@@ -59,7 +70,7 @@ export function useTriggerDeploy() {
 
 export function useStopDeployment() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; deploymentId: string }) =>
+    mutationFn: (data: DeploymentRef) =>
       httpPost<{ stopped: boolean }>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}/stop`,
         {}
@@ -69,7 +80,7 @@ export function useStopDeployment() {
 
 export function useDeleteDeployment() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; deploymentId: string }) =>
+    mutationFn: (data: DeploymentRef) =>
       httpDelete<{ deleted: boolean }>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}`
       ),
@@ -78,7 +89,7 @@ export function useDeleteDeployment() {
 
 export function useRestartDeployment() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; deploymentId: string }) =>
+    mutationFn: (data: DeploymentRef) =>
       httpPost<{ restarted: boolean }>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}/restart`,
         {}
@@ -88,7 +99,7 @@ export function useRestartDeployment() {
 
 export function useRedeployDeployment() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; deploymentId: string }) =>
+    mutationFn: (data: DeploymentRef) =>
       httpPost<{ deployment: Deployment }>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}/redeploy`,
         {}
@@ -98,12 +109,7 @@ export function useRedeployDeployment() {
 export function useScaleDeployment() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: {
-      appSlug: string;
-      deploymentId: string;
-      processType: ProcessType;
-      count: number;
-    }) =>
+    mutationFn: (data: ScaleDeploymentPayload) =>
       httpPost<{ scaled: boolean }>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}/scale`,
         {

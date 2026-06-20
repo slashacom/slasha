@@ -6,6 +6,8 @@ import {
 import { httpGet, httpPost, httpDelete } from '~/utils/http';
 import type { SshKey } from '~/models/ssh-key';
 
+type CreateSshKeyPayload = { title?: string; public_key: string };
+
 export function getSshKeysOptions() {
   return queryOptions({
     queryKey: ['ssh-keys'],
@@ -16,7 +18,7 @@ export function getSshKeysOptions() {
 export function useCreateSshKey() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { title?: string; public_key: string }) =>
+    mutationFn: (payload: CreateSshKeyPayload) =>
       httpPost<SshKey>('ssh-keys', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ssh-keys'] });

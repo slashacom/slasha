@@ -9,8 +9,9 @@ import {
   useDeleteAppDomain,
 } from '~/queries/apps';
 import { Button } from '~/components/interface/button';
+import { EmptyPage } from '~/components/global/empty-page';
+import { Input } from '~/components/interface/input';
 import { HStack, VStack } from '~/components/interface/stacks';
-import { cn } from '~/utils/classname';
 
 type DomainManagerProps = {
   appSlug: string;
@@ -85,13 +86,12 @@ export function DomainManager(props: DomainManagerProps) {
           <form onSubmit={handleAdd} className="mb-6">
             <HStack space={2}>
               <div className="relative flex-1">
-                <Globe className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-text-tertiary" />
-                <input
-                  type="text"
+                <Globe className="absolute left-3 top-1/2 z-10 size-3.5 -translate-y-1/2 text-text-tertiary" />
+                <Input
                   placeholder="example.com"
                   value={newDomain}
                   onChange={(e) => setNewDomain(e.target.value)}
-                  className="h-9 w-full rounded-md border border-border bg-surface px-9 text-[13px] text-text outline-none focus:border-white/20"
+                  className="pl-9 text-[13px]"
                 />
               </div>
               <Button
@@ -109,11 +109,11 @@ export function DomainManager(props: DomainManagerProps) {
           </form>
 
           {domains.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-8">
-              <p className="text-[13px] text-text-tertiary">
-                No custom domains added yet.
-              </p>
-            </div>
+            <EmptyPage
+              dashed
+              icon={Globe}
+              title="No custom domains added yet."
+            />
           ) : (
             <div className="divide-y divide-border rounded-lg border border-border bg-surface/20">
               {domains.map((domain) => (

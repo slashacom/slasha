@@ -6,6 +6,17 @@ import type { AppDomain } from '~/models/app';
 
 import type { AppMetrics } from '~/models/app-metrics';
 
+type CreateAppPayload = { name: string };
+
+type UpdateAppEnvVarsPayload = {
+  appSlug: string;
+  vars: Record<string, string>;
+};
+
+type AddAppDomainPayload = { appSlug: string; domain: string };
+
+type DeleteAppDomainPayload = { appSlug: string; domainId: string };
+
 export function getAppsOptions() {
   return queryOptions({
     queryKey: ['apps'],
@@ -22,7 +33,7 @@ export function getAppOptions(slug: string) {
 
 export function useCreateApp() {
   return useMutation({
-    mutationFn: (data: { name: string }) =>
+    mutationFn: (data: CreateAppPayload) =>
       httpPost<{ app: App }>('apps', data),
   });
 }
@@ -58,7 +69,7 @@ export function getAppEnvSuggestionsOptions(appSlug: string) {
 
 export function useUpdateAppEnvVars() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; vars: Record<string, string> }) =>
+    mutationFn: (data: UpdateAppEnvVarsPayload) =>
       httpPut<{ env_vars: Record<string, string> }>(
         `apps/${data.appSlug}/env`,
         {
@@ -84,7 +95,7 @@ export function getAppDomainsOptions(appSlug: string) {
 
 export function useAddAppDomain() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; domain: string }) =>
+    mutationFn: (data: AddAppDomainPayload) =>
       httpPost<{ domain: AppDomain }>(`apps/${data.appSlug}/domains`, {
         domain: data.domain,
       }),
@@ -93,7 +104,7 @@ export function useAddAppDomain() {
 
 export function useDeleteAppDomain() {
   return useMutation({
-    mutationFn: (data: { appSlug: string; domainId: string }) =>
+    mutationFn: (data: DeleteAppDomainPayload) =>
       httpDelete(`apps/${data.appSlug}/domains/${data.domainId}`),
   });
 }

@@ -22,10 +22,8 @@ import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
 import { formatRelativeTime } from '~/utils/format';
 import { toast } from 'sonner';
-import {
-  ConnectModal,
-  ServiceConfigModal,
-} from '~/components/apps/service-modals';
+import { ConnectModal } from '~/components/apps/connect-modal';
+import { ServiceConfigModal } from '~/components/apps/service-config-modal';
 
 type ServiceRowProps = {
   service: Service;

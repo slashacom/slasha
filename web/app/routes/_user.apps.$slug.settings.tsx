@@ -8,7 +8,7 @@ import {
   getAppOptions,
   useDeleteApp,
 } from '~/queries/apps';
-import { AppEnvEditor } from '~/components/apps/env-editor';
+import { AppEnvEditor } from '~/components/apps/app-env-editor';
 import { DomainManager } from '~/components/apps/domain-manager';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { queryClient } from '~/utils/query-client';

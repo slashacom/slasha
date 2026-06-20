@@ -7,7 +7,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '~/utils/query-client';
 
 import { ErrorView } from '~/components/global/error-view';
-import { FullPageSpinner } from '~/components/icons/spinner';
+import { FullPageSpinner } from '~/components/icons/full-page-spinner';
 import { NavigationProgress } from '~/components/interface/navigation-progress';
 
 import './styles/global.css';

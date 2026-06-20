@@ -1,7 +1,8 @@
 import { KeyIcon } from 'lucide-react';
 import type { SshKey } from '~/models/ssh-key';
 import { SshKeyRow } from './ssh-key-row';
-import { Button } from '../interface/button';
+import { EmptyPage } from '~/components/global/empty-page';
+import { Table } from '~/components/interface/table';
 
 type SshKeyListProps = {
   keys: SshKey[];
@@ -24,35 +25,27 @@ export function SshKeyList(props: SshKeyListProps) {
           ))}
         </div>
       ) : keys.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-20">
-          <KeyIcon className="size-10 text-text-tertiary/20" />
-          <h4 className="mt-4 font-medium text-text">No SSH keys found</h4>
-          <p className="mt-1 text-sm text-text-secondary">
-            Add a public key to access your applications via Git over SSH.
-          </p>
-          <Button
-            variant="link"
-            label="Add your first key"
-            className="mt-4"
-            onClick={onAddFirst}
-          />
-        </div>
+        <EmptyPage
+          dashed
+          icon={KeyIcon}
+          title="No SSH keys found"
+          subtitle="Add a public key to access your applications via Git over SSH."
+          actionLabel="Add your first key"
+          onAction={onAddFirst}
+        />
       ) : (
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-border text-xs font-medium text-text-tertiary">
-              <th className="pb-3 pr-4 uppercase tracking-wider">Title</th>
-              <th className="pb-3 pr-4 uppercase tracking-wider">Public Key</th>
-              <th className="pb-3 pr-4 uppercase tracking-wider">Created</th>
-              <th className="pb-3 text-right"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {keys.map((key) => (
-              <SshKeyRow key={key.id} sshKey={key} onDelete={onDelete} />
-            ))}
-          </tbody>
-        </table>
+        <Table
+          columns={[
+            'Title',
+            'Public Key',
+            'Created',
+            { label: '', align: 'right' },
+          ]}
+        >
+          {keys.map((key) => (
+            <SshKeyRow key={key.id} sshKey={key} onDelete={onDelete} />
+          ))}
+        </Table>
       )}
     </div>
   );

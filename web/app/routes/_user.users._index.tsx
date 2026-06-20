@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { PlusIcon } from 'lucide-react';
+import { PlusIcon, Users } from 'lucide-react';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
+import { EmptyPage } from '~/components/global/empty-page';
+import { Table } from '~/components/interface/table';
 import { queryClient } from '~/utils/query-client';
 import { getUsersOptions, useDeleteUser } from '~/queries/users';
 import type { User } from '~/models/user';
@@ -58,53 +60,47 @@ export default function UsersPage() {
 
       <div className="mt-6 overflow-x-auto">
         {usersData.users.length === 0 ? (
-          <p className="text-sm text-text-secondary">No users yet.</p>
+          <EmptyPage icon={Users} title="No users yet." />
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs text-text-tertiary">
-                <th className="pb-2 pr-4 font-medium">Email</th>
-                <th className="pb-2 pr-4 font-medium">Role</th>
-                <th className="pb-2 pr-4 font-medium">Created</th>
-                <th className="pb-2 font-medium"></th>
+          <Table
+            columns={[
+              'Email',
+              'Role',
+              'Created',
+              { label: '', align: 'right' },
+            ]}
+          >
+            {usersData.users.map((user: User) => (
+              <tr key={user.id}>
+                <td className="py-3 pr-4 font-medium text-text">
+                  {user.email}
+                </td>
+                <td className="py-3 pr-4 text-text-secondary capitalize">
+                  {user.role}
+                </td>
+                <td className="py-3 pr-4 text-text-secondary">
+                  {new Date(user.created_at).toLocaleDateString()}
+                </td>
+                <td className="py-3 text-right">
+                  <div className="flex items-center justify-end gap-3">
+                    <Link
+                      to={`/users/${user.id}/edit`}
+                      className="text-xs !text-text-secondary !no-underline hover:!text-text"
+                    >
+                      Edit
+                    </Link>
+                    <button
+                      onClick={() => setPendingDelete(user)}
+                      disabled={deleteUser.isPending}
+                      className="text-xs text-red-500 hover:underline disabled:opacity-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {usersData.users.map((user: User) => (
-                <tr
-                  key={user.id}
-                  className="border-b border-border last:border-0"
-                >
-                  <td className="py-3 pr-4 font-medium text-text">
-                    {user.email}
-                  </td>
-                  <td className="py-3 pr-4 text-text-secondary capitalize">
-                    {user.role}
-                  </td>
-                  <td className="py-3 pr-4 text-text-secondary">
-                    {new Date(user.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="py-3 text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <Link
-                        to={`/users/${user.id}/edit`}
-                        className="text-xs !text-text-secondary !no-underline hover:!text-text"
-                      >
-                        Edit
-                      </Link>
-                      <button
-                        onClick={() => setPendingDelete(user)}
-                        disabled={deleteUser.isPending}
-                        className="text-xs text-red-500 hover:underline disabled:opacity-50"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            ))}
+          </Table>
         )}
       </div>
 

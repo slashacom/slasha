@@ -11,7 +11,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from '~/components/interface/dialog';
-import { ServiceEnvEditor } from '~/components/apps/env-editor';
 
 type ConnectModalProps = {
   appSlug: string;
@@ -74,27 +73,3 @@ export function ConnectModal(props: ConnectModalProps) {
     </Dialog>
   );
 }
-
-type ServiceConfigModalProps = {
-  appSlug: string;
-  service: Service;
-  onClose: () => void;
-};
-
-export function ServiceConfigModal(props: ServiceConfigModalProps) {
-  const { appSlug, service, onClose } = props;
-  return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl border-none bg-transparent p-0 shadow-none">
-        <ServiceEnvEditor
-          appSlug={appSlug}
-          serviceId={service.id}
-          serviceName={service.name}
-          readOnly={true}
-          onCancel={onClose}
-        />
-      </DialogContent>
-    </Dialog>
-  );
-}
-
