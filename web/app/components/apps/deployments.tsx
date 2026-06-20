@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Play, History, RotateCcw } from 'lucide-react';
 import { getDeploymentsOptions, useTriggerDeploy } from '~/queries/deployments';
@@ -15,20 +16,34 @@ type DeploymentsViewProps = {
 
 export function DeploymentsView(props: DeploymentsViewProps) {
   const { appSlug } = props;
-  const { data, isLoading } = useQuery(getDeploymentsOptions(appSlug));
+  const navigate = useNavigate();
+  const { data, isLoading } = useQuery({
+    ...getDeploymentsOptions(appSlug),
+    refetchInterval: (query) => {
+      const deps = query.state.data?.deployments ?? [];
+      const active = deps.some(
+        (d) => d.status === 'Building' || d.status === 'Pending'
+      );
+      return active ? 2000 : false;
+    },
+  });
   const triggerDeploy = useTriggerDeploy();
   const queryClient = useQueryClient();
   const [showCommitSelector, setShowCommitSelector] = useState(false);
 
   const deployments = data?.deployments ?? [];
+  const cloneUrl =
+    typeof window === 'undefined'
+      ? `/git/${appSlug}`
+      : `${window.location.origin}/git/${appSlug}`;
 
   const handleDeploy = async () => {
     try {
-      await triggerDeploy.mutateAsync({ appSlug });
+      const result = await triggerDeploy.mutateAsync({ appSlug });
       queryClient.invalidateQueries({
         queryKey: ['apps', appSlug, 'deployments'],
       });
-      toast.success('Deployment triggered');
+      navigate(`/apps/${appSlug}/deployments/${result.deployment.id}`);
     } catch (e) {
       toast.error('Failed to trigger deploy: ' + e);
     }
@@ -75,19 +90,27 @@ export function DeploymentsView(props: DeploymentsViewProps) {
       />
 
       {deployments.length === 0 ? (
-        <VStack className="flex-1 items-center justify-center" space={4}>
+        <VStack className="flex-1 items-center justify-center" space={5}>
           <div className="rounded-full border border-border p-4">
             <RotateCcw className="size-8 text-text-tertiary" />
           </div>
           <VStack alignItems="center" space={1}>
             <p className="text-sm font-medium text-text">No deployments yet</p>
-            <p className="text-xs text-text-tertiary text-center max-w-[280px]">
-              Deployments will appear here once you trigger a build or push
-              code.
+            <p className="max-w-[340px] text-center text-xs text-text-tertiary">
+              Add the remote and push — slasha deploys every push to your
+              default branch automatically. Or trigger one now.
             </p>
           </VStack>
+          <pre className="w-full max-w-md overflow-x-auto rounded-lg border border-border bg-black/40 p-4 text-left font-mono text-[12px] leading-relaxed text-text-secondary">
+            <span className="select-none text-text-tertiary">$ </span>git remote
+            add slasha {cloneUrl}
+            {'\n'}
+            <span className="select-none text-text-tertiary">$ </span>git push
+            slasha main
+          </pre>
           <Button
-            label="Trigger First Deployment"
+            label="Deploy now"
+            icon={<Play className="size-3.5" />}
             size="sm"
             onClick={handleDeploy}
             isLoading={triggerDeploy.isPending}
@@ -101,6 +124,7 @@ export function DeploymentsView(props: DeploymentsViewProps) {
                 key={deployment.id}
                 deployment={deployment}
                 appSlug={appSlug}
+                isCurrent={deployment.status === 'Running'}
               />
             ))}
           </div>
@@ -113,12 +137,15 @@ export function DeploymentsView(props: DeploymentsViewProps) {
         appSlug={appSlug}
         onSelect={async (sha) => {
           try {
-            await triggerDeploy.mutateAsync({ appSlug, commitSha: sha });
+            const result = await triggerDeploy.mutateAsync({
+              appSlug,
+              commitSha: sha,
+            });
             queryClient.invalidateQueries({
               queryKey: ['apps', appSlug, 'deployments'],
             });
             setShowCommitSelector(false);
-            toast.success('Deployment triggered for ' + sha.slice(0, 7));
+            navigate(`/apps/${appSlug}/deployments/${result.deployment.id}`);
           } catch (e) {
             toast.error('Failed to trigger deploy: ' + e);
           }

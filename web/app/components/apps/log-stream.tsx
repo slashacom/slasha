@@ -22,9 +22,10 @@ export function LogStream(props: LogStreamProps) {
 
     es.onmessage = (event) => {
       const data = event.data;
+      // '[done]' marks the end of the historical replay; live lines keep
+      // streaming after it, so we keep the connection open.
       if (data === '[done]') {
         setDone(true);
-        es.close();
         return;
       }
       if (data) {

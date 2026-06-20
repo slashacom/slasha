@@ -25,10 +25,11 @@ import { toast } from 'sonner';
 type DeploymentRowProps = {
   deployment: Deployment;
   appSlug: string;
+  isCurrent?: boolean;
 };
 
 export function DeploymentRow(props: DeploymentRowProps) {
-  const { deployment, appSlug } = props;
+  const { deployment, appSlug, isCurrent = false } = props;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const stopDeployment = useStopDeployment();
@@ -36,6 +37,7 @@ export function DeploymentRow(props: DeploymentRowProps) {
   const restartDeployment = useRestartDeployment();
   const redeployDeployment = useRedeployDeployment();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
 
   const invalidate = () => {
     queryClient.invalidateQueries({
@@ -50,6 +52,7 @@ export function DeploymentRow(props: DeploymentRowProps) {
         deploymentId: deployment.id,
       });
       invalidate();
+      setShowStopConfirm(false);
     } catch {}
   };
 
@@ -100,7 +103,7 @@ export function DeploymentRow(props: DeploymentRowProps) {
     deployment.status === 'Running' ||
     deployment.status === 'Stopped' ||
     deployment.status === 'Failed';
-  const canDelete = deployment.status !== 'Building';
+  const canDelete = deployment.status !== 'Building' && !isCurrent;
 
   return (
     <>
@@ -116,6 +119,11 @@ export function DeploymentRow(props: DeploymentRowProps) {
               {deployment.commit_sha.slice(0, 7)}
             </span>
             <StatusBadge status={deployment.status} />
+            {isCurrent ? (
+              <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-400">
+                Current
+              </span>
+            ) : null}
             <span className="text-[11px] text-text-tertiary">
               {formatRelativeTime(deployment.created_at)}
             </span>
@@ -138,7 +146,7 @@ export function DeploymentRow(props: DeploymentRowProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {canStop ? (
-                <DropdownMenuItem onClick={handleStop}>
+                <DropdownMenuItem onClick={() => setShowStopConfirm(true)}>
                   <Square className="size-3.5" />
                   Stop
                 </DropdownMenuItem>
@@ -179,6 +187,15 @@ export function DeploymentRow(props: DeploymentRowProps) {
         description="Are you sure you want to delete this deployment? This will also remove the associated Docker container and its logs permanently."
         confirmLabel="Delete"
         onConfirm={handleDelete}
+      />
+
+      <ConfirmationDialog
+        open={showStopConfirm}
+        onOpenChange={setShowStopConfirm}
+        title="Stop Deployment"
+        description="This stops the running containers and takes the app offline until you restart or redeploy it."
+        confirmLabel="Stop"
+        onConfirm={handleStop}
       />
     </>
   );

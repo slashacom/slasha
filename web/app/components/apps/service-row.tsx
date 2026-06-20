@@ -46,6 +46,7 @@ export function ServiceRow(props: ServiceRowProps) {
   const restartService = useRestartService();
   const redeployService = useRedeployService();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
 
@@ -57,6 +58,7 @@ export function ServiceRow(props: ServiceRowProps) {
     try {
       await stopService.mutateAsync({ appSlug, serviceId: service.id });
       invalidate();
+      setShowStopConfirm(false);
     } catch (err) {
       toast.error('Failed to stop service: ' + err);
     }
@@ -160,7 +162,7 @@ export function ServiceRow(props: ServiceRowProps) {
               </DropdownMenuItem>
             ) : null}
             {isRunning ? (
-              <DropdownMenuItem onClick={handleStop}>
+              <DropdownMenuItem onClick={() => setShowStopConfirm(true)}>
                 <Square className="size-3.5" />
                 Stop
               </DropdownMenuItem>
@@ -185,6 +187,15 @@ export function ServiceRow(props: ServiceRowProps) {
         description={`Are you sure you want to delete ${service.name}? All underlying data will be permanently destroyed.`}
         confirmLabel="Delete Service"
         onConfirm={handleDelete}
+      />
+
+      <ConfirmationDialog
+        open={showStopConfirm}
+        onOpenChange={setShowStopConfirm}
+        title="Stop Service"
+        description={`Stop ${service.name}? Apps using it will lose their connection until it is restarted.`}
+        confirmLabel="Stop"
+        onConfirm={handleStop}
       />
 
       {showConfig && (

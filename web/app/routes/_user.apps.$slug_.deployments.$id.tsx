@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { useSuspenseQuery } from '@tanstack/react-query';
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { ArrowLeft, Check, ChevronRight, Copy, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 import { getDeploymentOptions } from '~/queries/deployments';
@@ -91,12 +91,19 @@ export default function DeploymentDetailPage() {
   const navigate = useNavigate();
 
   const { data: appData } = useSuspenseQuery(getAppOptions(slug!));
-  const { data: deploymentData } = useSuspenseQuery(
-    getDeploymentOptions(slug!, id!)
-  );
+  const { data: deploymentData } = useQuery({
+    ...getDeploymentOptions(slug!, id!),
+    refetchInterval: (query) => {
+      const status = query.state.data?.deployment.status;
+      return status === 'Pending' || status === 'Building' ? 2000 : false;
+    },
+  });
 
   const app = appData.app;
-  const deployment = deploymentData.deployment;
+  const deployment = deploymentData?.deployment;
+  if (!deployment) {
+    return null;
+  }
   const isTerminal =
     deployment.status === 'Running' ||
     deployment.status === 'Failed' ||
