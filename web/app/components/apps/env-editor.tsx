@@ -140,9 +140,7 @@ export function EnvEditor(props: EnvEditorProps) {
         onChange={handleTextChange}
         groups={groups}
         readOnly={readOnly}
-        placeholder={
-          'DATABASE_URL=postgres://...\nAPI_KEY=sk-...\n# Reference others with ${{ OTHER_VAR }}'
-        }
+        placeholder="DATABASE_URL=postgres://…   ( reference others with ${{ OTHER_VAR }} )"
       />
     </div>
   );

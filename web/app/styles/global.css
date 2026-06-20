@@ -113,13 +113,16 @@ a:not(nav a) {
   background: hsl(0 0% 100% / 20%);
 }
 
-.env-value-editor,
-.env-value-editor p {
+.env-dotenv-editor [data-mention] {
+  display: inline-block;
   white-space: nowrap;
+  vertical-align: middle;
 }
 
-.env-value-editor [data-mention] {
-  display: inline-block;
-  white-space: nowrap !important;
-  vertical-align: middle;
+.env-dotenv-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: hsl(0 0% 100% / 25%);
+  float: left;
+  height: 0;
+  pointer-events: none;
 }

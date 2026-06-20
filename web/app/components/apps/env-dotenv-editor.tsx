@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
 import Document from '@tiptap/extension-document';
 import Paragraph from '@tiptap/extension-paragraph';
@@ -168,6 +168,8 @@ export type DotenvEditorProps = {
 
 export function DotenvEditor(props: DotenvEditorProps) {
   const { value, onChange, groups, placeholder, readOnly = false } = props;
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
   const editor = useEditor(
     {
       extensions: [
@@ -232,7 +234,7 @@ export function DotenvEditor(props: DotenvEditorProps) {
             items: ({ query }) => {
               const q = query.toLowerCase();
               const out: FlatItem[] = [];
-              for (const group of groups) {
+              for (const group of groupsRef.current) {
                 for (const id of group.items) {
                   if (id.toLowerCase().includes(q)) {
                     out.push({ id, group: group.label });
