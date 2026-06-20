@@ -1,11 +1,16 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { FileWarning, Download, Copy, Check } from 'lucide-react';
 import { codeToHtml } from 'shiki';
 import { getFileContentOptions } from '~/queries/files';
 import { VStack, HStack } from '~/components/interface/stacks';
 import { Skeleton } from '~/components/interface/skeleton';
 import { Button } from '~/components/interface/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '~/components/interface/tooltip';
 import { inferLang, formatFileSize } from '~/utils/format';
 import { PathBreadcrumb } from './path-breadcrumb';
 
@@ -17,9 +22,10 @@ type CodeViewerProps = {
 
 export function CodeViewer(props: CodeViewerProps) {
   const { slug, filePath, onNavigate } = props;
-  const { data, isLoading, error } = useQuery(
-    getFileContentOptions(slug, filePath)
-  );
+  const { data, isLoading, error } = useQuery({
+    ...getFileContentOptions(slug, filePath),
+    placeholderData: keepPreviousData,
+  });
   const [highlightedHtml, setHighlightedHtml] = useState('');
   const [isHighlighting, setIsHighlighting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -137,28 +143,38 @@ export function CodeViewer(props: CodeViewerProps) {
           </span>
 
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              color="neutral"
-              size="sm"
-              icon={
-                copied ? (
-                  <Check className="size-4 text-emerald-400" />
-                ) : (
-                  <Copy className="size-4" />
-                )
-              }
-              onClick={handleCopy}
-              isDisabled={!data.content}
-            />
-            <Button
-              variant="ghost"
-              color="neutral"
-              size="sm"
-              icon={<Download className="size-4" />}
-              onClick={handleDownload}
-              isDisabled={!data.content}
-            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  color="neutral"
+                  size="sm"
+                  icon={
+                    copied ? (
+                      <Check className="size-4 text-emerald-400" />
+                    ) : (
+                      <Copy className="size-4" />
+                    )
+                  }
+                  onClick={handleCopy}
+                  isDisabled={!data.content}
+                />
+              </TooltipTrigger>
+              <TooltipContent>Copy file</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  color="neutral"
+                  size="sm"
+                  icon={<Download className="size-4" />}
+                  onClick={handleDownload}
+                  isDisabled={!data.content}
+                />
+              </TooltipTrigger>
+              <TooltipContent>Download</TooltipContent>
+            </Tooltip>
           </div>
         </HStack>
       </div>
@@ -169,15 +185,19 @@ export function CodeViewer(props: CodeViewerProps) {
             <FileWarning className="size-6" />
             <p className="text-xs">Binary file — cannot be displayed</p>
           </div>
-        ) : isHighlighting || !highlightedHtml ? (
-          <pre className="p-4 text-[13px] leading-relaxed text-text-secondary">
-            <code>{data.content}</code>
-          </pre>
-        ) : (
+        ) : highlightedHtml ? (
           <div
             className="shiki-wrapper overflow-auto text-[13px] leading-[1.55]"
             dangerouslySetInnerHTML={{ __html: highlightedHtml }}
           />
+        ) : isHighlighting ? (
+          <div className="p-4">
+            <Skeleton className="h-64 w-full bg-white/5" />
+          </div>
+        ) : (
+          <pre className="p-4 text-[13px] leading-relaxed text-text-secondary">
+            <code>{data.content}</code>
+          </pre>
         )}
       </div>
     </div>
