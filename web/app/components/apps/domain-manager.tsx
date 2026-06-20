@@ -125,11 +125,12 @@ export function DomainManager(props: DomainManagerProps) {
                         {domain.domain}
                       </span>
                       <a
-                        href={`http://${domain.domain}`}
+                        href={`https://${domain.domain}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-text-tertiary transition-colors hover:text-text"
+                        className="inline-flex items-center gap-1 text-[11px] text-text-tertiary transition-colors hover:text-text"
                       >
+                        Open
                         <ExternalLink className="size-3" />
                       </a>
                     </HStack>

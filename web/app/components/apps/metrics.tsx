@@ -296,7 +296,7 @@ export function AppMetricsView(props: AppMetricsViewProps) {
                         itemStyle={{ fontSize: '12px' }}
                         labelFormatter={formatTime}
                         formatter={(value: any) => [
-                          `${parseFloat(value).toFixed(3)}%`,
+                          `${parseFloat(value).toFixed(2)}%`,
                           'CPU Usage',
                         ]}
                       />
