@@ -128,21 +128,13 @@ export function EnvEditor(props: EnvEditorProps) {
       <span className="animate-pulse">Loading environment variables...</span>
     </div>
   ) : (
-    <div
-      className={cn(
-        'px-3 py-2',
-        !isEmbedded &&
-          'rounded-lg border border-border bg-bg/40 focus-within:border-text-tertiary/30'
-      )}
-    >
-      <DotenvEditor
-        value={text}
-        onChange={handleTextChange}
-        groups={groups}
-        readOnly={readOnly}
-        placeholder="DATABASE_URL=postgres://…   ( reference others with ${{ OTHER_VAR }} )"
-      />
-    </div>
+    <DotenvEditor
+      value={text}
+      onChange={handleTextChange}
+      groups={groups}
+      readOnly={readOnly}
+      placeholder="DATABASE_URL=postgres://…   ( reference others with ${{ OTHER_VAR }} )"
+    />
   );
 
   return (
