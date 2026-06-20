@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { ArrowLeft, ChevronRight, GitCommit, Terminal } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Copy, Terminal } from 'lucide-react';
+import { toast } from 'sonner';
 import { getDeploymentOptions } from '~/queries/deployments';
 import { getAppOptions } from '~/queries/apps';
 import { HStack, VStack } from '~/components/interface/stacks';
@@ -8,6 +10,40 @@ import { StatusBadge } from '~/components/interface/status-badge';
 import { LogStream } from '~/components/apps/log-stream';
 import { formatRelativeTime, parseUTC } from '~/utils/format';
 import { queryClient } from '~/utils/query-client';
+
+type CommitButtonProps = {
+  sha: string;
+};
+
+function CommitButton(props: CommitButtonProps) {
+  const { sha } = props;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(sha);
+      setCopied(true);
+      toast.success('Commit SHA copied');
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={`${sha} — click to copy`}
+      className="group inline-flex items-center gap-1.5 rounded font-mono text-[12px] text-text-tertiary transition-colors hover:text-text"
+    >
+      {sha.slice(0, 7)}
+      {copied ? (
+        <Check className="size-3 text-emerald-400" />
+      ) : (
+        <Copy className="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
+      )}
+    </button>
+  );
+}
 
 export async function clientLoader(args: {
   params: { slug: string; id: string };
@@ -85,9 +121,7 @@ export default function DeploymentDetailPage() {
               {app.name}
             </span>
             <ChevronRight className="size-3 text-text-quaternary" />
-            <span className="font-mono text-[12px] text-text-tertiary">
-              {deployment.commit_sha.slice(0, 7)}
-            </span>
+            <CommitButton sha={deployment.commit_sha} />
           </HStack>
         </HStack>
 
@@ -102,12 +136,7 @@ export default function DeploymentDetailPage() {
       <div className="flex min-h-0 flex-1 flex-col gap-6 p-8">
         <div className="grid grid-cols-2 gap-6 rounded-lg border border-border bg-surface/30 p-6 sm:grid-cols-4">
           <MetaItem label="Commit">
-            <HStack space={1.5} alignItems="center">
-              <GitCommit className="size-3.5 text-text-tertiary" />
-              <span className="font-mono">
-                {deployment.commit_sha.slice(0, 7)}
-              </span>
-            </HStack>
+            <CommitButton sha={deployment.commit_sha} />
           </MetaItem>
           <MetaItem label="Status">
             <StatusBadge status={deployment.status} />

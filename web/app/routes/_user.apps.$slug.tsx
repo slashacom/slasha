@@ -1,16 +1,22 @@
 import { Suspense, useMemo, useState } from 'react';
 import { Outlet, useParams } from 'react-router';
-import { useSuspenseQuery } from '@tanstack/react-query';
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { Check, Copy, Folder, GitBranch } from 'lucide-react';
 import { getAppOptions } from '~/queries/apps';
+import { getDeploymentsOptions } from '~/queries/deployments';
 import type { App } from '~/models/app';
 import { TabNav } from '~/components/interface/tab-nav';
+import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
+import { deriveAppStatus, type AppRuntimeStatus } from '~/utils/app-status';
 import { cn } from '~/utils/classname';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
-  await queryClient.ensureQueryData(getAppOptions(params.slug));
+  await Promise.all([
+    queryClient.ensureQueryData(getAppOptions(params.slug)),
+    queryClient.ensureQueryData(getDeploymentsOptions(params.slug)),
+  ]);
 }
 
 export function meta() {
@@ -21,10 +27,11 @@ type Protocol = 'https' | 'ssh';
 
 type AppToolbarProps = {
   app: App;
+  status: AppRuntimeStatus;
 };
 
 function AppToolbar(props: AppToolbarProps) {
-  const { app } = props;
+  const { app, status } = props;
   const [protocol, setProtocol] = useState<Protocol>('https');
   const [copied, setCopied] = useState(false);
 
@@ -67,6 +74,7 @@ function AppToolbar(props: AppToolbarProps) {
           <GitBranch className="size-3" />
           {app.default_branch}
         </span>
+        <AppRuntimeBadge status={status} />
       </div>
 
       <div className="flex items-center rounded border border-border bg-surface">
@@ -119,7 +127,12 @@ function AppToolbar(props: AppToolbarProps) {
 export default function AppLayout() {
   const { slug } = useParams();
   const { data } = useSuspenseQuery(getAppOptions(slug!));
+  const { data: deploymentsData } = useQuery({
+    ...getDeploymentsOptions(slug!),
+    refetchInterval: 10000,
+  });
   const app = data.app;
+  const status = deriveAppStatus(deploymentsData?.deployments ?? []);
 
   if (!app) {
     return (
@@ -134,7 +147,7 @@ export default function AppLayout() {
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
-      <AppToolbar app={app} />
+      <AppToolbar app={app} status={status} />
 
       <TabNav
         className="shrink-0 bg-surface/30 px-8"

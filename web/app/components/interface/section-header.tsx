@@ -16,7 +16,10 @@ export function SectionHeader(props: SectionHeaderProps) {
     <HStack
       justifyContent="between"
       alignItems="center"
-      className={cn('gap-4 border-b border-border px-8 py-4', className)}
+      className={cn(
+        'h-16 shrink-0 gap-4 border-b border-border px-8',
+        className
+      )}
     >
       <HStack space={2} alignItems={description ? 'start' : 'center'}>
         {Icon ? (
