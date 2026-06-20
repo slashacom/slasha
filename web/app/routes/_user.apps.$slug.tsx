@@ -141,6 +141,7 @@ export default function AppLayout() {
         items={[
           { label: 'Files', to: `/apps/${slug}`, end: true },
           { label: 'Deployments', to: `/apps/${slug}/deployments` },
+          { label: 'Scaling', to: `/apps/${slug}/scaling` },
           { label: 'Services', to: `/apps/${slug}/services` },
           { label: 'Metrics', to: `/apps/${slug}/metrics` },
           { label: 'Settings', to: `/apps/${slug}/settings` },
