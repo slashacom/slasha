@@ -239,13 +239,15 @@ export default function DeploymentDetailPage() {
   );
 }
 
-function ScaleCard(props: {
+type ScaleCardProps = {
   appSlug: string;
   deploymentId: string;
   processType: string;
   desiredCount: number;
   runningCount: number;
-}) {
+};
+
+function ScaleCard(props: ScaleCardProps) {
   const { appSlug, deploymentId, processType, desiredCount, runningCount } =
     props;
   const [countStr, setCountStr] = useState(desiredCount.toString());

@@ -25,7 +25,11 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
-export function Layout(props: { children: React.ReactNode }) {
+type LayoutProps = {
+  children: React.ReactNode;
+};
+
+export function Layout(props: LayoutProps) {
   const { children } = props;
   return (
     <html lang="en">

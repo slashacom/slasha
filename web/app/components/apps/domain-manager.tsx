@@ -12,7 +12,11 @@ import { Button } from '~/components/interface/button';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
 
-export function DomainManager(props: { appSlug: string }) {
+type DomainManagerProps = {
+  appSlug: string;
+};
+
+export function DomainManager(props: DomainManagerProps) {
   const { appSlug } = props;
   const queryClient = useQueryClient();
   const { data: domainsData, isLoading: domainsLoading } = useQuery(

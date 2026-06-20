@@ -31,7 +31,11 @@ import {
   ServiceConfigModal,
 } from '~/components/apps/service-modals';
 
-function StatusBadge(props: { status: ServiceStatus }) {
+type StatusBadgeProps = {
+  status: ServiceStatus;
+};
+
+function StatusBadge(props: StatusBadgeProps) {
   const { status } = props;
   const configs: Record<
     ServiceStatus,
@@ -73,11 +77,13 @@ function StatusBadge(props: { status: ServiceStatus }) {
   );
 }
 
-export function ServiceRow(props: {
+type ServiceRowProps = {
   service: Service;
   appSlug: string;
   onShowLogs: () => void;
-}) {
+};
+
+export function ServiceRow(props: ServiceRowProps) {
   const { service, appSlug, onShowLogs } = props;
   const queryClient = useQueryClient();
   const stopService = useStopService();

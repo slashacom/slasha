@@ -24,7 +24,11 @@ import {
   formatMiB,
 } from '~/components/apps/metrics-utils';
 
-export function AppMetricsView(props: { appSlug: string }) {
+type AppMetricsViewProps = {
+  appSlug: string;
+};
+
+export function AppMetricsView(props: AppMetricsViewProps) {
   const { appSlug } = props;
   const [selectedRange, setSelectedRange] = useState<TimeRange>(TIME_RANGES[0]);
 

@@ -56,8 +56,8 @@ export default function AppSettingsPage() {
                 Delete this application
               </h4>
               <p className="mt-1 text-[12px] text-red-500/70">
-                Once you delete an application, there is no going back. Please be
-                certain.
+                Once you delete an application, there is no going back. Please
+                be certain.
               </p>
             </div>
             <button

@@ -8,7 +8,11 @@ import { ServiceRow } from '~/components/apps/service-row';
 import { ProvisionServiceModal } from '~/components/apps/provision-service-modal';
 import { ServiceLogModal } from '~/components/apps/service-modals';
 
-export function ServicesView(props: { appSlug: string }) {
+type ServicesViewProps = {
+  appSlug: string;
+};
+
+export function ServicesView(props: ServicesViewProps) {
   const { appSlug } = props;
   const { data, isLoading } = useQuery(getAppServicesOptions(appSlug));
   const [isProvisionModalOpen, setProvisionModalOpen] = useState(false);

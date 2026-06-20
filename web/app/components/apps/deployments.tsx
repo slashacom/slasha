@@ -9,7 +9,11 @@ import { CommitSelector } from '~/components/apps/commit-selector';
 import { DeploymentRow } from '~/components/apps/deployment-row';
 import { LogModal } from '~/components/apps/deployment-log-modal';
 
-export function DeploymentsView(props: { appSlug: string }) {
+type DeploymentsViewProps = {
+  appSlug: string;
+};
+
+export function DeploymentsView(props: DeploymentsViewProps) {
   const { appSlug } = props;
   const { data, isLoading } = useQuery(getDeploymentsOptions(appSlug));
   const triggerDeploy = useTriggerDeploy();

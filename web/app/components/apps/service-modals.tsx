@@ -14,11 +14,13 @@ import {
 } from '~/components/interface/dialog';
 import { ServiceEnvEditor } from '~/components/apps/env-editor';
 
-export function ConnectModal(props: {
+type ConnectModalProps = {
   appSlug: string;
   service: Service;
   onClose: () => void;
-}) {
+};
+
+export function ConnectModal(props: ConnectModalProps) {
   const { appSlug, service, onClose } = props;
   const command = `slasha proxy --app ${appSlug} ${service.name}`;
   const [copied, setCopied] = useState(false);
@@ -74,11 +76,13 @@ export function ConnectModal(props: {
   );
 }
 
-export function ServiceConfigModal(props: {
+type ServiceConfigModalProps = {
   appSlug: string;
   service: Service;
   onClose: () => void;
-}) {
+};
+
+export function ServiceConfigModal(props: ServiceConfigModalProps) {
   const { appSlug, service, onClose } = props;
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -95,12 +99,14 @@ export function ServiceConfigModal(props: {
   );
 }
 
-export function ServiceLogModal(props: {
+type ServiceLogModalProps = {
   serviceId: string;
   serviceName: string;
   appSlug: string;
   onClose: () => void;
-}) {
+};
+
+export function ServiceLogModal(props: ServiceLogModalProps) {
   const { serviceId, serviceName, appSlug, onClose } = props;
   const [logs, setLogs] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);

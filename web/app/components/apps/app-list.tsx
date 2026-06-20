@@ -1,7 +1,11 @@
 import { AppCard } from './app-card';
 import type { App } from '~/models/app';
 
-export function AppList(props: { apps: App[] }) {
+type AppListProps = {
+  apps: App[];
+};
+
+export function AppList(props: AppListProps) {
   const { apps } = props;
   if (apps.length === 0) {
     return (

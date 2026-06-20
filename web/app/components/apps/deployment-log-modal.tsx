@@ -4,11 +4,13 @@ import { Button } from '~/components/interface/button';
 import { HStack } from '~/components/interface/stacks';
 import { getAuthToken } from '~/utils/jwt';
 
-export function LogModal(props: {
+type LogModalProps = {
   deploymentId: string;
   appSlug: string;
   onClose: () => void;
-}) {
+};
+
+export function LogModal(props: LogModalProps) {
   const { deploymentId, appSlug, onClose } = props;
   const [logs, setLogs] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);

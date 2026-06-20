@@ -20,10 +20,12 @@ import { TextInput } from '~/components/interface/text-input';
 import { EnvEditor } from '~/components/apps/env-editor';
 import { buildResourcesPayload } from '~/components/apps/service-resources';
 
-export function ProvisionServiceModal(props: {
+type ProvisionServiceModalProps = {
   appSlug: string;
   onClose: () => void;
-}) {
+};
+
+export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
   const { appSlug, onClose } = props;
   const queryClient = useQueryClient();
   const { data } = useQuery(getServiceKindsOptions());
@@ -195,7 +197,7 @@ export function ProvisionServiceModal(props: {
   );
 }
 
-function AdvancedResourcesSection(props: {
+type AdvancedResourcesSectionProps = {
   isOpen: boolean;
   onToggle: () => void;
   memoryMb: string;
@@ -206,7 +208,9 @@ function AdvancedResourcesSection(props: {
   onCpuChange: (v: string) => void;
   onShmChange: (v: string) => void;
   onPidsChange: (v: string) => void;
-}) {
+};
+
+function AdvancedResourcesSection(props: AdvancedResourcesSectionProps) {
   const {
     isOpen,
     onToggle,

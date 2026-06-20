@@ -4,11 +4,13 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { Button } from '~/components/interface/button';
 import { noAutofillProps } from '~/components/apps/env-parsing';
 
-export function EmptyState(props: {
+type EmptyStateProps = {
   readOnly: boolean;
   onAdd: () => void;
   onPaste: (e: React.ClipboardEvent<HTMLDivElement>) => void;
-}) {
+};
+
+export function EmptyState(props: EmptyStateProps) {
   const { readOnly, onAdd, onPaste } = props;
   return (
     <div
@@ -38,11 +40,13 @@ export function EmptyState(props: {
   );
 }
 
-export function RawEditor(props: {
+type RawEditorProps = {
   value: string;
   onChange: (v: string) => void;
   readOnly: boolean;
-}) {
+};
+
+export function RawEditor(props: RawEditorProps) {
   const { value, onChange, readOnly } = props;
   const ref = useRef<HTMLTextAreaElement>(null);
   return (

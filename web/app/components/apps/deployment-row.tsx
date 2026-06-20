@@ -27,7 +27,11 @@ import { cn } from '~/utils/classname';
 import { formatRelativeTime } from '~/utils/format';
 import { toast } from 'sonner';
 
-function StatusBadge(props: { status: DeploymentStatus }) {
+type StatusBadgeProps = {
+  status: DeploymentStatus;
+};
+
+function StatusBadge(props: StatusBadgeProps) {
   const { status } = props;
   const configs: Record<
     DeploymentStatus,
@@ -68,11 +72,13 @@ function StatusBadge(props: { status: DeploymentStatus }) {
   );
 }
 
-export function DeploymentRow(props: {
+type DeploymentRowProps = {
   deployment: Deployment;
   appSlug: string;
   onShowLogs: () => void;
-}) {
+};
+
+export function DeploymentRow(props: DeploymentRowProps) {
   const { deployment, appSlug, onShowLogs } = props;
   const navigate = useNavigate();
   const queryClient = useQueryClient();

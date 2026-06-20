@@ -12,13 +12,15 @@ import {
 import { Input } from '~/components/interface/input';
 import { HStack, VStack } from '~/components/interface/stacks';
 
-export function CommitSelector(props: {
+type CommitSelectorProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   appSlug: string;
   onSelect: (sha: string) => void;
   isDeploying: boolean;
-}) {
+};
+
+export function CommitSelector(props: CommitSelectorProps) {
   const { open, onOpenChange, appSlug, onSelect, isDeploying } = props;
   const { data, isLoading } = useQuery(getCommitsOptions(appSlug));
   const [search, setSearch] = useState('');

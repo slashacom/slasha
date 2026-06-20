@@ -568,7 +568,11 @@ export function EnvEditor(props: EnvEditorProps) {
   );
 }
 
-export function AppEnvEditor(props: { appSlug: string }) {
+type AppEnvEditorProps = {
+  appSlug: string;
+};
+
+export function AppEnvEditor(props: AppEnvEditorProps) {
   const { appSlug } = props;
   const queryClient = useQueryClient();
   const { data: envData, isLoading: envLoading } = useQuery(
@@ -619,14 +623,16 @@ export function AppEnvEditor(props: { appSlug: string }) {
   );
 }
 
-export function ServiceEnvEditor(props: {
+type ServiceEnvEditorProps = {
   appSlug: string;
   serviceId: string;
   serviceName: string;
   readOnly?: boolean;
   onSaveSuccess?: () => void;
   onCancel?: () => void;
-}) {
+};
+
+export function ServiceEnvEditor(props: ServiceEnvEditorProps) {
   const {
     appSlug,
     serviceId,

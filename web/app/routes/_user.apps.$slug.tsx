@@ -19,7 +19,11 @@ export function meta() {
 
 type Protocol = 'https' | 'ssh';
 
-function AppToolbar(props: { app: App }) {
+type AppToolbarProps = {
+  app: App;
+};
+
+function AppToolbar(props: AppToolbarProps) {
   const { app } = props;
   const [protocol, setProtocol] = useState<Protocol>('https');
   const [copied, setCopied] = useState(false);
@@ -112,7 +116,13 @@ function AppToolbar(props: { app: App }) {
   );
 }
 
-function TabLink(props: { to: string; end?: boolean; children: React.ReactNode }) {
+type TabLinkProps = {
+  to: string;
+  end?: boolean;
+  children: React.ReactNode;
+};
+
+function TabLink(props: TabLinkProps) {
   const { to, end, children } = props;
   return (
     <NavLink
