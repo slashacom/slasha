@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Context;
 use axum::{
     Json, Router,
@@ -13,8 +15,8 @@ use slasha_db::{
     app::{App, AppMember, AppMemberRole},
     deployment::{Deployment, DeploymentStatus},
     repos::{
-        app::AppRepo, app_scale::AppScaleRepo, deployment::DeploymentRepo,
-        service::ServiceRepo,
+        app::AppRepo, app_domain::AppDomainRepo, app_scale::AppScaleRepo,
+        deployment::DeploymentRepo, service::ServiceRepo,
     },
 };
 use tokio::process::Command;
@@ -129,12 +131,18 @@ async fn get_app(
 ) -> HttpResult<impl IntoResponse> {
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
-    let scheme = if config.platform_domain.contains("localhost") {
-        "http"
-    } else {
-        "https"
+    let domains = AppDomainRepo::list_for_app(&storage.db_pool, &app.id).await?;
+    let url = match domains.first() {
+        Some(domain) => format!("https://{}", domain.domain),
+        None => {
+            let scheme = if config.platform_domain.contains("localhost") {
+                "http"
+            } else {
+                "https"
+            };
+            format!("{}://{}.{}", scheme, app.slug, config.platform_domain)
+        }
     };
-    let url = format!("{}://{}.{}", scheme, app.slug, config.platform_domain);
 
     Ok(Json(serde_json::json!({
         "app": app,
@@ -251,11 +259,21 @@ async fn list_apps(
         "https"
     };
 
+    let app_ids = user_apps.iter().map(|app| app.id.clone()).collect();
+    let domains = AppDomainRepo::list_for_apps(&storage.db_pool, app_ids).await?;
+    let mut primary_domains: HashMap<String, String> = HashMap::new();
+    for domain in domains {
+        primary_domains.entry(domain.app_id).or_insert(domain.domain);
+    }
+
     let mut items = Vec::with_capacity(user_apps.len());
     for app in user_apps {
         let deployments =
             DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
-        let url = format!("{}://{}.{}", scheme, app.slug, config.platform_domain);
+        let url = match primary_domains.get(&app.id) {
+            Some(domain) => format!("https://{}", domain),
+            None => format!("{}://{}.{}", scheme, app.slug, config.platform_domain),
+        };
         items.push(serde_json::json!({
             "app": app,
             "url": url,

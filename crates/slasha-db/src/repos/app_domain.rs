@@ -22,6 +22,18 @@ impl AppDomainRepo {
         .await?
     }
 
+    pub async fn list_for_apps(pool: &DbPool, app_ids: Vec<String>) -> DbResult<Vec<AppDomain>> {
+        let pool = pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(app_domains::table
+                .filter(app_domains::app_id.eq_any(&app_ids))
+                .order(app_domains::created_at.asc())
+                .load::<AppDomain>(&mut conn)?)
+        })
+        .await?
+    }
+
     pub async fn add(pool: &DbPool, app_id: &str, domain: &str) -> DbResult<AppDomain> {
         let pool = pool.clone();
         let app_id = app_id.to_string();
