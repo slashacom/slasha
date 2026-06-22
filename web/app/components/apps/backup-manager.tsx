@@ -143,11 +143,11 @@ export function BackupManager(props: BackupManagerProps) {
               <div className="rounded-lg bg-white/5 p-2 text-text-secondary">
                 <DatabaseBackup className="size-5" />
               </div>
-              <div className="max-w-md">
+              <div>
                 <h3 className="text-[15px] font-semibold text-text">
                   Litestream backups
                 </h3>
-                <p className="mt-0.5 text-[13px] text-text-tertiary">
+                <p className="mt-0.5 whitespace-nowrap text-[13px] text-text-tertiary">
                   Replicate a SQLite DB to object storage for offsite,
                   point-in-time recovery.
                 </p>

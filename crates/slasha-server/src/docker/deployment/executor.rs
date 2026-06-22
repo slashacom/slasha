@@ -130,6 +130,7 @@ pub async fn resolve_app_env(
                 "app_id" => Ok(app.id.clone()),
                 "app_name" => Ok(app.name.clone()),
                 "app_slug" => Ok(app.slug.clone()),
+                "data_dir" => Ok(MANAGED_DATA_PATH.to_string()),
                 "network_name" => Ok(app_network_name(&app.id)),
                 _ => Err(DeploymentError::EnvResolveFailed(format!(
                     "Unknown system key: {}",

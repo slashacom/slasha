@@ -59,7 +59,7 @@ export default function AppSettingsPage() {
         <div className="max-w-3xl mb-12">
           <BackupManager appSlug={slug!} />
         </div>
-        <div className="max-w-2xl">
+        <div className="max-w-3xl">
           <h3 className="text-[14px] font-semibold text-text">Danger Zone</h3>
           <p className="mt-1 text-[13px] text-text-tertiary">
             Destructive actions for your application.

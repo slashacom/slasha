@@ -290,7 +290,7 @@ export function DotenvEditor(props: DotenvEditorProps) {
       editorProps: {
         attributes: {
           class: cn(
-            'env-dotenv-editor block min-h-[120px] w-full bg-transparent font-mono text-[13px] leading-6 text-text outline-none [&_p]:m-0 [&_p]:min-h-[24px] [&_p]:break-words'
+            'env-dotenv-editor block min-h-[120px] w-full overflow-x-auto bg-transparent font-mono text-[13px] leading-6 text-text outline-none [&_p]:m-0 [&_p]:min-h-[24px] [&_p]:whitespace-pre'
           ),
           autoComplete: 'off',
           autoCorrect: 'off',
@@ -320,7 +320,7 @@ export function DotenvEditor(props: DotenvEditorProps) {
 
   if (typeof document === 'undefined') {
     return (
-      <pre className="min-h-[120px] w-full whitespace-pre-wrap font-mono text-[13px] leading-6 text-text">
+      <pre className="min-h-[120px] w-full overflow-x-auto whitespace-pre font-mono text-[13px] leading-6 text-text">
         {value}
       </pre>
     );
@@ -334,6 +334,7 @@ export const APP_SLASHA_REFS = [
   'SLASHA.app_id',
   'SLASHA.app_name',
   'SLASHA.app_slug',
+  'SLASHA.data_dir',
   'SLASHA.network_name',
 ];
 

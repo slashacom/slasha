@@ -30,16 +30,19 @@ export function TextInput(props: TextInputProps) {
   return (
     <div className={cn('relative', wrapperClassName)}>
       <label
-        className={`flex w-full cursor-text items-center rounded-lg border focus-within:border-gray-400/90 border-gray-300 px-3 py-2 text-sm ${className}`}
+        className={cn(
+          'flex h-9 w-full cursor-text items-center rounded-md border border-border bg-surface px-3 py-2 text-sm text-text transition-colors focus-within:border-text-secondary',
+          className
+        )}
       >
         {prefix && (
-          <span className="text-gray-500/80 select-none mr-px">{prefix}</span>
+          <span className="mr-px select-none text-text-tertiary">{prefix}</span>
         )}
         <input
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="flex-1 bg-transparent outline-none"
+          className="flex-1 bg-transparent outline-none placeholder:text-text-tertiary"
           {...rest}
         />
       </label>
