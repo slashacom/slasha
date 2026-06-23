@@ -13,11 +13,11 @@ diesel::table! {
         secret_access_key -> Text,
         restore_pending -> Bool,
         last_synced_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
         last_checked_at -> Nullable<Timestamp>,
         last_check_ok -> Nullable<Bool>,
         last_check_error -> Nullable<Text>,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
     }
 }
 
@@ -83,6 +83,7 @@ diesel::table! {
         default_branch -> Text,
         status -> Text,
         created_at -> Timestamp,
+        auto_deploy -> Bool,
     }
 }
 

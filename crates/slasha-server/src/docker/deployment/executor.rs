@@ -4,6 +4,7 @@ use bollard::{
     Docker,
     query_parameters::{RemoveContainerOptionsBuilder, RemoveImageOptions},
 };
+use chrono::Utc;
 use slasha_db::{
     DbPool,
     app::{App, AppEnvVar},
@@ -16,6 +17,7 @@ use slasha_db::{
     service::{Service, ServiceStatus},
 };
 use tokio::sync::Notify;
+use uuid::Uuid;
 
 use super::{
     build::{build_docker, build_railpack},
@@ -469,4 +471,70 @@ async fn run_deployment_inner(
     proxy_sync_trigger.notify_one();
 
     Ok(())
+}
+
+fn resolve_commit_message(repo_path: &str, sha: &str) -> anyhow::Result<String> {
+    let repo = git2::Repository::open(repo_path)?;
+    let commit = repo.find_commit(git2::Oid::from_str(sha)?)?;
+    Ok(commit.summary().unwrap_or("").to_string())
+}
+
+pub fn resolve_head_commit(repo_path: &str, branch: &str) -> anyhow::Result<(String, String)> {
+    let repo = git2::Repository::open(repo_path)?;
+    let branch = repo.find_branch(branch, git2::BranchType::Local)?;
+    let commit = branch.get().peel_to_commit()?;
+
+    Ok((
+        commit.id().to_string(),
+        commit.summary().unwrap_or("").to_string(),
+    ))
+}
+
+pub async fn trigger_deployment(
+    docker_client: Docker,
+    db_pool: DbPool,
+    log_manager: Arc<LogManager>,
+    proxy_sync_trigger: Arc<Notify>,
+    app: App,
+    commit_sha: Option<String>,
+) -> anyhow::Result<Option<Deployment>> {
+    let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
+    let is_building = active_deployments
+        .iter()
+        .any(|d| d.status == DeploymentStatus::Building);
+    if is_building {
+        return Ok(None);
+    }
+
+    let (commit_sha, commit_message) = match commit_sha {
+        Some(sha) => {
+            let msg = resolve_commit_message(&app.repo_path, &sha)?;
+            (sha, msg)
+        }
+        None => resolve_head_commit(&app.repo_path, &app.default_branch)?,
+    };
+
+    let now = Utc::now().naive_utc();
+    let deployment = Deployment {
+        id: Uuid::new_v4().to_string(),
+        app_id: app.id.clone(),
+        commit_sha,
+        commit_message,
+        status: DeploymentStatus::Pending,
+        created_at: now,
+        updated_at: now,
+    };
+
+    let deployment = DeploymentRepo::create(&db_pool, deployment).await?;
+
+    tokio::spawn(run_deployment(
+        docker_client,
+        db_pool,
+        log_manager,
+        proxy_sync_trigger,
+        app,
+        deployment.clone(),
+    ));
+
+    Ok(Some(deployment))
 }

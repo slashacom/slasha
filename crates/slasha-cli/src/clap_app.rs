@@ -141,7 +141,6 @@ pub enum Command {
         command: ServicesCommand,
     },
 
-
     #[command(name = "env", about = "Manage app env vars")]
     AppEnv {
         #[arg(long, value_name = "SLUG")]

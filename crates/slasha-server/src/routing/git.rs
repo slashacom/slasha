@@ -21,13 +21,14 @@ use tokio_util::io::ReaderStream;
 
 use crate::{
     AppState,
-    docker::logs::LogManager,
+    docker::{
+        deployment::{resolve_head_commit, trigger_deployment},
+        logs::LogManager,
+    },
     error::HttpResult,
     extractors::git::{GitAuth, GitError},
-    routing::api::apps::deployments::{resolve_head_commit, start_deployment},
 };
 
-/// Context for auto-deploying after a successful `git push`.
 struct AutoDeploy {
     docker: Docker,
     db_pool: DbPool,
@@ -37,8 +38,10 @@ struct AutoDeploy {
 }
 
 async fn run_auto_deploy(ctx: AutoDeploy) {
-    // Only deploy when the default branch tip actually changed (ignores pushes
-    // to other branches and re-pushes of the same commit).
+    if !ctx.app.auto_deploy {
+        return;
+    }
+
     let head = match resolve_head_commit(&ctx.app.repo_path, &ctx.app.default_branch) {
         Ok((sha, _)) => sha,
         Err(_) => return,
@@ -50,7 +53,7 @@ async fn run_auto_deploy(ctx: AutoDeploy) {
         return;
     }
 
-    match start_deployment(
+    match trigger_deployment(
         ctx.docker,
         ctx.db_pool,
         ctx.log_manager,

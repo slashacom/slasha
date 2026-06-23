@@ -5,7 +5,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
 };
 use bollard::Docker;
 use chrono::Utc;
@@ -41,6 +41,7 @@ pub fn router() -> Router<AppState> {
         .route("/{slug}", get(get_app))
         .route("/{slug}/scales", get(list_scales))
         .route("/{slug}", delete(delete_app))
+        .route("/{slug}/settings", put(update_settings))
 }
 
 #[derive(Deserialize)]
@@ -105,6 +106,7 @@ async fn create_app(
         default_branch: "main".into(),
         status: "idle".into(),
         created_at: now,
+        auto_deploy: true,
     };
 
     let new_member = AppMember {
@@ -238,9 +240,7 @@ fn derive_runtime_status(deployments: &[Deployment]) -> &'static str {
         return "running";
     }
     match deployments.first().map(|d| d.status) {
-        Some(DeploymentStatus::Building) | Some(DeploymentStatus::Pending) => {
-            "deploying"
-        }
+        Some(DeploymentStatus::Building) | Some(DeploymentStatus::Pending) => "deploying",
         Some(DeploymentStatus::Failed) => "failed",
         _ => "idle",
     }
@@ -263,13 +263,14 @@ async fn list_apps(
     let domains = AppDomainRepo::list_for_apps(&storage.db_pool, app_ids).await?;
     let mut primary_domains: HashMap<String, String> = HashMap::new();
     for domain in domains {
-        primary_domains.entry(domain.app_id).or_insert(domain.domain);
+        primary_domains
+            .entry(domain.app_id)
+            .or_insert(domain.domain);
     }
 
     let mut items = Vec::with_capacity(user_apps.len());
     for app in user_apps {
-        let deployments =
-            DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
+        let deployments = DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
         let url = match primary_domains.get(&app.id) {
             Some(domain) => format!("https://{}", domain),
             None => format!("{}://{}.{}", scheme, app.slug, config.platform_domain),
@@ -295,4 +296,24 @@ async fn list_scales(
     let scales = AppScaleRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({ "scales": scales })))
+}
+
+#[derive(Deserialize)]
+struct UpdateSettingsReq {
+    auto_deploy: bool,
+}
+
+async fn update_settings(
+    State(storage): State<Storage>,
+    AuthUser(user): AuthUser,
+    Path(slug): Path<String>,
+    Json(payload): Json<UpdateSettingsReq>,
+) -> HttpResult<impl IntoResponse> {
+    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
+
+    AppRepo::update_auto_deploy(&storage.db_pool, &app.id, payload.auto_deploy).await?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+    })))
 }

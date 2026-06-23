@@ -1,5 +1,4 @@
-use diesel::prelude::*;
-use diesel::upsert::excluded;
+use diesel::{prelude::*, upsert::excluded};
 
 use crate::{
     connection::DbPool,
@@ -22,7 +21,7 @@ impl AppBackupRepo {
         })
         .await?
     }
-    
+
     pub async fn upsert(pool: &DbPool, backup: AppBackup) -> DbResult<AppBackup> {
         let pool = pool.clone();
         let app_id = backup.app_id.clone();
@@ -51,11 +50,7 @@ impl AppBackupRepo {
         .await?
     }
 
-    pub async fn set_restore_pending(
-        pool: &DbPool,
-        app_id: &str,
-        pending: bool,
-    ) -> DbResult<()> {
+    pub async fn set_restore_pending(pool: &DbPool, app_id: &str, pending: bool) -> DbResult<()> {
         let pool = pool.clone();
         let app_id = app_id.to_string();
         tokio::task::spawn_blocking(move || {
@@ -83,8 +78,7 @@ impl AppBackupRepo {
         let app_id = app_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            let query =
-                diesel::update(app_backups::table.filter(app_backups::app_id.eq(&app_id)));
+            let query = diesel::update(app_backups::table.filter(app_backups::app_id.eq(&app_id)));
             match last_synced_at {
                 Some(synced) => query
                     .set((

@@ -184,16 +184,16 @@ async fn update_profile(
     let mut new_email = None;
     let mut new_pwd_hash = None;
 
-    if let Some(ref email) = payload.email {
-        if email != &user.email {
-            if UserRepo::find_by_email(&storage.db_pool, email)
-                .await?
-                .is_some()
-            {
-                return Err(HttpError::bad_request("Email is already in use"));
-            }
-            new_email = Some(email.clone());
+    if let Some(ref email) = payload.email
+        && email != &user.email
+    {
+        if UserRepo::find_by_email(&storage.db_pool, email)
+            .await?
+            .is_some()
+        {
+            return Err(HttpError::bad_request("Email is already in use"));
         }
+        new_email = Some(email.clone());
     }
 
     if let Some(ref new_pwd) = payload.new_password {

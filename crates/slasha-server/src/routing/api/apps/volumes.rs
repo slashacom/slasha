@@ -13,7 +13,10 @@ use slasha_db::repos::app::AppRepo;
 use crate::{
     AppState,
     docker::{
-        deployment::{container::MANAGED_DATA_PATH, parse_volumes},
+        deployment::{
+            BuildStrategy, container::MANAGED_DATA_PATH, detect_build_strategy, parse_volumes,
+            resolve_head_commit,
+        },
         naming::app_volume_name,
     },
     error::HttpResult,
@@ -28,31 +31,25 @@ pub fn router() -> Router<AppState> {
 #[derive(Serialize)]
 struct VolumeView {
     path: String,
-    /// True for the per-app volume slasha mounts automatically at every deploy.
     managed: bool,
-    /// Whether the underlying docker volume has been created yet (i.e. the app
-    /// has deployed at least once).
     exists: bool,
-    /// On-disk size in bytes, when reported by the docker daemon.
     size_bytes: Option<i64>,
 }
 
-/// VOLUME paths declared in the repo's Dockerfile on its default branch.
-fn dockerfile_volume_paths(repo_path: &str, branch: &str) -> Vec<String> {
-    (|| -> anyhow::Result<Vec<String>> {
-        let repo = git2::Repository::open(repo_path)?;
-        let branch = repo.find_branch(branch, git2::BranchType::Local)?;
-        let tree = branch.get().peel_to_tree()?;
-        let entry = tree.get_path(Path::new("Dockerfile"))?;
-        let blob = repo.find_blob(entry.id())?;
-        let content = std::str::from_utf8(blob.content())?.to_string();
-        Ok(parse_volumes(&content))
-    })()
-    .unwrap_or_default()
+async fn dockerfile_volume_paths(repo_path: &str, branch: &str) -> Vec<String> {
+    let Ok((commit_sha, _)) = resolve_head_commit(repo_path, branch) else {
+        return Vec::new();
+    };
+    let path = Path::new(repo_path);
+    let Ok(strategy) = detect_build_strategy(path, &commit_sha).await else {
+        return Vec::new();
+    };
+    match strategy {
+        BuildStrategy::Dockerfile { content } => parse_volumes(&content),
+        BuildStrategy::Railpack => Vec::new(),
+    }
 }
 
-/// Map of docker volume name -> on-disk size in bytes (negative when the daemon
-/// can't report it).
 async fn volume_sizes(docker: &Docker) -> HashMap<String, i64> {
     let mut sizes = HashMap::new();
     let Ok(usage) = docker.df(None::<DataUsageOptions>).await else {
@@ -84,7 +81,7 @@ async fn list_volumes(
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let mut paths = vec![MANAGED_DATA_PATH.to_string()];
-    for path in dockerfile_volume_paths(&app.repo_path, &app.default_branch) {
+    for path in dockerfile_volume_paths(&app.repo_path, &app.default_branch).await {
         if path != MANAGED_DATA_PATH && !paths.contains(&path) {
             paths.push(path);
         }

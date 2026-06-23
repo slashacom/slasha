@@ -26,6 +26,7 @@ pub struct App {
     pub default_branch: String,
     pub status: String,
     pub created_at: chrono::NaiveDateTime,
+    pub auto_deploy: bool,
 }
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]

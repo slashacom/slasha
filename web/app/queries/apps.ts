@@ -23,6 +23,11 @@ type AddAppDomainPayload = { appSlug: string; domain: string };
 
 type DeleteAppDomainPayload = { appSlug: string; domainId: string };
 
+type UpdateAppSettingsPayload = {
+  appSlug: string;
+  auto_deploy: boolean;
+};
+
 export function getAppsOptions() {
   return queryOptions({
     queryKey: ['apps'],
@@ -122,5 +127,14 @@ export function getAppMetricsOptions(appSlug: string, hours?: number) {
       httpGet<{ metrics: AppMetrics[] }>(
         `apps/${appSlug}/metrics${hours ? `?hours=${hours}` : ''}`
       ),
+  });
+}
+
+export function useUpdateAppSettings() {
+  return useMutation({
+    mutationFn: (data: UpdateAppSettingsPayload) =>
+      httpPut<{ success: boolean }>(`apps/${data.appSlug}/settings`, {
+        auto_deploy: data.auto_deploy,
+      }),
   });
 }

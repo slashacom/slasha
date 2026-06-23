@@ -8,6 +8,7 @@ export type App = {
   default_branch: string;
   status: string;
   created_at: string;
+  auto_deploy: boolean;
 };
 
 export type AppDomain = {

@@ -193,4 +193,17 @@ impl AppRepo {
         let member = Self::find_membership(pool, app_id, user_id).await?;
         Ok(member.role == AppMemberRole::Owner)
     }
+
+    pub async fn update_auto_deploy(pool: &DbPool, id: &str, auto_deploy: bool) -> DbResult<()> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            diesel::update(apps::table.filter(apps::id.eq(&id)))
+                .set(apps::auto_deploy.eq(auto_deploy))
+                .execute(&mut conn)?;
+            Ok(())
+        })
+        .await?
+    }
 }
