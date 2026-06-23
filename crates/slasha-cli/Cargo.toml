@@ -39,7 +39,7 @@ slasha-server = { path = "../slasha-server", optional = true }
 strum = { version = "0.28", features = ["derive"] }
 tokio = { version = "1.50.0", features = ["full"] }
 tokio-stream = "0.1.18"
-keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "sync-secret-service"]}
+keyring = { version = "4.1.2", features = ["v1"] }
 toml = "1.1.2"
 sysinfo = "0.38.4"
 shell-escape = "0.1.5"
