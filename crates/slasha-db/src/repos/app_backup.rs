@@ -22,10 +22,7 @@ impl AppBackupRepo {
         })
         .await?
     }
-
-    /// Insert or update the single backup config for an app. The user-editable
-    /// fields are overwritten; `restore_pending` and `last_synced_at` are left
-    /// untouched so a config save never clears a pending restore.
+    
     pub async fn upsert(pool: &DbPool, backup: AppBackup) -> DbResult<AppBackup> {
         let pool = pool.clone();
         let app_id = backup.app_id.clone();
@@ -74,9 +71,6 @@ impl AppBackupRepo {
         .await?
     }
 
-    /// Record the result of a replica health probe. `last_synced_at` is only
-    /// overwritten when a fresh value is available (a failed probe keeps the
-    /// previously-known sync time).
     pub async fn set_health(
         pool: &DbPool,
         app_id: &str,

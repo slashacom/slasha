@@ -29,8 +29,6 @@ pub fn router() -> Router<AppState> {
         .route("/status/refresh", post(refresh_status))
 }
 
-/// API view of a backup config. The secret access key is never returned;
-/// callers learn only whether one is set.
 #[derive(Serialize)]
 struct BackupView {
     enabled: bool,
@@ -82,12 +80,9 @@ struct SaveBackupRequest {
     endpoint: String,
     path_prefix: Option<String>,
     access_key_id: String,
-    /// Optional: omit (or send empty) to keep the existing secret unchanged.
     secret_access_key: Option<String>,
 }
 
-/// A fresh backup row with system-managed fields defaulted; the caller fills in
-/// the user-editable fields.
 fn new_backup(app_id: &str, now: chrono::NaiveDateTime) -> AppBackup {
     AppBackup {
         id: Uuid::new_v4().to_string(),
@@ -118,7 +113,7 @@ async fn save_backup(
     let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let existing = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
-    // Keep the current secret when the request omits it (it's never sent back).
+    // keep current secret if not provided
     let secret_access_key = match payload.secret_access_key {
         Some(s) if !s.is_empty() => s,
         _ => existing
@@ -127,8 +122,6 @@ async fn save_backup(
             .unwrap_or_default(),
     };
 
-    // These values are interpolated into the generated litestream config and
-    // process environment, so reject control characters that could break either.
     let fields = [
         Some(&payload.db_path),
         Some(&payload.bucket),
@@ -153,9 +146,6 @@ async fn save_backup(
         ));
     }
 
-    // Start from the existing row (preserving system-managed fields like
-    // restore_pending and health) or a fresh default, then apply the editable
-    // fields from the request.
     let now = Utc::now().naive_utc();
     let mut backup = existing.unwrap_or_else(|| new_backup(&app.id, now));
     backup.enabled = payload.enabled;
@@ -194,10 +184,14 @@ async fn restore_backup(
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
     let Some(backup) = backup else {
-        return Err(HttpError::bad_request("Backups are not configured for this app"));
+        return Err(HttpError::bad_request(
+            "Backups are not configured for this app",
+        ));
     };
     if !backup.enabled {
-        return Err(HttpError::bad_request("Backups are not enabled for this app"));
+        return Err(HttpError::bad_request(
+            "Backups are not enabled for this app",
+        ));
     }
 
     AppBackupRepo::set_restore_pending(&storage.db_pool, &app.id, true).await?;
@@ -209,16 +203,10 @@ async fn restore_backup(
 struct BackupStatus {
     enabled: bool,
     restore_pending: bool,
-    /// Whether a web container is currently running (Litestream replicates for
-    /// its lifetime).
     web_running: bool,
     last_synced_at: Option<chrono::NaiveDateTime>,
-    /// When the replica was last probed.
     last_checked_at: Option<chrono::NaiveDateTime>,
-    /// Result of the last probe: Some(true) reachable, Some(false) failing,
-    /// None never checked.
     healthy: Option<bool>,
-    /// Why the replica was unreachable, when applicable.
     health_error: Option<String>,
 }
 
@@ -246,7 +234,9 @@ async fn backup_status(
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
     let Some(backup) = backup else {
-        return Ok(Json(serde_json::json!({ "status": BackupStatus::disabled() })));
+        return Ok(Json(
+            serde_json::json!({ "status": BackupStatus::disabled() }),
+        ));
     };
 
     let web_running = is_web_running(&docker, &app.id).await.unwrap_or(false);
@@ -264,9 +254,6 @@ async fn backup_status(
     })))
 }
 
-/// Probe the replica directly (reachability + freshness) and persist the result.
-/// This runs a one-shot container against object storage, so it's an explicit
-/// action rather than part of the cheap polling status.
 async fn refresh_status(
     State(storage): State<Storage>,
     State(docker): State<Docker>,
@@ -277,7 +264,9 @@ async fn refresh_status(
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
     let Some(backup) = backup.filter(|b| b.enabled) else {
-        return Err(HttpError::bad_request("Backups are not enabled for this app"));
+        return Err(HttpError::bad_request(
+            "Backups are not enabled for this app",
+        ));
     };
 
     let probe = litestream::probe_replica(&docker, &backup)

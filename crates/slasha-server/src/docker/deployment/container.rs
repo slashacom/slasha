@@ -26,7 +26,9 @@ use tokio::sync::Notify;
 
 use crate::{
     docker::{
-        DeploymentError, DeploymentResult, image_tag,
+        DeploymentError, DeploymentResult,
+        deployment::litestream,
+        image_tag,
         log_driver::default_log_config,
         logs::{LogHandle, LogKey, LogManager, stream_container_logs},
         naming::{
@@ -37,8 +39,8 @@ use crate::{
     proxy::container::PROXY_NETWORK_NAME,
 };
 
-/// Per-app persistent volume mount path, mounted into every process container
-/// and exposed to the app as `SLASHA_DATA_DIR`.
+// per-app persistent volume mount path, mounted into every process container
+// exposed to the app as`SLASHA_DATA_DIR`
 pub const MANAGED_DATA_PATH: &str = "/data";
 
 pub async fn list_deployment_processes(
@@ -92,8 +94,6 @@ pub async fn list_deployment_processes(
     Ok(processes)
 }
 
-/// Whether the app has at least one running web container — the process
-/// Litestream replication is wrapped around.
 pub async fn is_web_running(docker_client: &Docker, app_id: &str) -> DeploymentResult<bool> {
     let mut filters = HashMap::new();
     filters.insert(
@@ -124,7 +124,6 @@ pub struct CreateContainerContext {
     pub env_map: HashMap<String, String>,
     pub volume_paths: Vec<String>,
     pub backup: Option<AppBackup>,
-    /// Name of the shared litestream volume, when its binary has been ensured.
     pub litestream_volume: Option<String>,
 }
 
@@ -146,7 +145,7 @@ pub async fn create_process_container(
     let mut cmd = context.cmd;
     let mut env_map = context.env_map;
 
-    // Wrap the primary web instance with Litestream so its SQLite database is
+    // wrap the primary web instance with Litestream so its SQLite database is
     // restored on boot and continuously replicated. Litestream must be a single
     // writer, so only web instance 0 is ever wrapped.
     if let Some(backup) = &context.backup
@@ -156,10 +155,10 @@ pub async fn create_process_container(
     {
         match (&cmd, &context.litestream_volume) {
             (Some(original_cmd), Some(_volume)) => {
-                let plan = super::litestream::plan(backup, original_cmd, backup.restore_pending);
+                let plan = litestream::plan(backup, original_cmd, backup.restore_pending);
                 cmd = Some(plan.command);
                 env_map.extend(plan.env);
-                mounts.push(super::litestream::binary_mount());
+                mounts.push(litestream::binary_mount());
             }
             (None, _) => tracing::warn!(
                 app_id = %app.id,
@@ -500,12 +499,9 @@ async fn build_mounts(
     app_id: &str,
     volume_paths: &[String],
 ) -> DeploymentResult<Vec<Mount>> {
-    // Every app gets a managed persistent volume at MANAGED_DATA_PATH so data
-    // (e.g. a SQLite database) survives redeploys without requiring a Dockerfile
-    // VOLUME. Dockerfile-declared paths are layered on top, deduped so a repo
-    // that also declares /data doesn't double-mount.
     let mut paths: Vec<String> = vec![MANAGED_DATA_PATH.to_string()];
     for path in volume_paths {
+        // prevent multiple mounts of the same volume
         if path != MANAGED_DATA_PATH {
             paths.push(path.clone());
         }

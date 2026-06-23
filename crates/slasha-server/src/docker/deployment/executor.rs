@@ -20,8 +20,7 @@ use tokio::sync::Notify;
 use super::{
     build::{build_docker, build_railpack},
     container::{
-        MANAGED_DATA_PATH, create_process_container, run_release_container,
-        start_process_container,
+        MANAGED_DATA_PATH, create_process_container, run_release_container, start_process_container,
     },
     dockerfile_parser::{BuildStrategy, detect_build_strategy, parse_expose, parse_volumes},
     litestream,
@@ -354,9 +353,6 @@ async fn run_deployment_inner(
 
     let backup = AppBackupRepo::get(db_pool, &app.id).await.ok().flatten();
 
-    // When backups are on, make sure the shared litestream binary volume is
-    // populated before any container that needs it is created. Best-effort:
-    // if it fails (e.g. offline), the app still deploys, just without replication.
     let litestream_volume = if backup.as_ref().is_some_and(|b| b.enabled) {
         match litestream::ensure_litestream_volume(docker_client).await {
             Ok(volume) => Some(volume),
@@ -432,7 +428,10 @@ async fn run_deployment_inner(
 
     // A pending restore is consumed by the new web container's boot; clear the
     // flag so subsequent deploys don't keep discarding the live database.
-    if backup.as_ref().is_some_and(|b| b.enabled && b.restore_pending) {
+    if backup
+        .as_ref()
+        .is_some_and(|b| b.enabled && b.restore_pending)
+    {
         let _ = log
             .send("Restored SQLite database from backup replica".to_string())
             .await;
