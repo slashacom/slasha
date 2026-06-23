@@ -9,9 +9,14 @@ name = "slasha"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["bundle", "vendored"]
+
+# backend only, frontend must be served separately (useful for development)
 serve = ["slasha-server"]
-serve-bundle = ["serve", "slasha-server/bundle"]
+
+# backend + embedded frontend
+bundle = ["serve", "slasha-server/bundle"]
+
 vendored = ["slasha-db/bundled-sqlite", "slasha-server?/vendored"]
 
 [dependencies]

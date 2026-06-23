@@ -61,4 +61,4 @@ jobs:
         run: cargo test --workspace
 
       - name: Build release binary
-        run: cargo build --release -p slasha-cli --features "serve-bundle,vendored"
+        run: cargo build --release -p slasha-cli

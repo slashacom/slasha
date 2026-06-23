@@ -22,7 +22,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 COPY --from=frontend-builder /app/web/build/client /app/web/build/client
-RUN cargo build --release -p slasha-cli --features serve-bundle
+RUN cargo build --release -p slasha-cli
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && \

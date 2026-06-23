@@ -66,7 +66,7 @@ jobs:
         run: bun run scripts/release/replace-version.cjs
 
       - name: Build binary
-        run: cargo build --release -p slasha-cli --features "serve-bundle,vendored" --target ${{ matrix.target }}
+        run: cargo build --release -p slasha-cli --target ${{ matrix.target }}
 
       - name: Package
         run: |
