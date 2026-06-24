@@ -34,7 +34,31 @@ async fn add_domain(
     ActiveApp { app, .. }: ActiveApp,
     Json(payload): Json<AddDomainRequest>,
 ) -> HttpResult<impl IntoResponse> {
-    let domain = AppDomainRepo::add(&state.storage.db_pool, &app.id, &payload.domain).await?;
+    let raw_domain = payload.domain.trim();
+    if raw_domain.is_empty() {
+        return Err(crate::error::HttpError::bad_request(
+            "Domain cannot be empty",
+        ));
+    }
+
+    let url_str = if !raw_domain.starts_with("http://") && !raw_domain.starts_with("https://") {
+        format!("https://{}", raw_domain)
+    } else {
+        raw_domain.to_string()
+    };
+
+    let cleaned = match reqwest::Url::parse(&url_str) {
+        Ok(parsed) => {
+            if let Some(host) = parsed.host_str() {
+                host.to_string()
+            } else {
+                raw_domain.trim_end_matches('/').to_string()
+            }
+        }
+        Err(_) => raw_domain.trim_end_matches('/').to_string(),
+    };
+
+    let domain = AppDomainRepo::add(&state.storage.db_pool, &app.id, &cleaned).await?;
 
     state.runtime.proxy_sync_trigger.notify_one();
 

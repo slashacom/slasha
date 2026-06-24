@@ -133,7 +133,13 @@ async fn get_app(
 ) -> HttpResult<impl IntoResponse> {
     let domains = AppDomainRepo::list_for_app(&storage.db_pool, &app.id).await?;
     let url = match domains.first() {
-        Some(domain) => format!("https://{}", domain.domain),
+        Some(domain) => format!(
+            "https://{}",
+            domain
+                .domain
+                .trim_start_matches("http://")
+                .trim_start_matches("https://")
+        ),
         None => {
             let scheme = if config.platform_domain.contains("localhost") {
                 "http"
@@ -161,65 +167,79 @@ async fn delete_app(
     }
 
     let app_services = ServiceRepo::list_for_app(&db_pool, &app.id).await?;
-
-    for service in app_services {
-        if let Err(e) =
-            remove_service_container(&docker, &runtime.log_manager, &app, &service, true).await
-        {
-            tracing::warn!(
-                service_id = %service.id,
-                error = %e,
-                "Failed to delete service"
-            );
-        }
-
-        ServiceRepo::delete(&db_pool, &service.id).await?;
-    }
-
     let deployments = AppRepo::delete(&db_pool, &app.id).await?;
 
-    for dep in deployments {
-        if let Err(e) = remove_deployment_processes(
-            &docker,
-            &runtime.proxy_sync_trigger,
-            &runtime.log_manager,
-            &app,
-            &dep,
-        )
-        .await
-        {
+    let app_clone = app.clone();
+    let app_slug = app.slug.clone();
+    let app_id = app.id.clone();
+
+    tokio::spawn(async move {
+        for service in app_services {
+            if let Err(e) =
+                remove_service_container(&docker, &runtime.log_manager, &app_clone, &service, true)
+                    .await
+            {
+                tracing::warn!(
+                    service_id = %service.id,
+                    error = %e,
+                    "Failed to delete service"
+                );
+            }
+        }
+
+        for dep in deployments {
+            if let Err(e) = remove_deployment_processes(
+                &docker,
+                &runtime.proxy_sync_trigger,
+                &runtime.log_manager,
+                &app_clone,
+                &dep,
+            )
+            .await
+            {
+                tracing::warn!(
+                    deployment_id = %dep.id,
+                    error = %e,
+                    "Failed to remove deployment processes"
+                );
+            }
+        }
+
+        if let Err(e) = remove_app_network(&docker, &app_id).await {
             tracing::warn!(
-                deployment_id = %dep.id,
-                error = %e,
-                "Failed to remove deployment processes"
+                app_id = %app_id,
+                error = ?e,
+                "Failed to remove app network"
             );
         }
-    }
 
-    remove_app_network(&docker, &app.id).await?;
+        if let Err(e) = remove_app_volumes(&docker, &app_id).await {
+            tracing::warn!(
+                app_id = %app_id,
+                error = ?e,
+                "Failed to clean up volumes for app"
+            );
+        }
 
-    if let Err(e) = remove_app_volumes(&docker, &app.id).await {
-        tracing::warn!(
-            app_id = %app.id,
-            error = ?e,
-            "Failed to clean up volumes for app"
-        );
-    }
+        if let Err(e) = runtime.log_manager.delete_app_logs(&app_slug).await {
+            tracing::warn!(
+                app_slug = %app_slug,
+                error = ?e,
+                "Failed to delete logs for app"
+            );
+        }
 
-    if let Err(e) = runtime.log_manager.delete_app_logs(&app.slug).await {
-        tracing::warn!(
-            app_slug = %app.slug,
-            error = ?e,
-            "Failed to delete logs for app"
-        );
-    }
-
-    let repo_path = std::path::Path::new(&app.repo_path);
-    if repo_path.exists() {
-        tokio::fs::remove_dir_all(repo_path)
-            .await
-            .context("Failed to remove repo")?;
-    }
+        let repo_path = std::path::Path::new(&app_clone.repo_path);
+        if repo_path.exists() {
+            if let Err(e) = tokio::fs::remove_dir_all(repo_path).await {
+                tracing::warn!(
+                    app_slug = %app_slug,
+                    error = ?e,
+                    "Failed to remove repo"
+                );
+            }
+        }
+    });
 
     Ok(Json(serde_json::json!({
         "deleted": true,
@@ -267,7 +287,12 @@ async fn list_apps(
     for app in user_apps {
         let deployments = DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
         let url = match primary_domains.get(&app.id) {
-            Some(domain) => format!("https://{}", domain),
+            Some(domain) => format!(
+                "https://{}",
+                domain
+                    .trim_start_matches("http://")
+                    .trim_start_matches("https://")
+            ),
             None => format!("{}://{}.{}", scheme, app.slug, config.platform_domain),
         };
         items.push(serde_json::json!({

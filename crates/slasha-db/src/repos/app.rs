@@ -5,7 +5,7 @@ use crate::{
     error::{DbError, DbResult},
     models::{
         app::{App, AppEnvVar, AppMember, AppMemberRole},
-        deployment::{Deployment, DeploymentStatus},
+        deployment::Deployment,
         schema::{app_env_vars, app_members, apps, deployments, users},
         user::{User, UserRole},
     },
@@ -130,18 +130,6 @@ impl AppRepo {
                 let deps: Vec<Deployment> = deployments::table
                     .filter(deployments::app_id.eq(&app_id))
                     .load(tx)?;
-
-                let active = deps.iter().any(|d| {
-                    matches!(
-                        d.status,
-                        DeploymentStatus::Running | DeploymentStatus::Building
-                    )
-                });
-                if active {
-                    return Err(DbError::PreconditionFailed(
-                        "app has active deployments; stop them before deleting".into(),
-                    ));
-                }
 
                 diesel::delete(apps::table.filter(apps::id.eq(&app_id))).execute(tx)?;
 

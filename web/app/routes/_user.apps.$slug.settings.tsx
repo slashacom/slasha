@@ -100,6 +100,7 @@ export default function AppSettingsPage() {
           onConfirm={() => {
             deleteApp.mutate(app.slug, {
               onSuccess: () => {
+                queryClient.invalidateQueries({ queryKey: ['apps'] });
                 navigate('/apps');
               },
             });

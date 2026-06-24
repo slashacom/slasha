@@ -2,7 +2,7 @@ use diesel::prelude::*;
 
 use crate::{
     connection::DbPool,
-    error::DbResult,
+    error::{DbError, DbResult},
     models::{app::AppDomain, schema::app_domains},
 };
 
@@ -40,6 +40,15 @@ impl AppDomainRepo {
         let domain = domain.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
+            let exists: bool = diesel::select(diesel::dsl::exists(
+                app_domains::table.filter(app_domains::domain.eq(&domain)),
+            ))
+            .get_result(&mut conn)?;
+
+            if exists {
+                return Err(DbError::Conflict("domain already exists".into()));
+            }
+
             let new_domain = AppDomain {
                 id: uuid::Uuid::new_v4().to_string(),
                 app_id,
