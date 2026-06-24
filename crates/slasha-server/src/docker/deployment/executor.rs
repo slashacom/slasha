@@ -165,8 +165,6 @@ pub async fn resolve_app_env(
         resolved.insert(var.key.clone(), value);
     }
 
-    resolved.insert("SLASHA_DATA_DIR".to_string(), MANAGED_DATA_PATH.to_string());
-
     Ok(resolved)
 }
 
