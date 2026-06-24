@@ -7,11 +7,17 @@ import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
 import { Table } from '~/components/interface/table';
+import { redirect } from 'react-router';
 import { queryClient } from '~/utils/query-client';
+import { getAuthMeOptions } from '~/queries/auth';
 import { getUsersOptions, useDeleteUser } from '~/queries/users';
 import type { User } from '~/models/user';
 
 export async function clientLoader() {
+  const me = await queryClient.ensureQueryData(getAuthMeOptions());
+  if (me.user.role !== 'Admin') {
+    return redirect('/apps');
+  }
   await queryClient.ensureQueryData(getUsersOptions());
   return null;
 }

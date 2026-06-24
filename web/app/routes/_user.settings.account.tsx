@@ -84,10 +84,7 @@ export default function AccountSettings() {
         </p>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="border border-border bg-surface/20 rounded-lg p-6 space-y-6"
-      >
+      <form onSubmit={handleSubmit} className="space-y-6 max-w-md">
         <VStack space={4}>
           <VStack space={2}>
             <Label
@@ -180,13 +177,15 @@ export default function AccountSettings() {
             </div>
           </VStack>
 
-          <Button
-            type="submit"
-            isLoading={updateProfile.isPending}
-            isDisabled={updateProfile.isPending}
-            label="Save changes"
-            className="mt-2 h-11 w-full justify-center bg-white text-bg hover:bg-white/90 focus:ring-0 focus:ring-offset-0"
-          />
+          <div className="flex justify-start pt-2">
+            <Button
+              type="submit"
+              isLoading={updateProfile.isPending}
+              isDisabled={updateProfile.isPending}
+              label="Save changes"
+              className="h-11 px-6 justify-center bg-white text-bg hover:bg-white/90 focus:ring-0 focus:ring-offset-0 font-medium"
+            />
+          </div>
         </VStack>
       </form>
     </div>

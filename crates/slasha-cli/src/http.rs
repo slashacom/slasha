@@ -101,6 +101,15 @@ impl ApiClient {
         self.send(self.client.put(self.url(path)).json(body)).await
     }
 
+    pub async fn patch<B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<serde_json::Value> {
+        self.send(self.client.patch(self.url(path)).json(body))
+            .await
+    }
+
     pub async fn delete(&self, path: &str) -> Result<serde_json::Value> {
         self.send(self.client.delete(self.url(path))).await
     }

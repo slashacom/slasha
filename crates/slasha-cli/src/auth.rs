@@ -148,7 +148,7 @@ pub async fn handle_me(state: &AppState) -> Result<()> {
     output(state.output_mode, &me.user, || {
         cli_section("Current user");
         cli_label("Email", &me.user.email);
-        cli_label("Role", &me.user.role);
+        cli_label("Role", me.user.role);
     })?;
 
     Ok(())

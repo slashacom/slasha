@@ -39,7 +39,7 @@ function SidebarItem(props: SidebarItemProps) {
 export function Sidebar() {
   const navigate = useNavigate();
   const { data } = useSuspenseQuery(getAuthMeOptions());
-  const isAdmin = data.user?.role === 'admin';
+  const isAdmin = data.user?.role === 'Admin';
 
   const handleLogout = () => {
     removeAuthToken();

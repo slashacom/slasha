@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Context;
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::State,
     response::IntoResponse,
     routing::{delete, get, post, put},
 };
@@ -18,6 +18,7 @@ use slasha_db::{
         app::AppRepo, app_domain::AppDomainRepo, app_scale::AppScaleRepo,
         deployment::DeploymentRepo, service::ServiceRepo,
     },
+    user::UserRole,
 };
 use tokio::process::Command;
 use uuid::Uuid;
@@ -29,7 +30,7 @@ use crate::{
         service::remove_service_container,
     },
     error::{HttpError, HttpResult},
-    extractors::auth::AuthUser,
+    extractors::{app::ActiveApp, auth::AuthUser},
     state::{AppState, Config, Runtime, Storage},
     utils::slugify,
 };
@@ -128,11 +129,8 @@ async fn create_app(
 async fn get_app(
     State(storage): State<Storage>,
     State(config): State<Config>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-
     let domains = AppDomainRepo::list_for_app(&storage.db_pool, &app.id).await?;
     let url = match domains.first() {
         Some(domain) => format!("https://{}", domain.domain),
@@ -156,12 +154,9 @@ async fn delete_app(
     State(docker): State<Docker>,
     State(db_pool): State<DbPool>,
     State(runtime): State<Runtime>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, user }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-
-    if !AppRepo::is_owner(&db_pool, &app.id, &user.id).await? {
+    if user.role != UserRole::Admin && !AppRepo::is_owner(&db_pool, &app.id, &user.id).await? {
         return Err(HttpError::bad_request("Only app owners can delete apps"));
     }
 
@@ -228,7 +223,7 @@ async fn delete_app(
 
     Ok(Json(serde_json::json!({
         "deleted": true,
-        "slug": slug,
+        "slug": app.slug,
     })))
 }
 
@@ -289,10 +284,8 @@ async fn list_apps(
 
 async fn list_scales(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let scales = AppScaleRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({ "scales": scales })))
@@ -305,12 +298,9 @@ struct UpdateSettingsReq {
 
 async fn update_settings(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
     Json(payload): Json<UpdateSettingsReq>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-
     AppRepo::update_auto_deploy(&storage.db_pool, &app.id, payload.auto_deploy).await?;
 
     Ok(Json(serde_json::json!({

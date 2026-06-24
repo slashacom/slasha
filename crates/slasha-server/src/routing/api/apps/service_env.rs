@@ -8,15 +8,12 @@ use axum::{
 };
 use chrono::Utc;
 use serde::Deserialize;
-use slasha_db::{
-    repos::{app::AppRepo, service::ServiceRepo},
-    service::ServiceEnvVar,
-};
+use slasha_db::{repos::service::ServiceRepo, service::ServiceEnvVar};
 use uuid::Uuid;
 
 use crate::{
     error::HttpResult,
-    extractors::auth::AuthUser,
+    extractors::app::ActiveApp,
     state::{AppState, Storage},
 };
 
@@ -33,11 +30,9 @@ struct UpdateEnvVarsReq {
 
 async fn get_env_vars(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path((slug, service_id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, service_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-
     ServiceRepo::find(&storage.db_pool, &service_id, &app.id).await?;
 
     let vars = ServiceRepo::get_env_vars(&storage.db_pool, &service_id).await?;
@@ -52,12 +47,10 @@ async fn get_env_vars(
 
 async fn update_env_vars(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path((slug, service_id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, service_id)): Path<(String, String)>,
     Json(payload): Json<UpdateEnvVarsReq>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-
     ServiceRepo::find(&storage.db_pool, &service_id, &app.id).await?;
 
     let now = Utc::now().naive_utc();

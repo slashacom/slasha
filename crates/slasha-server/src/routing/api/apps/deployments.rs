@@ -17,7 +17,7 @@ use slasha_db::{
     DbPool,
     deployment::DeploymentStatus,
     models::app_scale::ProcessType,
-    repos::{app::AppRepo, app_backup::AppBackupRepo, deployment::DeploymentRepo},
+    repos::{app_backup::AppBackupRepo, deployment::DeploymentRepo},
 };
 use tokio::sync::Notify;
 use tokio_stream::wrappers::BroadcastStream;
@@ -32,7 +32,7 @@ use crate::{
         logs::{LogKey, LogManager},
     },
     error::{HttpError, HttpResult},
-    extractors::auth::AuthUser,
+    extractors::app::ActiveApp,
     state::{AppState, Runtime},
 };
 
@@ -59,12 +59,9 @@ async fn trigger_deploy(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
     Json(payload): Json<TriggerDeployReq>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-
     let deployment = trigger_deployment(
         docker_client,
         db_pool,
@@ -86,11 +83,8 @@ async fn trigger_deploy(
 
 async fn list_deployments(
     State(db_pool): State<DbPool>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-
     let deps = DeploymentRepo::list_for_app(&db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({ "deployments": deps })))
@@ -98,11 +92,9 @@ async fn list_deployments(
 
 async fn get_deployment(
     State(db_pool): State<DbPool>,
-    AuthUser(user): AuthUser,
-    Path((slug, deployment_id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     Ok(Json(serde_json::json!({ "deployment": deployment })))
@@ -112,11 +104,9 @@ async fn stop_deployment(
     State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(runtime): State<Runtime>,
-    AuthUser(user): AuthUser,
-    Path((slug, deployment_id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     if !matches!(
@@ -150,11 +140,9 @@ async fn redeploy_deployment(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
-    AuthUser(user): AuthUser,
-    Path((slug, deployment_id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     remove_deployment_processes(
@@ -189,10 +177,9 @@ async fn restart_deployment(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
-    AuthUser(user): AuthUser,
-    Path((slug, deployment_id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     restart_deployment_processes(
@@ -213,13 +200,11 @@ async fn restart_deployment(
 async fn stream_logs(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    AuthUser(user): AuthUser,
-    Path((slug, deployment_id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<
     Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
 > {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-
     DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     let log = log_manager
@@ -256,11 +241,9 @@ async fn delete_deployment(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
-    AuthUser(user): AuthUser,
-    Path((slug, deployment_id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     remove_deployment_processes(
@@ -288,8 +271,8 @@ struct ScaleDeploymentReq {
 
 async fn scale_deployment(
     State(app_state): State<AppState>,
-    AuthUser(user): AuthUser,
-    Path((slug, deployment_id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, deployment_id)): Path<(String, String)>,
     Json(payload): Json<ScaleDeploymentReq>,
 ) -> HttpResult<impl IntoResponse> {
     if payload.count <= 0 {
@@ -299,8 +282,6 @@ async fn scale_deployment(
     let docker_client = app_state.clients.docker;
     let db_pool = app_state.storage.db_pool;
     let app_runtime = app_state.runtime;
-
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
 
     // Litestream requires a single writer to the SQLite database. Running more
     // than one web container would let multiple processes write the same file on
@@ -356,10 +337,9 @@ async fn scale_deployment(
 async fn list_processes(
     State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
-    AuthUser(user): AuthUser,
-    Path((slug, deployment_id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     let processes = list_deployment_processes(&docker_client, &deployment.id).await?;

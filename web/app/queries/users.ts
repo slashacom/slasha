@@ -12,7 +12,7 @@ export function getUsersOptions() {
 export function getUserOptions(id: string) {
   return queryOptions({
     queryKey: ['users', id],
-    queryFn: () => httpGet<{ user: User }>(`users/${id}`),
+    queryFn: () => httpGet<{ user: User; app_ids: string[] }>(`users/${id}`),
   });
 }
 

@@ -1,14 +1,8 @@
 use std::{collections::HashMap, path::Path};
 
-use axum::{
-    Json, Router,
-    extract::{Path as AxumPath, State},
-    response::IntoResponse,
-    routing::get,
-};
+use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
 use bollard::{Docker, query_parameters::DataUsageOptions};
 use serde::Serialize;
-use slasha_db::repos::app::AppRepo;
 
 use crate::{
     AppState,
@@ -20,8 +14,7 @@ use crate::{
         naming::app_volume_name,
     },
     error::HttpResult,
-    extractors::auth::AuthUser,
-    state::Storage,
+    extractors::app::ActiveApp,
 };
 
 pub fn router() -> Router<AppState> {
@@ -73,13 +66,9 @@ async fn volume_sizes(docker: &Docker) -> HashMap<String, i64> {
 }
 
 async fn list_volumes(
-    State(storage): State<Storage>,
     State(docker): State<Docker>,
-    AuthUser(user): AuthUser,
-    AxumPath(slug): AxumPath<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-
     let mut paths = vec![MANAGED_DATA_PATH.to_string()];
     for path in dockerfile_volume_paths(&app.repo_path, &app.default_branch).await {
         if path != MANAGED_DATA_PATH && !paths.contains(&path) {

@@ -1,6 +1,11 @@
 use clap::{Parser, Subcommand, builder::PossibleValuesParser};
-use slasha_db::service::ServiceKind;
+use slasha_db::{service::ServiceKind, user::UserRole};
 use strum::VariantNames;
+
+fn parse_user_role(s: &str) -> Result<UserRole, String> {
+    use std::str::FromStr;
+    UserRole::from_str(s).map_err(|_| "invalid role: must be admin or user".to_string())
+}
 
 use crate::output::OutputMode;
 
@@ -364,8 +369,10 @@ pub enum UsersCommand {
             help = "Read password from stdin instead of prompting (SLASHA_PASSWORD env is also honored)"
         )]
         password_stdin: bool,
-        #[arg(long)]
-        role: String,
+        #[arg(long, value_parser = parse_user_role)]
+        role: UserRole,
+        #[arg(long, value_delimiter = ',')]
+        apps: Option<Vec<String>>,
     },
 
     #[command(name = "update", about = "Update a user")]
@@ -373,8 +380,12 @@ pub enum UsersCommand {
         id: String,
         #[arg(long)]
         email: Option<String>,
+        #[arg(long, value_parser = parse_user_role)]
+        role: Option<UserRole>,
         #[arg(long)]
-        role: Option<String>,
+        password: Option<String>,
+        #[arg(long, value_delimiter = ',')]
+        apps: Option<Vec<String>>,
     },
 
     #[command(name = "delete", about = "Delete a user")]

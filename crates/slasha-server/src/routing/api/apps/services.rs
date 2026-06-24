@@ -20,7 +20,7 @@ use futures_util::{StreamExt, stream};
 use serde::Deserialize;
 use slasha_db::{
     DbPool,
-    repos::{app::AppRepo, service::ServiceRepo},
+    repos::service::ServiceRepo,
     service::{Service, ServiceKind, ServiceResources, ServiceStatus},
 };
 use tokio_stream::wrappers::BroadcastStream;
@@ -36,7 +36,7 @@ use crate::{
         },
     },
     error::{HttpError, HttpResult},
-    extractors::auth::AuthUser,
+    extractors::app::ActiveApp,
     state::AppState,
     tunnel,
 };
@@ -146,10 +146,8 @@ async fn validate_resources(
 
 async fn list_services(
     State(db_pool): State<DbPool>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let services = ServiceRepo::list_for_app(&db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({
@@ -161,12 +159,9 @@ async fn create_service(
     State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
     Json(payload): Json<CreateServiceReq>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
-
     if !payload
         .kind
         .supported_versions()
@@ -233,10 +228,9 @@ async fn tunnel_handler(
     ws: WebSocketUpgrade,
     State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
-    AuthUser(user): AuthUser,
-    Path((slug, id)): Path<(String, String)>,
+    ActiveApp { app, user }: ActiveApp,
+    Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
     if service.status != ServiceStatus::Running {
@@ -253,10 +247,9 @@ async fn restart_service_handler(
     State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    AuthUser(user): AuthUser,
-    Path((slug, id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
     restart_service_container(&docker_client, &db_pool, &log_manager, &app, &service).await?;
@@ -268,10 +261,9 @@ async fn redeploy_service_handler(
     State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    AuthUser(user): AuthUser,
-    Path((slug, id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
     remove_service_container(&docker_client, &log_manager, &app, &service, false).await?;
@@ -292,10 +284,9 @@ async fn stop_service_handler(
     State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    AuthUser(user): AuthUser,
-    Path((slug, id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
     if service.status != ServiceStatus::Running {
@@ -311,10 +302,9 @@ async fn delete_service_handler(
     State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    AuthUser(user): AuthUser,
-    Path((slug, id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
     if service.status != ServiceStatus::Stopped && service.status != ServiceStatus::Failed {
@@ -333,10 +323,9 @@ async fn delete_service_handler(
 async fn backup_service_handler(
     State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
-    AuthUser(user): AuthUser,
-    Path((slug, id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
     if service.status != ServiceStatus::Running {
@@ -402,12 +391,11 @@ async fn backup_service_handler(
 async fn stream_logs(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    AuthUser(user): AuthUser,
-    Path((slug, id)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<
     Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
 > {
-    let app = AppRepo::find_by_slug_for_user(&db_pool, &slug, &user.id).await?;
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
     let log = log_manager

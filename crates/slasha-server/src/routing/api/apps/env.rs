@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::State,
     response::IntoResponse,
     routing::{get, put},
 };
@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::{
     error::HttpResult,
-    extractors::auth::AuthUser,
+    extractors::app::ActiveApp,
     state::{AppState, Storage},
 };
 
@@ -34,11 +34,8 @@ struct UpdateEnvVarsReq {
 
 async fn get_env_vars(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-
     let vars = AppRepo::get_env_vars(&storage.db_pool, &app.id).await?;
 
     let env_map: HashMap<String, String> = vars.into_iter().map(|v| (v.key, v.value)).collect();
@@ -56,10 +53,8 @@ struct ServiceSuggestion {
 
 async fn get_env_suggestions(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let services = ServiceRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
     let mut out: Vec<ServiceSuggestion> = Vec::with_capacity(services.len());
@@ -81,12 +76,9 @@ async fn get_env_suggestions(
 
 async fn update_env_vars(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
     Json(payload): Json<UpdateEnvVarsReq>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-
     let now = Utc::now().naive_utc();
     let new_vars: Vec<AppEnvVar> = payload
         .vars

@@ -1,4 +1,5 @@
 use axum::{extract::Request, middleware::Next, response::Response};
+use slasha_db::user::UserRole;
 
 use crate::{
     error::{HttpError, HttpResult},
@@ -10,7 +11,7 @@ pub async fn admin_middleware(
     request: Request,
     next: Next,
 ) -> HttpResult<Response> {
-    if auth.0.role != "admin" {
+    if auth.0.role != UserRole::Admin {
         return Err(HttpError::forbidden("Admin access required"));
     }
 

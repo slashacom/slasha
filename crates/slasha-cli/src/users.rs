@@ -4,7 +4,10 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use inquire::{Password, PasswordDisplayMode};
 use serde_json::json;
-use slasha_db::user::User;
+use slasha_db::{
+    app::App,
+    user::{User, UserRole},
+};
 
 use crate::{
     clap_app::UsersCommand,
@@ -21,11 +24,18 @@ pub async fn dispatch(state: &AppState, cmd: UsersCommand) -> Result<()> {
             email,
             password_stdin,
             role,
+            apps,
         } => {
             let password = read_password(password_stdin)?;
-            handle_create(state, &email, &password, &role).await
+            handle_create(state, &email, &password, role, apps).await
         }
-        UsersCommand::Update { id, email, role } => handle_update(state, &id, email, role).await,
+        UsersCommand::Update {
+            id,
+            email,
+            role,
+            password,
+            apps,
+        } => handle_update(state, &id, email, role, password, apps).await,
         UsersCommand::Delete { id, yes } => handle_delete(state, &id, yes).await,
     }
 }
@@ -79,7 +89,7 @@ pub async fn handle_list(state: &AppState) -> Result<()> {
                     vec![
                         u.id.to_string(),
                         u.email.clone(),
-                        u.role.clone(),
+                        u.role.to_string(),
                         u.created_at.format("%Y-%m-%d").to_string(),
                     ]
                 })
@@ -90,12 +100,35 @@ pub async fn handle_list(state: &AppState) -> Result<()> {
     Ok(())
 }
 
+async fn resolve_app_slugs_to_ids(state: &AppState, slugs: &[String]) -> Result<Vec<String>> {
+    let apps_data = state.api_client.get("/api/apps").await?;
+    let apps_list: Vec<App> =
+        serde_json::from_value(apps_data["apps"].clone()).context("Failed to parse apps")?;
+
+    let mut ids = Vec::new();
+    for slug in slugs {
+        if let Some(app) = apps_list.iter().find(|a| a.slug == *slug || a.id == *slug) {
+            ids.push(app.id.clone());
+        } else {
+            anyhow::bail!("App with slug or ID '{}' not found", slug);
+        }
+    }
+    Ok(ids)
+}
+
 pub async fn handle_create(
     state: &AppState,
     email: &str,
     password: &str,
-    role: &str,
+    role: UserRole,
+    app_slugs: Option<Vec<String>>,
 ) -> Result<()> {
+    let app_ids = if let Some(slugs) = app_slugs {
+        Some(resolve_app_slugs_to_ids(state, &slugs).await?)
+    } else {
+        None
+    };
+
     let create_res = state
         .api_client
         .post(
@@ -104,6 +137,7 @@ pub async fn handle_create(
                 "email": email,
                 "password": password,
                 "role": role,
+                "app_ids": app_ids,
             }),
         )
         .await?;
@@ -115,7 +149,7 @@ pub async fn handle_create(
         cli_success("User created.");
         cli_label("ID", &user.id);
         cli_label("Email", &user.email);
-        cli_label("Role", &user.role);
+        cli_label("Role", user.role);
     })?;
 
     Ok(())
@@ -125,15 +159,25 @@ pub async fn handle_update(
     state: &AppState,
     id: &str,
     email: Option<String>,
-    role: Option<String>,
+    role: Option<UserRole>,
+    password: Option<String>,
+    app_slugs: Option<Vec<String>>,
 ) -> Result<()> {
+    let app_ids = if let Some(slugs) = app_slugs {
+        Some(resolve_app_slugs_to_ids(state, &slugs).await?)
+    } else {
+        None
+    };
+
     let update_res = state
         .api_client
-        .put(
+        .patch(
             &format!("/api/users/{}", id),
             &json!({
                 "email": email,
                 "role": role,
+                "password": password,
+                "app_ids": app_ids,
             }),
         )
         .await?;
@@ -144,7 +188,7 @@ pub async fn handle_update(
     output(state.output_mode, &user, || {
         cli_success("User updated.");
         cli_label("Email", &user.email);
-        cli_label("Role", &user.role);
+        cli_label("Role", user.role);
     })?;
 
     Ok(())

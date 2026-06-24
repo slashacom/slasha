@@ -1,18 +1,12 @@
 use anyhow::Context;
-use axum::{
-    Json, Router,
-    extract::{Path, State},
-    response::IntoResponse,
-    routing::get,
-};
+use axum::{Json, Router, extract::Path, response::IntoResponse, routing::get};
 use git2::ObjectType;
 use serde::Serialize;
-use slasha_db::repos::app::AppRepo;
 
 use crate::{
     error::{HttpError, HttpResult},
-    extractors::auth::AuthUser,
-    state::{AppState, Storage},
+    extractors::app::ActiveApp,
+    state::AppState,
 };
 
 const MAX_FILE_SIZE: usize = 1024 * 1024;
@@ -127,13 +121,7 @@ fn build_tree_recursive(
     Ok(nodes)
 }
 
-async fn get_file_tree(
-    State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
-) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
-
+async fn get_file_tree(ActiveApp { app, .. }: ActiveApp) -> HttpResult<impl IntoResponse> {
     let repo = git2::Repository::open_bare(&app.repo_path).context("Failed to open repository")?;
 
     let tree = resolve_head_tree(&repo)?;
@@ -156,17 +144,14 @@ async fn get_file_tree(
 }
 
 async fn get_file_content(
-    State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path((slug, file_path)): Path<(String, String)>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, file_path)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     tracing::debug!(
-        app_slug = %slug,
+        app_slug = %app.slug,
         file_path = %file_path,
         "fetching file content"
     );
-
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
 
     let repo = git2::Repository::open_bare(&app.repo_path).context("Failed to open repository")?;
 

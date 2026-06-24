@@ -3,7 +3,9 @@
 export type User = {
   id: string;
   email: string;
-  role: string;
+  role: UserRole;
   created_at: string;
   updated_at: string;
 };
+
+export type UserRole = 'Admin' | 'User';

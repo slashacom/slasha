@@ -6,7 +6,10 @@ use axum::{
 };
 use chrono::Utc;
 use serde::Deserialize;
-use slasha_db::{repos::user::UserRepo, user::User};
+use slasha_db::{
+    repos::{app::AppRepo, user::UserRepo},
+    user::{User, UserRole},
+};
 use uuid::Uuid;
 
 use crate::{
@@ -29,9 +32,12 @@ async fn get_user(
     Path(id): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
     let user = UserRepo::find_by_id(&storage.db_pool, &id).await?;
+    let memberships = AppRepo::list_memberships_for_user(&storage.db_pool, &id).await?;
+    let app_ids: Vec<String> = memberships.into_iter().map(|m| m.app_id).collect();
 
     Ok(Json(serde_json::json!({
         "user": user,
+        "app_ids": app_ids,
     })))
 }
 
@@ -47,7 +53,8 @@ async fn list_users(State(storage): State<Storage>) -> HttpResult<impl IntoRespo
 struct CreateUserReq {
     email: String,
     password: String,
-    role: String,
+    role: UserRole,
+    app_ids: Option<Vec<String>>,
 }
 
 async fn create_user(
@@ -66,6 +73,10 @@ async fn create_user(
 
     let new_user = UserRepo::create(&storage.db_pool, new_user).await?;
 
+    if let Some(app_ids) = payload.app_ids {
+        AppRepo::set_user_memberships(&storage.db_pool, &new_user.id, app_ids).await?;
+    }
+
     Ok(Json(serde_json::json!({
         "user": new_user,
     })))
@@ -74,7 +85,9 @@ async fn create_user(
 #[derive(Deserialize)]
 struct UpdateUserReq {
     email: Option<String>,
-    role: Option<String>,
+    role: Option<UserRole>,
+    password: Option<String>,
+    app_ids: Option<Vec<String>>,
 }
 
 async fn update_user(
@@ -82,7 +95,34 @@ async fn update_user(
     Path(id): Path<String>,
     Json(payload): Json<UpdateUserReq>,
 ) -> HttpResult<impl IntoResponse> {
-    let updated_user = UserRepo::update(&storage.db_pool, &id, payload.email, payload.role).await?;
+    let user = UserRepo::find_by_id(&storage.db_pool, &id).await?;
+
+    if let Some(new_role) = payload.role
+        && user.role == UserRole::Admin
+        && new_role == UserRole::User
+    {
+        let admin_count = UserRepo::admin_count(&storage.db_pool).await?;
+        if admin_count == 1 {
+            return Err(HttpError::bad_request(
+                "There needs to be at least one admin user!",
+            ));
+        }
+    }
+
+    let password_hash = payload.password.map(|p| hash_password(&p)).transpose()?;
+
+    let updated_user = UserRepo::update(
+        &storage.db_pool,
+        &id,
+        payload.email,
+        payload.role,
+        password_hash,
+    )
+    .await?;
+
+    if let Some(app_ids) = payload.app_ids {
+        AppRepo::set_user_memberships(&storage.db_pool, &id, app_ids).await?;
+    }
 
     Ok(Json(serde_json::json!({
         "user": updated_user,
@@ -97,7 +137,7 @@ async fn delete_user(
 
     let admin_count = UserRepo::admin_count(&storage.db_pool).await?;
 
-    if user.role == "admin" && admin_count == 1 {
+    if user.role == UserRole::Admin && admin_count == 1 {
         return Err(HttpError::bad_request(
             "There needs to be at least one admin user!",
         ));

@@ -9,7 +9,10 @@ use axum::{
 };
 use chrono::Utc;
 use serde::Deserialize;
-use slasha_db::{repos::user::UserRepo, user::User};
+use slasha_db::{
+    repos::user::UserRepo,
+    user::{User, UserRole},
+};
 use uuid::Uuid;
 
 use crate::{
@@ -90,7 +93,7 @@ async fn signup(
         id: Uuid::new_v4().to_string(),
         email: payload.email.clone(),
         password_hash: hashed,
-        role: "admin".into(),
+        role: UserRole::Admin,
         created_at: Utc::now().naive_utc(),
         updated_at: Utc::now().naive_utc(),
     };
@@ -214,7 +217,7 @@ async fn update_profile(
     }
 
     let updated_user =
-        UserRepo::update_profile(&storage.db_pool, &user.id, new_email, new_pwd_hash).await?;
+        UserRepo::update(&storage.db_pool, &user.id, new_email, None, new_pwd_hash).await?;
 
     let exp = Utc::now().timestamp() as usize + EXP_TIME;
     let token_payload = TokenPayload {

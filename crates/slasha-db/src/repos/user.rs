@@ -4,7 +4,10 @@ use diesel::prelude::*;
 use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
-    models::{schema::users, user::User},
+    models::{
+        schema::users,
+        user::{User, UserRole},
+    },
 };
 
 pub struct UserRepo;
@@ -15,7 +18,7 @@ impl UserRepo {
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             let count = users::table
-                .filter(users::role.eq("admin"))
+                .filter(users::role.eq(UserRole::Admin))
                 .count()
                 .get_result::<i64>(&mut conn)?;
             Ok(count)
@@ -77,7 +80,8 @@ impl UserRepo {
         pool: &DbPool,
         id: &str,
         email: Option<String>,
-        role: Option<String>,
+        role: Option<UserRole>,
+        password_hash: Option<String>,
     ) -> DbResult<User> {
         let pool = pool.clone();
         let id = id.to_string();
@@ -94,6 +98,12 @@ impl UserRepo {
             if let Some(r) = role {
                 diesel::update(users::table.filter(users::id.eq(&id)))
                     .set((users::role.eq(r), users::updated_at.eq(updated_at)))
+                    .execute(&mut conn)?;
+            }
+
+            if let Some(p) = password_hash {
+                diesel::update(users::table.filter(users::id.eq(&id)))
+                    .set((users::password_hash.eq(p), users::updated_at.eq(updated_at)))
                     .execute(&mut conn)?;
             }
 
@@ -117,37 +127,6 @@ impl UserRepo {
 
             diesel::delete(users::table.filter(users::id.eq(&id))).execute(&mut conn)?;
             Ok(user)
-        })
-        .await?
-    }
-
-    pub async fn update_profile(
-        pool: &DbPool,
-        id: &str,
-        email: Option<String>,
-        password_hash: Option<String>,
-    ) -> DbResult<User> {
-        let pool = pool.clone();
-        let id = id.to_string();
-        tokio::task::spawn_blocking(move || {
-            let mut conn = pool.get()?;
-            let updated_at = Utc::now().naive_utc();
-
-            if let Some(e) = email {
-                diesel::update(users::table.filter(users::id.eq(&id)))
-                    .set((users::email.eq(e), users::updated_at.eq(updated_at)))
-                    .execute(&mut conn)?;
-            }
-
-            if let Some(p) = password_hash {
-                diesel::update(users::table.filter(users::id.eq(&id)))
-                    .set((users::password_hash.eq(p), users::updated_at.eq(updated_at)))
-                    .execute(&mut conn)?;
-            }
-
-            Ok(users::table
-                .filter(users::id.eq(&id))
-                .first::<User>(&mut conn)?)
         })
         .await?
     }

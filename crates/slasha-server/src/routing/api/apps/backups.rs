@@ -1,23 +1,20 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::State,
     response::IntoResponse,
     routing::{get, post},
 };
 use bollard::Docker;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use slasha_db::{
-    app_backup::AppBackup,
-    repos::{app::AppRepo, app_backup::AppBackupRepo},
-};
+use slasha_db::{app_backup::AppBackup, repos::app_backup::AppBackupRepo};
 use uuid::Uuid;
 
 use crate::{
     AppState,
     docker::deployment::{container::is_web_running, litestream},
     error::{HttpError, HttpResult},
-    extractors::auth::AuthUser,
+    extractors::app::ActiveApp,
     state::Storage,
 };
 
@@ -61,10 +58,8 @@ impl From<AppBackup> for BackupView {
 
 async fn get_backup(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({
@@ -106,11 +101,9 @@ fn new_backup(app_id: &str, now: chrono::NaiveDateTime) -> AppBackup {
 
 async fn save_backup(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
     Json(payload): Json<SaveBackupRequest>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let existing = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
     // keep current secret if not provided
@@ -166,10 +159,8 @@ async fn save_backup(
 
 async fn delete_backup(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     AppBackupRepo::delete(&storage.db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -177,10 +168,8 @@ async fn delete_backup(
 
 async fn restore_backup(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
     let Some(backup) = backup else {
@@ -227,10 +216,8 @@ impl BackupStatus {
 async fn backup_status(
     State(storage): State<Storage>,
     State(docker): State<Docker>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
     let Some(backup) = backup else {
@@ -257,10 +244,8 @@ async fn backup_status(
 async fn refresh_status(
     State(storage): State<Storage>,
     State(docker): State<Docker>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
     let Some(backup) = backup.filter(|b| b.enabled) else {

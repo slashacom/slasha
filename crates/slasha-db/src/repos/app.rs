@@ -6,7 +6,8 @@ use crate::{
     models::{
         app::{App, AppEnvVar, AppMember, AppMemberRole},
         deployment::{Deployment, DeploymentStatus},
-        schema::{app_env_vars, app_members, apps, deployments},
+        schema::{app_env_vars, app_members, apps, deployments, users},
+        user::{User, UserRole},
     },
 };
 
@@ -18,6 +19,16 @@ impl AppRepo {
         let user_id = user_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
+            let u: User = users::table
+                .filter(users::id.eq(&user_id))
+                .first::<User>(&mut conn)?;
+
+            if u.role == UserRole::Admin {
+                return Ok(apps::table
+                    .order(apps::created_at.desc())
+                    .load::<App>(&mut conn)?);
+            }
+
             let app_ids: Vec<String> = app_members::table
                 .filter(app_members::user_id.eq(&user_id))
                 .select(app_members::app_id)
@@ -56,6 +67,14 @@ impl AppRepo {
                 .optional()?
                 .ok_or_else(|| DbError::NotFound(format!("app '{}' not found", slug)))?;
 
+            let u: User = users::table
+                .filter(users::id.eq(&user_id))
+                .first::<User>(&mut conn)?;
+
+            if u.role == UserRole::Admin {
+                return Ok(app);
+            }
+
             let is_member = app_members::table
                 .filter(app_members::app_id.eq(&app.id))
                 .filter(app_members::user_id.eq(&user_id))
@@ -64,7 +83,7 @@ impl AppRepo {
                 .is_some();
 
             if !is_member {
-                return Err(DbError::NotFound(format!("app '{}' not found", slug)));
+                return Err(DbError::NotFound("user is not a member of this app".into()));
             }
 
             Ok(app)
@@ -203,6 +222,66 @@ impl AppRepo {
                 .set(apps::auto_deploy.eq(auto_deploy))
                 .execute(&mut conn)?;
             Ok(())
+        })
+        .await?
+    }
+
+    pub async fn list_all(pool: &DbPool) -> DbResult<Vec<App>> {
+        let pool = pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(apps::table
+                .order(apps::created_at.desc())
+                .load::<App>(&mut conn)?)
+        })
+        .await?
+    }
+
+    pub async fn list_memberships_for_user(
+        pool: &DbPool,
+        user_id: &str,
+    ) -> DbResult<Vec<AppMember>> {
+        let pool = pool.clone();
+        let user_id = user_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(app_members::table
+                .filter(app_members::user_id.eq(&user_id))
+                .load::<AppMember>(&mut conn)?)
+        })
+        .await?
+    }
+
+    pub async fn set_user_memberships(
+        pool: &DbPool,
+        user_id: &str,
+        app_ids: Vec<String>,
+    ) -> DbResult<()> {
+        let pool = pool.clone();
+        let user_id = user_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            conn.transaction::<_, DbError, _>(|tx| {
+                diesel::delete(app_members::table.filter(app_members::user_id.eq(&user_id)))
+                    .execute(tx)?;
+
+                if !app_ids.is_empty() {
+                    let now = chrono::Utc::now().naive_utc();
+                    let new_members: Vec<AppMember> = app_ids
+                        .into_iter()
+                        .map(|app_id| AppMember {
+                            app_id,
+                            user_id: user_id.clone(),
+                            role: AppMemberRole::Member,
+                            added_at: now,
+                        })
+                        .collect();
+                    diesel::insert_into(app_members::table)
+                        .values(&new_members)
+                        .execute(tx)?;
+                }
+                Ok(())
+            })
         })
         .await?
     }

@@ -5,9 +5,9 @@ use axum::{
     routing::{delete, get},
 };
 use serde::Deserialize;
-use slasha_db::repos::{app::AppRepo, app_domain::AppDomainRepo};
+use slasha_db::repos::app_domain::AppDomainRepo;
 
-use crate::{AppState, error::HttpResult, extractors::auth::AuthUser, state::Storage};
+use crate::{AppState, error::HttpResult, extractors::app::ActiveApp, state::Storage};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -22,10 +22,8 @@ struct AddDomainRequest {
 
 async fn list_domains(
     State(storage): State<Storage>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&storage.db_pool, &slug, &user.id).await?;
     let domains = AppDomainRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({ "domains": domains })))
@@ -33,11 +31,9 @@ async fn list_domains(
 
 async fn add_domain(
     State(state): State<AppState>,
-    AuthUser(user): AuthUser,
-    Path(slug): Path<String>,
+    ActiveApp { app, .. }: ActiveApp,
     Json(payload): Json<AddDomainRequest>,
 ) -> HttpResult<impl IntoResponse> {
-    let app = AppRepo::find_by_slug_for_user(&state.storage.db_pool, &slug, &user.id).await?;
     let domain = AppDomainRepo::add(&state.storage.db_pool, &app.id, &payload.domain).await?;
 
     state.runtime.proxy_sync_trigger.notify_one();
@@ -47,10 +43,9 @@ async fn add_domain(
 
 async fn delete_domain(
     State(state): State<AppState>,
-    AuthUser(user): AuthUser,
-    Path((slug, domain_id)): Path<(String, String)>,
+    ActiveApp { .. }: ActiveApp,
+    Path((_, domain_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let _app = AppRepo::find_by_slug_for_user(&state.storage.db_pool, &slug, &user.id).await?;
     AppDomainRepo::delete(&state.storage.db_pool, &domain_id).await?;
 
     state.runtime.proxy_sync_trigger.notify_one();
