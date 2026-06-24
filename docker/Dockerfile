@@ -7,7 +7,7 @@ RUN NODE_ENV=production bun run build
 
 FROM lukemathwalker/cargo-chef:latest-rust-slim-bookworm AS chef
 RUN apt-get update && \
-    apt-get install -y pkg-config libssl-dev libsqlite3-dev libdbus-1-dev && \
+    apt-get install -y pkg-config libssl-dev libsqlite3-dev libdbus-1-dev perl make && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
