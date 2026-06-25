@@ -1,7 +1,11 @@
 <br />
 
 <p align="center">
-  <img src=".github/banner.svg" alt="Slasha" width="280" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/banner-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset=".github/banner.svg">
+    <img alt="Slasha" src=".github/banner.svg" width="280" />
+  </picture>
 </p>
 
 <p align="center">
