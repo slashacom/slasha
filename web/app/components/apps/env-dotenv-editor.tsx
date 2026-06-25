@@ -290,7 +290,7 @@ export function DotenvEditor(props: DotenvEditorProps) {
       editorProps: {
         attributes: {
           class: cn(
-            'env-dotenv-editor block min-h-[120px] w-full overflow-x-auto bg-transparent font-mono text-[13px] leading-6 text-text outline-none [&_p]:m-0 [&_p]:min-h-[24px] [&_p]:whitespace-pre'
+            'env-dotenv-editor block min-h-[120px] w-full overflow-x-auto bg-transparent font-mono text-[13px] leading-6 text-text outline-none'
           ),
           autoComplete: 'off',
           autoCorrect: 'off',

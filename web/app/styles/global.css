@@ -113,6 +113,12 @@ a:not(nav a) {
   background: hsl(0 0% 100% / 20%);
 }
 
+.env-dotenv-editor p {
+  margin: 0;
+  min-height: 24px;
+  white-space: pre;
+}
+
 .env-dotenv-editor [data-mention] {
   white-space: nowrap;
 }
