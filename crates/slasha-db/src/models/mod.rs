@@ -5,6 +5,7 @@ pub mod app_scale;
 pub mod deployment;
 pub mod schema;
 pub mod server_metrics;
+pub mod server_settings;
 pub mod service;
 pub mod ssh_keys;
 pub mod user;
