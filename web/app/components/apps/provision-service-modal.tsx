@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, KeyRound, Loader2 } from 'lucide-react';
 import type { ServiceKind } from '~/models/service';
 import {
@@ -19,7 +19,9 @@ import {
 } from '~/components/interface/dialog';
 import { TextInput } from '~/components/interface/text-input';
 import { EnvEditor } from '~/components/apps/env-editor';
+import { EnvVarChips } from '~/components/apps/env-var-chips';
 import { buildResourcesPayload } from '~/components/apps/service-resources';
+import { primaryEnvKey, serviceEnvReference } from '~/utils/service-env';
 
 type ProvisionServiceModalProps = {
   appSlug: string;
@@ -35,7 +37,6 @@ function sanitizeServiceName(value: string) {
 
 export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
   const { appSlug, onClose } = props;
-  const queryClient = useQueryClient();
   const { data } = useQuery(getServiceKindsOptions());
   const provisionService = useProvisionService();
 
@@ -97,9 +98,6 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
         version,
         envVars,
         resources: payload,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'services'],
       });
       onClose();
     } catch (e) {
@@ -213,9 +211,6 @@ function EnvConfigSection(props: EnvConfigSectionProps) {
     props;
   const keys = useMemo(() => Object.keys(envVars).sort(), [envVars]);
   const refName = name.trim() || '<service-name>';
-  const exampleKey = keys.includes('DATABASE_URL')
-    ? 'DATABASE_URL'
-    : (keys[0] ?? 'DATABASE_URL');
   const hasSecret = keys.some((k) => /password|secret|token|key/i.test(k));
 
   return (
@@ -265,16 +260,7 @@ function EnvConfigSection(props: EnvConfigSectionProps) {
               <span className="text-[13px] text-text">
                 {keys.length} variables will be configured for you
               </span>
-              <HStack space={1.5} wrap>
-                {keys.map((key) => (
-                  <span
-                    key={key}
-                    className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-[11px] text-text-secondary"
-                  >
-                    {key}
-                  </span>
-                ))}
-              </HStack>
+              <EnvVarChips keys={keys} />
               {hasSecret ? (
                 <span className="text-[11px] leading-5 text-text-tertiary">
                   Secrets like passwords are generated automatically.
@@ -288,7 +274,7 @@ function EnvConfigSection(props: EnvConfigSectionProps) {
       <p className="text-[11px] leading-5 text-text-tertiary">
         Reference these from your app as{' '}
         <span className="font-mono text-text-secondary">
-          {`\${{ ${refName}.${exampleKey} }}`}
+          {serviceEnvReference(refName, primaryEnvKey(keys))}
         </span>
         . Edit anytime from the service&apos;s settings.
       </p>

@@ -174,7 +174,6 @@ struct ServiceStats {
     started_at: Option<String>,
     cpu_percent: Option<f64>,
     memory_used_bytes: Option<u64>,
-    memory_limit_bytes: Option<u64>,
     disk_bytes: Option<i64>,
 }
 
@@ -203,21 +202,23 @@ async fn service_stats_handler(
 
     let mut cpu_percent = None;
     let mut memory_used_bytes = None;
-    let mut memory_limit_bytes = None;
 
     if running {
         let opts = StatsOptionsBuilder::default()
             .stream(false)
             .one_shot(true)
             .build();
-        if let Some(Ok(stats)) = docker_client.stats(&container_name, Some(opts)).next().await {
+        if let Some(Ok(stats)) = docker_client
+            .stats(&container_name, Some(opts))
+            .next()
+            .await
+        {
             cpu_percent = Some(compute_cpu_percent(
                 stats.cpu_stats.as_ref(),
                 stats.precpu_stats.as_ref(),
             ));
             if let Some(mem) = stats.memory_stats.as_ref() {
                 memory_used_bytes = mem.usage;
-                memory_limit_bytes = mem.limit;
             }
         }
     }
@@ -233,7 +234,6 @@ async fn service_stats_handler(
         started_at,
         cpu_percent,
         memory_used_bytes,
-        memory_limit_bytes,
         disk_bytes,
     }))
 }
@@ -250,18 +250,18 @@ async fn service_disk_bytes(docker: &Docker, service: &Service) -> Option<i64> {
             CreateExecOptions {
                 attach_stdout: Some(true),
                 attach_stderr: Some(false),
-                cmd: Some(vec![
-                    "du".to_string(),
-                    "-sk".to_string(),
-                    mount.to_string(),
-                ]),
+                cmd: Some(vec!["du".to_string(), "-sk".to_string(), mount.to_string()]),
                 ..Default::default()
             },
         )
         .await
         .ok()?;
 
-    let mut output = match docker.start_exec(&exec.id, None::<StartExecOptions>).await.ok()? {
+    let mut output = match docker
+        .start_exec(&exec.id, None::<StartExecOptions>)
+        .await
+        .ok()?
+    {
         StartExecResults::Attached { output, .. } => output,
         StartExecResults::Detached => return None,
     };

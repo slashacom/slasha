@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import {
@@ -10,6 +10,7 @@ import {
   type SuggestionGroup,
 } from '~/components/apps/env-dotenv-editor';
 import { EnvEditor } from '~/components/apps/env-editor';
+import { primaryEnvKey, serviceEnvReference } from '~/utils/service-env';
 
 type ServiceEnvEditorProps = {
   appSlug: string;
@@ -29,7 +30,6 @@ export function ServiceEnvEditor(props: ServiceEnvEditorProps) {
     onSaveSuccess,
     onCancel,
   } = props;
-  const queryClient = useQueryClient();
   const { data: envData, isLoading: envLoading } = useQuery(
     getServiceEnvVarsOptions(appSlug, serviceId)
   );
@@ -46,9 +46,6 @@ export function ServiceEnvEditor(props: ServiceEnvEditorProps) {
         vars,
       });
       toast.success('Service environment variables saved');
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'services', serviceId, 'env-vars'],
-      });
       onSaveSuccess?.();
     } catch (e: any) {
       toast.error(
@@ -63,14 +60,11 @@ export function ServiceEnvEditor(props: ServiceEnvEditorProps) {
   ];
 
   const keys = Object.keys(envData?.env_vars ?? {});
-  const exampleKey = keys.includes('DATABASE_URL')
-    ? 'DATABASE_URL'
-    : (keys[0] ?? 'DATABASE_URL');
   const hint = (
     <span>
       Reference these from your app as{' '}
       <span className="font-mono text-text-secondary">
-        {`\${{ ${serviceName}.${exampleKey} }}`}
+        {serviceEnvReference(serviceName, primaryEnvKey(keys))}
       </span>
     </span>
   );

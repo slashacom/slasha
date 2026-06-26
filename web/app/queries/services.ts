@@ -1,4 +1,8 @@
-import { queryOptions, useMutation } from '@tanstack/react-query';
+import {
+  queryOptions,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { httpGet, httpPost, httpDelete, httpPut } from '~/utils/http';
 import type { Service, ServiceKind } from '~/models/service';
 
@@ -50,9 +54,7 @@ export function getServiceOptions(appSlug: string, serviceId: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'services', serviceId],
     queryFn: () =>
-      httpGet<{ service: Service }>(
-        `apps/${appSlug}/services/${serviceId}`
-      ),
+      httpGet<{ service: Service }>(`apps/${appSlug}/services/${serviceId}`),
   });
 }
 
@@ -61,7 +63,6 @@ export type ServiceStats = {
   started_at: string | null;
   cpu_percent: number | null;
   memory_used_bytes: number | null;
-  memory_limit_bytes: number | null;
   disk_bytes: number | null;
 };
 
@@ -69,13 +70,22 @@ export function getServiceStatsOptions(appSlug: string, serviceId: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'services', serviceId, 'stats'],
     queryFn: () =>
-      httpGet<ServiceStats>(
-        `apps/${appSlug}/services/${serviceId}/stats`
-      ),
+      httpGet<ServiceStats>(`apps/${appSlug}/services/${serviceId}/stats`),
   });
 }
 
+// Service lifecycle mutations all refresh the app's service list (which, by
+// prefix, also covers the single-service and stats queries).
+function useInvalidateServices() {
+  const queryClient = useQueryClient();
+  return (appSlug: string) =>
+    queryClient.invalidateQueries({
+      queryKey: ['apps', appSlug, 'services'],
+    });
+}
+
 export function useProvisionService() {
+  const invalidate = useInvalidateServices();
   return useMutation({
     mutationFn: (data: ProvisionServicePayload) =>
       httpPost<{ service: Service }>(`apps/${data.appSlug}/services`, {
@@ -85,45 +95,54 @@ export function useProvisionService() {
         env_vars: data.envVars,
         resources: data.resources ?? null,
       }),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }
 
 export function useRestartService() {
+  const invalidate = useInvalidateServices();
   return useMutation({
     mutationFn: (data: ServiceRef) =>
       httpPost<{ restarted: boolean }>(
         `apps/${data.appSlug}/services/${data.serviceId}/restart`,
         {}
       ),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }
 
 export function useRedeployService() {
+  const invalidate = useInvalidateServices();
   return useMutation({
     mutationFn: (data: ServiceRef) =>
       httpPost<{ redeploying: boolean }>(
         `apps/${data.appSlug}/services/${data.serviceId}/redeploy`,
         {}
       ),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }
 
 export function useStopService() {
+  const invalidate = useInvalidateServices();
   return useMutation({
     mutationFn: (data: ServiceRef) =>
       httpPost<{ stopped: boolean }>(
         `apps/${data.appSlug}/services/${data.serviceId}/stop`,
         {}
       ),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }
 
 export function useDeleteService() {
+  const invalidate = useInvalidateServices();
   return useMutation({
     mutationFn: (data: ServiceRef) =>
       httpDelete<{ deleted: boolean }>(
         `apps/${data.appSlug}/services/${data.serviceId}`
       ),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }
 
@@ -138,11 +157,23 @@ export function getServiceEnvVarsOptions(appSlug: string, serviceId: string) {
 }
 
 export function useUpdateServiceEnvVars() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: UpdateServiceEnvVarsPayload) =>
       httpPut<{ env_vars: Record<string, string> }>(
         `apps/${data.appSlug}/services/${data.serviceId}/env`,
         { vars: data.vars }
       ),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: [
+          'apps',
+          variables.appSlug,
+          'services',
+          variables.serviceId,
+          'env-vars',
+        ],
+      });
+    },
   });
 }

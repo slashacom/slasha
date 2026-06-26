@@ -6,6 +6,7 @@ import { getServiceEnvVarsOptions } from '~/queries/services';
 import { Button } from '~/components/interface/button';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
+import { primaryEnvKey, serviceEnvReference } from '~/utils/service-env';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -73,12 +74,10 @@ export function ConnectModal(props: ConnectModalProps) {
   );
 
   const envKeys = Object.keys(envData?.env_vars ?? {}).sort();
-  const primaryKey = envKeys.includes('DATABASE_URL')
-    ? 'DATABASE_URL'
-    : (envKeys[0] ?? 'DATABASE_URL');
+  const primaryKey = primaryEnvKey(envKeys);
   const otherKeys = envKeys.filter((key) => key !== primaryKey);
 
-  const appExample = `${primaryKey}=\${{ ${service.name}.${primaryKey} }}`;
+  const appExample = `${primaryKey}=${serviceEnvReference(service.name, primaryKey)}`;
   const proxyCommand = `slasha proxy --app ${appSlug} ${service.name}`;
 
   return (
@@ -123,7 +122,7 @@ export function ConnectModal(props: ConnectModalProps) {
                 {otherKeys.map((key, index) => (
                   <span key={key}>
                     <span className="font-mono text-text-secondary">
-                      {`\${{ ${service.name}.${key} }}`}
+                      {serviceEnvReference(service.name, key)}
                     </span>
                     {index < otherKeys.length - 1 ? ', ' : ''}
                   </span>

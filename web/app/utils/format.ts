@@ -91,3 +91,24 @@ export function formatRelativeTime(date: string | Date): string {
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
 }
+
+export function formatUptime(startedAt: string): string {
+  const ms = Date.now() - parseUTC(startedAt).getTime();
+  if (Number.isNaN(ms) || ms < 0) {
+    return '—';
+  }
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ${minutes % 60}m`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
+}

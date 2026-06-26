@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useQueryClient } from '@tanstack/react-query';
 import { Eye, MoreHorizontal, Trash2 } from 'lucide-react';
 import type { Service } from '~/models/service';
 import { useDeleteService } from '~/queries/services';
@@ -14,6 +13,7 @@ import {
 } from '~/components/interface/dropdown-menu';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
+import { ServiceKindBadge } from '~/components/apps/service-kind-badge';
 import { formatRelativeTime } from '~/utils/format';
 import { toast } from 'sonner';
 
@@ -25,7 +25,6 @@ type ServiceRowProps = {
 export function ServiceRow(props: ServiceRowProps) {
   const { service, appSlug } = props;
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const deleteService = useDeleteService();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -36,7 +35,6 @@ export function ServiceRow(props: ServiceRowProps) {
   const handleDelete = async () => {
     try {
       await deleteService.mutateAsync({ appSlug, serviceId: service.id });
-      queryClient.invalidateQueries({ queryKey: ['apps', appSlug, 'services'] });
       setShowDeleteConfirm(false);
     } catch (e) {
       toast.error('Failed to delete service: ' + e);
@@ -54,9 +52,7 @@ export function ServiceRow(props: ServiceRowProps) {
             <span className="font-mono text-[13px] font-semibold text-text transition-colors group-hover:text-primary">
               {service.name}
             </span>
-            <span className="rounded bg-white/5 px-1.5 py-0.5 text-[11px] font-medium text-text-secondary">
-              {service.kind} {service.version}
-            </span>
+            <ServiceKindBadge service={service} />
             <StatusBadge status={service.status} />
           </HStack>
           <HStack space={3}>
