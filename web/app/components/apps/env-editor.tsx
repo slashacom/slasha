@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { Save, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -28,6 +28,7 @@ export type EnvEditorProps = {
   readOnly?: boolean;
   variant?: 'default' | 'embedded';
   extraGroups?: SuggestionGroup[];
+  hint?: ReactNode;
 };
 
 export function EnvEditor(props: EnvEditorProps) {
@@ -43,6 +44,7 @@ export function EnvEditor(props: EnvEditorProps) {
     readOnly = false,
     variant = 'default',
     extraGroups,
+    hint,
   } = props;
   const [text, setText] = useState<string>(() =>
     serializeDotEnv(fromEnvRecord(initialVars))
@@ -120,14 +122,16 @@ export function EnvEditor(props: EnvEditorProps) {
       onChange={handleTextChange}
       groups={groups}
       readOnly={readOnly}
+      padded={!isEmbedded}
       placeholder="DATABASE_URL=postgres://…   ( reference others with ${{ OTHER_VAR }} )"
     />
   );
 
   return (
-    <VStack space={isEmbedded ? 3 : 4}>
+    <VStack space={isEmbedded ? 3 : 4} className="min-w-0">
       <div
         className={cn(
+          'min-w-0',
           !isEmbedded &&
             'overflow-hidden rounded-xl border border-border bg-surface/50 shadow-sm backdrop-blur-sm'
         )}
@@ -148,27 +152,32 @@ export function EnvEditor(props: EnvEditorProps) {
           </div>
         )}
 
-        <div className={cn(!isEmbedded && 'px-6 py-5')}>{editor}</div>
+        <div className="min-w-0">{editor}</div>
 
         {showFooter && (
-          <div className="flex justify-end gap-3 border-t border-border bg-surface/50 px-6 py-4">
-            {onCancel && (
-              <Button
-                label={readOnly ? 'Close' : 'Cancel'}
-                variant="ghost"
-                onClick={onCancel}
-                size="sm"
-              />
-            )}
-            {!readOnly && (
-              <Button
-                label="Save Changes"
-                icon={<Save className="size-4" />}
-                onClick={handleSave}
-                isLoading={isSaving}
-                size="sm"
-              />
-            )}
+          <div className="flex items-center justify-between gap-3 border-t border-border bg-surface/50 px-6 py-4">
+            <div className="min-w-0 text-[12px] leading-5 text-text-tertiary">
+              {hint}
+            </div>
+            <HStack space={3}>
+              {onCancel && (
+                <Button
+                  label={readOnly ? 'Close' : 'Cancel'}
+                  variant="ghost"
+                  onClick={onCancel}
+                  size="sm"
+                />
+              )}
+              {!readOnly && (
+                <Button
+                  label="Save Changes"
+                  icon={<Save className="size-4" />}
+                  onClick={handleSave}
+                  isLoading={isSaving}
+                  size="sm"
+                />
+              )}
+            </HStack>
           </div>
         )}
       </div>

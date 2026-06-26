@@ -77,9 +77,9 @@ export function StorageManager(props: StorageManagerProps) {
           <p className="mt-4 text-[11px] leading-5 text-text-tertiary">
             The managed{' '}
             <span className="font-mono text-text-secondary">/data</span> volume
-            is mounted into every process and exposed as{' '}
+            is mounted into every process. Reference it in your env config with{' '}
             <span className="font-mono text-text-secondary">
-              SLASHA_DATA_DIR
+              {'${{ SLASHA.data_dir }}'}
             </span>
             . Write databases and uploads there to keep them across deploys.
           </p>

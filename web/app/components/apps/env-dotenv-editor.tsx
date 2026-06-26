@@ -166,10 +166,18 @@ export type DotenvEditorProps = {
   groups: SuggestionGroup[];
   placeholder?: string;
   readOnly?: boolean;
+  padded?: boolean;
 };
 
 export function DotenvEditor(props: DotenvEditorProps) {
-  const { value, onChange, groups, placeholder, readOnly = false } = props;
+  const {
+    value,
+    onChange,
+    groups,
+    placeholder,
+    readOnly = false,
+    padded = false,
+  } = props;
   const groupsRef = useRef(groups);
   groupsRef.current = groups;
   const editor = useEditor(
@@ -290,7 +298,8 @@ export function DotenvEditor(props: DotenvEditorProps) {
       editorProps: {
         attributes: {
           class: cn(
-            'env-dotenv-editor block min-h-[120px] w-full overflow-x-auto bg-transparent font-mono text-[13px] leading-6 text-text outline-none'
+            'env-dotenv-editor block min-h-[120px] w-full overflow-x-auto bg-transparent font-mono text-[13px] leading-6 text-text outline-none',
+            padded && 'px-6 py-5'
           ),
           autoComplete: 'off',
           autoCorrect: 'off',
@@ -320,7 +329,12 @@ export function DotenvEditor(props: DotenvEditorProps) {
 
   if (typeof document === 'undefined') {
     return (
-      <pre className="min-h-[120px] w-full overflow-x-auto whitespace-pre font-mono text-[13px] leading-6 text-text">
+      <pre
+        className={cn(
+          'min-h-[120px] w-full overflow-x-auto whitespace-pre font-mono text-[13px] leading-6 text-text',
+          padded && 'px-6 py-5'
+        )}
+      >
         {value}
       </pre>
     );

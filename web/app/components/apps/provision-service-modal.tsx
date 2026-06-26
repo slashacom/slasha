@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { ChevronDown, ChevronRight, KeyRound, Loader2 } from 'lucide-react';
 import type { ServiceKind } from '~/models/service';
 import {
   getServiceKindsOptions,
@@ -19,16 +19,24 @@ import {
 } from '~/components/interface/dialog';
 import { TextInput } from '~/components/interface/text-input';
 import { EnvEditor } from '~/components/apps/env-editor';
+import { EnvVarChips } from '~/components/apps/env-var-chips';
 import { buildResourcesPayload } from '~/components/apps/service-resources';
+import { primaryEnvKey, serviceEnvReference } from '~/utils/service-env';
 
 type ProvisionServiceModalProps = {
   appSlug: string;
   onClose: () => void;
 };
 
+// Service names double as the reference namespace (`${{ name.KEY }}`), so keep
+// them to a safe identifier: spaces become hyphens and other characters are
+// dropped.
+function sanitizeServiceName(value: string) {
+  return value.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
 export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
   const { appSlug, onClose } = props;
-  const queryClient = useQueryClient();
   const { data } = useQuery(getServiceKindsOptions());
   const provisionService = useProvisionService();
 
@@ -39,6 +47,7 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
   const [version, setVersion] = useState<string>('');
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
 
+  const [isEnvOpen, setIsEnvOpen] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [memoryMb, setMemoryMb] = useState('');
   const [cpuCores, setCpuCores] = useState('');
@@ -90,9 +99,6 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
         envVars,
         resources: payload,
       });
-      queryClient.invalidateQueries({
-        queryKey: ['apps', appSlug, 'services'],
-      });
       onClose();
     } catch (e) {
       toast.error('Failed to provision service: ' + e);
@@ -105,14 +111,14 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
         <DialogHeader>
           <DialogTitle>Provision Service</DialogTitle>
         </DialogHeader>
-        <VStack space={4} className="mt-4">
+        <VStack space={4} className="mt-4 min-w-0">
           <VStack space={1.5}>
             <label className="text-xs font-medium text-text-secondary">
               Service Name
             </label>
             <TextInput
               value={name}
-              onChange={setName}
+              onChange={(value) => setName(sanitizeServiceName(value))}
               placeholder="e.g. main-db"
             />
           </VStack>
@@ -153,21 +159,15 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
             </VStack>
           </HStack>
 
-          <VStack space={1.5} className="mt-4">
-            <label className="text-xs font-medium text-text-secondary">
-              Environment Configuration
-            </label>
-            <div className="max-h-[400px] overflow-auto rounded-lg border border-border bg-surface/30 custom-scrollbar">
-              <EnvEditor
-                key={kindName}
-                initialVars={envVars}
-                isLoading={false}
-                isSaving={false}
-                onChange={setEnvVars}
-                variant="embedded"
-              />
-            </div>
-          </VStack>
+          <EnvConfigSection
+            kindName={kindName}
+            name={name}
+            envVars={envVars}
+            loading={!selectedKind}
+            isOpen={isEnvOpen}
+            onToggle={() => setIsEnvOpen((v) => !v)}
+            onChange={setEnvVars}
+          />
 
           <AdvancedResourcesSection
             isOpen={isAdvancedOpen}
@@ -193,6 +193,92 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type EnvConfigSectionProps = {
+  kindName: ServiceKind | '';
+  name: string;
+  envVars: Record<string, string>;
+  loading: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  onChange: (vars: Record<string, string>) => void;
+};
+
+function EnvConfigSection(props: EnvConfigSectionProps) {
+  const { kindName, name, envVars, loading, isOpen, onToggle, onChange } =
+    props;
+  const keys = useMemo(() => Object.keys(envVars).sort(), [envVars]);
+  const refName = name.trim() || '<service-name>';
+  const hasSecret = keys.some((k) => /password|secret|token|key/i.test(k));
+
+  return (
+    <VStack space={2} className="mt-4 min-w-0">
+      <HStack space={2} justifyContent="between">
+        <label className="text-xs font-medium text-text-secondary">
+          Environment Configuration
+        </label>
+        {!loading ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex items-center gap-1 text-xs font-medium text-text-secondary transition-colors hover:text-text"
+          >
+            {isOpen ? (
+              <ChevronDown className="size-3.5" />
+            ) : (
+              <ChevronRight className="size-3.5" />
+            )}
+            {isOpen ? 'Hide' : 'Customize'}
+          </button>
+        ) : null}
+      </HStack>
+
+      {loading ? (
+        <div className="flex min-h-[135px] items-center justify-center rounded-lg border border-border bg-surface/30">
+          <Loader2 className="size-4 animate-spin text-text-tertiary" />
+        </div>
+      ) : isOpen ? (
+        <div className="max-h-[400px] overflow-auto rounded-lg border border-border bg-surface/30 custom-scrollbar">
+          <EnvEditor
+            key={kindName}
+            initialVars={envVars}
+            isLoading={false}
+            isSaving={false}
+            onChange={onChange}
+            variant="embedded"
+          />
+        </div>
+      ) : (
+        <div className="min-h-[135px] rounded-lg border border-border bg-surface/30 p-4">
+          <HStack space={3} alignItems="start">
+            <div className="rounded-md bg-white/5 p-1.5 text-text-secondary">
+              <KeyRound className="size-4" />
+            </div>
+            <VStack space={2} className="min-w-0 flex-1">
+              <span className="text-[13px] text-text">
+                {keys.length} variables will be configured for you
+              </span>
+              <EnvVarChips keys={keys} />
+              {hasSecret ? (
+                <span className="text-[11px] leading-5 text-text-tertiary">
+                  Secrets like passwords are generated automatically.
+                </span>
+              ) : null}
+            </VStack>
+          </HStack>
+        </div>
+      )}
+
+      <p className="text-[11px] leading-5 text-text-tertiary">
+        Reference these from your app as{' '}
+        <span className="font-mono text-text-secondary">
+          {serviceEnvReference(refName, primaryEnvKey(keys))}
+        </span>
+        . Edit anytime from the service&apos;s settings.
+      </p>
+    </VStack>
   );
 }
 

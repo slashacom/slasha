@@ -203,7 +203,10 @@ async fn tick(
     Ok(())
 }
 
-fn compute_cpu_percent(cpu: Option<&ContainerCpuStats>, precpu: Option<&ContainerCpuStats>) -> f64 {
+pub(crate) fn compute_cpu_percent(
+    cpu: Option<&ContainerCpuStats>,
+    precpu: Option<&ContainerCpuStats>,
+) -> f64 {
     let (cpu, precpu) = match (cpu, precpu) {
         (Some(c), Some(p)) => (c, p),
         _ => return 0.0,

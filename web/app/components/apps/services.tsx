@@ -8,7 +8,6 @@ import { EmptyPage } from '~/components/global/empty-page';
 import { VStack } from '~/components/interface/stacks';
 import { ServiceRow } from '~/components/apps/service-row';
 import { ProvisionServiceModal } from '~/components/apps/provision-service-modal';
-import { LogStreamDialog } from '~/components/apps/log-stream-dialog';
 
 type ServicesViewProps = {
   appSlug: string;
@@ -18,10 +17,6 @@ export function ServicesView(props: ServicesViewProps) {
   const { appSlug } = props;
   const { data, isLoading } = useQuery(getAppServicesOptions(appSlug));
   const [isProvisionModalOpen, setProvisionModalOpen] = useState(false);
-  const [activeLogsId, setActiveLogsId] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
 
   const services = data?.services ?? [];
 
@@ -73,9 +68,6 @@ export function ServicesView(props: ServicesViewProps) {
                 key={service.id}
                 service={service}
                 appSlug={appSlug}
-                onShowLogs={() =>
-                  setActiveLogsId({ id: service.id, name: service.name })
-                }
               />
             ))}
           </div>
@@ -86,13 +78,6 @@ export function ServicesView(props: ServicesViewProps) {
         <ProvisionServiceModal
           appSlug={appSlug}
           onClose={() => setProvisionModalOpen(false)}
-        />
-      )}
-      {activeLogsId && (
-        <LogStreamDialog
-          url={`/api/apps/${appSlug}/services/${activeLogsId.id}/logs`}
-          title={`Service Logs — ${activeLogsId.name}`}
-          onClose={() => setActiveLogsId(null)}
         />
       )}
     </div>
