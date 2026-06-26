@@ -5,6 +5,7 @@ use crate::{AppState, error::HttpResult};
 
 pub mod apps;
 pub mod auth;
+pub mod monitoring;
 pub mod service_kinds;
 pub mod ssh_keys;
 pub mod users;
@@ -16,6 +17,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/health", get(health_check))
         .nest("/auth", auth::router())
         .nest("/apps", apps::router())
+        .nest("/monitoring", monitoring::router())
         .nest("/services", service_kinds::router())
         .nest("/ssh-keys", ssh_keys::router())
         .nest(

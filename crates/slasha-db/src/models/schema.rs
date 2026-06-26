@@ -100,6 +100,23 @@ diesel::table! {
 }
 
 diesel::table! {
+    server_metrics (id) {
+        id -> Text,
+        cpu_usage -> Float,
+        memory_used -> Integer,
+        memory_total -> Integer,
+        swap_used -> Integer,
+        swap_total -> Integer,
+        disk_used -> Integer,
+        disk_total -> Integer,
+        network_rx_bps -> Float,
+        network_tx_bps -> Float,
+        load_average -> Float,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     service_env_vars (id) {
         id -> Text,
         service_id -> Text,
@@ -166,6 +183,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     app_scale,
     apps,
     deployments,
+    server_metrics,
     service_env_vars,
     services,
     ssh_keys,
