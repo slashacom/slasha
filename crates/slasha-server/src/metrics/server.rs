@@ -19,7 +19,6 @@ enum AlertKind {
 struct Alert {
     kind: AlertKind,
     name: &'static str,
-    emoji: &'static str,
     current: f32,
     limit: f32,
 }
@@ -102,7 +101,6 @@ impl ServerMetricsCollector {
             alerts.push(Alert {
                 kind: AlertKind::Cpu,
                 name: "CPU",
-                emoji: "🖥️",
                 current: metric.cpu_usage,
                 limit,
             });
@@ -114,7 +112,6 @@ impl ServerMetricsCollector {
                 alerts.push(Alert {
                     kind: AlertKind::Memory,
                     name: "Memory",
-                    emoji: "🧠",
                     current: pct,
                     limit,
                 });
@@ -127,7 +124,6 @@ impl ServerMetricsCollector {
                 alerts.push(Alert {
                     kind: AlertKind::Disk,
                     name: "Disk",
-                    emoji: "💾",
                     current: pct,
                     limit,
                 });
@@ -239,19 +235,18 @@ fn percent(used: i32, total: i32) -> f32 {
 }
 
 fn build_alert_message(alerts: &[Alert]) -> String {
-    let mut out = String::from("🚨 *Server Resource Alert*\n\n");
+    let mut out = String::from("🚨 Server Resource Alert\n\n");
 
-    for alert in alerts {
+    for (i, alert) in alerts.iter().enumerate() {
         out.push_str(&format!(
-            "• {} *{}*\n  Current: *{:.1}%*\n  Limit:   {:.1}%\n\n",
-            alert.emoji, alert.name, alert.current, alert.limit,
+            "> *{}*\n> Current: {:.1}%\n> Limit: {:.1}%",
+            alert.name, alert.current, alert.limit,
         ));
-    }
 
-    out.push_str(&format!(
-        "_Time: {} UTC_",
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
-    ));
+        if i + 1 < alerts.len() {
+            out.push_str("\n\n");
+        }
+    }
 
     out
 }
