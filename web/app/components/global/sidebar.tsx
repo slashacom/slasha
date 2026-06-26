@@ -1,6 +1,6 @@
 import { NavLink, useNavigate, useLocation } from 'react-router';
 
-import { Users, Key, Settings } from 'lucide-react';
+import { Users, Key, Settings, Activity } from 'lucide-react';
 
 import { LayoutGrid } from '../icons/layout';
 
@@ -59,6 +59,7 @@ export function Sidebar() {
 
       <nav className="flex-1 px-6 pt-5">
         <SidebarItem to="/apps" icon={LayoutGrid} label="Apps" />
+        <SidebarItem to="/monitoring" icon={Activity} label="Monitoring" />
         {isAdmin && <SidebarItem to="/users" icon={Users} label="Users" />}
         <SidebarItem to="/settings" icon={Settings} label="Settings" />
       </nav>

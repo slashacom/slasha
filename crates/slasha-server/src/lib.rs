@@ -9,6 +9,7 @@ pub mod middleware;
 pub mod proxy;
 
 pub mod routing;
+
 pub mod ssh;
 pub mod state;
 pub mod tunnel;
@@ -103,7 +104,8 @@ pub async fn serve() -> anyhow::Result<()> {
 
     run_migrations(&storage);
 
-    metrics::spawn_app_metrics_collector(storage.db_pool.clone(), docker_client.clone());
+    metrics::app::AppMetricsCollector::new(storage.db_pool.clone(), docker_client.clone()).spawn();
+    metrics::server::ServerMetricsCollector::new(storage.db_pool.clone()).spawn();
 
     let proxy_sync_trigger =
         proxy::spawn_route_syncer(clients.clone(), storage.db_pool.clone(), config.clone());

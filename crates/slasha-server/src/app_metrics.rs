@@ -203,7 +203,7 @@ async fn tick(
     Ok(())
 }
 
-pub(crate) fn compute_cpu_percent(
+pub fn compute_cpu_percent(
     cpu: Option<&ContainerCpuStats>,
     precpu: Option<&ContainerCpuStats>,
 ) -> f64 {
