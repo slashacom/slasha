@@ -3,6 +3,7 @@ import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
 import type { App } from '~/models/app';
 import type { AppScale } from '~/models/app-scale';
 import type { AppDomain } from '~/models/app';
+import type { DomainHealth } from '~/models/domain-health';
 
 import type { AppMetrics } from '~/models/app-metrics';
 
@@ -101,6 +102,14 @@ export function getAppDomainsOptions(appSlug: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'domains'],
     queryFn: () => httpGet<{ domains: AppDomain[] }>(`apps/${appSlug}/domains`),
+  });
+}
+
+export function getAppDomainsHealthOptions(appSlug: string) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'domains', 'health'],
+    queryFn: () =>
+      httpGet<{ health: DomainHealth[] }>(`apps/${appSlug}/domains/health`),
   });
 }
 

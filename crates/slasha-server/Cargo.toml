@@ -40,6 +40,7 @@ tempfile = "3.27.0"
 strum = "0.28"
 strum_macros = "0.28"
 reqwest = { version = "0.13.2", features = ["json"] }
+x509-parser = "0.18.1"
 tokio-stream = { version = "0.1.18", features = ["sync"] }
 regex = "1.12.3"
 once_cell = "1.21.4"
