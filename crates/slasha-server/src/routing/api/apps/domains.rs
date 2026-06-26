@@ -7,11 +7,14 @@ use axum::{
 use serde::Deserialize;
 use slasha_db::repos::app_domain::AppDomainRepo;
 
-use crate::{AppState, error::HttpResult, extractors::app::ActiveApp, state::Storage};
+use crate::{
+    AppState, domain_health, error::HttpResult, extractors::app::ActiveApp, state::Storage,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_domains).post(add_domain))
+        .route("/health", get(list_domains_health))
         .route("/{domain_id}", delete(delete_domain))
 }
 
@@ -27,6 +30,18 @@ async fn list_domains(
     let domains = AppDomainRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
     Ok(Json(serde_json::json!({ "domains": domains })))
+}
+
+async fn list_domains_health(
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
+) -> HttpResult<impl IntoResponse> {
+    let domains = AppDomainRepo::list_for_app(&state.storage.db_pool, &app.id).await?;
+    let names = domains.into_iter().map(|d| d.domain).collect();
+
+    let health = domain_health::check_domains(names, &state.config).await;
+
+    Ok(Json(serde_json::json!({ "health": health })))
 }
 
 async fn add_domain(

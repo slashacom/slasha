@@ -1,17 +1,29 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Globe, Plus, Trash2, Loader2, ExternalLink } from 'lucide-react';
+import {
+  Globe,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Loader2,
+  ExternalLink,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
+  getAppDomainsHealthOptions,
   getAppDomainsOptions,
   useAddAppDomain,
   useDeleteAppDomain,
 } from '~/queries/apps';
+import type { DomainHealth } from '~/models/domain-health';
 import { Button } from '~/components/interface/button';
+import { DomainHealthBadge } from '~/components/apps/domain-health-badge';
+import { DomainHealthDetail } from '~/components/apps/domain-health-detail';
 import { EmptyPage } from '~/components/global/empty-page';
 import { Input } from '~/components/interface/input';
 import { HStack, VStack } from '~/components/interface/stacks';
+import { cn } from '~/utils/classname';
 
 type DomainManagerProps = {
   appSlug: string;
@@ -23,6 +35,12 @@ export function DomainManager(props: DomainManagerProps) {
   const { data: domainsData, isLoading: domainsLoading } = useQuery(
     getAppDomainsOptions(appSlug)
   );
+  const {
+    data: healthData,
+    isLoading: healthLoading,
+    isFetching: healthFetching,
+    refetch: refetchHealth,
+  } = useQuery(getAppDomainsHealthOptions(appSlug));
   const addDomain = useAddAppDomain();
   const deleteDomain = useDeleteAppDomain();
 
@@ -64,11 +82,15 @@ export function DomainManager(props: DomainManagerProps) {
   }
 
   const domains = domainsData?.domains ?? [];
+  const healthByDomain = new Map<string, DomainHealth>(
+    (healthData?.health ?? []).map((entry) => [entry.domain, entry])
+  );
+  const serverIps = deriveServerIps(healthData?.health ?? []);
 
   return (
     <VStack space={6}>
       <div className="overflow-hidden rounded-xl border border-border bg-surface/50 shadow-sm backdrop-blur-sm">
-        <div className="border-b border-border bg-surface/50 px-6 py-5">
+        <div className="flex items-center justify-between border-b border-border bg-surface/50 px-6 py-5">
           <HStack space={3}>
             <div className="rounded-lg bg-white/5 p-2 text-text-secondary">
               <Globe className="size-5" />
@@ -80,6 +102,19 @@ export function DomainManager(props: DomainManagerProps) {
               </p>
             </div>
           </HStack>
+          {domains.length > 0 && (
+            <button
+              type="button"
+              onClick={() => refetchHealth()}
+              disabled={healthFetching}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-text-tertiary transition-colors hover:bg-white/5 hover:text-text disabled:opacity-50"
+            >
+              <RefreshCw
+                className={cn('size-3.5', healthFetching && 'animate-spin')}
+              />
+              Recheck
+            </button>
+          )}
         </div>
 
         <div className="p-6">
@@ -103,8 +138,20 @@ export function DomainManager(props: DomainManagerProps) {
               />
             </HStack>
             <p className="mt-2 text-[11px] text-text-tertiary">
-              Ensure your domain's A or CNAME record points to this server's IP
-              address.
+              {serverIps.length ? (
+                <>
+                  Point your domain’s A record to{' '}
+                  <span className="font-mono text-text-secondary">
+                    {serverIps.join(', ')}
+                  </span>
+                  . HTTPS is provisioned automatically.
+                </>
+              ) : (
+                <>
+                  Ensure your domain’s A or CNAME record points to this server’s
+                  IP address. HTTPS is provisioned automatically.
+                </>
+              )}
             </p>
           </form>
 
@@ -116,42 +163,68 @@ export function DomainManager(props: DomainManagerProps) {
             />
           ) : (
             <div className="divide-y divide-border rounded-lg border border-border bg-surface/20">
-              {domains.map((domain) => (
-                <div key={domain.id} className="px-4 py-3">
-                  <HStack justifyContent="between">
-                    <HStack space={3}>
-                      <Globe className="size-3.5 text-text-tertiary" />
-                      <span className="text-[13px] font-medium text-text">
-                        {domain.domain}
-                      </span>
-                      <a
-                        href={`https://${domain.domain}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] text-text-tertiary transition-colors hover:text-text"
-                      >
-                        Open
-                        <ExternalLink className="size-3" />
-                      </a>
+              {domains.map((domain) => {
+                const health = healthByDomain.get(domain.domain);
+
+                return (
+                  <div key={domain.id} className="px-4 py-3.5">
+                    <HStack justifyContent="between" alignItems="start">
+                      <VStack space={0} className="min-w-0">
+                        <HStack space={3}>
+                          <Globe className="size-3.5 shrink-0 text-text-tertiary" />
+                          <span className="truncate text-[13px] font-medium text-text">
+                            {domain.domain}
+                          </span>
+                          <a
+                            href={`https://${domain.domain}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] text-text-tertiary transition-colors hover:text-text"
+                          >
+                            Open
+                            <ExternalLink className="size-3" />
+                          </a>
+                        </HStack>
+                      </VStack>
+                      <HStack space={2} className="shrink-0">
+                        <DomainHealthBadge
+                          status={
+                            healthLoading && !health
+                              ? 'checking'
+                              : (health?.status ?? 'unknown')
+                          }
+                        />
+                        <Button
+                          variant="ghost"
+                          color="error"
+                          icon={<Trash2 className="size-3.5" />}
+                          onClick={() => handleDelete(domain.id)}
+                          isLoading={
+                            deleteDomain.isPending &&
+                            deleteDomain.variables?.domainId === domain.id
+                          }
+                          className="size-8"
+                        />
+                      </HStack>
                     </HStack>
-                    <Button
-                      variant="ghost"
-                      color="error"
-                      icon={<Trash2 className="size-3.5" />}
-                      onClick={() => handleDelete(domain.id)}
-                      isLoading={
-                        deleteDomain.isPending &&
-                        deleteDomain.variables?.domainId === domain.id
-                      }
-                      className="size-8"
-                    />
-                  </HStack>
-                </div>
-              ))}
+                    {health && <DomainHealthDetail health={health} />}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
       </div>
     </VStack>
   );
+}
+
+function deriveServerIps(health: DomainHealth[]): string[] {
+  for (const entry of health) {
+    if (entry.dns.expected_ips.length) {
+      return entry.dns.expected_ips;
+    }
+  }
+
+  return [];
 }

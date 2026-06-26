@@ -2,6 +2,7 @@
 pub mod assets;
 pub mod auth;
 pub mod docker;
+pub mod domain_health;
 pub mod error;
 pub mod extractors;
 pub mod metrics;
