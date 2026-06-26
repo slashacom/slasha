@@ -117,6 +117,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    server_settings (id) {
+        id -> Text,
+        cpu_limit_percent -> Nullable<Float>,
+        memory_limit_percent -> Nullable<Float>,
+        disk_limit_percent -> Nullable<Float>,
+        slack_webhook_url -> Nullable<Text>,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     service_env_vars (id) {
         id -> Text,
         service_id -> Text,
@@ -184,6 +195,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     apps,
     deployments,
     server_metrics,
+    server_settings,
     service_env_vars,
     services,
     ssh_keys,
