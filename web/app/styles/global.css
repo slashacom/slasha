@@ -119,7 +119,7 @@ a:not(nav a) {
   white-space: pre;
 }
 
-.env-dotenv-editor [data-mention] {
+.ProseMirror.env-dotenv-editor [data-mention] {
   white-space: nowrap;
 }
 

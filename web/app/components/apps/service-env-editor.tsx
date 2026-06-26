@@ -62,6 +62,19 @@ export function ServiceEnvEditor(props: ServiceEnvEditorProps) {
     { label: 'SLASHA', items: SERVICE_SLASHA_REFS },
   ];
 
+  const keys = Object.keys(envData?.env_vars ?? {});
+  const exampleKey = keys.includes('DATABASE_URL')
+    ? 'DATABASE_URL'
+    : (keys[0] ?? 'DATABASE_URL');
+  const hint = (
+    <span>
+      Reference these from your app as{' '}
+      <span className="font-mono text-text-secondary">
+        {`\${{ ${serviceName}.${exampleKey} }}`}
+      </span>
+    </span>
+  );
+
   return (
     <EnvEditor
       title={`${serviceName} Configuration`}
@@ -77,6 +90,7 @@ export function ServiceEnvEditor(props: ServiceEnvEditorProps) {
       onCancel={onCancel}
       readOnly={readOnly}
       extraGroups={extraGroups}
+      hint={hint}
     />
   );
 }

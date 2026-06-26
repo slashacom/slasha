@@ -46,6 +46,35 @@ export function getAppServicesOptions(appSlug: string) {
   });
 }
 
+export function getServiceOptions(appSlug: string, serviceId: string) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'services', serviceId],
+    queryFn: () =>
+      httpGet<{ service: Service }>(
+        `apps/${appSlug}/services/${serviceId}`
+      ),
+  });
+}
+
+export type ServiceStats = {
+  running: boolean;
+  started_at: string | null;
+  cpu_percent: number | null;
+  memory_used_bytes: number | null;
+  memory_limit_bytes: number | null;
+  disk_bytes: number | null;
+};
+
+export function getServiceStatsOptions(appSlug: string, serviceId: string) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'services', serviceId, 'stats'],
+    queryFn: () =>
+      httpGet<ServiceStats>(
+        `apps/${appSlug}/services/${serviceId}/stats`
+      ),
+  });
+}
+
 export function useProvisionService() {
   return useMutation({
     mutationFn: (data: ProvisionServicePayload) =>

@@ -9,15 +9,16 @@ use axum::{
         IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
     },
-    routing::{delete, get, post},
+    routing::{get, post},
 };
 use bollard::{
     Docker,
     exec::{CreateExecOptions, StartExecOptions, StartExecResults},
+    query_parameters::StatsOptionsBuilder,
 };
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use slasha_db::{
     DbPool,
     repos::service::ServiceRepo,
@@ -37,6 +38,7 @@ use crate::{
     },
     error::{HttpError, HttpResult},
     extractors::app::ActiveApp,
+    metrics::compute_cpu_percent,
     state::AppState,
     tunnel,
 };
@@ -51,7 +53,8 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/restart", post(restart_service_handler))
         .route("/{id}/redeploy", post(redeploy_service_handler))
         .route("/{id}/stop", post(stop_service_handler))
-        .route("/{id}", delete(delete_service_handler))
+        .route("/{id}/stats", get(service_stats_handler))
+        .route("/{id}", get(get_service).delete(delete_service_handler))
 }
 
 #[derive(Deserialize)]
@@ -153,6 +156,126 @@ async fn list_services(
     Ok(Json(serde_json::json!({
         "services": services,
     })))
+}
+
+async fn get_service(
+    State(db_pool): State<DbPool>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+
+    Ok(Json(serde_json::json!({ "service": service })))
+}
+
+#[derive(Serialize)]
+struct ServiceStats {
+    running: bool,
+    started_at: Option<String>,
+    cpu_percent: Option<f64>,
+    memory_used_bytes: Option<u64>,
+    memory_limit_bytes: Option<u64>,
+    disk_bytes: Option<i64>,
+}
+
+// Live, on-demand stats for a single service container (the metrics collector
+// only aggregates per-app, not per-service).
+async fn service_stats_handler(
+    State(docker_client): State<Docker>,
+    State(db_pool): State<DbPool>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+    let container_name = service_container_name(&service.id);
+
+    let state = docker_client
+        .inspect_container(&container_name, None)
+        .await
+        .ok()
+        .and_then(|info| info.state);
+    let running = state.as_ref().and_then(|s| s.running).unwrap_or(false);
+    let started_at = if running {
+        state.as_ref().and_then(|s| s.started_at.clone())
+    } else {
+        None
+    };
+
+    let mut cpu_percent = None;
+    let mut memory_used_bytes = None;
+    let mut memory_limit_bytes = None;
+
+    if running {
+        let opts = StatsOptionsBuilder::default()
+            .stream(false)
+            .one_shot(true)
+            .build();
+        if let Some(Ok(stats)) = docker_client.stats(&container_name, Some(opts)).next().await {
+            cpu_percent = Some(compute_cpu_percent(
+                stats.cpu_stats.as_ref(),
+                stats.precpu_stats.as_ref(),
+            ));
+            if let Some(mem) = stats.memory_stats.as_ref() {
+                memory_used_bytes = mem.usage;
+                memory_limit_bytes = mem.limit;
+            }
+        }
+    }
+
+    let disk_bytes = if running {
+        service_disk_bytes(&docker_client, &service).await
+    } else {
+        None
+    };
+
+    Ok(Json(ServiceStats {
+        running,
+        started_at,
+        cpu_percent,
+        memory_used_bytes,
+        memory_limit_bytes,
+        disk_bytes,
+    }))
+}
+
+// The /system/df API returns an uncomputed size for volumes, so measure actual
+// usage by running `du` against the volume mount inside the container.
+async fn service_disk_bytes(docker: &Docker, service: &Service) -> Option<i64> {
+    let container_name = service_container_name(&service.id);
+    let mount = service.kind.volume_mount_path();
+
+    let exec = docker
+        .create_exec(
+            &container_name,
+            CreateExecOptions {
+                attach_stdout: Some(true),
+                attach_stderr: Some(false),
+                cmd: Some(vec![
+                    "du".to_string(),
+                    "-sk".to_string(),
+                    mount.to_string(),
+                ]),
+                ..Default::default()
+            },
+        )
+        .await
+        .ok()?;
+
+    let mut output = match docker.start_exec(&exec.id, None::<StartExecOptions>).await.ok()? {
+        StartExecResults::Attached { output, .. } => output,
+        StartExecResults::Detached => return None,
+    };
+
+    let mut buf = String::new();
+    while let Some(Ok(chunk)) = output.next().await {
+        if let bollard::container::LogOutput::StdOut { message } = chunk {
+            buf.push_str(&String::from_utf8_lossy(&message));
+        }
+    }
+
+    // `du -sk` prints "<kilobytes>\t<path>"; take the leading block count.
+    let kilobytes: i64 = buf.split_whitespace().next()?.parse().ok()?;
+    Some(kilobytes * 1024)
 }
 
 async fn create_service(

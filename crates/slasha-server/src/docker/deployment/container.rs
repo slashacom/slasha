@@ -40,7 +40,7 @@ use crate::{
 };
 
 // per-app persistent volume mount path, mounted into every process container
-// exposed to the app as`SLASHA_DATA_DIR`
+// referenced in env config as `${{ SLASHA.data_dir }}`
 pub const MANAGED_DATA_PATH: &str = "/data";
 
 pub async fn list_deployment_processes(
