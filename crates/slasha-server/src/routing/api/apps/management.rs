@@ -230,14 +230,14 @@ async fn delete_app(
         }
 
         let repo_path = std::path::Path::new(&app_clone.repo_path);
-        if repo_path.exists() {
-            if let Err(e) = tokio::fs::remove_dir_all(repo_path).await {
-                tracing::warn!(
-                    app_slug = %app_slug,
-                    error = ?e,
-                    "Failed to remove repo"
-                );
-            }
+        if repo_path.exists()
+            && let Err(e) = tokio::fs::remove_dir_all(repo_path).await
+        {
+            tracing::warn!(
+                app_slug = %app_slug,
+                error = ?e,
+                "Failed to remove repo"
+            );
         }
     });
 
