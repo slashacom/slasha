@@ -26,13 +26,24 @@ type DeleteAppDomainPayload = { appSlug: string; domainId: string };
 
 type UpdateAppSettingsPayload = {
   appSlug: string;
-  auto_deploy: boolean;
+  name?: string;
+  auto_deploy?: boolean;
 };
 
 export function getAppsOptions() {
   return queryOptions({
     queryKey: ['apps'],
     queryFn: () => httpGet<{ apps: AppListItem[] }>('apps'),
+  });
+}
+
+export function getCheckSlugOptions(name: string) {
+  return queryOptions({
+    queryKey: ['apps', 'check-slug', name],
+    queryFn: () =>
+      httpGet<{ slug: string; available: boolean }>(
+        `apps/check-slug?name=${encodeURIComponent(name)}`
+      ),
   });
 }
 
@@ -143,6 +154,7 @@ export function useUpdateAppSettings() {
   return useMutation({
     mutationFn: (data: UpdateAppSettingsPayload) =>
       httpPut<{ success: boolean }>(`apps/${data.appSlug}/settings`, {
+        name: data.name,
         auto_deploy: data.auto_deploy,
       }),
   });

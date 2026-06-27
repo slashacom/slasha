@@ -10,6 +10,7 @@ import {
 } from '~/queries/apps';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { AppEnvEditor } from '~/components/apps/app-env-editor';
+import { AppNameManager } from '~/components/apps/app-name-manager';
 import { AutoDeployManager } from '~/components/apps/auto-deploy-manager';
 import { BackupManager } from '~/components/apps/backup-manager';
 import { DomainManager } from '~/components/apps/domain-manager';
@@ -48,6 +49,9 @@ export default function AppSettingsPage() {
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <SectionHeader icon={SettingsIcon} title="Settings" />
       <div className="flex-1 overflow-y-auto p-8">
+        <div className="max-w-3xl mb-8">
+          <AppNameManager app={app} />
+        </div>
         <div className="max-w-3xl mb-8">
           <AutoDeployManager app={app} />
         </div>

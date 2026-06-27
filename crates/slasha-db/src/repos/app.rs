@@ -214,6 +214,20 @@ impl AppRepo {
         .await?
     }
 
+    pub async fn update_name(pool: &DbPool, id: &str, name: &str) -> DbResult<()> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        let name = name.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            diesel::update(apps::table.filter(apps::id.eq(&id)))
+                .set(apps::name.eq(name))
+                .execute(&mut conn)?;
+            Ok(())
+        })
+        .await?
+    }
+
     pub async fn list_all(pool: &DbPool) -> DbResult<Vec<App>> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
