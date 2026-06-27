@@ -15,6 +15,10 @@ export default defineConfig(({ mode, command }) => {
           target: `http://localhost:${port}`,
           changeOrigin: true,
         },
+        '/git': {
+          target: `http://localhost:${port}`,
+          changeOrigin: true,
+        },
       },
     },
     resolve: {
