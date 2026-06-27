@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { Plus, Trash2, Pencil, BellRing } from 'lucide-react';
 import { toast } from 'sonner';
@@ -17,18 +18,16 @@ import {
   useDeleteRule,
   useUpdateRule,
 } from '~/queries/alerting';
-import { RuleDialog } from './rule-dialog';
 
 export function RulesSection() {
   const { data: rules } = useSuspenseQuery(getAlertRulesOptions());
   const { data: channels } = useSuspenseQuery(getChannelsOptions());
   const apps = useQuery(getAppsOptions());
 
+  const navigate = useNavigate();
   const updateRule = useUpdateRule();
   const deleteRule = useDeleteRule();
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<AlertRule | undefined>(undefined);
   const [pendingDelete, setPendingDelete] = useState<AlertRule | undefined>(
     undefined
   );
@@ -76,16 +75,6 @@ export function RulesSection() {
     return '→ run command';
   };
 
-  const openCreate = () => {
-    setEditing(undefined);
-    setDialogOpen(true);
-  };
-
-  const openEdit = (rule: AlertRule) => {
-    setEditing(rule);
-    setDialogOpen(true);
-  };
-
   const toggleEnabled = (rule: AlertRule, enabled: boolean) => {
     const promise = updateRule.mutateAsync({
       id: rule.id,
@@ -122,9 +111,9 @@ export function RulesSection() {
           </p>
         </div>
         <Button
+          to="/settings/alerts/new"
           icon={<Plus className="size-4" />}
           label="New rule"
-          onClick={openCreate}
           size="sm"
         />
       </div>
@@ -137,7 +126,7 @@ export function RulesSection() {
           subtitle="Create a rule to watch your server, apps, and domains."
           actionLabel="New rule"
           actionIcon={<Plus className="size-3.5" />}
-          onAction={openCreate}
+          onAction={() => navigate('/settings/alerts/new')}
         />
       ) : (
         <div className="divide-y divide-border rounded-lg border border-border bg-surface/20">
@@ -163,10 +152,10 @@ export function RulesSection() {
                   </HStack>
                   <HStack space={1} className="shrink-0">
                     <Button
+                      to={`/settings/alerts/${rule.id}`}
                       variant="ghost"
                       size="sm"
                       icon={<Pencil className="size-3.5" />}
-                      onClick={() => openEdit(rule)}
                     />
                     <Button
                       variant="ghost"
@@ -182,15 +171,6 @@ export function RulesSection() {
           })}
         </div>
       )}
-
-      {dialogOpen ? (
-        <RuleDialog
-          isOpen={dialogOpen}
-          onOpenChange={setDialogOpen}
-          channels={channels}
-          rule={editing}
-        />
-      ) : null}
 
       <ConfirmationDialog
         open={Boolean(pendingDelete)}
