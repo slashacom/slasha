@@ -100,6 +100,34 @@ diesel::table! {
 }
 
 diesel::table! {
+    alert_rules (id) {
+        id -> Text,
+        name -> Text,
+        enabled -> Bool,
+        target -> Text,
+        event -> Text,
+        params -> Text,
+        cooldown_secs -> Integer,
+        action_type -> Text,
+        action_config -> Text,
+        last_fired_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    channels (id) {
+        id -> Text,
+        name -> Text,
+        kind -> Text,
+        config -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     server_metrics (id) {
         id -> Text,
         cpu_usage -> Float,
@@ -113,17 +141,6 @@ diesel::table! {
         network_tx_bps -> Float,
         load_average -> Float,
         created_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    server_settings (id) {
-        id -> Text,
-        cpu_limit_percent -> Nullable<Float>,
-        memory_limit_percent -> Nullable<Float>,
-        disk_limit_percent -> Nullable<Float>,
-        slack_webhook_url -> Nullable<Text>,
-        updated_at -> Timestamp,
     }
 }
 
@@ -186,6 +203,7 @@ diesel::joinable!(services -> apps (app_id));
 diesel::joinable!(ssh_keys -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    alert_rules,
     app_backups,
     app_domains,
     app_env_vars,
@@ -193,9 +211,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     app_metrics,
     app_scale,
     apps,
+    channels,
     deployments,
     server_metrics,
-    server_settings,
     service_env_vars,
     services,
     ssh_keys,

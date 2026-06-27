@@ -1,11 +1,12 @@
+pub mod alert_rule;
 pub mod app;
 pub mod app_backup;
 pub mod app_domain;
 pub mod app_metrics;
 pub mod app_scale;
+pub mod channel;
 pub mod deployment;
 pub mod server_metrics;
-pub mod server_settings;
 pub mod service;
 pub mod ssh_key;
 pub mod user;

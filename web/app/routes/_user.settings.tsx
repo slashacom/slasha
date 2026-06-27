@@ -12,7 +12,7 @@ export default function SettingsLayout() {
   ];
 
   if (data.user.role === 'Admin') {
-    tabs.push({ label: 'Server', to: '/settings/server' });
+    tabs.push({ label: 'Alerts', to: '/settings/alerts' });
   }
 
   return (

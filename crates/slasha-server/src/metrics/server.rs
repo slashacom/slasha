@@ -1,34 +1,14 @@
 use std::{path::Path, time::Instant};
 
 use slasha_db::{
-    DbPool,
-    models::{server_metrics::ServerMetrics, server_settings::ServerSettings},
-    repos::{server_metrics::ServerMetricsRepo, server_settings::ServerSettingsRepo},
+    DbPool, models::server_metrics::ServerMetrics, repos::server_metrics::ServerMetricsRepo,
 };
 use sysinfo::{Disks, Networks, System};
 
-use crate::metrics::{COLLECT_INTERVAL, utils::bytes_to_mib};
-
-#[derive(Copy, Clone)]
-enum AlertKind {
-    Cpu,
-    Memory,
-    Disk,
-}
-
-struct Alert {
-    kind: AlertKind,
-    name: &'static str,
-    current: f32,
-    limit: f32,
-}
-
-#[derive(Default)]
-struct AlertState {
-    cpu: Option<Instant>,
-    memory: Option<Instant>,
-    disk: Option<Instant>,
-}
+use crate::{
+    alerting::{self, AlertEvent},
+    metrics::{COLLECT_INTERVAL, utils::bytes_to_mib},
+};
 
 pub struct ServerMetricsCollector {
     db_pool: DbPool,
@@ -36,8 +16,6 @@ pub struct ServerMetricsCollector {
     networks: Networks,
     disks: Disks,
     last_refresh: Instant,
-    alert_state: AlertState,
-    http_client: reqwest::Client,
 }
 
 impl ServerMetricsCollector {
@@ -52,8 +30,6 @@ impl ServerMetricsCollector {
             networks: Networks::new_with_refreshed_list(),
             disks: Disks::new_with_refreshed_list(),
             last_refresh: Instant::now(),
-            alert_state: AlertState::default(),
-            http_client: reqwest::Client::new(),
         }
     }
 
@@ -70,11 +46,7 @@ impl ServerMetricsCollector {
                     tracing::error!(target: "slasha::metrics", error = ?err, "failed to persist server metrics");
                 }
 
-                if let Ok(settings) = ServerSettingsRepo::get(&self.db_pool).await
-                    && let Some(ref webhook_url) = settings.slack_webhook_url
-                {
-                    self.check_alerts(&metric, &settings, webhook_url).await;
-                }
+                self.emit_alerts(&metric).await;
 
                 let cutoff = chrono::Utc::now().naive_utc() - chrono::Duration::days(7);
                 if let Err(err) = ServerMetricsRepo::prune_older_than(&self.db_pool, cutoff).await {
@@ -84,95 +56,55 @@ impl ServerMetricsCollector {
         });
     }
 
-    async fn check_alerts(
-        &mut self,
-        metric: &ServerMetrics,
-        settings: &ServerSettings,
-        webhook_url: &str,
-    ) {
-        let cooldown = std::time::Duration::from_secs(15 * 60); // 15 mins cooldown
-        let now = Instant::now();
+    /// Emit one metric-stream event per host resource. The alert rules decide
+    /// the thresholds and delivery — this collector only reports readings.
+    async fn emit_alerts(&self, metric: &ServerMetrics) {
+        let memory_pct = percent(metric.memory_used, metric.memory_total);
+        let disk_pct = percent(metric.disk_used, metric.disk_total);
 
-        let mut alerts = Vec::new();
+        let events = [
+            AlertEvent {
+                target: "server".into(),
+                event: "server.cpu".into(),
+                title: "CPU".into(),
+                value: metric.cpu_usage,
+                unit: "%".into(),
+                detail: format!("CPU at {:.1}%", metric.cpu_usage),
+            },
+            AlertEvent {
+                target: "server".into(),
+                event: "server.memory".into(),
+                title: "Memory".into(),
+                value: memory_pct,
+                unit: "%".into(),
+                detail: format!(
+                    "Memory at {:.1}% ({} / {} MiB)",
+                    memory_pct, metric.memory_used, metric.memory_total
+                ),
+            },
+            AlertEvent {
+                target: "server".into(),
+                event: "server.disk".into(),
+                title: "Disk".into(),
+                value: disk_pct,
+                unit: "%".into(),
+                detail: format!(
+                    "Disk at {:.1}% ({} / {} MiB)",
+                    disk_pct, metric.disk_used, metric.disk_total
+                ),
+            },
+            AlertEvent {
+                target: "server".into(),
+                event: "server.load".into(),
+                title: "Load average".into(),
+                value: metric.load_average,
+                unit: "".into(),
+                detail: format!("1m load average at {:.2}", metric.load_average),
+            },
+        ];
 
-        if let Some(limit) = settings.cpu_limit_percent
-            && metric.cpu_usage >= limit
-        {
-            alerts.push(Alert {
-                kind: AlertKind::Cpu,
-                name: "CPU",
-                current: metric.cpu_usage,
-                limit,
-            });
-        }
-
-        if let Some(limit) = settings.memory_limit_percent {
-            let pct = percent(metric.memory_used, metric.memory_total);
-            if pct >= limit {
-                alerts.push(Alert {
-                    kind: AlertKind::Memory,
-                    name: "Memory",
-                    current: pct,
-                    limit,
-                });
-            }
-        }
-
-        if let Some(limit) = settings.disk_limit_percent {
-            let pct = percent(metric.disk_used, metric.disk_total);
-            if pct >= limit {
-                alerts.push(Alert {
-                    kind: AlertKind::Disk,
-                    name: "Disk",
-                    current: pct,
-                    limit,
-                });
-            }
-        }
-
-        if alerts.is_empty() {
-            return;
-        }
-
-        let should_send = alerts.iter().any(|alert| {
-            self.last_alert(alert.kind)
-                .is_none_or(|t| now.duration_since(t) >= cooldown)
-        });
-
-        if !should_send {
-            return;
-        }
-
-        for alert in &alerts {
-            self.set_last_alert(alert.kind, now);
-        }
-
-        let payload = serde_json::json!({
-            "text": build_alert_message(&alerts)
-        });
-
-        let webhook_url = webhook_url.to_string();
-        let client = self.http_client.clone();
-        tokio::spawn(async move {
-            if let Err(err) = client.post(&webhook_url).json(&payload).send().await {
-                tracing::error!(target: "slasha::metrics", error = ?err, "failed to send slack alert");
-            }
-        });
-    }
-
-    fn last_alert(&self, kind: AlertKind) -> Option<Instant> {
-        match kind {
-            AlertKind::Cpu => self.alert_state.cpu,
-            AlertKind::Memory => self.alert_state.memory,
-            AlertKind::Disk => self.alert_state.disk,
-        }
-    }
-
-    fn set_last_alert(&mut self, kind: AlertKind, now: Instant) {
-        match kind {
-            AlertKind::Cpu => self.alert_state.cpu = Some(now),
-            AlertKind::Memory => self.alert_state.memory = Some(now),
-            AlertKind::Disk => self.alert_state.disk = Some(now),
+        for event in events {
+            alerting::dispatch(&self.db_pool, event).await;
         }
     }
 
@@ -232,21 +164,4 @@ fn percent(used: i32, total: i32) -> f32 {
     } else {
         used as f32 / total as f32 * 100.0
     }
-}
-
-fn build_alert_message(alerts: &[Alert]) -> String {
-    let mut out = String::from("🚨 Server Resource Alert\n\n");
-
-    for (i, alert) in alerts.iter().enumerate() {
-        out.push_str(&format!(
-            "> *{}*\n> Current: {:.1}%\n> Limit: {:.1}%",
-            alert.name, alert.current, alert.limit,
-        ));
-
-        if i + 1 < alerts.len() {
-            out.push_str("\n\n");
-        }
-    }
-
-    out
 }

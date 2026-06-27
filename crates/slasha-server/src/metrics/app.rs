@@ -8,7 +8,10 @@ use bollard::{
 use futures_util::StreamExt;
 use slasha_db::{DbPool, models::app_metrics::AppMetrics, repos::app_metrics::AppMetricsRepo};
 
-use crate::metrics::{COLLECT_INTERVAL, utils::bytes_to_mib};
+use crate::{
+    alerting::{self, AlertEvent},
+    metrics::{COLLECT_INTERVAL, utils::bytes_to_mib},
+};
 
 struct PrevCounters {
     rx_bytes: u64,
@@ -194,6 +197,8 @@ impl AppMetricsCollector {
                 created_at: now,
             };
 
+            self.emit_alerts(&metric).await;
+
             if let Err(err) = AppMetricsRepo::insert(&self.db_pool, metric).await {
                 tracing::error!(
                     target: "slasha::metrics",
@@ -210,6 +215,44 @@ impl AppMetricsCollector {
         }
 
         Ok(())
+    }
+
+    /// Emit per-app metric-stream events so rules can target a specific app
+    /// (`app:<id>`) or any app (`app`).
+    async fn emit_alerts(&self, metric: &AppMetrics) {
+        let target = format!("app:{}", metric.app_id);
+
+        alerting::dispatch(
+            &self.db_pool,
+            AlertEvent {
+                target: target.clone(),
+                event: "app.cpu".into(),
+                title: "App CPU".into(),
+                value: metric.cpu_usage,
+                unit: "%".into(),
+                detail: format!("App {} CPU at {:.1}%", metric.app_id, metric.cpu_usage),
+            },
+        )
+        .await;
+
+        if metric.memory_limit > 0 {
+            let memory_pct = metric.memory_used as f32 / metric.memory_limit as f32 * 100.0;
+            alerting::dispatch(
+                &self.db_pool,
+                AlertEvent {
+                    target,
+                    event: "app.memory".into(),
+                    title: "App memory".into(),
+                    value: memory_pct,
+                    unit: "%".into(),
+                    detail: format!(
+                        "App {} memory at {:.1}% ({} / {} MiB)",
+                        metric.app_id, memory_pct, metric.memory_used, metric.memory_limit
+                    ),
+                },
+            )
+            .await;
+        }
     }
 }
 

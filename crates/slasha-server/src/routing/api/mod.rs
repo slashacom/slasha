@@ -3,10 +3,11 @@ use serde_json::{Value, json};
 
 use crate::{AppState, error::HttpResult};
 
+pub mod alert_rules;
 pub mod apps;
 pub mod auth;
+pub mod channels;
 pub mod monitoring;
-pub mod server_settings;
 pub mod service_kinds;
 pub mod ssh_keys;
 pub mod users;
@@ -22,8 +23,15 @@ pub fn router(state: AppState) -> Router<AppState> {
         .nest("/services", service_kinds::router())
         .nest("/ssh-keys", ssh_keys::router())
         .nest(
-            "/server-settings",
-            server_settings::router().route_layer(axum::middleware::from_fn_with_state(
+            "/channels",
+            channels::router().route_layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                admin_middleware,
+            )),
+        )
+        .nest(
+            "/alert-rules",
+            alert_rules::router().route_layer(axum::middleware::from_fn_with_state(
                 state.clone(),
                 admin_middleware,
             )),
