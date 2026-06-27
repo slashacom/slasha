@@ -1,41 +1,43 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
-import { useCreateApp } from '~/queries/apps';
+import { getCheckSlugOptions, useCreateApp } from '~/queries/apps';
 import { queryClient } from '~/utils/query-client';
+import { useDebounce } from '~/hooks/use-debounce';
 
 export function meta() {
   return [{ title: 'New app · slasha' }];
-}
-
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
 }
 
 export default function NewApp() {
   const navigate = useNavigate();
   const createApp = useCreateApp();
   const [name, setName] = useState('');
-  const slug = slugify(name);
+  const debouncedName = useDebounce(name, 300);
+
+  const { data: slugCheck, isFetching } = useQuery({
+    ...getCheckSlugOptions(debouncedName),
+    enabled: debouncedName.trim().length > 0,
+  });
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const name = formData.get('name') as string;
+    const submittedName = formData.get('name') as string;
 
-    const promise = createApp.mutateAsync({ name });
+    const promise = createApp.mutateAsync({ name: submittedName });
 
     toast.promise(promise, {
       loading: 'Creating application...',
-      success: `Successfully created ${name}`,
-      error: (err) => err.message || 'Failed to create application.',
+      success: `Successfully created ${submittedName}`,
+      error: (err) =>
+        err.response?.data?.error ||
+        err.message ||
+        'Failed to create application.',
     });
 
     try {
@@ -75,18 +77,29 @@ export default function NewApp() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
-              <p className="text-xs text-text-tertiary">
-                {slug ? (
-                  <>
+              <div className="h-5">
+                {name.trim() === '' ? (
+                  <p className="text-xs text-text-tertiary">
+                    Used to generate the slug and git repository name.
+                  </p>
+                ) : isFetching || debouncedName !== name ? (
+                  <p className="text-xs text-text-tertiary animate-pulse">
+                    Checking availability...
+                  </p>
+                ) : slugCheck ? (
+                  <p className="text-xs text-text-tertiary">
                     Repository:{' '}
                     <span className="font-mono text-text-secondary">
-                      {slug}.git
+                      {slugCheck.slug}.git
                     </span>
-                  </>
-                ) : (
-                  'Used to generate the slug and git repository name.'
-                )}
-              </p>
+                    {!slugCheck.available && (
+                      <span className="ml-2 text-amber-500/90">
+                        (Name taken, using suggested unique name)
+                      </span>
+                    )}
+                  </p>
+                ) : null}
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -100,7 +113,9 @@ export default function NewApp() {
                 type="submit"
                 label="Create app"
                 isLoading={createApp.isPending}
-                isDisabled={createApp.isPending}
+                isDisabled={
+                  createApp.isPending || debouncedName !== name || isFetching
+                }
               />
             </div>
           </div>

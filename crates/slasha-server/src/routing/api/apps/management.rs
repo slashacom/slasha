@@ -11,7 +11,7 @@ use bollard::Docker;
 use chrono::Utc;
 use serde::Deserialize;
 use slasha_db::{
-    DbPool,
+    DbPool, DbResult,
     app::{App, AppMember, AppMemberRole},
     deployment::{Deployment, DeploymentStatus},
     repos::{
@@ -32,13 +32,13 @@ use crate::{
     error::{HttpError, HttpResult},
     extractors::{app::ActiveApp, auth::AuthUser},
     state::{AppState, Config, Runtime, Storage},
-    utils::slugify,
 };
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", post(create_app))
         .route("/", get(list_apps))
+        .route("/check-slug", get(check_slug))
         .route("/{slug}", get(get_app))
         .route("/{slug}/scales", get(list_scales))
         .route("/{slug}", delete(delete_app))
@@ -48,6 +48,62 @@ pub fn router() -> Router<AppState> {
 #[derive(Deserialize)]
 struct CreateAppReq {
     name: String,
+}
+
+#[derive(Deserialize)]
+struct CheckSlugReq {
+    name: String,
+}
+
+fn slugify(name: &str) -> String {
+    name.to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+async fn generate_unique_slug(pool: &DbPool, name: &str) -> DbResult<(String, bool)> {
+    let base_slug = slugify(name);
+    if base_slug.is_empty() {
+        return Ok((String::new(), false));
+    }
+
+    if !AppRepo::slug_exists(pool, &base_slug).await? {
+        return Ok((base_slug, true));
+    }
+
+    let mut counter = 1;
+    loop {
+        let candidate = format!("{}-{}", base_slug, counter);
+        if !AppRepo::slug_exists(pool, &candidate).await? {
+            return Ok((candidate, false));
+        }
+        counter += 1;
+    }
+}
+
+async fn check_slug(
+    State(storage): State<Storage>,
+    axum::extract::Query(query): axum::extract::Query<CheckSlugReq>,
+) -> HttpResult<impl IntoResponse> {
+    let (slug, available) = generate_unique_slug(&storage.db_pool, &query.name)
+        .await
+        .map_err(HttpError::internal)?;
+
+    Ok(Json(serde_json::json!({
+        "slug": slug,
+        "available": available,
+    })))
 }
 
 async fn create_app(
@@ -61,18 +117,14 @@ async fn create_app(
         return Err(HttpError::bad_request("App name cannot be empty"));
     }
 
-    let slug = slugify(&name);
+    let (slug, _) = generate_unique_slug(&storage.db_pool, &name)
+        .await
+        .map_err(HttpError::internal)?;
+
     if slug.is_empty() {
         return Err(HttpError::bad_request(
             "App name must contain alphanumeric characters",
         ));
-    }
-
-    if AppRepo::slug_exists(&storage.db_pool, &slug).await? {
-        return Err(HttpError::bad_request(format!(
-            "An app with the slug '{}' already exists",
-            slug
-        )));
     }
 
     let repo_path = storage
@@ -318,7 +370,8 @@ async fn list_scales(
 
 #[derive(Deserialize)]
 struct UpdateSettingsReq {
-    auto_deploy: bool,
+    name: Option<String>,
+    auto_deploy: Option<bool>,
 }
 
 async fn update_settings(
@@ -326,7 +379,17 @@ async fn update_settings(
     ActiveApp { app, .. }: ActiveApp,
     Json(payload): Json<UpdateSettingsReq>,
 ) -> HttpResult<impl IntoResponse> {
-    AppRepo::update_auto_deploy(&storage.db_pool, &app.id, payload.auto_deploy).await?;
+    if let Some(auto_deploy) = payload.auto_deploy {
+        AppRepo::update_auto_deploy(&storage.db_pool, &app.id, auto_deploy).await?;
+    }
+
+    if let Some(name) = payload.name {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(HttpError::bad_request("App name cannot be empty"));
+        }
+        AppRepo::update_name(&storage.db_pool, &app.id, name).await?;
+    }
 
     Ok(Json(serde_json::json!({
         "success": true,
