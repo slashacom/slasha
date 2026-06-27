@@ -25,7 +25,11 @@ struct CommitInfo {
 
 fn get_all_commits(repo_path: &str, branch_name: &str) -> anyhow::Result<Vec<CommitInfo>> {
     let repo = git2::Repository::open(repo_path)?;
-    let branch = repo.find_branch(branch_name, git2::BranchType::Local)?;
+    let branch = match repo.find_branch(branch_name, git2::BranchType::Local) {
+        Ok(branch) => branch,
+        Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.into()),
+    };
     let commit = branch.get().peel_to_commit()?;
 
     let mut revwalk = repo.revwalk()?;
