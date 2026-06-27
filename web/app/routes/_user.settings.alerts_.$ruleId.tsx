@@ -1,8 +1,6 @@
-import { ArrowLeft } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { RuleForm } from '~/components/alerting/rule-form';
-import { HStack } from '~/components/interface/stacks';
 import { getAlertRulesOptions, getChannelsOptions } from '~/queries/alerting';
 import { getAppsOptions } from '~/queries/apps';
 import { queryClient } from '~/utils/query-client';
@@ -21,7 +19,6 @@ export async function clientLoader() {
 }
 
 export default function EditRulePage() {
-  const navigate = useNavigate();
   const { ruleId } = useParams();
   const { data: rules } = useSuspenseQuery(getAlertRulesOptions());
   const rule = rules.find((entry) => entry.id === ruleId);
@@ -29,16 +26,7 @@ export default function EditRulePage() {
   return (
     <div className="max-w-xl space-y-6">
       <div>
-        <HStack space={3}>
-          <button
-            type="button"
-            onClick={() => navigate('/settings/alerts')}
-            className="group flex size-7 shrink-0 items-center justify-center rounded border border-border bg-surface transition-all hover:bg-white/[0.06]"
-          >
-            <ArrowLeft className="size-3.5 text-text-tertiary group-hover:text-text" />
-          </button>
-          <h3 className="font-semibold text-text">Edit alert rule</h3>
-        </HStack>
+        <h3 className="font-semibold text-text">Edit alert rule</h3>
         <p className="mt-2 text-sm text-text-secondary">
           When the condition is met, perform the action.
         </p>
