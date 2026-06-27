@@ -128,7 +128,7 @@ export function CodeViewer(props: CodeViewerProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-white/[0.02] px-4 py-2.5">
         <PathBreadcrumb
           path={filePath}
           isDirectory={false}
@@ -179,7 +179,7 @@ export function CodeViewer(props: CodeViewerProps) {
         </HStack>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="custom-scrollbar flex-1 overflow-auto">
         {data.is_binary ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
             <FileWarning className="size-6" />
@@ -187,7 +187,7 @@ export function CodeViewer(props: CodeViewerProps) {
           </div>
         ) : highlightedHtml ? (
           <div
-            className="shiki-wrapper overflow-auto text-[13px] leading-[1.55]"
+            className="shiki-wrapper min-w-fit text-[13px] leading-[1.55]"
             dangerouslySetInnerHTML={{ __html: highlightedHtml }}
           />
         ) : isHighlighting ? (
@@ -196,7 +196,7 @@ export function CodeViewer(props: CodeViewerProps) {
           </div>
         ) : (
           <pre className="p-4 text-[13px] leading-relaxed text-text-secondary">
-            <code>{data.content}</code>
+            <code className="min-w-fit">{data.content}</code>
           </pre>
         )}
       </div>

@@ -25,7 +25,7 @@ export function FolderViewer(props: FolderViewerProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-white/[0.02] px-4 py-2.5">
         <PathBreadcrumb path={node.path} isDirectory onNavigate={onSelect} />
         <span className="shrink-0 text-[11px] text-text-tertiary">
           {children.length} {children.length === 1 ? 'item' : 'items'}
