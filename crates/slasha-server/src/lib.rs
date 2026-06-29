@@ -1,3 +1,4 @@
+pub mod alerts;
 #[cfg(feature = "bundle")]
 pub mod assets;
 pub mod auth;
@@ -107,6 +108,7 @@ pub async fn serve() -> anyhow::Result<()> {
 
     metrics::app::AppMetricsCollector::new(storage.db_pool.clone(), docker_client.clone()).spawn();
     metrics::server::ServerMetricsCollector::new(storage.db_pool.clone()).spawn();
+    alerts::spawn_alert_worker(storage.db_pool.clone(), config.clone());
 
     let proxy_sync_trigger =
         proxy::spawn_route_syncer(clients.clone(), storage.db_pool.clone(), config.clone());

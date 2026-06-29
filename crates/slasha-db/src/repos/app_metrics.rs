@@ -21,6 +21,20 @@ impl AppMetricsRepo {
         .await?
     }
 
+    pub async fn find_latest(pool: &DbPool, app_id: &str) -> DbResult<Option<AppMetrics>> {
+        let pool = pool.clone();
+        let app_id = app_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(app_metrics::table
+                .filter(app_metrics::app_id.eq(&app_id))
+                .order(app_metrics::created_at.desc())
+                .first::<AppMetrics>(&mut conn)
+                .optional()?)
+        })
+        .await?
+    }
+
     pub async fn get_history(pool: &DbPool, app_id: &str, hours: i64) -> DbResult<Vec<AppMetrics>> {
         let pool = pool.clone();
         let app_id = app_id.to_string();

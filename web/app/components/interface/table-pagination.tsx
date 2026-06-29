@@ -30,8 +30,8 @@ function PaginationButton(props: PaginationButtonProps) {
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'flex gap-1.5 disabled:cursor-not-allowed px-2 cursor-pointer items-center justify-center  hover:bg-gray-100 disabled:text-gray-300 disabled:hover:bg-transparent transition-colors',
-        isFetching && 'bg-gray-100! hover:bg-gray-100 disabled:bg-gray-100'
+        'flex cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-text-secondary transition-colors hover:bg-surface hover:text-text disabled:cursor-not-allowed disabled:text-text-tertiary disabled:hover:bg-transparent',
+        isFetching && 'bg-surface hover:bg-surface disabled:bg-surface'
       )}
     >
       {isFetching ? (
@@ -69,7 +69,7 @@ export function TablePagination(props: TablePaginationProps) {
   } = props;
 
   return (
-    <div className="flex justify-star">
+    <div className="flex items-center gap-1">
       <PaginationButton
         onClick={onPrevPage}
         disabled={disablePrev}
@@ -78,7 +78,7 @@ export function TablePagination(props: TablePaginationProps) {
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex focus:outline-none focus:ring-0 items-center gap-1.5 px-1.5 py-1.5 text-xs cursor-pointer font-medium text-gray-700 hover:bg-gray-100  transition-colors">
+          <button className="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-surface hover:text-text focus:outline-none focus:ring-0">
             {limit} rows
             <ChevronDown className="size-3.5" />
           </button>

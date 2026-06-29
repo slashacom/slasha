@@ -1,0 +1,28 @@
+import { useNavigate } from 'react-router';
+import { useSuspenseQuery } from '@tanstack/react-query';
+import { AlertRuleForm } from '~/components/alerts/alert-rule-form';
+import { getAppsOptions } from '~/queries/apps';
+import { getAlertChannelsOptions } from '~/queries/alerts';
+
+export default function NewAlertRulePage() {
+  const navigate = useNavigate();
+  const { data: appsData } = useSuspenseQuery(getAppsOptions());
+  const { data: channelsData } = useSuspenseQuery(getAlertChannelsOptions());
+
+  return (
+    <div className="p-8">
+      <div className="mb-8">
+        <h2 className="text-base font-semibold text-text">New rule</h2>
+        <p className="mt-1 text-sm text-text-tertiary">
+          Define a condition and choose how notifications should be delivered.
+        </p>
+      </div>
+      <AlertRuleForm
+        apps={appsData.apps.map((item) => item.app)}
+        channels={channelsData.channels}
+        onCancel={() => navigate('/alerts/rules')}
+        onSaved={() => navigate('/alerts/rules')}
+      />
+    </div>
+  );
+}

@@ -21,6 +21,18 @@ impl ServerMetricsRepo {
         .await?
     }
 
+    pub async fn find_latest(pool: &DbPool) -> DbResult<Option<ServerMetrics>> {
+        let pool = pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(server_metrics::table
+                .order(server_metrics::created_at.desc())
+                .first::<ServerMetrics>(&mut conn)
+                .optional()?)
+        })
+        .await?
+    }
+
     pub async fn get_history(pool: &DbPool, hours: i64) -> DbResult<Vec<ServerMetrics>> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {

@@ -1,0 +1,359 @@
+use std::str::FromStr;
+
+use chrono::NaiveDateTime;
+use diesel::{
+    backend::Backend,
+    deserialize::{self, FromSql},
+    expression::AsExpression,
+    prelude::*,
+    serialize::{self, IsNull, Output, ToSql},
+    sql_types::{Bool, Integer, Nullable, Text, Timestamp},
+    sqlite::Sqlite,
+};
+use serde::{Deserialize, Serialize};
+use strum_macros::{Display, EnumString};
+use ts_rs::TS;
+
+use crate::models::alerts::deserialize::FromSqlRow;
+
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    FromSqlRow,
+    AsExpression,
+    Display,
+    Copy,
+    Clone,
+    EnumString,
+    Serialize,
+    Deserialize,
+    TS,
+)]
+#[strum(serialize_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+#[diesel(sql_type = diesel::sql_types::Text)]
+#[ts(export, export_to = "./alerts.ts")]
+pub enum AlertIncidentStatus {
+    Open,
+    Resolved,
+}
+
+impl ToSql<Text, Sqlite> for AlertIncidentStatus
+where
+    str: ToSql<Text, Sqlite>,
+{
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        out.set_value(self.to_string());
+        Ok(IsNull::No)
+    }
+}
+
+impl FromSql<Text, Sqlite> for AlertIncidentStatus {
+    fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let value = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        AlertIncidentStatus::from_str(&value).map_err(|err| Box::new(err) as _)
+    }
+}
+
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    FromSqlRow,
+    AsExpression,
+    Display,
+    Copy,
+    Clone,
+    EnumString,
+    Serialize,
+    Deserialize,
+    TS,
+)]
+#[strum(serialize_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+#[diesel(sql_type = diesel::sql_types::Text)]
+#[ts(export, export_to = "./alerts.ts")]
+pub enum AlertNotificationKind {
+    Triggered,
+    Renotified,
+    Resolved,
+}
+
+impl ToSql<Text, Sqlite> for AlertNotificationKind
+where
+    str: ToSql<Text, Sqlite>,
+{
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        out.set_value(self.to_string());
+        Ok(IsNull::No)
+    }
+}
+
+impl FromSql<Text, Sqlite> for AlertNotificationKind {
+    fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let value = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        AlertNotificationKind::from_str(&value).map_err(|err| Box::new(err) as _)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export, export_to = "./alerts.ts")]
+pub enum AlertChannelConfig {
+    Slack { webhook_url: String },
+    Telegram { bot_token: String, chat_id: String },
+}
+
+impl AlertChannelConfig {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            AlertChannelConfig::Slack { .. } => "slack",
+            AlertChannelConfig::Telegram { .. } => "telegram",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export, export_to = "./alerts.ts")]
+pub enum AlertRuleConfig {
+    ServerCpu {
+        threshold_percent: f32,
+    },
+    ServerMemory {
+        threshold_percent: f32,
+    },
+    ServerLoadAverage {
+        threshold: f32,
+    },
+    AppCpu {
+        app_id: String,
+        threshold_percent: f32,
+    },
+    AppMemory {
+        app_id: String,
+        threshold_percent: f32,
+    },
+    DomainTlsExpiry {
+        domain: String,
+        days_before: i32,
+    },
+    DomainDnsMisconfigured {
+        domain: String,
+    },
+}
+
+impl AlertRuleConfig {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            AlertRuleConfig::ServerCpu { .. } => "server_cpu",
+            AlertRuleConfig::ServerMemory { .. } => "server_memory",
+            AlertRuleConfig::ServerLoadAverage { .. } => "server_load_average",
+            AlertRuleConfig::AppCpu { .. } => "app_cpu",
+            AlertRuleConfig::AppMemory { .. } => "app_memory",
+            AlertRuleConfig::DomainTlsExpiry { .. } => "domain_tls_expiry",
+            AlertRuleConfig::DomainDnsMisconfigured { .. } => "domain_dns_misconfigured",
+        }
+    }
+
+    pub fn generate_target_key(&self) -> String {
+        let kind = self.kind();
+        match self {
+            AlertRuleConfig::ServerCpu { .. }
+            | AlertRuleConfig::ServerMemory { .. }
+            | AlertRuleConfig::ServerLoadAverage { .. } => kind.to_string(),
+            AlertRuleConfig::AppCpu { app_id, .. } | AlertRuleConfig::AppMemory { app_id, .. } => {
+                format!("{kind}:{app_id}")
+            }
+            AlertRuleConfig::DomainTlsExpiry { domain, .. }
+            | AlertRuleConfig::DomainDnsMisconfigured { domain, .. } => {
+                format!("{kind}:{domain}")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./alerts.ts")]
+pub struct AlertChannel {
+    pub id: String,
+    pub name: String,
+    pub config: AlertChannelConfig,
+    pub enabled: bool,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+impl AlertChannel {
+    pub fn kind(&self) -> &'static str {
+        self.config.kind()
+    }
+}
+
+impl Queryable<(Text, Text, Text, Text, Bool, Timestamp, Timestamp), Sqlite> for AlertChannel {
+    type Row = (
+        String,
+        String,
+        String,
+        String,
+        bool,
+        NaiveDateTime,
+        NaiveDateTime,
+    );
+
+    fn build(row: Self::Row) -> deserialize::Result<Self> {
+        let (id, name, kind, config_json, enabled, created_at, updated_at) = row;
+        let config: AlertChannelConfig = serde_json::from_str(&config_json)?;
+
+        if config.kind() != kind {
+            return Err(format!(
+                "alert channel '{}' has kind '{}' but config kind '{}'",
+                id,
+                kind,
+                config.kind()
+            )
+            .into());
+        }
+
+        Ok(Self {
+            id,
+            name,
+            config,
+            enabled,
+            created_at,
+            updated_at,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./alerts.ts")]
+pub struct AlertRule {
+    pub id: String,
+    pub name: String,
+    pub config: AlertRuleConfig,
+    pub channel_ids: Vec<String>,
+    pub direct_webhook_url: Option<String>,
+    pub message_template: Option<String>,
+    pub shell_command: Option<String>,
+    pub enabled: bool,
+    pub cooldown_secs: i32,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+impl AlertRule {
+    pub fn kind(&self) -> &'static str {
+        self.config.kind()
+    }
+}
+
+impl
+    Queryable<
+        (
+            Text,
+            Text,
+            Text,
+            Text,
+            Text,
+            Nullable<Text>,
+            Nullable<Text>,
+            Nullable<Text>,
+            Bool,
+            Integer,
+            Timestamp,
+            Timestamp,
+        ),
+        Sqlite,
+    > for AlertRule
+{
+    type Row = (
+        String,
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        bool,
+        i32,
+        NaiveDateTime,
+        NaiveDateTime,
+    );
+
+    fn build(row: Self::Row) -> deserialize::Result<Self> {
+        let (
+            id,
+            name,
+            kind,
+            config_json,
+            channel_ids_json,
+            direct_webhook_url,
+            message_template,
+            shell_command,
+            enabled,
+            cooldown_secs,
+            created_at,
+            updated_at,
+        ) = row;
+
+        let config: AlertRuleConfig = serde_json::from_str(&config_json)?;
+        if config.kind() != kind {
+            return Err(format!(
+                "alert rule '{}' has kind '{}' but config kind '{}'",
+                id,
+                kind,
+                config.kind()
+            )
+            .into());
+        }
+
+        let channel_ids: Vec<String> = serde_json::from_str(&channel_ids_json)?;
+
+        Ok(Self {
+            id,
+            name,
+            config,
+            channel_ids,
+            direct_webhook_url,
+            message_template,
+            shell_command,
+            enabled,
+            cooldown_secs,
+            created_at,
+            updated_at,
+        })
+    }
+}
+
+#[derive(
+    Queryable, Selectable, Insertable, AsChangeset, Debug, Clone, Serialize, Deserialize, TS,
+)]
+#[diesel(table_name = crate::models::schema::alert_incidents)]
+#[ts(export, export_to = "./alerts.ts")]
+pub struct AlertIncident {
+    pub id: String,
+    pub rule_id: String,
+    pub target_key: String,
+    pub status: AlertIncidentStatus,
+    pub trigger_value: Option<f32>,
+    pub current_value: Option<f32>,
+    pub recovery_value: Option<f32>,
+    pub threshold_value: Option<f32>,
+    pub opened_at: NaiveDateTime,
+    pub last_notified_at: Option<NaiveDateTime>,
+    pub resolved_at: Option<NaiveDateTime>,
+}
+
+#[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
+#[diesel(table_name = crate::models::schema::alert_notifications)]
+#[ts(export, export_to = "./alerts.ts")]
+pub struct AlertNotification {
+    pub id: String,
+    pub incident_id: String,
+    pub kind: AlertNotificationKind,
+    pub message: String,
+    pub created_at: NaiveDateTime,
+}
