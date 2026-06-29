@@ -4,6 +4,7 @@ use chrono::Utc;
 use reqwest::Client;
 use slasha_db::{
     DbPool,
+    app_metrics::AppMetrics,
     models::alerts::{
         AlertIncident, AlertIncidentStatus, AlertNotification, AlertNotificationKind, AlertRule,
         AlertRuleConfig,
@@ -13,6 +14,7 @@ use slasha_db::{
         app_metrics::AppMetricsRepo,
         server_metrics::ServerMetricsRepo,
     },
+    server_metrics::ServerMetrics,
 };
 use tokio::time::sleep;
 use tracing::{error, info, warn};
@@ -25,6 +27,7 @@ use crate::{
 
 pub struct AppSnapshot {
     pub metric: Option<slasha_db::app_metrics::AppMetrics>,
+    pub health_check: Option<bool>,
 }
 
 pub struct AlertSnapshot {
@@ -55,7 +58,7 @@ async fn run_tick(db_pool: &DbPool, config: &Config, http_client: &Client) -> an
         return Ok(());
     }
 
-    let snapshot = build_snapshot(db_pool, config, &rules).await;
+    let snapshot = build_snapshot(db_pool, config, &rules, http_client).await;
     for rule in &rules {
         if let Err(err) = process_rule(db_pool, http_client, rule, &snapshot).await {
             error!(
@@ -71,58 +74,105 @@ async fn run_tick(db_pool: &DbPool, config: &Config, http_client: &Client) -> an
     Ok(())
 }
 
-async fn build_snapshot(db_pool: &DbPool, config: &Config, rules: &[AlertRule]) -> AlertSnapshot {
-    let mut app_ids = HashSet::new();
-    let mut domains = HashSet::new();
+async fn build_snapshot(
+    db_pool: &DbPool,
+    config: &Config,
+    rules: &[AlertRule],
+    http_client: &Client,
+) -> AlertSnapshot {
+    let mut metric_app_ids = HashSet::new();
+    let mut domains_to_check = HashSet::new();
+    let mut health_check_urls = HashMap::new();
 
     for rule in rules {
         match &rule.config {
             AlertRuleConfig::AppCpu { app_id, .. } | AlertRuleConfig::AppMemory { app_id, .. } => {
-                app_ids.insert(app_id.clone());
+                metric_app_ids.insert(app_id.clone());
             }
+
+            AlertRuleConfig::AppHealthCheck { app_id, url } => {
+                health_check_urls.insert(app_id.clone(), url.clone());
+            }
+
             AlertRuleConfig::DomainTlsExpiry { domain, .. }
             | AlertRuleConfig::DomainDnsMisconfigured { domain } => {
-                domains.insert(domain.clone());
+                domains_to_check.insert(domain.clone());
             }
+
             _ => {}
         }
     }
 
-    let server_metric = match ServerMetricsRepo::find_latest(db_pool).await {
-        Ok(metric) => metric,
-        Err(err) => {
-            warn!(target: "slasha::alerts", error = ?err, "failed to load server metrics");
-            None
-        }
-    };
+    let server_metric = load_server_metric(db_pool).await;
+
+    let mut app_ids = metric_app_ids.clone();
+    app_ids.extend(health_check_urls.keys().cloned());
 
     let mut apps = HashMap::new();
+
     for app_id in app_ids {
-        let app_metric = match AppMetricsRepo::find_latest(db_pool, &app_id).await {
-            Ok(metric) => metric,
-            Err(err) => {
-                warn!(target: "slasha::alerts", app_id = %app_id, error = ?err, "failed to load app metrics for alert rule");
-                None
-            }
+        let metric = if metric_app_ids.contains(&app_id) {
+            load_app_metric(db_pool, &app_id).await
+        } else {
+            None
         };
 
-        apps.insert(app_id, AppSnapshot { metric: app_metric });
+        let health_check = if let Some(url) = health_check_urls.get(&app_id) {
+            Some(probe_health_check(http_client, url).await)
+        } else {
+            None
+        };
+
+        apps.insert(
+            app_id,
+            AppSnapshot {
+                metric,
+                health_check,
+            },
+        );
     }
 
-    let domains = if domains.is_empty() {
-        HashMap::new()
-    } else {
-        let checked = domain_health::check_domains(domains.into_iter().collect(), config).await;
-        checked
-            .into_iter()
-            .map(|health| (health.domain.clone(), health))
-            .collect()
-    };
+    let domains = domain_health::check_domains(domains_to_check.into_iter().collect(), config)
+        .await
+        .into_iter()
+        .map(|health| (health.domain.clone(), health))
+        .collect();
 
     AlertSnapshot {
         server_metric,
         apps,
         domains,
+    }
+}
+
+async fn load_server_metric(db_pool: &DbPool) -> Option<ServerMetrics> {
+    ServerMetricsRepo::find_latest(db_pool)
+        .await
+        .unwrap_or_else(|err| {
+            warn!(target: "slasha::alerts", error = ?err, "failed to load server metrics");
+            None
+        })
+}
+
+async fn load_app_metric(db_pool: &DbPool, app_id: &str) -> Option<AppMetrics> {
+    AppMetricsRepo::find_latest(db_pool, app_id)
+        .await
+        .unwrap_or_else(|err| {
+            warn!(target: "slasha::alerts", app_id = %app_id, error = ?err, "failed to load app metrics for alert rule");
+            None
+        })
+}
+
+async fn probe_health_check(http_client: &Client, url: &str) -> bool {
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        http_client.get(url).send(),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(response)) => response.status().is_success(),
+        _ => false,
     }
 }
 

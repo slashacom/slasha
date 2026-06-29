@@ -15,36 +15,39 @@ pub struct EvaluationResult {
 
 pub fn evaluate_rule(rule: &AlertRule, snapshot: &AlertSnapshot) -> Option<EvaluationResult> {
     let target_key = rule.config.generate_target_key();
-    let mut observation = match &rule.config {
+    let mut result = match &rule.config {
         AlertRuleConfig::ServerCpu { threshold_percent } => {
-            server_cpu_obs(snapshot, *threshold_percent)
+            evaluate_server_cpu(snapshot, *threshold_percent)
         }
         AlertRuleConfig::ServerMemory { threshold_percent } => {
-            server_memory_obs(snapshot, *threshold_percent)
+            evaluate_server_memory(snapshot, *threshold_percent)
         }
         AlertRuleConfig::ServerLoadAverage { threshold } => {
-            server_load_average_obs(snapshot, *threshold)
+            evaluate_server_load_average(snapshot, *threshold)
         }
         AlertRuleConfig::AppCpu {
             app_id,
             threshold_percent,
-        } => app_cpu_obs(snapshot.apps.get(app_id)?, *threshold_percent),
+        } => evaluate_app_cpu(snapshot.apps.get(app_id)?, *threshold_percent),
         AlertRuleConfig::AppMemory {
             app_id,
             threshold_percent,
-        } => app_memory_obs(snapshot.apps.get(app_id)?, *threshold_percent),
+        } => evaluate_app_memory(snapshot.apps.get(app_id)?, *threshold_percent),
         AlertRuleConfig::DomainTlsExpiry {
             domain,
             days_before,
-        } => domain_tls_expiry_obs(snapshot, domain, *days_before),
-        AlertRuleConfig::DomainDnsMisconfigured { domain } => domain_dns_obs(snapshot, domain),
+        } => evaluate_domain_tls_expiry(snapshot, domain, *days_before),
+        AlertRuleConfig::DomainDnsMisconfigured { domain } => evaluate_domain_dns(snapshot, domain),
+        AlertRuleConfig::AppHealthCheck { app_id, url } => {
+            evaluate_app_health_check(snapshot.apps.get(app_id)?, url)
+        }
     }?;
 
-    observation.target_key = target_key;
-    Some(observation)
+    result.target_key = target_key;
+    Some(result)
 }
 
-fn server_cpu_obs(snapshot: &AlertSnapshot, threshold: f32) -> Option<EvaluationResult> {
+fn evaluate_server_cpu(snapshot: &AlertSnapshot, threshold: f32) -> Option<EvaluationResult> {
     let metric = snapshot.server_metric.as_ref()?;
     let current = metric.cpu_usage;
     Some(EvaluationResult {
@@ -58,7 +61,7 @@ fn server_cpu_obs(snapshot: &AlertSnapshot, threshold: f32) -> Option<Evaluation
     })
 }
 
-fn server_memory_obs(snapshot: &AlertSnapshot, threshold: f32) -> Option<EvaluationResult> {
+fn evaluate_server_memory(snapshot: &AlertSnapshot, threshold: f32) -> Option<EvaluationResult> {
     let metric = snapshot.server_metric.as_ref()?;
     let current = percent(metric.memory_used, metric.memory_total);
     Some(EvaluationResult {
@@ -72,7 +75,10 @@ fn server_memory_obs(snapshot: &AlertSnapshot, threshold: f32) -> Option<Evaluat
     })
 }
 
-fn server_load_average_obs(snapshot: &AlertSnapshot, threshold: f32) -> Option<EvaluationResult> {
+fn evaluate_server_load_average(
+    snapshot: &AlertSnapshot,
+    threshold: f32,
+) -> Option<EvaluationResult> {
     let metric = snapshot.server_metric.as_ref()?;
     let current = metric.load_average;
     Some(EvaluationResult {
@@ -86,7 +92,7 @@ fn server_load_average_obs(snapshot: &AlertSnapshot, threshold: f32) -> Option<E
     })
 }
 
-fn app_cpu_obs(snapshot: &AppSnapshot, threshold: f32) -> Option<EvaluationResult> {
+fn evaluate_app_cpu(snapshot: &AppSnapshot, threshold: f32) -> Option<EvaluationResult> {
     let current = snapshot.metric.as_ref()?.cpu_usage;
     Some(EvaluationResult {
         target_key: String::new(),
@@ -99,7 +105,7 @@ fn app_cpu_obs(snapshot: &AppSnapshot, threshold: f32) -> Option<EvaluationResul
     })
 }
 
-fn app_memory_obs(snapshot: &AppSnapshot, threshold: f32) -> Option<EvaluationResult> {
+fn evaluate_app_memory(snapshot: &AppSnapshot, threshold: f32) -> Option<EvaluationResult> {
     let metric = snapshot.metric.as_ref()?;
     let current = percent(metric.memory_used, metric.memory_limit);
     Some(EvaluationResult {
@@ -113,7 +119,7 @@ fn app_memory_obs(snapshot: &AppSnapshot, threshold: f32) -> Option<EvaluationRe
     })
 }
 
-fn domain_tls_expiry_obs(
+fn evaluate_domain_tls_expiry(
     snapshot: &AlertSnapshot,
     domain: &str,
     days_before: i32,
@@ -146,7 +152,7 @@ fn domain_tls_expiry_obs(
     })
 }
 
-fn domain_dns_obs(snapshot: &AlertSnapshot, domain: &str) -> Option<EvaluationResult> {
+fn evaluate_domain_dns(snapshot: &AlertSnapshot, domain: &str) -> Option<EvaluationResult> {
     let health = snapshot.domains.get(domain)?;
     let triggered = matches!(
         health.dns.status,
@@ -164,14 +170,38 @@ fn domain_dns_obs(snapshot: &AlertSnapshot, domain: &str) -> Option<EvaluationRe
         health.dns.expected_ips.join(", ")
     };
 
+    let detail_display = if triggered {
+        format!("DNS misconfigured or unresolved. Resolves to {resolved}, but expected {expected}")
+    } else {
+        format!("DNS correctly configured. Resolves to expected IPs: {expected}")
+    };
+
     Some(EvaluationResult {
         target_key: String::new(),
         trigger_value: None,
         current_value: None,
         recovery_value: None,
         threshold_value: None,
-        detail_display: format!("resolved: {resolved}, expected: {expected}"),
+        detail_display,
         triggered,
+    })
+}
+
+fn evaluate_app_health_check(snapshot: &AppSnapshot, url: &str) -> Option<EvaluationResult> {
+    let healthy = snapshot.health_check?;
+    let detail_display = if healthy {
+        format!("Responded with 2xx success status: {url}")
+    } else {
+        format!("Failed to respond with 2xx status (error or timeout): {url}")
+    };
+    Some(EvaluationResult {
+        target_key: String::new(),
+        trigger_value: None,
+        current_value: None,
+        recovery_value: None,
+        threshold_value: None,
+        detail_display,
+        triggered: !healthy,
     })
 }
 

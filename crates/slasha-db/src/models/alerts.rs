@@ -142,6 +142,10 @@ pub enum AlertRuleConfig {
     DomainDnsMisconfigured {
         domain: String,
     },
+    AppHealthCheck {
+        app_id: String,
+        url: String,
+    },
 }
 
 impl AlertRuleConfig {
@@ -154,6 +158,7 @@ impl AlertRuleConfig {
             AlertRuleConfig::AppMemory { .. } => "app_memory",
             AlertRuleConfig::DomainTlsExpiry { .. } => "domain_tls_expiry",
             AlertRuleConfig::DomainDnsMisconfigured { .. } => "domain_dns_misconfigured",
+            AlertRuleConfig::AppHealthCheck { .. } => "app_health_check",
         }
     }
 
@@ -163,7 +168,9 @@ impl AlertRuleConfig {
             AlertRuleConfig::ServerCpu { .. }
             | AlertRuleConfig::ServerMemory { .. }
             | AlertRuleConfig::ServerLoadAverage { .. } => kind.to_string(),
-            AlertRuleConfig::AppCpu { app_id, .. } | AlertRuleConfig::AppMemory { app_id, .. } => {
+            AlertRuleConfig::AppCpu { app_id, .. }
+            | AlertRuleConfig::AppMemory { app_id, .. }
+            | AlertRuleConfig::AppHealthCheck { app_id, .. } => {
                 format!("{kind}:{app_id}")
             }
             AlertRuleConfig::DomainTlsExpiry { domain, .. }
