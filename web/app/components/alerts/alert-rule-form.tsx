@@ -230,6 +230,41 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
             />
           </Field>
         ) : null}
+
+        {draft.kind === 'app_health_check' ? (
+          <>
+            <Field label="App">
+              <Select
+                value={draft.app_id}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    app_id: event.target.value,
+                  }))
+                }
+              >
+                <option value="">Select an app</option>
+                {apps.map((app) => (
+                  <option key={app.id} value={app.id}>
+                    {app.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Health check URL">
+              <Input
+                value={draft.health_check_url}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    health_check_url: event.target.value,
+                  }))
+                }
+                placeholder="https://myapp.example.com/health"
+              />
+            </Field>
+          </>
+        ) : null}
       </FormSection>
 
       <FormSection

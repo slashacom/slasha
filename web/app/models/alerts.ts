@@ -60,4 +60,5 @@ export type AlertRuleConfig =
   | { kind: 'app_cpu'; app_id: string; threshold_percent: number }
   | { kind: 'app_memory'; app_id: string; threshold_percent: number }
   | { kind: 'domain_tls_expiry'; domain: string; days_before: number }
-  | { kind: 'domain_dns_misconfigured'; domain: string };
+  | { kind: 'domain_dns_misconfigured'; domain: string }
+  | { kind: 'app_health_check'; app_id: string; url: string };

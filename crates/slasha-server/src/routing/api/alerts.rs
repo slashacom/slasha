@@ -323,6 +323,15 @@ fn validate_rule_input(payload: &RuleInput) -> HttpResult<()> {
                 return Err(HttpError::bad_request("Domain cannot be empty"));
             }
         }
+        AlertRuleConfig::AppHealthCheck { app_id, url } => {
+            if app_id.trim().is_empty() {
+                return Err(HttpError::bad_request("App id cannot be empty"));
+            }
+
+            if url.trim().is_empty() {
+                return Err(HttpError::bad_request("Health check URL cannot be empty"));
+            }
+        }
     }
 
     if let Some(cooldown_secs) = payload.cooldown_secs

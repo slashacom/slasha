@@ -24,6 +24,7 @@ export type RuleDraft = {
   app_id: string;
   domain: string;
   days_before: string;
+  health_check_url: string;
   channel_ids: string[];
   direct_webhook_url: string;
   message_template: string;
@@ -198,6 +199,32 @@ export const alertRuleRegistry = {
     },
     summary: (config) => `DNS misconfiguration for ${config.domain}`,
   },
+  app_health_check: {
+    label: 'App Health Check',
+    description:
+      'Trigger when an application health check URL does not return a 2xx response.',
+    defaults: { app_id: '', health_check_url: '' },
+    buildConfig: (draft) => {
+      const app_id = draft.app_id.trim();
+      if (!app_id) return { error: 'Select an app for the rule.' };
+
+      const url = draft.health_check_url.trim();
+      if (!url) return { error: 'Health check URL is required.' };
+
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return { error: 'Health check URL must use http:// or https://' };
+        }
+      } catch {
+        return { error: 'Health check URL is invalid.' };
+      }
+
+      return { config: { kind: 'app_health_check', app_id, url } };
+    },
+    summary: (config, apps) =>
+      `Health check for ${appName(config.app_id, apps)}: ${config.url}`,
+  },
 } satisfies { [K in RuleKind]: RuleDefinition<K> };
 
 export const alertChannelKinds = Object.keys(
@@ -255,6 +282,7 @@ export function emptyRuleDraft(
     app_id: '',
     domain: '',
     days_before: '30',
+    health_check_url: '',
     channel_ids: [],
     direct_webhook_url: '',
     message_template: '',
@@ -299,6 +327,10 @@ export function ruleDraftFromRule(
       break;
     case 'domain_dns_misconfigured':
       draft.domain = cfg.domain;
+      break;
+    case 'app_health_check':
+      draft.app_id = cfg.app_id;
+      draft.health_check_url = cfg.url;
       break;
   }
 
