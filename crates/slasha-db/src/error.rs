@@ -11,6 +11,9 @@ pub enum DbError {
     #[error("conflict: {0}")]
     Conflict(String),
 
+    #[error("data integrity error: {0}")]
+    Data(String),
+
     #[error("pool error: {0}")]
     Pool(#[from] diesel::r2d2::PoolError),
 

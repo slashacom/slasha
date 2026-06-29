@@ -112,3 +112,15 @@ export function formatUptime(startedAt: string): string {
   const days = Math.floor(hours / 24);
   return `${days}d ${hours % 24}h`;
 }
+
+export function formatDate(value: string | null | undefined) {
+  return value ? parseUTC(value).toLocaleString() : '—';
+}
+
+export function formatMetric(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return '—';
+  }
+
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}

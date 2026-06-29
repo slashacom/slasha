@@ -1,5 +1,5 @@
 mod backups;
-pub(crate) mod deployments;
+pub mod deployments;
 mod domains;
 mod env;
 mod files;

@@ -1,6 +1,61 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    alert_channels (id) {
+        id -> Text,
+        name -> Text,
+        kind -> Text,
+        config_json -> Text,
+        enabled -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    alert_incidents (id) {
+        id -> Text,
+        rule_id -> Text,
+        target_key -> Text,
+        status -> Text,
+        trigger_value -> Nullable<Float>,
+        current_value -> Nullable<Float>,
+        recovery_value -> Nullable<Float>,
+        threshold_value -> Nullable<Float>,
+        opened_at -> Timestamp,
+        last_notified_at -> Nullable<Timestamp>,
+        resolved_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
+    alert_notifications (id) {
+        id -> Text,
+        incident_id -> Text,
+        kind -> Text,
+        message -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    alert_rules (id) {
+        id -> Text,
+        name -> Text,
+        kind -> Text,
+        config_json -> Text,
+        channel_ids_json -> Text,
+        direct_webhook_url -> Nullable<Text>,
+        message_template -> Nullable<Text>,
+        shell_command -> Nullable<Text>,
+        enabled -> Bool,
+        cooldown_secs -> Integer,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     app_backups (id) {
         id -> Text,
         app_id -> Text,
@@ -117,17 +172,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    server_settings (id) {
-        id -> Text,
-        cpu_limit_percent -> Nullable<Float>,
-        memory_limit_percent -> Nullable<Float>,
-        disk_limit_percent -> Nullable<Float>,
-        slack_webhook_url -> Nullable<Text>,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     service_env_vars (id) {
         id -> Text,
         service_id -> Text,
@@ -173,6 +217,8 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(alert_incidents -> alert_rules (rule_id));
+diesel::joinable!(alert_notifications -> alert_incidents (incident_id));
 diesel::joinable!(app_backups -> apps (app_id));
 diesel::joinable!(app_domains -> apps (app_id));
 diesel::joinable!(app_env_vars -> apps (app_id));
@@ -186,6 +232,10 @@ diesel::joinable!(services -> apps (app_id));
 diesel::joinable!(ssh_keys -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    alert_channels,
+    alert_incidents,
+    alert_notifications,
+    alert_rules,
     app_backups,
     app_domains,
     app_env_vars,
@@ -195,7 +245,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     apps,
     deployments,
     server_metrics,
-    server_settings,
     service_env_vars,
     services,
     ssh_keys,

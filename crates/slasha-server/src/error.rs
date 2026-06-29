@@ -92,9 +92,9 @@ impl From<slasha_db::DbError> for HttpError {
     fn from(e: slasha_db::DbError) -> Self {
         match e {
             slasha_db::DbError::NotFound(msg) => HttpError::not_found(msg),
-            slasha_db::DbError::PreconditionFailed(msg) | slasha_db::DbError::Conflict(msg) => {
-                HttpError::bad_request(msg)
-            }
+            slasha_db::DbError::PreconditionFailed(msg)
+            | slasha_db::DbError::Conflict(msg)
+            | slasha_db::DbError::Data(msg) => HttpError::bad_request(msg),
             _ => HttpError::internal(anyhow::anyhow!(e)),
         }
     }

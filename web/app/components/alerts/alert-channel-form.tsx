@@ -1,0 +1,176 @@
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { Button } from '~/components/interface/button';
+import { Input } from '~/components/interface/input';
+import { Label } from '~/components/interface/label';
+import { Select } from '~/components/interface/select';
+import { Switch } from '~/components/interface/switch';
+import type { AlertChannel, AlertChannelConfig } from '~/models/alerts';
+import { useCreateAlertChannel, useUpdateAlertChannel } from '~/queries/alerts';
+import {
+  alertChannelKinds,
+  alertChannelRegistry,
+  buildChannelConfig,
+  channelDraftFromChannel,
+  emptyChannelDraft,
+} from './alert-definitions';
+
+type AlertChannelFormProps = {
+  channel?: AlertChannel;
+  onCancel: () => void;
+  onSaved: () => void;
+};
+
+export function AlertChannelForm(props: AlertChannelFormProps) {
+  const { channel, onCancel, onSaved } = props;
+  const createChannel = useCreateAlertChannel();
+  const updateChannel = useUpdateAlertChannel();
+  const [draft, setDraft] = useState(() =>
+    channel ? channelDraftFromChannel(channel) : emptyChannelDraft()
+  );
+
+  const handleSave = async () => {
+    const name = draft.name.trim();
+    if (!name) {
+      toast.error('Channel name is required.');
+      return;
+    }
+
+    const result = buildChannelConfig(draft);
+    if ('error' in result) {
+      toast.error(result.error);
+      return;
+    }
+
+    const payload = {
+      name,
+      config: result.config,
+      enabled: draft.enabled,
+    };
+    const promise = channel
+      ? updateChannel.mutateAsync({ id: channel.id, data: payload })
+      : createChannel.mutateAsync(payload);
+
+    toast.promise(promise, {
+      loading: channel ? 'Updating channel...' : 'Creating channel...',
+      success: channel ? 'Channel updated.' : 'Channel created.',
+      error: (error) => error.message || 'Failed to save channel.',
+    });
+
+    try {
+      await promise;
+      onSaved();
+    } catch {
+      return;
+    }
+  };
+
+  return (
+    <div className="max-w-xl space-y-5">
+      <div className="space-y-2">
+        <Label>Name</Label>
+        <Input
+          value={draft.name}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, name: event.target.value }))
+          }
+          placeholder="Production Slack"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Kind</Label>
+        <Select
+          value={draft.kind}
+          onChange={(event) => {
+            const kind = event.target.value as AlertChannelConfig['kind'];
+            setDraft((current) => ({
+              ...emptyChannelDraft(kind),
+              id: current.id,
+              name: current.name,
+              enabled: current.enabled,
+            }));
+          }}
+        >
+          {alertChannelKinds.map((kind) => (
+            <option key={kind} value={kind}>
+              {alertChannelRegistry[kind].label}
+            </option>
+          ))}
+        </Select>
+        <p className="text-xs text-text-tertiary">
+          {alertChannelRegistry[draft.kind].description}
+        </p>
+      </div>
+
+      {draft.kind === 'slack' ? (
+        <div className="space-y-2">
+          <Label>Slack webhook URL</Label>
+          <Input
+            value={draft.webhook_url}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                webhook_url: event.target.value,
+              }))
+            }
+            placeholder="https://hooks.slack.com/services/..."
+          />
+        </div>
+      ) : (
+        <>
+          <div className="space-y-2">
+            <Label>Bot token</Label>
+            <Input
+              value={draft.bot_token}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  bot_token: event.target.value,
+                }))
+              }
+              placeholder="123456:ABCDEF..."
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Chat id</Label>
+            <Input
+              value={draft.chat_id}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  chat_id: event.target.value,
+                }))
+              }
+              placeholder="-1001234567890"
+            />
+          </div>
+        </>
+      )}
+
+      <div className="flex items-center justify-between border-t border-border pt-4">
+        <div>
+          <p className="text-sm font-medium text-text">Enabled</p>
+          <p className="text-xs text-text-tertiary">
+            Disabled channels remain saved but receive no alerts.
+          </p>
+        </div>
+        <Switch
+          checked={draft.enabled}
+          onCheckedChange={(enabled) =>
+            setDraft((current) => ({ ...current, enabled }))
+          }
+        />
+      </div>
+
+      <div className="flex items-center gap-2 pt-2">
+        <Button
+          label={channel ? 'Save changes' : 'Create channel'}
+          onClick={handleSave}
+          isLoading={createChannel.isPending || updateChannel.isPending}
+        />
+        <Button label="Cancel" variant="ghost" onClick={onCancel} />
+      </div>
+    </div>
+  );
+}

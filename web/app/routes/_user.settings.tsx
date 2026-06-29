@@ -4,16 +4,12 @@ import { TabNav } from '~/components/interface/tab-nav';
 import { getAuthMeOptions } from '~/queries/auth';
 
 export default function SettingsLayout() {
-  const { data } = useSuspenseQuery(getAuthMeOptions());
+  useSuspenseQuery(getAuthMeOptions());
 
   const tabs = [
     { label: 'Account', to: '/settings/account' },
     { label: 'SSH Keys', to: '/settings/ssh-keys' },
   ];
-
-  if (data.user.role === 'Admin') {
-    tabs.push({ label: 'Server', to: '/settings/server' });
-  }
 
   return (
     <div className="flex flex-1 flex-col space-y-8">

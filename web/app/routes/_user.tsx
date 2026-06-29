@@ -32,6 +32,9 @@ function usePageTitle() {
   if (path.startsWith('/monitoring')) {
     return 'Monitoring';
   }
+  if (path === '/alerts' || path.startsWith('/alerts/')) {
+    return 'Alerts';
+  }
   if (path === '/users' || path === '/users/') {
     return 'Users';
   }
@@ -53,7 +56,8 @@ export default function UserLayout() {
   const params = useParams();
   const isFullWidth =
     (!!params.slug && location.pathname.startsWith('/apps/')) ||
-    location.pathname.startsWith('/monitoring');
+    location.pathname.startsWith('/monitoring') ||
+    location.pathname.startsWith('/alerts');
 
   return (
     <div className="flex h-screen bg-bg">
