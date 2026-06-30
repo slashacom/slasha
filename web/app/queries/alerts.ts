@@ -108,6 +108,13 @@ export function useDeleteAlertChannel() {
   });
 }
 
+export function useTestAlertChannel() {
+  return useMutation({
+    mutationFn: (id: string) =>
+      httpPost<{ success: boolean }>(`alerts/channels/${id}/test`, {}),
+  });
+}
+
 export function useCreateAlertRule() {
   return useMutation({
     mutationFn: (payload: AlertRulePayload) =>

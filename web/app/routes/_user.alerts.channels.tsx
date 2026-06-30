@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { Plus, Webhook } from 'lucide-react';
+import { Plus, Webhook, Send, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { Button } from '~/components/interface/button';
@@ -13,6 +13,7 @@ import type { AlertChannel } from '~/models/alerts';
 import {
   getAlertChannelsOptions,
   useDeleteAlertChannel,
+  useTestAlertChannel,
 } from '~/queries/alerts';
 import { channelSummary } from '~/components/alerts/alert-definitions';
 import { formatDate } from '~/utils/format';
@@ -27,6 +28,7 @@ export default function AlertsChannelsPage() {
   const navigate = useNavigate();
   const { data } = useSuspenseQuery(getAlertChannelsOptions());
   const deleteChannel = useDeleteAlertChannel();
+  const testChannel = useTestAlertChannel();
   const [channelToDelete, setChannelToDelete] = useState<AlertChannel | null>(
     null
   );
@@ -95,18 +97,37 @@ export default function AlertsChannelsPage() {
                     </td>
                     <td className="py-3 text-right">
                       <div className="flex items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          title="Test channel"
+                          disabled={testChannel.isPending}
+                          onClick={async () => {
+                            const promise = testChannel.mutateAsync(channel.id);
+                            toast.promise(promise, {
+                              loading: 'Sending test message...',
+                              success: 'Test message sent.',
+                              error: (error) =>
+                                error.message || 'Failed to send test message.',
+                            });
+                          }}
+                          className="text-text-secondary transition-colors hover:text-text disabled:opacity-50"
+                        >
+                          <Send className="size-4" />
+                        </button>
                         <Link
                           to={`/alerts/channels/${channel.id}/edit`}
-                          className="text-xs !text-text-secondary !no-underline hover:!text-text"
+                          className="text-text-secondary transition-colors hover:text-text"
+                          title="Edit channel"
                         >
-                          Edit
+                          <Pencil className="size-4" />
                         </Link>
                         <button
                           type="button"
+                          title="Delete channel"
                           onClick={() => setChannelToDelete(channel)}
-                          className="text-xs text-red-400 transition-colors hover:text-red-300"
+                          className="text-red-400/80 transition-colors hover:text-red-400"
                         >
-                          Delete
+                          <Trash2 className="size-4" />
                         </button>
                       </div>
                     </td>

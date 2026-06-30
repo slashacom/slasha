@@ -151,7 +151,7 @@ pub async fn deliver_alert(
     }
 }
 
-async fn deliver_channel(
+pub async fn deliver_channel(
     channel: &AlertChannel,
     message: &str,
     http_client: &Client,
