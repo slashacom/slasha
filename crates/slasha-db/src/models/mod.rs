@@ -3,6 +3,7 @@ pub mod app;
 pub mod app_backup;
 pub mod app_metrics;
 pub mod app_scale;
+pub mod cron;
 pub mod deployment;
 pub mod schema;
 pub mod server_metrics;

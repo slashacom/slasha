@@ -21,6 +21,7 @@ uuid = { version = "1.23.0", features = ["v4", "serde"] }
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
 argon2 = { version = "0.5.3", features = ["std", "zeroize"] }
 chrono = { version = "0.4.44", features = ["serde"] }
+chrono-tz = "0.10"
 zeroize = "1.8.2"
 rand_core = "0.10.0"
 dotenv = "0.15.0"
