@@ -5,6 +5,7 @@ use reqwest::Client;
 use slasha_db::{
     DbPool,
     app_metrics::AppMetrics,
+    cron::CronRun,
     models::alerts::{
         AlertIncident, AlertIncidentStatus, AlertNotification, AlertNotificationKind, AlertRule,
         AlertRuleConfig,
@@ -12,6 +13,7 @@ use slasha_db::{
     repos::{
         alerts::{AlertIncidentRepo, AlertNotificationRepo, AlertRuleRepo},
         app_metrics::AppMetricsRepo,
+        cron::CronRunRepo,
         server_metrics::ServerMetricsRepo,
     },
     server_metrics::ServerMetrics,
@@ -34,6 +36,7 @@ pub struct AlertSnapshot {
     pub server_metric: Option<slasha_db::models::server_metrics::ServerMetrics>,
     pub apps: HashMap<String, AppSnapshot>,
     pub domains: HashMap<String, domain_health::DomainHealth>,
+    pub crons: HashMap<String, Option<CronRun>>,
 }
 
 pub fn spawn_alert_worker(db_pool: DbPool, config: Config) {
@@ -83,6 +86,7 @@ async fn build_snapshot(
     let mut metric_app_ids = HashSet::new();
     let mut domains_to_check = HashSet::new();
     let mut health_check_urls = HashMap::new();
+    let mut cron_job_ids = HashSet::new();
 
     for rule in rules {
         match &rule.config {
@@ -97,6 +101,10 @@ async fn build_snapshot(
             AlertRuleConfig::DomainTlsExpiry { domain, .. }
             | AlertRuleConfig::DomainDnsMisconfigured { domain } => {
                 domains_to_check.insert(domain.clone());
+            }
+
+            AlertRuleConfig::CronFailed { cron_job_id } => {
+                cron_job_ids.insert(cron_job_id.clone());
             }
 
             _ => {}
@@ -138,10 +146,17 @@ async fn build_snapshot(
         .map(|health| (health.domain.clone(), health))
         .collect();
 
+    let mut crons = HashMap::new();
+    for cron_job_id in cron_job_ids {
+        let latest = load_cron_outcome(db_pool, &cron_job_id).await;
+        crons.insert(cron_job_id, latest);
+    }
+
     AlertSnapshot {
         server_metric,
         apps,
         domains,
+        crons,
     }
 }
 
@@ -159,6 +174,15 @@ async fn load_app_metric(db_pool: &DbPool, app_id: &str) -> Option<AppMetrics> {
         .await
         .unwrap_or_else(|err| {
             warn!(target: "slasha::alerts", app_id = %app_id, error = ?err, "failed to load app metrics for alert rule");
+            None
+        })
+}
+
+async fn load_cron_outcome(db_pool: &DbPool, cron_job_id: &str) -> Option<CronRun> {
+    CronRunRepo::latest_outcome_for_job(db_pool, cron_job_id)
+        .await
+        .unwrap_or_else(|err| {
+            warn!(target: "slasha::alerts", cron_job_id = %cron_job_id, error = ?err, "failed to load cron run for alert rule");
             None
         })
 }

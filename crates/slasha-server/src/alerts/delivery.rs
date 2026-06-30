@@ -109,6 +109,7 @@ fn default_category(rule: &AlertRule) -> &'static str {
         AlertRuleConfig::DomainTlsExpiry { .. }
         | AlertRuleConfig::DomainDnsMisconfigured { .. } => "Domain Alert",
         AlertRuleConfig::AppHealthCheck { .. } => "App Health Check Alert",
+        AlertRuleConfig::CronFailed { .. } => "Cron Job Alert",
     }
 }
 

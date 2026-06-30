@@ -1,4 +1,4 @@
-use slasha_db::{alerts::AlertRule, models::alerts::AlertRuleConfig};
+use slasha_db::{alerts::AlertRule, cron::CronRunStatus, models::alerts::AlertRuleConfig};
 
 use super::worker::{AlertSnapshot, AppSnapshot};
 
@@ -41,6 +41,7 @@ pub fn evaluate_rule(rule: &AlertRule, snapshot: &AlertSnapshot) -> Option<Evalu
         AlertRuleConfig::AppHealthCheck { app_id, url } => {
             evaluate_app_health_check(snapshot.apps.get(app_id)?, url)
         }
+        AlertRuleConfig::CronFailed { cron_job_id } => evaluate_cron_failed(snapshot, cron_job_id),
     }?;
 
     result.target_key = target_key;
@@ -202,6 +203,31 @@ fn evaluate_app_health_check(snapshot: &AppSnapshot, url: &str) -> Option<Evalua
         threshold_value: None,
         detail_display,
         triggered: !healthy,
+    })
+}
+
+fn evaluate_cron_failed(snapshot: &AlertSnapshot, cron_job_id: &str) -> Option<EvaluationResult> {
+    let latest = snapshot.crons.get(cron_job_id)?;
+    let (triggered, detail_display) = match latest {
+        Some(run) => {
+            let failed = matches!(run.status, CronRunStatus::Failed | CronRunStatus::TimedOut);
+            let detail = match run.exit_code {
+                Some(code) => format!("Last run {} (exit code {})", run.status, code),
+                None => format!("Last run {}", run.status),
+            };
+            (failed, detail)
+        }
+        None => (false, "No completed runs yet".to_string()),
+    };
+
+    Some(EvaluationResult {
+        target_key: String::new(),
+        trigger_value: None,
+        current_value: None,
+        recovery_value: None,
+        threshold_value: None,
+        detail_display,
+        triggered,
     })
 }
 

@@ -1,4 +1,5 @@
 mod backups;
+mod crons;
 pub mod deployments;
 mod domains;
 mod env;
@@ -62,6 +63,7 @@ pub fn router() -> Router<AppState> {
         .nest("/{slug}/files", files::router())
         .route("/{slug}/commits", get(list_commits))
         .nest("/{slug}/deployments", deployments::router())
+        .nest("/{slug}/crons", crons::router())
         .nest("/{slug}/domains", domains::router())
         .nest("/{slug}/backups", backups::router())
         .nest("/{slug}/volumes", volumes::router())
