@@ -1,19 +1,40 @@
 import { queryOptions, useMutation } from '@tanstack/react-query';
 import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
-import type { App } from '~/models/app';
+import type { App, AppSource } from '~/models/app';
 import type { AppScale } from '~/models/app-scale';
 import type { AppDomain } from '~/models/app';
 import type { DomainHealth } from '~/models/domain-health';
 
 import type { AppMetrics } from '~/models/app-metrics';
+import type { GitConnection } from '~/models/connection';
 
 export type AppListItem = {
   app: App;
   url: string;
-  runtime_status: string;
 };
 
-type CreateAppPayload = { name: string };
+type CreateAppPayload<Source extends AppSource = AppSource> = {
+  name: string;
+  source: Source;
+} & (Source extends 'github'
+  ? { installation_id: number; repository_id: number }
+  : Source extends 'git'
+    ? { url: string; branch?: string }
+    : Record<never, never>);
+
+export type GitAppConnection = Pick<GitConnection, 'clone_url'>;
+
+export type GithubConnectionRepository = {
+  full_name: string;
+  html_url: string;
+  default_branch: string;
+};
+
+export type GithubAppConnection = {
+  repository: GithubConnectionRepository | null;
+};
+
+export type AppConnection = GitAppConnection | GithubAppConnection;
 
 type UpdateAppEnvVarsPayload = {
   appSlug: string;
@@ -50,7 +71,19 @@ export function getCheckSlugOptions(name: string) {
 export function getAppOptions(slug: string) {
   return queryOptions({
     queryKey: ['apps', slug],
-    queryFn: () => httpGet<{ app: App; url: string }>(`apps/${slug}`),
+    queryFn: () =>
+      httpGet<{
+        app: App;
+        url: string;
+      }>(`apps/${slug}`),
+  });
+}
+
+export function getAppConnectionOptions(slug: string) {
+  return queryOptions({
+    queryKey: ['apps', slug, 'connection'],
+    queryFn: () =>
+      httpGet<{ connection?: AppConnection }>(`apps/${slug}/connection`),
   });
 }
 
@@ -157,5 +190,26 @@ export function useUpdateAppSettings() {
         name: data.name,
         auto_deploy: data.auto_deploy,
       }),
+  });
+}
+
+export function useReconnectGithub() {
+  return useMutation({
+    mutationFn: (data: {
+      appSlug: string;
+      installation_id: number;
+      repository_id: number;
+    }) =>
+      httpPut<void>(`apps/${data.appSlug}/connection/github`, {
+        installation_id: data.installation_id,
+        repository_id: data.repository_id,
+      }),
+  });
+}
+
+export function useDisconnectGithub() {
+  return useMutation({
+    mutationFn: (appSlug: string) =>
+      httpDelete<void>(`apps/${appSlug}/connection/github`),
   });
 }

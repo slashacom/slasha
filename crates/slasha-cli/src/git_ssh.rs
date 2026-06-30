@@ -40,6 +40,9 @@ pub async fn handle(user_id: String) -> Result<i32> {
     if !["git-upload-pack", "git-receive-pack"].contains(&service) {
         anyhow::bail!("Unsupported Git service: {}", service);
     }
+    if !app.source.accepts_pushes() && service == "git-receive-pack" {
+        anyhow::bail!("Externally sourced apps do not accept direct pushes");
+    }
 
     let service = service.trim_start_matches("git-");
 

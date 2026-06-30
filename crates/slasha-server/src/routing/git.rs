@@ -92,6 +92,12 @@ async fn info_refs(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoRes
         )
         .into());
     };
+    if !auth.app.source.accepts_pushes() && service == "git-receive-pack" {
+        return Err(GitError::BadRequest(
+            "Externally sourced apps do not accept direct pushes".into(),
+        )
+        .into());
+    }
 
     let git_protocol = req
         .headers()
@@ -159,6 +165,12 @@ async fn receive_pack(
     auth: GitAuth,
     req: Request<Body>,
 ) -> HttpResult<impl IntoResponse> {
+    if !auth.app.source.accepts_pushes() {
+        return Err(GitError::BadRequest(
+            "Externally sourced apps do not accept direct pushes".into(),
+        )
+        .into());
+    }
     let auto_deploy = AutoDeploy {
         docker,
         db_pool,

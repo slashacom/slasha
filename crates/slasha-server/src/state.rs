@@ -8,19 +8,21 @@ use bollard::Docker;
 use slasha_db::DbPool;
 use tokio::sync::Notify;
 
-use crate::{docker::logs::LogManager, proxy::CaddyClient, utils};
+use crate::{connections::GithubClient, docker::logs::LogManager, proxy::CaddyClient, utils};
 
 #[derive(Clone)]
 pub struct Clients {
     pub docker: Docker,
     pub caddy: CaddyClient,
+    pub github: Option<GithubClient>,
 }
 
 impl Clients {
-    pub fn new(docker: Docker) -> Self {
+    pub fn new(docker: Docker, github: Option<GithubClient>) -> Self {
         Self {
             docker,
             caddy: CaddyClient::default(),
+            github,
         }
     }
 }
@@ -46,6 +48,7 @@ pub struct Runtime {
     pub log_manager: Arc<LogManager>,
     pub proxy_sync_trigger: Arc<Notify>,
     pub scaling_locks: Arc<dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    pub connection_sync_locks: Arc<dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl Runtime {
@@ -54,12 +57,20 @@ impl Runtime {
             log_manager: Arc::new(LogManager::new(utils::ensure_dir(logs_dir))),
             proxy_sync_trigger,
             scaling_locks: Arc::new(dashmap::DashMap::new()),
+            connection_sync_locks: Arc::new(dashmap::DashMap::new()),
         })
     }
 
     pub fn get_scaling_lock(&self, deployment_id: &str) -> Arc<tokio::sync::Mutex<()>> {
         self.scaling_locks
             .entry(deployment_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    }
+
+    pub fn get_connection_sync_lock(&self, app_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.connection_sync_locks
+            .entry(app_id.to_string())
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone()
     }

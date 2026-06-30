@@ -15,6 +15,7 @@ use futures_util::{StreamExt, stream};
 use serde::Deserialize;
 use slasha_db::{
     DbPool,
+    app::AppSource,
     deployment::DeploymentStatus,
     models::app_scale::ProcessType,
     repos::{app_backup::AppBackupRepo, deployment::DeploymentRepo},
@@ -23,6 +24,7 @@ use tokio::sync::Notify;
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
+    connections::sync_external_app,
     docker::{
         deployment::{
             ScaleDeps, list_deployment_processes, remove_deployment_processes,
@@ -55,18 +57,26 @@ struct TriggerDeployReq {
 }
 
 async fn trigger_deploy(
-    State(docker_client): State<Docker>,
-    State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
-    State(proxy_sync_trigger): State<Arc<Notify>>,
-    ActiveApp { app, .. }: ActiveApp,
+    State(state): State<AppState>,
+    ActiveApp { mut app, .. }: ActiveApp,
     Json(payload): Json<TriggerDeployReq>,
 ) -> HttpResult<impl IntoResponse> {
+    if app.source != AppSource::Local {
+        sync_external_app(
+            state.clients.github.as_ref(),
+            &state.storage,
+            &state.runtime,
+            &mut app,
+        )
+        .await
+        .map_err(|error| HttpError::bad_request(error.to_string()))?;
+    }
+
     let deployment = trigger_deployment(
-        docker_client,
-        db_pool,
-        log_manager,
-        proxy_sync_trigger,
+        state.clients.docker,
+        state.storage.db_pool,
+        state.runtime.log_manager,
+        state.runtime.proxy_sync_trigger,
         app,
         payload.commit_sha,
     )

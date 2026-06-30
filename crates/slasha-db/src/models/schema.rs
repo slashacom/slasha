@@ -139,6 +139,7 @@ diesel::table! {
         status -> Text,
         created_at -> Timestamp,
         auto_deploy -> Bool,
+        source -> Text,
     }
 }
 
@@ -183,6 +184,33 @@ diesel::table! {
         status -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    git_connections (app_id) {
+        app_id -> Text,
+        clone_url -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    github_connections (app_id) {
+        app_id -> Text,
+        installation_id -> BigInt,
+        repository_id -> BigInt,
+        status -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    github_installations (user_id, installation_id) {
+        user_id -> Text,
+        installation_id -> BigInt,
+        created_at -> Timestamp,
     }
 }
 
@@ -261,6 +289,9 @@ diesel::joinable!(app_scale -> apps (app_id));
 diesel::joinable!(cron_jobs -> apps (app_id));
 diesel::joinable!(cron_runs -> cron_jobs (cron_job_id));
 diesel::joinable!(deployments -> apps (app_id));
+diesel::joinable!(git_connections -> apps (app_id));
+diesel::joinable!(github_connections -> apps (app_id));
+diesel::joinable!(github_installations -> users (user_id));
 diesel::joinable!(service_env_vars -> services (service_id));
 diesel::joinable!(services -> apps (app_id));
 diesel::joinable!(ssh_keys -> users (user_id));
@@ -280,6 +311,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     cron_jobs,
     cron_runs,
     deployments,
+    git_connections,
+    github_connections,
+    github_installations,
     server_metrics,
     service_env_vars,
     services,

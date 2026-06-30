@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import {
   getAppDomainsOptions,
+  getAppConnectionOptions,
   getAppEnvSuggestionsOptions,
   getAppEnvVarsOptions,
   getAppOptions,
@@ -12,6 +13,8 @@ import { Settings as SettingsIcon } from 'lucide-react';
 import { AppEnvEditor } from '~/components/apps/app-env-editor';
 import { AppNameManager } from '~/components/apps/app-name-manager';
 import { AutoDeployManager } from '~/components/apps/auto-deploy-manager';
+import { GithubConnectionManager } from '~/components/apps/github-connection-manager';
+import { GitConnectionManager } from '~/components/apps/git-connection-manager';
 import { BackupManager } from '~/components/apps/backup-manager';
 import { DomainManager } from '~/components/apps/domain-manager';
 import { StorageManager } from '~/components/apps/storage-manager';
@@ -20,11 +23,14 @@ import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { SectionHeader } from '~/components/interface/section-header';
 import { getBackupOptions, getVolumesOptions } from '~/queries/storage';
 import { queryClient } from '~/utils/query-client';
+import { getGithubStatusOptions } from '~/queries/github';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
   await Promise.all([
     queryClient.ensureQueryData(getAppOptions(params.slug)),
+    queryClient.ensureQueryData(getAppConnectionOptions(params.slug)),
+    queryClient.ensureQueryData(getGithubStatusOptions()),
     queryClient.ensureQueryData(getAppEnvVarsOptions(params.slug)),
     queryClient.ensureQueryData(getAppEnvSuggestionsOptions(params.slug)),
     queryClient.ensureQueryData(getAppDomainsOptions(params.slug)),
@@ -38,6 +44,9 @@ export default function AppSettingsPage() {
   const navigate = useNavigate();
   const deleteApp = useDeleteApp();
   const { data } = useSuspenseQuery(getAppOptions(slug!));
+  const { data: connectionData } = useSuspenseQuery(
+    getAppConnectionOptions(slug!)
+  );
   const app = data.app;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -58,6 +67,32 @@ export default function AppSettingsPage() {
         <div className="max-w-3xl mb-8">
           <AppEnvEditor appSlug={slug!} />
         </div>
+        {app.source === 'github' && (
+          <div className="max-w-3xl mb-8">
+            <GithubConnectionManager
+              app={app}
+              connection={
+                connectionData.connection &&
+                'repository' in connectionData.connection
+                  ? connectionData.connection
+                  : undefined
+              }
+            />
+          </div>
+        )}
+        {app.source === 'git' && (
+          <div className="max-w-3xl mb-8">
+            <GitConnectionManager
+              app={app}
+              connection={
+                connectionData.connection &&
+                'clone_url' in connectionData.connection
+                  ? connectionData.connection
+                  : undefined
+              }
+            />
+          </div>
+        )}
         <div className="max-w-3xl mb-8">
           <DomainManager appSlug={slug!} />
         </div>

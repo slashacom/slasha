@@ -1,0 +1,5086 @@
+diff --git a/.env.example b/.env.example
+index 40f07cf..1984443 100644
+--- a/.env.example
++++ b/.env.example
+@@ -3,3 +3,10 @@ SLASHA_PLATFORM_DOMAIN=slasha.localhost
+ SLASHA_PORT=3000
+ 
+ JWT_SECRET=somesecret
++
++# GitHub integration is disabled when all variables below are absent.
++GITHUB_APP_ID=
++GITHUB_APP_CLIENT_ID=
++GITHUB_APP_CLIENT_SECRET=
++GITHUB_APP_PRIVATE_KEY=
++GITHUB_APP_WEBHOOK_SECRET=
+diff --git a/Cargo.lock b/Cargo.lock
+index 872858e..e305737 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -16,7 +16,7 @@ checksum = "b169f7a6d4742236a0a00c541b845991d0ac43e546831af1249753ab4c3aa3a0"
+ dependencies = [
+  "cfg-if",
+  "cipher",
+- "cpufeatures",
++ "cpufeatures 0.2.17",
+ ]
+ 
+ [[package]]
+@@ -131,7 +131,7 @@ checksum = "3c3610892ee6e0cbce8ae2700349fcf8f98adb0dbfbee85aec3c9179d29cc072"
+ dependencies = [
+  "base64ct",
+  "blake2",
+- "cpufeatures",
++ "cpufeatures 0.2.17",
+  "password-hash",
+  "zeroize",
+ ]
+@@ -476,7 +476,7 @@ version = "0.10.6"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "46502ad458c9a52b69d4d4d32775c788b7a1b85e8bc9d482d92250fc0e3f8efe"
+ dependencies = [
+- "digest",
++ "digest 0.10.7",
+ ]
+ 
+ [[package]]
+@@ -488,6 +488,15 @@ dependencies = [
+  "generic-array",
+ ]
+ 
++[[package]]
++name = "block-buffer"
++version = "0.12.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
++dependencies = [
++ "hybrid-array",
++]
++
+ [[package]]
+ name = "block-padding"
+ version = "0.3.3"
+@@ -661,7 +670,7 @@ version = "0.4.4"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
+ dependencies = [
+- "crypto-common",
++ "crypto-common 0.1.7",
+  "inout",
+ ]
+ 
+@@ -714,6 +723,12 @@ dependencies = [
+  "cc",
+ ]
+ 
++[[package]]
++name = "cmov"
++version = "0.5.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
++
+ [[package]]
+ name = "colorchoice"
+ version = "1.0.5"
+@@ -779,6 +794,12 @@ version = "0.9.6"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
+ 
++[[package]]
++name = "const-oid"
++version = "0.10.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
++
+ [[package]]
+ name = "convert_case"
+ version = "0.10.0"
+@@ -834,6 +855,15 @@ dependencies = [
+  "libc",
+ ]
+ 
++[[package]]
++name = "cpufeatures"
++version = "0.3.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
++dependencies = [
++ "libc",
++]
++
+ [[package]]
+ name = "crc32fast"
+ version = "1.5.0"
+@@ -917,6 +947,24 @@ dependencies = [
+  "typenum",
+ ]
+ 
++[[package]]
++name = "crypto-common"
++version = "0.2.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453"
++dependencies = [
++ "hybrid-array",
++]
++
++[[package]]
++name = "ctutils"
++version = "0.4.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
++dependencies = [
++ "cmov",
++]
++
+ [[package]]
+ name = "curve25519-dalek"
+ version = "4.1.3"
+@@ -924,9 +972,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2be"
+ dependencies = [
+  "cfg-if",
+- "cpufeatures",
++ "cpufeatures 0.2.17",
+  "curve25519-dalek-derive",
+- "digest",
++ "digest 0.10.7",
+  "fiat-crypto",
+  "rustc_version",
+  "subtle",
+@@ -1005,7 +1053,7 @@ version = "0.7.10"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
+ dependencies = [
+- "const-oid",
++ "const-oid 0.9.6",
+  "pem-rfc7468",
+  "zeroize",
+ ]
+@@ -1109,12 +1157,24 @@ version = "0.10.7"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
+ dependencies = [
+- "block-buffer",
+- "const-oid",
+- "crypto-common",
++ "block-buffer 0.10.4",
++ "const-oid 0.9.6",
++ "crypto-common 0.1.7",
+  "subtle",
+ ]
+ 
++[[package]]
++name = "digest"
++version = "0.11.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
++dependencies = [
++ "block-buffer 0.12.1",
++ "const-oid 0.10.2",
++ "crypto-common 0.2.2",
++ "ctutils",
++]
++
+ [[package]]
+ name = "dirs"
+ version = "6.0.0"
+@@ -1201,7 +1261,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "ee27f32b5c5292967d2d4a9d7f1e0b0aed2c15daded5a60300e4abb9d8020bca"
+ dependencies = [
+  "der",
+- "digest",
++ "digest 0.10.7",
+  "elliptic-curve",
+  "rfc6979",
+  "signature",
+@@ -1227,7 +1287,7 @@ dependencies = [
+  "curve25519-dalek",
+  "ed25519",
+  "serde",
+- "sha2",
++ "sha2 0.10.9",
+  "subtle",
+  "zeroize",
+ ]
+@@ -1246,7 +1306,7 @@ checksum = "b5e6043086bf7973472e0c7dff2142ea0b680d30e18d9cc40f267efbf222bd47"
+ dependencies = [
+  "base16ct",
+  "crypto-bigint",
+- "digest",
++ "digest 0.10.7",
+  "ff",
+  "generic-array",
+  "group",
+@@ -1700,7 +1760,7 @@ version = "0.12.4"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "7b5f8eb2ad728638ea2c7d47a21db23b7b58a72ed6a38256b8a1849f15fbbdf7"
+ dependencies = [
+- "hmac",
++ "hmac 0.12.1",
+ ]
+ 
+ [[package]]
+@@ -1709,7 +1769,16 @@ version = "0.12.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+ dependencies = [
+- "digest",
++ "digest 0.10.7",
++]
++
++[[package]]
++name = "hmac"
++version = "0.13.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
++dependencies = [
++ "digest 0.11.3",
+ ]
+ 
+ [[package]]
+@@ -1766,6 +1835,15 @@ version = "1.0.3"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+ 
++[[package]]
++name = "hybrid-array"
++version = "0.4.13"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "818356c5132c1fede50f837ca96afbe78ff42413047f4abb886217845e1b6c8c"
++dependencies = [
++ "typenum",
++]
++
+ [[package]]
+ name = "hyper"
+ version = "1.9.0"
+@@ -2172,7 +2250,7 @@ dependencies = [
+  "base64",
+  "ed25519-dalek",
+  "getrandom 0.2.17",
+- "hmac",
++ "hmac 0.12.1",
+  "js-sys",
+  "p256",
+  "p384",
+@@ -2181,7 +2259,7 @@ dependencies = [
+  "rsa",
+  "serde",
+  "serde_json",
+- "sha2",
++ "sha2 0.10.9",
+  "signature",
+  "simple_asn1",
+ ]
+@@ -2651,7 +2729,7 @@ dependencies = [
+  "ecdsa",
+  "elliptic-curve",
+  "primeorder",
+- "sha2",
++ "sha2 0.10.9",
+ ]
+ 
+ [[package]]
+@@ -2663,7 +2741,7 @@ dependencies = [
+  "ecdsa",
+  "elliptic-curve",
+  "primeorder",
+- "sha2",
++ "sha2 0.10.9",
+ ]
+ 
+ [[package]]
+@@ -3179,7 +3257,7 @@ version = "0.4.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "f8dd2a808d456c4a54e300a23e9f5a67e122c3024119acbfd73e3bf664491cb2"
+ dependencies = [
+- "hmac",
++ "hmac 0.12.1",
+  "subtle",
+ ]
+ 
+@@ -3203,8 +3281,8 @@ version = "0.9.10"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "b8573f03f5883dcaebdfcf4725caa1ecb9c15b2ef50c43a07b816e06799bb12d"
+ dependencies = [
+- "const-oid",
+- "digest",
++ "const-oid 0.9.6",
++ "digest 0.10.7",
+  "num-bigint-dig",
+  "num-integer",
+  "num-traits",
+@@ -3258,7 +3336,7 @@ version = "8.11.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "5bcdef0be6fe7f6fa333b1073c949729274b05f123a0ad7efcb8efd878e5c3b1"
+ dependencies = [
+- "sha2",
++ "sha2 0.10.9",
+  "walkdir",
+ ]
+ 
+@@ -3450,7 +3528,7 @@ dependencies = [
+  "num",
+  "once_cell",
+  "serde",
+- "sha2",
++ "sha2 0.10.9",
+  "zbus",
+ ]
+ 
+@@ -3576,8 +3654,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
+ dependencies = [
+  "cfg-if",
+- "cpufeatures",
+- "digest",
++ "cpufeatures 0.2.17",
++ "digest 0.10.7",
+ ]
+ 
+ [[package]]
+@@ -3587,8 +3665,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+ dependencies = [
+  "cfg-if",
+- "cpufeatures",
+- "digest",
++ "cpufeatures 0.2.17",
++ "digest 0.10.7",
++]
++
++[[package]]
++name = "sha2"
++version = "0.11.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
++dependencies = [
++ "cfg-if",
++ "cpufeatures 0.3.0",
++ "digest 0.11.3",
+ ]
+ 
+ [[package]]
+@@ -3658,7 +3747,7 @@ version = "2.2.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
+ dependencies = [
+- "digest",
++ "digest 0.10.7",
+  "rand_core 0.6.4",
+ ]
+ 
+@@ -3756,6 +3845,8 @@ dependencies = [
+  "flate2",
+  "futures-util",
+  "git2",
++ "hex",
++ "hmac 0.13.0",
+  "jsonwebtoken",
+  "mime_guess",
+  "once_cell",
+@@ -3765,7 +3856,7 @@ dependencies = [
+  "rust-embed",
+  "serde",
+  "serde_json",
+- "sha2",
++ "sha2 0.11.0",
+  "slasha-db",
+  "strum",
+  "strum_macros",
+@@ -3778,6 +3869,7 @@ dependencies = [
+  "tower-http",
+  "tracing",
+  "tracing-subscriber",
++ "urlencoding",
+  "uuid",
+  "x509-parser",
+  "zeroize",
+@@ -4427,9 +4519,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "typenum"
+-version = "1.19.0"
++version = "1.20.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
++checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+ 
+ [[package]]
+ name = "uds_windows"
+@@ -4524,6 +4616,12 @@ dependencies = [
+  "serde",
+ ]
+ 
++[[package]]
++name = "urlencoding"
++version = "2.1.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
++
+ [[package]]
+ name = "utf-8"
+ version = "0.7.6"
+diff --git a/crates/slasha-cli/src/apps.rs b/crates/slasha-cli/src/apps.rs
+index 94f7f8d..a246d64 100644
+--- a/crates/slasha-cli/src/apps.rs
++++ b/crates/slasha-cli/src/apps.rs
+@@ -1,7 +1,7 @@
+ use anyhow::{Context, Result};
+ use colored::Colorize;
+ use serde_json::json;
+-use slasha_db::app::App;
++use slasha_db::app::{App, AppSource};
+ 
+ use crate::{
+     config::ProjectConfig,
+@@ -20,19 +20,32 @@ fn ssh_git_url(state: &AppState, slug: &str) -> String {
+ fn print_app(state: &AppState, app: &App) {
+     cli_section(&app.name);
+     cli_label("Slug", &app.slug);
+-    cli_label("Status", &app.status);
++    cli_label("Status", app.status);
+     cli_label("Branch", &app.default_branch);
+-
+-    cli_section("Git remotes");
+-    cli_label("HTTPS", git_remote_url(state, &app.slug));
+-    cli_label("SSH", ssh_git_url(state, &app.slug));
+-
+-    cli_section("Deploy");
+-    cli_info(format!(
+-        "  git remote add slasha {}",
+-        ssh_git_url(state, &app.slug)
+-    ));
+-    cli_info("  git push -u slasha main".to_string());
++    cli_label("Source", app.source.to_string());
++
++    match app.source {
++        AppSource::Local => {
++            cli_section("Git remotes");
++            cli_label("HTTPS", git_remote_url(state, &app.slug));
++            cli_label("SSH", ssh_git_url(state, &app.slug));
++
++            cli_section("Deploy");
++            cli_info(format!(
++                "  git remote add slasha {}",
++                ssh_git_url(state, &app.slug)
++            ));
++            cli_info("  git push -u slasha main".to_string());
++        }
++        AppSource::Github => {
++            cli_section("Deploy");
++            cli_info("Push to the connected GitHub repository or deploy from the dashboard.");
++        }
++        AppSource::Git => {
++            cli_section("Deploy");
++            cli_info("Deployments are triggered from the dashboard.");
++        }
++    }
+ }
+ 
+ pub async fn handle_list(state: &AppState) -> Result<()> {
+@@ -46,14 +59,15 @@ pub async fn handle_list(state: &AppState) -> Result<()> {
+             cli_info("No apps yet. Run slasha create <name> to create one.");
+         } else {
+             print_table(
+-                &["NAME", "SLUG", "STATUS", "BRANCH"],
++                &["NAME", "SLUG", "STATUS", "BRANCH", "SOURCE"],
+                 apps.iter()
+                     .map(|a| {
+                         vec![
+                             a.name.clone(),
+                             a.slug.clone(),
+-                            a.status.clone(),
++                            a.status.to_string(),
+                             a.default_branch.clone(),
++                            a.source.to_string(),
+                         ]
+                     })
+                     .collect(),
+@@ -67,7 +81,7 @@ pub async fn handle_list(state: &AppState) -> Result<()> {
+ pub async fn handle_create(state: &AppState, name: &str) -> Result<()> {
+     let body = state
+         .api_client
+-        .post("/api/apps", &json!({ "name": name }))
++        .post("/api/apps", &json!({ "name": name, "source": "local" }))
+         .await?;
+ 
+     let app: App = serde_json::from_value(body["app"].clone()).context("Failed to parse app")?;
+diff --git a/crates/slasha-cli/src/git_ssh.rs b/crates/slasha-cli/src/git_ssh.rs
+index b39fbc3..0458c60 100644
+--- a/crates/slasha-cli/src/git_ssh.rs
++++ b/crates/slasha-cli/src/git_ssh.rs
+@@ -40,6 +40,9 @@ pub async fn handle(user_id: String) -> Result<i32> {
+     if !["git-upload-pack", "git-receive-pack"].contains(&service) {
+         anyhow::bail!("Unsupported Git service: {}", service);
+     }
++    if !app.source.accepts_pushes() && service == "git-receive-pack" {
++        anyhow::bail!("Externally sourced apps do not accept direct pushes");
++    }
+ 
+     let service = service.trim_start_matches("git-");
+ 
+diff --git a/crates/slasha-db/migrations/2026-06-29-120000-0000_create_connections_table/down.sql b/crates/slasha-db/migrations/2026-06-29-120000-0000_create_connections_table/down.sql
+new file mode 100644
+index 0000000..b16aede
+--- /dev/null
++++ b/crates/slasha-db/migrations/2026-06-29-120000-0000_create_connections_table/down.sql
+@@ -0,0 +1,6 @@
++DROP INDEX IF EXISTS idx_github_connections_installation_repository;
++DROP TABLE IF EXISTS github_connections;
++DROP TABLE IF EXISTS git_connections;
++DROP INDEX IF EXISTS idx_github_installations_installation_id;
++DROP TABLE IF EXISTS github_installations;
++ALTER TABLE apps DROP COLUMN source;
+diff --git a/crates/slasha-db/migrations/2026-06-29-120000-0000_create_connections_table/up.sql b/crates/slasha-db/migrations/2026-06-29-120000-0000_create_connections_table/up.sql
+new file mode 100644
+index 0000000..d97de8d
+--- /dev/null
++++ b/crates/slasha-db/migrations/2026-06-29-120000-0000_create_connections_table/up.sql
+@@ -0,0 +1,32 @@
++ALTER TABLE apps
++ADD COLUMN source TEXT NOT NULL DEFAULT 'local'
++CHECK (source IN ('local', 'github', 'git'));
++
++CREATE TABLE github_installations (
++    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
++    installation_id BIGINT NOT NULL,
++    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    PRIMARY KEY (user_id, installation_id)
++);
++
++CREATE INDEX idx_github_installations_installation_id
++ON github_installations(installation_id);
++
++CREATE TABLE github_connections (
++    app_id TEXT PRIMARY KEY NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
++    installation_id BIGINT NOT NULL,
++    repository_id BIGINT NOT NULL,
++    status TEXT NOT NULL DEFAULT 'connected'
++        CHECK (status IN ('connected', 'disconnected')),
++    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
++);
++
++CREATE INDEX idx_github_connections_installation_repository
++ON github_connections(installation_id, repository_id);
++
++CREATE TABLE git_connections (
++    app_id TEXT PRIMARY KEY NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
++    clone_url TEXT NOT NULL,
++    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
++);
+diff --git a/crates/slasha-db/src/lib.rs b/crates/slasha-db/src/lib.rs
+index 76d7196..ad539a2 100644
+--- a/crates/slasha-db/src/lib.rs
++++ b/crates/slasha-db/src/lib.rs
+@@ -6,6 +6,6 @@ pub mod repos;
+ pub use connection::{DbPool, create_pool, create_pool_with_max_size};
+ pub use error::{DbError, DbResult};
+ pub use models::{
+-    alerts, app, app_backup, app_metrics, deployment, schema, server_metrics, service, ssh_keys,
+-    user,
++    alerts, app, app_backup, app_metrics, deployment, git_connection, github_connection, schema,
++    server_metrics, service, ssh_keys, user,
+ };
+diff --git a/crates/slasha-db/src/models/app.rs b/crates/slasha-db/src/models/app.rs
+index b5aef1e..9c88948 100644
+--- a/crates/slasha-db/src/models/app.rs
++++ b/crates/slasha-db/src/models/app.rs
+@@ -24,9 +24,102 @@ pub struct App {
+     pub name: String,
+     pub repo_path: String,
+     pub default_branch: String,
+-    pub status: String,
++    pub status: AppStatus,
+     pub created_at: chrono::NaiveDateTime,
+     pub auto_deploy: bool,
++    pub source: AppSource,
++}
++
++#[derive(
++    Debug,
++    PartialEq,
++    FromSqlRow,
++    AsExpression,
++    Display,
++    Copy,
++    Clone,
++    EnumString,
++    Serialize,
++    Deserialize,
++    TS,
++)]
++#[strum(serialize_all = "lowercase")]
++#[serde(rename_all = "lowercase")]
++#[diesel(sql_type = diesel::sql_types::Text)]
++#[ts(export, export_to = "./app.ts")]
++pub enum AppSource {
++    Local,
++    Github,
++    Git,
++}
++
++#[derive(
++    Debug,
++    PartialEq,
++    Eq,
++    FromSqlRow,
++    AsExpression,
++    Display,
++    Copy,
++    Clone,
++    EnumString,
++    Serialize,
++    Deserialize,
++    TS,
++)]
++#[strum(serialize_all = "lowercase")]
++#[serde(rename_all = "lowercase")]
++#[diesel(sql_type = diesel::sql_types::Text)]
++#[ts(export, export_to = "./app.ts")]
++pub enum AppStatus {
++    Idle,
++    Building,
++    Running,
++    Failed,
++}
++
++impl ToSql<Text, Sqlite> for AppStatus
++where
++    str: ToSql<Text, Sqlite>,
++{
++    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
++        out.set_value(self.to_string());
++        Ok(IsNull::No)
++    }
++}
++
++impl FromSql<Text, Sqlite> for AppStatus {
++    fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
++        <String as FromSql<Text, Sqlite>>::from_sql(bytes).and_then(|value| {
++            AppStatus::from_str(&value)
++                .map_err(|_| format!("invalid app status '{}'", value).into())
++        })
++    }
++}
++
++impl AppSource {
++    pub fn accepts_pushes(self) -> bool {
++        self == Self::Local
++    }
++}
++
++impl ToSql<Text, Sqlite> for AppSource
++where
++    str: ToSql<Text, Sqlite>,
++{
++    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
++        out.set_value(self.to_string());
++        Ok(IsNull::No)
++    }
++}
++
++impl FromSql<Text, Sqlite> for AppSource {
++    fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
++        <String as FromSql<Text, Sqlite>>::from_sql(bytes).and_then(|value| {
++            AppSource::from_str(&value)
++                .map_err(|_| format!("invalid app source '{}'", value).into())
++        })
++    }
+ }
+ 
+ #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
+diff --git a/crates/slasha-db/src/models/app_backup.rs b/crates/slasha-db/src/models/app_backup.rs
+index a99803a..243b0ca 100644
+--- a/crates/slasha-db/src/models/app_backup.rs
++++ b/crates/slasha-db/src/models/app_backup.rs
+@@ -4,7 +4,7 @@ use ts_rs::TS;
+ 
+ #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
+ #[diesel(table_name = crate::models::schema::app_backups)]
+-#[ts(export, export_to = "./app_backup.ts")]
++#[ts(export, export_to = "./app-backup.ts")]
+ pub struct AppBackup {
+     pub id: String,
+     pub app_id: String,
+diff --git a/crates/slasha-db/src/models/app_metrics.rs b/crates/slasha-db/src/models/app_metrics.rs
+index c1ffe74..6f37933 100644
+--- a/crates/slasha-db/src/models/app_metrics.rs
++++ b/crates/slasha-db/src/models/app_metrics.rs
+@@ -4,7 +4,7 @@ use ts_rs::TS;
+ 
+ #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
+ #[diesel(table_name = crate::models::schema::app_metrics)]
+-#[ts(export, export_to = "./app_metrics.ts")]
++#[ts(export, export_to = "./app-metrics.ts")]
+ pub struct AppMetrics {
+     pub id: String,
+     pub app_id: String,
+diff --git a/crates/slasha-db/src/models/app_scale.rs b/crates/slasha-db/src/models/app_scale.rs
+index d113671..af5fbd5 100644
+--- a/crates/slasha-db/src/models/app_scale.rs
++++ b/crates/slasha-db/src/models/app_scale.rs
+@@ -19,7 +19,7 @@ use crate::models::app_scale::deserialize::FromSqlRow;
+     Queryable, Selectable, Insertable, AsChangeset, Debug, Clone, Serialize, Deserialize, TS,
+ )]
+ #[diesel(table_name = crate::models::schema::app_scale)]
+-#[ts(export, export_to = "./app_scale.ts")]
++#[ts(export, export_to = "./app-scale.ts")]
+ pub struct AppScale {
+     pub id: String,
+     pub app_id: String,
+@@ -45,7 +45,7 @@ pub struct AppScale {
+ #[strum(serialize_all = "lowercase")]
+ #[serde(rename_all = "lowercase")]
+ #[diesel(sql_type = diesel::sql_types::Text)]
+-#[ts(export, export_to = "./app_scale.ts")]
++#[ts(export, export_to = "./app-scale.ts")]
+ pub enum ProcessType {
+     Web,
+     Worker,
+@@ -53,14 +53,14 @@ pub enum ProcessType {
+ }
+ 
+ #[derive(Debug, Clone, serde::Serialize, TS)]
+-#[ts(export, export_to = "./app_scale.ts")]
++#[ts(export, export_to = "./app-scale.ts")]
+ pub enum ProcessStatus {
+     Running,
+     Stopped,
+ }
+ 
+ #[derive(Debug, Clone, serde::Serialize, TS)]
+-#[ts(export, export_to = "./app_scale.ts")]
++#[ts(export, export_to = "./app-scale.ts")]
+ pub struct ProcessContainer {
+     pub name: String,
+     pub process_type: ProcessType,
+diff --git a/crates/slasha-db/src/models/git_connection.rs b/crates/slasha-db/src/models/git_connection.rs
+new file mode 100644
+index 0000000..eec815a
+--- /dev/null
++++ b/crates/slasha-db/src/models/git_connection.rs
+@@ -0,0 +1,12 @@
++use diesel::prelude::*;
++use serde::{Deserialize, Serialize};
++use ts_rs::TS;
++
++#[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
++#[diesel(table_name = crate::models::schema::git_connections)]
++#[ts(export, export_to = "./connection.ts")]
++pub struct GitConnection {
++    pub app_id: String,
++    pub clone_url: String,
++    pub created_at: chrono::NaiveDateTime,
++}
+diff --git a/crates/slasha-db/src/models/github_connection.rs b/crates/slasha-db/src/models/github_connection.rs
+new file mode 100644
+index 0000000..dde7ae5
+--- /dev/null
++++ b/crates/slasha-db/src/models/github_connection.rs
+@@ -0,0 +1,76 @@
++use std::str::FromStr;
++
++use diesel::{
++    backend::Backend,
++    deserialize::{self, FromSql, FromSqlRow},
++    expression::AsExpression,
++    prelude::*,
++    serialize::{self, IsNull, Output, ToSql},
++    sql_types::Text,
++    sqlite::Sqlite,
++};
++use serde::{Deserialize, Serialize};
++use strum_macros::{Display, EnumString};
++use ts_rs::TS;
++
++#[derive(
++    Debug,
++    PartialEq,
++    FromSqlRow,
++    AsExpression,
++    Display,
++    Copy,
++    Clone,
++    EnumString,
++    Serialize,
++    Deserialize,
++    TS,
++)]
++#[strum(serialize_all = "lowercase")]
++#[serde(rename_all = "lowercase")]
++#[diesel(sql_type = Text)]
++#[ts(export, export_to = "./connection.ts")]
++pub enum ConnectionStatus {
++    Connected,
++    Disconnected,
++}
++
++impl ToSql<Text, Sqlite> for ConnectionStatus
++where
++    str: ToSql<Text, Sqlite>,
++{
++    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
++        out.set_value(self.to_string());
++        Ok(IsNull::No)
++    }
++}
++
++impl FromSql<Text, Sqlite> for ConnectionStatus {
++    fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
++        <String as FromSql<Text, Sqlite>>::from_sql(bytes).and_then(|value| {
++            ConnectionStatus::from_str(&value)
++                .map_err(|_| format!("invalid connection status '{}'", value).into())
++        })
++    }
++}
++
++#[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
++#[diesel(table_name = crate::models::schema::github_connections)]
++#[ts(export, export_to = "./connection.ts")]
++pub struct GithubConnection {
++    pub app_id: String,
++    pub installation_id: i64,
++    pub repository_id: i64,
++    pub status: ConnectionStatus,
++    pub created_at: chrono::NaiveDateTime,
++    pub updated_at: chrono::NaiveDateTime,
++}
++
++#[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
++#[diesel(table_name = crate::models::schema::github_installations)]
++#[ts(export, export_to = "./connection.ts")]
++pub struct GithubInstallation {
++    pub user_id: String,
++    pub installation_id: i64,
++    pub created_at: chrono::NaiveDateTime,
++}
+diff --git a/crates/slasha-db/src/models/mod.rs b/crates/slasha-db/src/models/mod.rs
+index 9d7250d..877b048 100644
+--- a/crates/slasha-db/src/models/mod.rs
++++ b/crates/slasha-db/src/models/mod.rs
+@@ -4,6 +4,8 @@ pub mod app_backup;
+ pub mod app_metrics;
+ pub mod app_scale;
+ pub mod deployment;
++pub mod git_connection;
++pub mod github_connection;
+ pub mod schema;
+ pub mod server_metrics;
+ pub mod service;
+diff --git a/crates/slasha-db/src/models/schema.rs b/crates/slasha-db/src/models/schema.rs
+index 0d09c1b..1f70711 100644
+--- a/crates/slasha-db/src/models/schema.rs
++++ b/crates/slasha-db/src/models/schema.rs
+@@ -139,6 +139,7 @@ diesel::table! {
+         status -> Text,
+         created_at -> Timestamp,
+         auto_deploy -> Bool,
++        source -> Text,
+     }
+ }
+ 
+@@ -154,6 +155,33 @@ diesel::table! {
+     }
+ }
+ 
++diesel::table! {
++    git_connections (app_id) {
++        app_id -> Text,
++        clone_url -> Text,
++        created_at -> Timestamp,
++    }
++}
++
++diesel::table! {
++    github_connections (app_id) {
++        app_id -> Text,
++        installation_id -> BigInt,
++        repository_id -> BigInt,
++        status -> Text,
++        created_at -> Timestamp,
++        updated_at -> Timestamp,
++    }
++}
++
++diesel::table! {
++    github_installations (user_id, installation_id) {
++        user_id -> Text,
++        installation_id -> BigInt,
++        created_at -> Timestamp,
++    }
++}
++
+ diesel::table! {
+     server_metrics (id) {
+         id -> Text,
+@@ -227,6 +255,9 @@ diesel::joinable!(app_members -> users (user_id));
+ diesel::joinable!(app_metrics -> apps (app_id));
+ diesel::joinable!(app_scale -> apps (app_id));
+ diesel::joinable!(deployments -> apps (app_id));
++diesel::joinable!(git_connections -> apps (app_id));
++diesel::joinable!(github_connections -> apps (app_id));
++diesel::joinable!(github_installations -> users (user_id));
+ diesel::joinable!(service_env_vars -> services (service_id));
+ diesel::joinable!(services -> apps (app_id));
+ diesel::joinable!(ssh_keys -> users (user_id));
+@@ -244,6 +275,9 @@ diesel::allow_tables_to_appear_in_same_query!(
+     app_scale,
+     apps,
+     deployments,
++    git_connections,
++    github_connections,
++    github_installations,
+     server_metrics,
+     service_env_vars,
+     services,
+diff --git a/crates/slasha-db/src/models/server_metrics.rs b/crates/slasha-db/src/models/server_metrics.rs
+index 7e100f3..58d632f 100644
+--- a/crates/slasha-db/src/models/server_metrics.rs
++++ b/crates/slasha-db/src/models/server_metrics.rs
+@@ -4,7 +4,7 @@ use ts_rs::TS;
+ 
+ #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
+ #[diesel(table_name = crate::models::schema::server_metrics)]
+-#[ts(export, export_to = "./server_metrics.ts")]
++#[ts(export, export_to = "./server-metrics.ts")]
+ pub struct ServerMetrics {
+     pub id: String,
+     pub cpu_usage: f32,
+diff --git a/crates/slasha-db/src/models/ssh_keys.rs b/crates/slasha-db/src/models/ssh_keys.rs
+index 7e3ff09..e66af89 100644
+--- a/crates/slasha-db/src/models/ssh_keys.rs
++++ b/crates/slasha-db/src/models/ssh_keys.rs
+@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
+ 
+ #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
+ #[diesel(table_name = crate::models::schema::ssh_keys)]
+-#[ts(export, export_to = "./ssh_key.ts")]
++#[ts(export, export_to = "./ssh-key.ts")]
+ pub struct SshKey {
+     pub id: String,
+     pub user_id: String,
+diff --git a/crates/slasha-db/src/repos/app.rs b/crates/slasha-db/src/repos/app.rs
+index 9071b40..05c98ef 100644
+--- a/crates/slasha-db/src/repos/app.rs
++++ b/crates/slasha-db/src/repos/app.rs
+@@ -4,15 +4,25 @@ use crate::{
+     connection::DbPool,
+     error::{DbError, DbResult},
+     models::{
+-        app::{App, AppEnvVar, AppMember, AppMemberRole},
++        app::{App, AppEnvVar, AppMember, AppMemberRole, AppSource},
+         deployment::Deployment,
+-        schema::{app_env_vars, app_members, apps, deployments, users},
++        git_connection::GitConnection,
++        github_connection::GithubConnection,
++        schema::{
++            app_env_vars, app_members, apps, deployments, git_connections, github_connections,
++            users,
++        },
+         user::{User, UserRole},
+     },
+ };
+ 
+ pub struct AppRepo;
+ 
++pub enum NewAppConnection {
++    Git(GitConnection),
++    Github(GithubConnection),
++}
++
+ impl AppRepo {
+     pub async fn list_for_user(pool: &DbPool, user_id: &str) -> DbResult<Vec<App>> {
+         let pool = pool.clone();
+@@ -121,6 +131,53 @@ impl AppRepo {
+         .await?
+     }
+ 
++    pub async fn create_with_connection(
++        pool: &DbPool,
++        app: App,
++        member: AppMember,
++        connection: NewAppConnection,
++    ) -> DbResult<App> {
++        let pool = pool.clone();
++        tokio::task::spawn_blocking(move || {
++            let (connection_app_id, expected_source) = match &connection {
++                NewAppConnection::Git(connection) => (&connection.app_id, AppSource::Git),
++                NewAppConnection::Github(connection) => (&connection.app_id, AppSource::Github),
++            };
++            if app.source != expected_source {
++                return Err(DbError::Data(
++                    "connection type does not match app source".to_string(),
++                ));
++            }
++            if connection_app_id != &app.id {
++                return Err(DbError::Data(
++                    "connection app id does not match app".to_string(),
++                ));
++            }
++            let mut conn = pool.get()?;
++            conn.transaction::<_, DbError, _>(|tx| {
++                diesel::insert_into(apps::table).values(&app).execute(tx)?;
++                diesel::insert_into(app_members::table)
++                    .values(&member)
++                    .execute(tx)?;
++                match &connection {
++                    NewAppConnection::Git(connection) => {
++                        diesel::insert_into(git_connections::table)
++                            .values(connection)
++                            .execute(tx)?;
++                    }
++                    NewAppConnection::Github(connection) => {
++                        diesel::insert_into(github_connections::table)
++                            .values(connection)
++                            .execute(tx)?;
++                    }
++                }
++                Ok(())
++            })?;
++            Ok(app)
++        })
++        .await?
++    }
++
+     pub async fn delete(pool: &DbPool, app_id: &str) -> DbResult<Vec<Deployment>> {
+         let pool = pool.clone();
+         let app_id = app_id.to_string();
+@@ -228,6 +285,23 @@ impl AppRepo {
+         .await?
+     }
+ 
++    pub async fn update_default_branch(pool: &DbPool, id: &str, branch: &str) -> DbResult<()> {
++        let pool = pool.clone();
++        let id = id.to_string();
++        let branch = branch.to_string();
++        tokio::task::spawn_blocking(move || {
++            let mut conn = pool.get()?;
++            let updated = diesel::update(apps::table.filter(apps::id.eq(&id)))
++                .set(apps::default_branch.eq(branch))
++                .execute(&mut conn)?;
++            if updated == 0 {
++                return Err(DbError::NotFound(format!("app '{}' not found", id)));
++            }
++            Ok(())
++        })
++        .await?
++    }
++
+     pub async fn list_all(pool: &DbPool) -> DbResult<Vec<App>> {
+         let pool = pool.clone();
+         tokio::task::spawn_blocking(move || {
+diff --git a/crates/slasha-db/src/repos/deployment.rs b/crates/slasha-db/src/repos/deployment.rs
+index 2b4f232..39d52ff 100644
+--- a/crates/slasha-db/src/repos/deployment.rs
++++ b/crates/slasha-db/src/repos/deployment.rs
+@@ -5,8 +5,9 @@ use crate::{
+     connection::DbPool,
+     error::{DbError, DbResult},
+     models::{
++        app::AppStatus,
+         deployment::{Deployment, DeploymentStatus},
+-        schema::deployments,
++        schema::{apps, deployments},
+     },
+ };
+ 
+@@ -95,9 +96,12 @@ impl DeploymentRepo {
+         let pool = pool.clone();
+         tokio::task::spawn_blocking(move || {
+             let mut conn = pool.get()?;
+-            diesel::insert_into(deployments::table)
+-                .values(&deployment)
+-                .execute(&mut conn)?;
++            conn.transaction::<_, DbError, _>(|tx| {
++                diesel::insert_into(deployments::table)
++                    .values(&deployment)
++                    .execute(tx)?;
++                sync_app_status(tx, &deployment.app_id)
++            })?;
+             Ok(deployment)
+         })
+         .await?
+@@ -108,13 +112,19 @@ impl DeploymentRepo {
+         let id = id.to_string();
+         tokio::task::spawn_blocking(move || {
+             let mut conn = pool.get()?;
+-            diesel::update(deployments::table.filter(deployments::id.eq(&id)))
+-                .set((
+-                    deployments::status.eq(status.to_string()),
+-                    deployments::updated_at.eq(chrono::Utc::now().naive_utc()),
+-                ))
+-                .execute(&mut conn)?;
+-            Ok(())
++            conn.transaction::<_, DbError, _>(|tx| {
++                diesel::update(deployments::table.filter(deployments::id.eq(&id)))
++                    .set((
++                        deployments::status.eq(status.to_string()),
++                        deployments::updated_at.eq(chrono::Utc::now().naive_utc()),
++                    ))
++                    .execute(tx)?;
++                let app_id = deployments::table
++                    .filter(deployments::id.eq(&id))
++                    .select(deployments::app_id)
++                    .first::<String>(tx)?;
++                sync_app_status(tx, &app_id)
++            })
+         })
+         .await?
+     }
+@@ -128,15 +138,19 @@ impl DeploymentRepo {
+         let id = id.to_string();
+         tokio::task::spawn_blocking(move || {
+             let mut conn = pool.get()?;
+-            diesel::update(deployments::table.filter(deployments::id.eq(&id)))
+-                .set((
+-                    deployments::status.eq(DeploymentStatus::Pending.to_string()),
+-                    deployments::updated_at.eq(now),
+-                ))
+-                .execute(&mut conn)?;
+-            Ok(deployments::table
+-                .filter(deployments::id.eq(&id))
+-                .first::<Deployment>(&mut conn)?)
++            conn.transaction::<_, DbError, _>(|tx| {
++                diesel::update(deployments::table.filter(deployments::id.eq(&id)))
++                    .set((
++                        deployments::status.eq(DeploymentStatus::Pending.to_string()),
++                        deployments::updated_at.eq(now),
++                    ))
++                    .execute(tx)?;
++                let deployment = deployments::table
++                    .filter(deployments::id.eq(&id))
++                    .first::<Deployment>(tx)?;
++                sync_app_status(tx, &deployment.app_id)?;
++                Ok(deployment)
++            })
+         })
+         .await?
+     }
+@@ -166,9 +180,33 @@ impl DeploymentRepo {
+                 }
+ 
+                 diesel::delete(deployments::table.filter(deployments::id.eq(&id))).execute(tx)?;
++                sync_app_status(tx, &app_id)?;
+                 Ok(dep)
+             })
+         })
+         .await?
+     }
+ }
++
++fn sync_app_status(conn: &mut SqliteConnection, app_id: &str) -> DbResult<()> {
++    let deployments = deployments::table
++        .filter(deployments::app_id.eq(app_id))
++        .order(deployments::created_at.desc())
++        .load::<Deployment>(conn)?;
++    let status = if deployments
++        .iter()
++        .any(|deployment| deployment.status == DeploymentStatus::Running)
++    {
++        AppStatus::Running
++    } else {
++        match deployments.first().map(|deployment| deployment.status) {
++            Some(DeploymentStatus::Pending | DeploymentStatus::Building) => AppStatus::Building,
++            Some(DeploymentStatus::Failed) => AppStatus::Failed,
++            _ => AppStatus::Idle,
++        }
++    };
++    diesel::update(apps::table.filter(apps::id.eq(app_id)))
++        .set(apps::status.eq(status))
++        .execute(conn)?;
++    Ok(())
++}
+diff --git a/crates/slasha-db/src/repos/git_connection.rs b/crates/slasha-db/src/repos/git_connection.rs
+new file mode 100644
+index 0000000..9876ab1
+--- /dev/null
++++ b/crates/slasha-db/src/repos/git_connection.rs
+@@ -0,0 +1,24 @@
++use diesel::prelude::*;
++
++use crate::{
++    connection::DbPool,
++    error::DbResult,
++    models::{git_connection::GitConnection, schema::git_connections},
++};
++
++pub struct GitConnectionRepo;
++
++impl GitConnectionRepo {
++    pub async fn find_for_app(pool: &DbPool, app_id: &str) -> DbResult<Option<GitConnection>> {
++        let pool = pool.clone();
++        let app_id = app_id.to_string();
++        tokio::task::spawn_blocking(move || {
++            let mut conn = pool.get()?;
++            Ok(git_connections::table
++                .filter(git_connections::app_id.eq(app_id))
++                .first::<GitConnection>(&mut conn)
++                .optional()?)
++        })
++        .await?
++    }
++}
+diff --git a/crates/slasha-db/src/repos/github_connection.rs b/crates/slasha-db/src/repos/github_connection.rs
+new file mode 100644
+index 0000000..ad01ddd
+--- /dev/null
++++ b/crates/slasha-db/src/repos/github_connection.rs
+@@ -0,0 +1,195 @@
++use diesel::prelude::*;
++
++use crate::{
++    connection::DbPool,
++    error::{DbError, DbResult},
++    models::{
++        github_connection::{ConnectionStatus, GithubConnection, GithubInstallation},
++        schema::{apps, github_connections, github_installations},
++    },
++};
++
++pub struct GithubConnectionRepo;
++
++impl GithubConnectionRepo {
++    pub async fn save_installation(
++        pool: &DbPool,
++        installation: GithubInstallation,
++    ) -> DbResult<()> {
++        let pool = pool.clone();
++        tokio::task::spawn_blocking(move || {
++            let mut conn = pool.get()?;
++            diesel::insert_into(github_installations::table)
++                .values(&installation)
++                .on_conflict((
++                    github_installations::user_id,
++                    github_installations::installation_id,
++                ))
++                .do_nothing()
++                .execute(&mut conn)?;
++            Ok(())
++        })
++        .await?
++    }
++
++    pub async fn list_installations_for_user(
++        pool: &DbPool,
++        user_id: &str,
++    ) -> DbResult<Vec<GithubInstallation>> {
++        let pool = pool.clone();
++        let user_id = user_id.to_string();
++        tokio::task::spawn_blocking(move || {
++            let mut conn = pool.get()?;
++            Ok(github_installations::table
++                .filter(github_installations::user_id.eq(user_id))
++                .order(github_installations::created_at.asc())
++                .load::<GithubInstallation>(&mut conn)?)
++        })
++        .await?
++    }
++
++    pub async fn user_has_installation(
++        pool: &DbPool,
++        user_id: &str,
++        installation_id: i64,
++    ) -> DbResult<bool> {
++        let pool = pool.clone();
++        let user_id = user_id.to_string();
++        tokio::task::spawn_blocking(move || {
++            let mut conn = pool.get()?;
++            Ok(diesel::select(diesel::dsl::exists(
++                github_installations::table
++                    .filter(github_installations::user_id.eq(user_id))
++                    .filter(github_installations::installation_id.eq(installation_id)),
++            ))
++            .get_result::<bool>(&mut conn)?)
++        })
++        .await?
++    }
++
++    pub async fn disconnect_installation(pool: &DbPool, installation_id: i64) -> DbResult<()> {
++        let pool = pool.clone();
++        tokio::task::spawn_blocking(move || {
++            let mut conn = pool.get()?;
++            conn.transaction::<_, DbError, _>(|tx| {
++                diesel::update(
++                    github_connections::table
++                        .filter(github_connections::installation_id.eq(installation_id)),
++                )
++                .set((
++                    github_connections::status.eq(ConnectionStatus::Disconnected.to_string()),
++                    github_connections::updated_at.eq(chrono::Utc::now().naive_utc()),
++                ))
++                .execute(tx)?;
++                diesel::delete(
++                    github_installations::table
++                        .filter(github_installations::installation_id.eq(installation_id)),
++                )
++                .execute(tx)?;
++                Ok(())
++            })
++        })
++        .await?
++    }
++
++    pub async fn find_for_app(pool: &DbPool, app_id: &str) -> DbResult<Option<GithubConnection>> {
++        let pool = pool.clone();
++        let app_id = app_id.to_string();
++        tokio::task::spawn_blocking(move || {
++            let mut conn = pool.get()?;
++            Ok(github_connections::table
++                .filter(github_connections::app_id.eq(app_id))
++                .first::<GithubConnection>(&mut conn)
++                .optional()?)
++        })
++        .await?
++    }
++
++    pub async fn list_for_repository(
++        pool: &DbPool,
++        installation_id: i64,
++        repository_id: i64,
++    ) -> DbResult<Vec<GithubConnection>> {
++        let pool = pool.clone();
++        tokio::task::spawn_blocking(move || {
++            let mut conn = pool.get()?;
++            Ok(github_connections::table
++                .filter(github_connections::installation_id.eq(installation_id))
++                .filter(github_connections::repository_id.eq(repository_id))
++                .load::<GithubConnection>(&mut conn)?)
++        })
++        .await?
++    }
++
++    pub async fn reconnect(
++        pool: &DbPool,
++        app_id: &str,
++        installation_id: i64,
++        repository_id: i64,
++        default_branch: &str,
++    ) -> DbResult<GithubConnection> {
++        let pool = pool.clone();
++        let app_id = app_id.to_string();
++        let default_branch = default_branch.to_string();
++        tokio::task::spawn_blocking(move || {
++            let mut conn = pool.get()?;
++            conn.transaction::<_, DbError, _>(|tx| {
++                let updated = diesel::update(
++                    github_connections::table.filter(github_connections::app_id.eq(&app_id)),
++                )
++                .set((
++                    github_connections::installation_id.eq(installation_id),
++                    github_connections::repository_id.eq(repository_id),
++                    github_connections::status.eq(ConnectionStatus::Connected.to_string()),
++                    github_connections::updated_at.eq(chrono::Utc::now().naive_utc()),
++                ))
++                .execute(tx)?;
++                if updated == 0 {
++                    return Err(DbError::NotFound(format!(
++                        "github connection for app '{}' not found",
++                        app_id
++                    )));
++                }
++
++                diesel::update(apps::table.filter(apps::id.eq(&app_id)))
++                    .set(apps::default_branch.eq(default_branch))
++                    .execute(tx)?;
++
++                Ok(github_connections::table
++                    .filter(github_connections::app_id.eq(&app_id))
++                    .first::<GithubConnection>(tx)?)
++            })
++        })
++        .await?
++    }
++
++    pub async fn update_status(
++        pool: &DbPool,
++        app_id: &str,
++        status: ConnectionStatus,
++    ) -> DbResult<()> {
++        let pool = pool.clone();
++        let app_id = app_id.to_string();
++        tokio::task::spawn_blocking(move || {
++            let mut conn = pool.get()?;
++            let updated = diesel::update(
++                github_connections::table.filter(github_connections::app_id.eq(&app_id)),
++            )
++            .set((
++                github_connections::status.eq(status.to_string()),
++                github_connections::updated_at.eq(chrono::Utc::now().naive_utc()),
++            ))
++            .execute(&mut conn)?;
++
++            if updated == 0 {
++                return Err(DbError::NotFound(format!(
++                    "github connection for app '{}' not found",
++                    app_id
++                )));
++            }
++
++            Ok(())
++        })
++        .await?
++    }
++}
+diff --git a/crates/slasha-db/src/repos/mod.rs b/crates/slasha-db/src/repos/mod.rs
+index d28c777..16833de 100644
+--- a/crates/slasha-db/src/repos/mod.rs
++++ b/crates/slasha-db/src/repos/mod.rs
+@@ -5,6 +5,8 @@ pub mod app_domain;
+ pub mod app_metrics;
+ pub mod app_scale;
+ pub mod deployment;
++pub mod git_connection;
++pub mod github_connection;
+ pub mod server_metrics;
+ pub mod service;
+ pub mod ssh_key;
+diff --git a/crates/slasha-server/Cargo.toml b/crates/slasha-server/Cargo.toml
+index 6f6a76f..b0b7c39 100644
+--- a/crates/slasha-server/Cargo.toml
++++ b/crates/slasha-server/Cargo.toml
+@@ -45,7 +45,10 @@ tokio-stream = { version = "0.1.18", features = ["sync"] }
+ regex = "1.12.3"
+ once_cell = "1.21.4"
+ sysinfo = "0.33.1"
+-sha2 = "0.10"
++sha2 = "0.11.0"
++hmac = "0.13.0"
++hex = "0.4.3"
++urlencoding = "2.1.3"
+ 
+ [features]
+ bundle = ["rust-embed", "mime_guess"]
+diff --git a/crates/slasha-server/src/connections/github/auth.rs b/crates/slasha-server/src/connections/github/auth.rs
+new file mode 100644
+index 0000000..e6b6029
+--- /dev/null
++++ b/crates/slasha-server/src/connections/github/auth.rs
+@@ -0,0 +1,35 @@
++use chrono::Utc;
++use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
++use serde::{Deserialize, Serialize};
++
++const SETUP_TTL_SECONDS: i64 = 15 * 60;
++
++#[derive(Debug, Serialize, Deserialize)]
++struct StateClaims {
++    user_id: String,
++    redirect_to: String,
++    exp: usize,
++}
++
++pub fn create_state(user_id: &str, redirect_to: &str, secret: &str) -> anyhow::Result<String> {
++    encode(
++        &Header::default(),
++        &StateClaims {
++            user_id: user_id.to_string(),
++            redirect_to: redirect_to.to_string(),
++            exp: (Utc::now().timestamp() + SETUP_TTL_SECONDS) as usize,
++        },
++        &EncodingKey::from_secret(secret.as_bytes()),
++    )
++    .map_err(Into::into)
++}
++
++pub fn verify_state(token: &str, secret: &str) -> anyhow::Result<(String, String)> {
++    let claims = decode::<StateClaims>(
++        token,
++        &DecodingKey::from_secret(secret.as_bytes()),
++        &Validation::default(),
++    )?
++    .claims;
++    Ok((claims.user_id, claims.redirect_to))
++}
+diff --git a/crates/slasha-server/src/connections/github/client.rs b/crates/slasha-server/src/connections/github/client.rs
+new file mode 100644
+index 0000000..1ef61fb
+--- /dev/null
++++ b/crates/slasha-server/src/connections/github/client.rs
+@@ -0,0 +1,355 @@
++use std::sync::Arc;
++
++use chrono::Utc;
++use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
++use reqwest::{Client, StatusCode};
++use serde::{Deserialize, Serialize};
++
++#[derive(Debug, thiserror::Error)]
++pub enum GithubError {
++    #[error("GitHub installation or repository is no longer accessible")]
++    AccessRevoked,
++    #[error(transparent)]
++    Other(#[from] anyhow::Error),
++}
++
++impl From<reqwest::Error> for GithubError {
++    fn from(err: reqwest::Error) -> Self {
++        GithubError::Other(anyhow::anyhow!(err))
++    }
++}
++
++pub type GithubResult<T> = Result<T, GithubError>;
++
++#[derive(Clone)]
++pub struct GithubClient {
++    inner: Arc<Inner>,
++}
++
++struct Inner {
++    http: Client,
++    app_id: String,
++    client_id: String,
++    client_secret: String,
++    private_key: EncodingKey,
++    webhook_secret: Vec<u8>,
++}
++
++#[derive(Debug, Clone, Deserialize, Serialize)]
++pub struct GithubRepository {
++    pub id: i64,
++    pub full_name: String,
++    pub html_url: String,
++    pub clone_url: String,
++    pub default_branch: String,
++    pub private: bool,
++}
++
++#[derive(Serialize)]
++struct AppClaims<'a> {
++    iat: i64,
++    exp: i64,
++    iss: &'a str,
++}
++
++#[derive(Deserialize)]
++struct AppInfo {
++    html_url: String,
++}
++
++#[derive(Deserialize)]
++struct OAuthToken {
++    access_token: String,
++}
++
++#[derive(Deserialize)]
++struct InstallationToken {
++    token: String,
++}
++
++#[derive(Debug, Clone, Deserialize, Serialize)]
++pub struct GithubInstallationInfo {
++    pub id: i64,
++    pub html_url: String,
++}
++
++#[derive(Deserialize)]
++struct Repositories {
++    repositories: Vec<GithubRepository>,
++}
++
++impl GithubClient {
++    pub fn from_env() -> anyhow::Result<Option<Self>> {
++        const ENV_VARS: [&str; 5] = [
++            "GITHUB_APP_ID",
++            "GITHUB_APP_CLIENT_ID",
++            "GITHUB_APP_CLIENT_SECRET",
++            "GITHUB_APP_PRIVATE_KEY",
++            "GITHUB_APP_WEBHOOK_SECRET",
++        ];
++
++        let present = ENV_VARS
++            .iter()
++            .filter(|name| std::env::var(name).map(|v| !v.is_empty()).unwrap_or(false))
++            .count();
++
++        if present == 0 {
++            return Ok(None);
++        }
++        if present < ENV_VARS.len() {
++            anyhow::bail!(
++                "GitHub integration is partially configured — set all of {:?} or none of them",
++                ENV_VARS
++            );
++        }
++
++        let app_id = std::env::var("GITHUB_APP_ID").unwrap();
++        let client_id = std::env::var("GITHUB_APP_CLIENT_ID").unwrap();
++        let client_secret = std::env::var("GITHUB_APP_CLIENT_SECRET").unwrap();
++        let private_key_pem = std::env::var("GITHUB_APP_PRIVATE_KEY")
++            .unwrap()
++            .replace("\\n", "\n");
++        let webhook_secret = std::env::var("GITHUB_APP_WEBHOOK_SECRET")
++            .unwrap()
++            .into_bytes();
++        let private_key = EncodingKey::from_rsa_pem(private_key_pem.as_bytes())?;
++
++        Ok(Some(Self {
++            inner: Arc::new(Inner {
++                http: Client::builder().user_agent("slasha").build()?,
++                app_id,
++                client_id,
++                client_secret,
++                private_key,
++                webhook_secret,
++            }),
++        }))
++    }
++
++    fn generate_app_jwt(&self) -> anyhow::Result<String> {
++        let now = Utc::now().timestamp();
++        Ok(encode(
++            &Header::new(Algorithm::RS256),
++            &AppClaims {
++                iat: now - 60,
++                exp: now + 9 * 60,
++                iss: &self.inner.app_id,
++            },
++            &self.inner.private_key,
++        )?)
++    }
++
++    fn build_api_url(&self, path: &str) -> String {
++        format!("https://api.github.com{}", path)
++    }
++
++    pub fn webhook_secret(&self) -> &[u8] {
++        &self.inner.webhook_secret
++    }
++
++    pub async fn get_installation_url(&self, state: &str) -> GithubResult<String> {
++        let app = self
++            .inner
++            .http
++            .get(self.build_api_url("/app"))
++            .bearer_auth(self.generate_app_jwt()?)
++            .send()
++            .await?
++            .error_for_status()?
++            .json::<AppInfo>()
++            .await?;
++        Ok(format!(
++            "{}/installations/new?state={}",
++            app.html_url,
++            urlencoding::encode(state)
++        ))
++    }
++
++    pub async fn exchange_oauth_code(&self, code: &str) -> GithubResult<String> {
++        let response = self
++            .inner
++            .http
++            .post("https://github.com/login/oauth/access_token")
++            .header("Accept", "application/json")
++            .json(&serde_json::json!({
++                "client_id": self.inner.client_id,
++                "client_secret": self.inner.client_secret,
++                "code": code,
++            }))
++            .send()
++            .await?
++            .error_for_status()?
++            .json::<OAuthToken>()
++            .await?;
++        Ok(response.access_token)
++    }
++
++    pub async fn user_has_installation_access(
++        &self,
++        user_token: &str,
++        installation_id: i64,
++    ) -> GithubResult<bool> {
++        let response = self
++            .inner
++            .http
++            .get(self.build_api_url(&format!(
++                "/user/installations/{}/repositories?per_page=1",
++                installation_id
++            )))
++            .bearer_auth(user_token)
++            .send()
++            .await?;
++
++        Ok(response.status().is_success())
++    }
++
++    pub async fn get_installation_token(&self, installation_id: i64) -> GithubResult<String> {
++        let response = self
++            .inner
++            .http
++            .post(self.build_api_url(&format!(
++                "/app/installations/{}/access_tokens",
++                installation_id
++            )))
++            .bearer_auth(self.generate_app_jwt()?)
++            .send()
++            .await?;
++
++        if matches!(
++            response.status(),
++            StatusCode::NOT_FOUND | StatusCode::FORBIDDEN
++        ) {
++            return Err(GithubError::AccessRevoked);
++        }
++
++        Ok(response
++            .error_for_status()?
++            .json::<InstallationToken>()
++            .await?
++            .token)
++    }
++
++    pub async fn get_installation(
++        &self,
++        installation_id: i64,
++    ) -> GithubResult<GithubInstallationInfo> {
++        let response = self
++            .inner
++            .http
++            .get(self.build_api_url(&format!("/app/installations/{}", installation_id)))
++            .bearer_auth(self.generate_app_jwt()?)
++            .send()
++            .await?;
++        if matches!(
++            response.status(),
++            StatusCode::NOT_FOUND | StatusCode::FORBIDDEN
++        ) {
++            return Err(GithubError::AccessRevoked);
++        }
++        Ok(response
++            .error_for_status()?
++            .json::<GithubInstallationInfo>()
++            .await?)
++    }
++
++    pub async fn delete_installation(&self, installation_id: i64) -> GithubResult<()> {
++        let response = self
++            .inner
++            .http
++            .delete(self.build_api_url(&format!("/app/installations/{}", installation_id)))
++            .bearer_auth(self.generate_app_jwt()?)
++            .send()
++            .await?;
++        if matches!(
++            response.status(),
++            StatusCode::NOT_FOUND | StatusCode::FORBIDDEN
++        ) {
++            return Err(GithubError::AccessRevoked);
++        }
++        response.error_for_status()?;
++        Ok(())
++    }
++
++    pub async fn get_repositories(
++        &self,
++        installation_id: i64,
++    ) -> GithubResult<Vec<GithubRepository>> {
++        let max_per_page = 100;
++        let token = self.get_installation_token(installation_id).await?;
++
++        let mut all_repositories = Vec::new();
++        let mut page = 1u32;
++
++        loop {
++            let batch = self
++                .inner
++                .http
++                .get(self.build_api_url(&format!(
++                    "/installation/repositories?per_page={}&page={}",
++                    max_per_page, page
++                )))
++                .bearer_auth(&token)
++                .send()
++                .await?
++                .error_for_status()?
++                .json::<Repositories>()
++                .await?
++                .repositories;
++
++            let fetched = batch.len() as u32;
++            all_repositories.extend(batch);
++
++            if fetched < max_per_page {
++                break;
++            }
++            page += 1;
++        }
++
++        Ok(all_repositories)
++    }
++
++    /// this is a client utility method that uses get_repository_with_token internally
++    /// but discards the token
++    pub async fn get_repository(
++        &self,
++        installation_id: i64,
++        repository_id: i64,
++    ) -> GithubResult<GithubRepository> {
++        Ok(self
++            .get_repository_with_token(installation_id, repository_id)
++            .await?
++            .0)
++    }
++
++    pub async fn get_repository_with_token(
++        &self,
++        installation_id: i64,
++        repository_id: i64,
++    ) -> GithubResult<(GithubRepository, String)> {
++        let token = self.get_installation_token(installation_id).await?;
++        let repository = self
++            .inner
++            .http
++            .get(self.build_api_url(&format!("/repositories/{}", repository_id)))
++            .bearer_auth(&token)
++            .send()
++            .await?;
++        if matches!(
++            repository.status(),
++            StatusCode::NOT_FOUND | StatusCode::FORBIDDEN
++        ) {
++            return Err(GithubError::AccessRevoked);
++        }
++        let repository = repository
++            .error_for_status()?
++            .json::<GithubRepository>()
++            .await?;
++
++        if repository.id != repository_id {
++            return Err(GithubError::Other(anyhow::anyhow!(
++                "GitHub returned an unexpected repository"
++            )));
++        }
++        Ok((repository, token))
++    }
++}
+diff --git a/crates/slasha-server/src/connections/github/mod.rs b/crates/slasha-server/src/connections/github/mod.rs
+new file mode 100644
+index 0000000..10dcd6d
+--- /dev/null
++++ b/crates/slasha-server/src/connections/github/mod.rs
+@@ -0,0 +1,9 @@
++mod auth;
++mod client;
++mod webhook;
++
++pub use auth::{create_state, verify_state};
++pub use client::{
++    GithubClient, GithubError, GithubInstallationInfo, GithubRepository, GithubResult,
++};
++pub use webhook::handle as handle_webhook;
+diff --git a/crates/slasha-server/src/connections/github/webhook.rs b/crates/slasha-server/src/connections/github/webhook.rs
+new file mode 100644
+index 0000000..19c151c
+--- /dev/null
++++ b/crates/slasha-server/src/connections/github/webhook.rs
+@@ -0,0 +1,229 @@
++use axum::{
++    body::Bytes,
++    extract::State,
++    http::{HeaderMap, StatusCode},
++};
++use hmac::{Hmac, KeyInit, Mac};
++use serde::Deserialize;
++use sha2::Sha256;
++use slasha_db::{
++    app::AppSource,
++    github_connection::ConnectionStatus,
++    repos::{app::AppRepo, deployment::DeploymentRepo, github_connection::GithubConnectionRepo},
++};
++
++use crate::{
++    AppState,
++    connections::sync_github_app,
++    docker::deployment::trigger_deployment,
++    error::{HttpError, HttpResult},
++};
++
++type HmacSha256 = Hmac<Sha256>;
++
++#[derive(Deserialize)]
++struct InstallationRef {
++    id: i64,
++}
++
++#[derive(Deserialize)]
++struct RepositoryRef {
++    id: i64,
++}
++
++#[derive(Deserialize)]
++struct PushPayload {
++    installation: InstallationRef,
++    repository: RepositoryRef,
++    r#ref: String,
++    after: String,
++    deleted: bool,
++}
++
++#[derive(Deserialize)]
++struct InstallationPayload {
++    action: String,
++    installation: InstallationRef,
++}
++
++#[derive(Deserialize)]
++struct InstallationRepositoriesPayload {
++    action: String,
++    installation: InstallationRef,
++    repositories_removed: Vec<RepositoryRef>,
++}
++
++pub async fn handle(
++    State(state): State<AppState>,
++    headers: HeaderMap,
++    body: Bytes,
++) -> HttpResult<StatusCode> {
++    verify_signature(&state, &headers, &body)?;
++
++    let event = headers
++        .get("x-github-event")
++        .and_then(|value| value.to_str().ok())
++        .ok_or_else(|| HttpError::bad_request("Missing GitHub event header"))?;
++
++    match event {
++        "push" => {
++            let payload: PushPayload =
++                serde_json::from_slice(&body).map_err(HttpError::internal)?;
++            if !payload.deleted {
++                tokio::spawn(handle_push(state, payload));
++            }
++        }
++        "installation" => {
++            let payload: InstallationPayload =
++                serde_json::from_slice(&body).map_err(HttpError::internal)?;
++            if matches!(payload.action.as_str(), "deleted" | "suspend") {
++                disconnect_installation(&state, payload.installation.id).await?;
++            }
++        }
++        "installation_repositories" => {
++            let payload: InstallationRepositoriesPayload =
++                serde_json::from_slice(&body).map_err(HttpError::internal)?;
++            if payload.action == "removed" {
++                for repository in payload.repositories_removed {
++                    disconnect_repository(&state, payload.installation.id, repository.id).await?;
++                }
++            }
++        }
++        _ => {}
++    }
++
++    Ok(StatusCode::ACCEPTED)
++}
++
++fn verify_signature(state: &AppState, headers: &HeaderMap, body: &[u8]) -> HttpResult<()> {
++    let github = state
++        .clients
++        .github
++        .as_ref()
++        .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
++    let signature = headers
++        .get("x-hub-signature-256")
++        .and_then(|value| value.to_str().ok())
++        .ok_or_else(HttpError::unauthorized)?;
++    let Some(signature) = signature.strip_prefix("sha256=") else {
++        return Err(HttpError::unauthorized());
++    };
++    let signature = hex::decode(signature).map_err(|_| HttpError::unauthorized())?;
++    let mut mac =
++        HmacSha256::new_from_slice(github.webhook_secret()).map_err(HttpError::internal)?;
++    mac.update(body);
++    mac.verify_slice(&signature)
++        .map_err(|_| HttpError::unauthorized())
++}
++
++async fn disconnect_installation(state: &AppState, installation_id: i64) -> HttpResult<()> {
++    GithubConnectionRepo::disconnect_installation(&state.storage.db_pool, installation_id).await?;
++    Ok(())
++}
++
++async fn disconnect_repository(
++    state: &AppState,
++    installation_id: i64,
++    repository_id: i64,
++) -> HttpResult<()> {
++    let connections = GithubConnectionRepo::list_for_repository(
++        &state.storage.db_pool,
++        installation_id,
++        repository_id,
++    )
++    .await?;
++    for connection in connections {
++        GithubConnectionRepo::update_status(
++            &state.storage.db_pool,
++            &connection.app_id,
++            ConnectionStatus::Disconnected,
++        )
++        .await?;
++    }
++    Ok(())
++}
++
++async fn handle_push(state: AppState, payload: PushPayload) {
++    let Some(github) = state.clients.github.as_ref() else {
++        return;
++    };
++    let connections = match GithubConnectionRepo::list_for_repository(
++        &state.storage.db_pool,
++        payload.installation.id,
++        payload.repository.id,
++    )
++    .await
++    {
++        Ok(connections) => connections,
++        Err(error) => {
++            tracing::warn!(error = %error, "github push lookup failed");
++            return;
++        }
++    };
++
++    for connection in connections {
++        if connection.status != ConnectionStatus::Connected {
++            continue;
++        }
++        let mut app = match AppRepo::find_by_id(&state.storage.db_pool, &connection.app_id).await {
++            Ok(app) if app.source == AppSource::Github => app,
++            _ => continue,
++        };
++        let repository = match sync_github_app(github, &state.storage, &state.runtime, &app).await {
++            Ok(repository) => repository,
++            Err(error) => {
++                tracing::warn!(app_id = %app.id, error = %error, "github repository sync failed");
++                continue;
++            }
++        };
++        if payload.r#ref != format!("refs/heads/{}", repository.default_branch) {
++            continue;
++        }
++        if app.default_branch != repository.default_branch {
++            if let Err(error) = AppRepo::update_default_branch(
++                &state.storage.db_pool,
++                &app.id,
++                &repository.default_branch,
++            )
++            .await
++            {
++                tracing::warn!(
++                    app_id = %app.id,
++                    error = %error,
++                    "failed to update github default branch"
++                );
++                continue;
++            }
++            app.default_branch = repository.default_branch;
++        }
++        if !app.auto_deploy {
++            continue;
++        }
++        if let Ok(deployments) = DeploymentRepo::list_for_app(&state.storage.db_pool, &app.id).await
++            && deployments
++                .first()
++                .map(|deployment| deployment.commit_sha.as_str())
++                == Some(payload.after.as_str())
++        {
++            continue;
++        }
++
++        match trigger_deployment(
++            state.clients.docker.clone(),
++            state.storage.db_pool.clone(),
++            state.runtime.log_manager.clone(),
++            state.runtime.proxy_sync_trigger.clone(),
++            app,
++            Some(payload.after.clone()),
++        )
++        .await
++        {
++            Ok(Some(deployment)) => tracing::info!(
++                deployment_id = %deployment.id,
++                "auto-deploy triggered from github push"
++            ),
++            Ok(None) => tracing::info!("github auto-deploy skipped: build already in progress"),
++            Err(error) => tracing::warn!(error = %error, "github auto-deploy failed"),
++        }
++    }
++}
+diff --git a/crates/slasha-server/src/connections/mirror.rs b/crates/slasha-server/src/connections/mirror.rs
+new file mode 100644
+index 0000000..6aab5d3
+--- /dev/null
++++ b/crates/slasha-server/src/connections/mirror.rs
+@@ -0,0 +1,93 @@
++use std::path::PathBuf;
++
++use anyhow::Context;
++use git2::{Cred, Direction, FetchOptions, FetchPrune, RemoteCallbacks};
++
++#[derive(Clone)]
++pub enum MirrorAuth {
++    Anonymous,
++    GithubToken(String),
++}
++
++pub struct Mirror {
++    pub remote_url: String,
++    pub branch: Option<String>,
++    pub path: PathBuf,
++    pub auth: MirrorAuth,
++}
++
++impl Mirror {
++    pub async fn sync(self) -> anyhow::Result<String> {
++        tokio::task::spawn_blocking(move || self.sync_blocking()).await?
++    }
++
++    fn sync_blocking(self) -> anyhow::Result<String> {
++        let repo = if self.path.exists() {
++            git2::Repository::open_bare(&self.path)
++                .with_context(|| format!("failed to open mirror at {}", self.path.display()))?
++        } else {
++            git2::Repository::init_bare(&self.path).with_context(|| {
++                format!("failed to initialize mirror at {}", self.path.display())
++            })?
++        };
++
++        if repo.find_remote("origin").is_ok() {
++            repo.remote_set_url("origin", &self.remote_url)?;
++        } else {
++            repo.remote("origin", &self.remote_url)?;
++        }
++
++        let branch = match self.branch {
++            Some(branch) => normalize_branch(&branch)?,
++            None => discover_default_branch(&repo, self.auth.clone())?,
++        };
++
++        let mut remote = repo.find_remote("origin")?;
++        let mut fetch = FetchOptions::new();
++        fetch.remote_callbacks(callbacks(self.auth));
++        fetch.prune(FetchPrune::On);
++        remote
++            .fetch(&["+refs/heads/*:refs/heads/*"], Some(&mut fetch), None)
++            .with_context(|| format!("failed to fetch {}", self.remote_url))?;
++
++        let head = format!("refs/heads/{branch}");
++        repo.find_reference(&head)
++            .with_context(|| format!("remote branch '{branch}' was not found"))?;
++        repo.set_head(&head)?;
++        Ok(branch)
++    }
++}
++
++fn discover_default_branch(repo: &git2::Repository, auth: MirrorAuth) -> anyhow::Result<String> {
++    let mut remote = repo.find_remote("origin")?;
++    remote
++        .connect_auth(Direction::Fetch, Some(callbacks(auth)), None)
++        .context("failed to connect to remote")?;
++    let default_branch = remote
++        .default_branch()
++        .context("remote did not advertise a default branch")?;
++    remote.disconnect()?;
++    let default_branch = default_branch
++        .as_str()
++        .context("remote default branch is not valid UTF-8")?;
++    normalize_branch(default_branch)
++}
++
++fn normalize_branch(branch: &str) -> anyhow::Result<String> {
++    let branch = branch
++        .trim()
++        .strip_prefix("refs/heads/")
++        .unwrap_or(branch.trim());
++    if branch.is_empty() || !git2::Reference::is_valid_name(&format!("refs/heads/{branch}")) {
++        anyhow::bail!("invalid Git branch '{branch}'");
++    }
++    Ok(branch.to_string())
++}
++
++fn callbacks(auth: MirrorAuth) -> RemoteCallbacks<'static> {
++    let mut callbacks = RemoteCallbacks::new();
++    if let MirrorAuth::GithubToken(token) = auth {
++        callbacks.credentials(move |_, _, _| Cred::userpass_plaintext("x-access-token", &token));
++    }
++    callbacks
++}
+diff --git a/crates/slasha-server/src/connections/mod.rs b/crates/slasha-server/src/connections/mod.rs
+new file mode 100644
+index 0000000..77dde47
+--- /dev/null
++++ b/crates/slasha-server/src/connections/mod.rs
+@@ -0,0 +1,143 @@
++pub mod github;
++mod mirror;
++
++use std::path::PathBuf;
++
++pub use github::{
++    GithubClient, GithubError, GithubInstallationInfo, GithubRepository, GithubResult,
++    create_state, handle_webhook, verify_state,
++};
++use slasha_db::{
++    app::{App, AppSource},
++    github_connection::ConnectionStatus,
++    repos::{
++        app::AppRepo, git_connection::GitConnectionRepo, github_connection::GithubConnectionRepo,
++    },
++};
++
++use crate::state::{Runtime, Storage};
++
++pub async fn sync_external_app(
++    github: Option<&GithubClient>,
++    storage: &Storage,
++    runtime: &Runtime,
++    app: &mut App,
++) -> anyhow::Result<()> {
++    let branch = match app.source {
++        AppSource::Local => return Ok(()),
++        AppSource::Github => {
++            sync_github_app(
++                github.ok_or_else(|| anyhow::anyhow!("GitHub integration is disabled"))?,
++                storage,
++                runtime,
++                app,
++            )
++            .await?
++            .default_branch
++        }
++        AppSource::Git => sync_git_app(storage, runtime, app).await?,
++    };
++
++    if branch != app.default_branch {
++        AppRepo::update_default_branch(&storage.db_pool, &app.id, &branch).await?;
++        app.default_branch = branch;
++    }
++
++    Ok(())
++}
++
++pub async fn sync_github_app(
++    client: &GithubClient,
++    storage: &Storage,
++    runtime: &Runtime,
++    app: &App,
++) -> anyhow::Result<GithubRepository> {
++    let connection = GithubConnectionRepo::find_for_app(&storage.db_pool, &app.id)
++        .await?
++        .ok_or_else(|| anyhow::anyhow!("GitHub connection not found"))?;
++    if connection.status != ConnectionStatus::Connected {
++        anyhow::bail!("GitHub connection is disconnected");
++    }
++
++    let lock = runtime.get_connection_sync_lock(&app.id);
++    let _guard = lock.lock().await;
++    let (repository, token) = match client
++        .get_repository_with_token(connection.installation_id, connection.repository_id)
++        .await
++    {
++        Ok(repository) => repository,
++        Err(GithubError::AccessRevoked) => {
++            GithubConnectionRepo::update_status(
++                &storage.db_pool,
++                &app.id,
++                ConnectionStatus::Disconnected,
++            )
++            .await?;
++            return Err(GithubError::AccessRevoked.into());
++        }
++        Err(error) => return Err(error.into()),
++    };
++
++    mirror::Mirror {
++        remote_url: repository.clone_url.clone(),
++        branch: Some(repository.default_branch.clone()),
++        path: PathBuf::from(&app.repo_path),
++        auth: mirror::MirrorAuth::GithubToken(token),
++    }
++    .sync()
++    .await?;
++    Ok(repository)
++}
++
++pub async fn sync_selected_github_repository(
++    client: &GithubClient,
++    runtime: &Runtime,
++    app_id: &str,
++    repo_path: PathBuf,
++    installation_id: i64,
++    repository_id: i64,
++) -> anyhow::Result<GithubRepository> {
++    let lock = runtime.get_connection_sync_lock(app_id);
++    let _guard = lock.lock().await;
++    let (repository, token) = client
++        .get_repository_with_token(installation_id, repository_id)
++        .await?;
++    mirror::Mirror {
++        remote_url: repository.clone_url.clone(),
++        branch: Some(repository.default_branch.clone()),
++        path: repo_path,
++        auth: mirror::MirrorAuth::GithubToken(token),
++    }
++    .sync()
++    .await?;
++    Ok(repository)
++}
++
++async fn sync_git_app(storage: &Storage, runtime: &Runtime, app: &App) -> anyhow::Result<String> {
++    let connection = GitConnectionRepo::find_for_app(&storage.db_pool, &app.id)
++        .await?
++        .ok_or_else(|| anyhow::anyhow!("Git connection not found"))?;
++    let lock = runtime.get_connection_sync_lock(&app.id);
++    let _guard = lock.lock().await;
++    sync_selected_git_repository(
++        connection.clone_url,
++        Some(app.default_branch.clone()),
++        PathBuf::from(&app.repo_path),
++    )
++    .await
++}
++
++pub async fn sync_selected_git_repository(
++    clone_url: String,
++    branch: Option<String>,
++    repo_path: PathBuf,
++) -> anyhow::Result<String> {
++    mirror::Mirror {
++        remote_url: clone_url,
++        branch,
++        path: repo_path,
++        auth: mirror::MirrorAuth::Anonymous,
++    }
++    .sync()
++    .await
++}
+diff --git a/crates/slasha-server/src/lib.rs b/crates/slasha-server/src/lib.rs
+index 9169731..406163a 100644
+--- a/crates/slasha-server/src/lib.rs
++++ b/crates/slasha-server/src/lib.rs
+@@ -2,6 +2,7 @@ pub mod alerts;
+ #[cfg(feature = "bundle")]
+ pub mod assets;
+ pub mod auth;
++pub mod connections;
+ pub mod docker;
+ pub mod domain_health;
+ pub mod error;
+@@ -98,10 +99,11 @@ pub async fn serve() -> anyhow::Result<()> {
+ 
+     let docker_client =
+         bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");
++    let github_client = connections::GithubClient::from_env()?;
+ 
+     proxy::container::ensure_caddy_ready(&docker_client).await?;
+ 
+-    let clients = Clients::new(docker_client.clone());
++    let clients = Clients::new(docker_client.clone(), github_client);
+     let storage = Storage::new(&db_path, repos_dir)?;
+ 
+     run_migrations(&storage);
+diff --git a/crates/slasha-server/src/routing/api/apps/deployments.rs b/crates/slasha-server/src/routing/api/apps/deployments.rs
+index cab1338..5dad310 100644
+--- a/crates/slasha-server/src/routing/api/apps/deployments.rs
++++ b/crates/slasha-server/src/routing/api/apps/deployments.rs
+@@ -15,6 +15,7 @@ use futures_util::{StreamExt, stream};
+ use serde::Deserialize;
+ use slasha_db::{
+     DbPool,
++    app::AppSource,
+     deployment::DeploymentStatus,
+     models::app_scale::ProcessType,
+     repos::{app_backup::AppBackupRepo, deployment::DeploymentRepo},
+@@ -23,6 +24,7 @@ use tokio::sync::Notify;
+ use tokio_stream::wrappers::BroadcastStream;
+ 
+ use crate::{
++    connections::sync_external_app,
+     docker::{
+         deployment::{
+             ScaleDeps, list_deployment_processes, remove_deployment_processes,
+@@ -55,18 +57,26 @@ struct TriggerDeployReq {
+ }
+ 
+ async fn trigger_deploy(
+-    State(docker_client): State<Docker>,
+-    State(db_pool): State<DbPool>,
+-    State(log_manager): State<Arc<LogManager>>,
+-    State(proxy_sync_trigger): State<Arc<Notify>>,
+-    ActiveApp { app, .. }: ActiveApp,
++    State(state): State<AppState>,
++    ActiveApp { mut app, .. }: ActiveApp,
+     Json(payload): Json<TriggerDeployReq>,
+ ) -> HttpResult<impl IntoResponse> {
++    if app.source != AppSource::Local {
++        sync_external_app(
++            state.clients.github.as_ref(),
++            &state.storage,
++            &state.runtime,
++            &mut app,
++        )
++        .await
++        .map_err(|error| HttpError::bad_request(error.to_string()))?;
++    }
++
+     let deployment = trigger_deployment(
+-        docker_client,
+-        db_pool,
+-        log_manager,
+-        proxy_sync_trigger,
++        state.clients.docker,
++        state.storage.db_pool,
++        state.runtime.log_manager,
++        state.runtime.proxy_sync_trigger,
+         app,
+         payload.commit_sha,
+     )
+diff --git a/crates/slasha-server/src/routing/api/apps/management.rs b/crates/slasha-server/src/routing/api/apps/management.rs
+index 2cfcb04..3e8d537 100644
+--- a/crates/slasha-server/src/routing/api/apps/management.rs
++++ b/crates/slasha-server/src/routing/api/apps/management.rs
+@@ -4,6 +4,7 @@ use anyhow::Context;
+ use axum::{
+     Json, Router,
+     extract::State,
++    http::StatusCode,
+     response::IntoResponse,
+     routing::{delete, get, post, put},
+ };
+@@ -12,11 +13,16 @@ use chrono::Utc;
+ use serde::Deserialize;
+ use slasha_db::{
+     DbPool, DbResult,
+-    app::{App, AppMember, AppMemberRole},
+-    deployment::{Deployment, DeploymentStatus},
++    app::{App, AppMember, AppMemberRole, AppSource, AppStatus},
++    git_connection::GitConnection,
++    github_connection::{ConnectionStatus, GithubConnection},
+     repos::{
+-        app::AppRepo, app_domain::AppDomainRepo, app_scale::AppScaleRepo,
+-        deployment::DeploymentRepo, service::ServiceRepo,
++        app::{AppRepo, NewAppConnection},
++        app_domain::AppDomainRepo,
++        app_scale::AppScaleRepo,
++        git_connection::GitConnectionRepo,
++        github_connection::GithubConnectionRepo,
++        service::ServiceRepo,
+     },
+     user::UserRole,
+ };
+@@ -24,6 +30,7 @@ use tokio::process::Command;
+ use uuid::Uuid;
+ 
+ use crate::{
++    connections::{GithubError, sync_selected_git_repository, sync_selected_github_repository},
+     docker::{
+         deployment::{remove_app_volumes, remove_deployment_processes},
+         network::{create_app_network, remove_app_network},
+@@ -40,14 +47,35 @@ pub fn router() -> Router<AppState> {
+         .route("/", get(list_apps))
+         .route("/check-slug", get(check_slug))
+         .route("/{slug}", get(get_app))
++        .route("/{slug}/connection", get(get_connection))
+         .route("/{slug}/scales", get(list_scales))
+         .route("/{slug}", delete(delete_app))
+         .route("/{slug}/settings", put(update_settings))
++        .route(
++            "/{slug}/connection/github",
++            put(reconnect_github).delete(disconnect_github),
++        )
+ }
+ 
+ #[derive(Deserialize)]
+ struct CreateAppReq {
+     name: String,
++    #[serde(flatten)]
++    source: CreateAppSource,
++}
++
++#[derive(Deserialize)]
++#[serde(tag = "source", rename_all = "lowercase")]
++enum CreateAppSource {
++    Local,
++    Github {
++        installation_id: i64,
++        repository_id: i64,
++    },
++    Git {
++        url: String,
++        branch: Option<String>,
++    },
+ }
+ 
+ #[derive(Deserialize)]
+@@ -92,6 +120,99 @@ async fn generate_unique_slug(pool: &DbPool, name: &str) -> DbResult<(String, bo
+     }
+ }
+ 
++async fn init_local_repository(repo_path: &str) -> HttpResult<()> {
++    let output = Command::new("git")
++        .arg("init")
++        .arg("--bare")
++        .arg("--initial-branch=main")
++        .arg(repo_path)
++        .output()
++        .await
++        .context("Failed to init bare repo")?;
++
++    if !output.status.success() {
++        let stderr = String::from_utf8_lossy(&output.stderr);
++        return Err(anyhow::anyhow!("git init --bare failed: {}", stderr).into());
++    }
++    Ok(())
++}
++
++fn validate_public_git_url(value: &str) -> HttpResult<String> {
++    let value = value.trim();
++    let url = reqwest::Url::parse(value)
++        .map_err(|_| HttpError::bad_request("Git URL must be a valid HTTP(S) URL"))?;
++    if !matches!(url.scheme(), "http" | "https")
++        || url.host_str().is_none()
++        || !url.username().is_empty()
++        || url.password().is_some()
++    {
++        return Err(HttpError::bad_request(
++            "Git URL must be a public HTTP(S) URL without credentials",
++        ));
++    }
++    Ok(url.to_string())
++}
++
++async fn prepare_github_connection(
++    state: &AppState,
++    user_id: &str,
++    app_id: &str,
++    repo_path: &str,
++    installation_id: i64,
++    repository_id: i64,
++) -> HttpResult<(String, GithubConnection)> {
++    let github = state
++        .clients
++        .github
++        .as_ref()
++        .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
++    ensure_github_installation_access(state, user_id, installation_id).await?;
++    let repository = sync_selected_github_repository(
++        github,
++        &state.runtime,
++        app_id,
++        std::path::PathBuf::from(repo_path),
++        installation_id,
++        repository_id,
++    )
++    .await
++    .map_err(|error| {
++        HttpError::bad_request(format!("Failed to fetch GitHub repository: {}", error))
++    })?;
++
++    let now = Utc::now().naive_utc();
++    Ok((
++        repository.default_branch,
++        GithubConnection {
++            app_id: app_id.to_string(),
++            installation_id,
++            repository_id,
++            status: ConnectionStatus::Connected,
++            created_at: now,
++            updated_at: now,
++        },
++    ))
++}
++
++async fn ensure_github_installation_access(
++    state: &AppState,
++    user_id: &str,
++    installation_id: i64,
++) -> HttpResult<()> {
++    if !GithubConnectionRepo::user_has_installation(
++        &state.storage.db_pool,
++        user_id,
++        installation_id,
++    )
++    .await?
++    {
++        return Err(HttpError::forbidden(
++            "GitHub installation is not connected to this user",
++        ));
++    }
++    Ok(())
++}
++
+ async fn check_slug(
+     State(storage): State<Storage>,
+     axum::extract::Query(query): axum::extract::Query<CheckSlugReq>,
+@@ -107,17 +228,17 @@ async fn check_slug(
+ }
+ 
+ async fn create_app(
+-    State(docker): State<Docker>,
+-    State(storage): State<Storage>,
++    State(state): State<AppState>,
+     AuthUser(user): AuthUser,
+     Json(payload): Json<CreateAppReq>,
+ ) -> HttpResult<impl IntoResponse> {
+     let name = payload.name.trim().to_string();
++
+     if name.is_empty() {
+         return Err(HttpError::bad_request("App name cannot be empty"));
+     }
+ 
+-    let (slug, _) = generate_unique_slug(&storage.db_pool, &name)
++    let (slug, _) = generate_unique_slug(&state.storage.db_pool, &name)
+         .await
+         .map_err(HttpError::internal)?;
+ 
+@@ -127,39 +248,77 @@ async fn create_app(
+         ));
+     }
+ 
+-    let repo_path = storage
++    let repo_path = state
++        .storage
+         .repos_dir
+         .join(format!("{}.git", slug))
+         .to_str()
+         .ok_or_else(|| HttpError::internal(anyhow::anyhow!("Invalid repo path")))?
+         .to_string();
+ 
+-    let git_status = Command::new("git")
+-        .arg("init")
+-        .arg("--bare")
+-        .arg("--initial-branch=main")
+-        .arg(&repo_path)
+-        .output()
+-        .await
+-        .context("Failed to init bare repo")?;
+-
+-    if !git_status.status.success() {
+-        let stderr = String::from_utf8_lossy(&git_status.stderr);
+-        return Err(anyhow::anyhow!("git init --bare failed: {}", stderr).into());
+-    }
+-
+     let now = Utc::now().naive_utc();
+     let app_id = Uuid::new_v4().to_string();
++    let (source, default_branch, connection) = match payload.source {
++        CreateAppSource::Local => {
++            init_local_repository(&repo_path).await?;
++            (AppSource::Local, "main".to_string(), None)
++        }
++        CreateAppSource::Github {
++            installation_id,
++            repository_id,
++        } => {
++            let (branch, connection) = prepare_github_connection(
++                &state,
++                &user.id,
++                &app_id,
++                &repo_path,
++                installation_id,
++                repository_id,
++            )
++            .await?;
++            (
++                AppSource::Github,
++                branch,
++                Some(NewAppConnection::Github(connection)),
++            )
++        }
++        CreateAppSource::Git { url, branch } => {
++            let clone_url = validate_public_git_url(&url)?;
++            let requested_branch = branch
++                .map(|branch| branch.trim().to_string())
++                .filter(|branch| !branch.is_empty());
++            let branch = sync_selected_git_repository(
++                clone_url.clone(),
++                requested_branch,
++                std::path::PathBuf::from(&repo_path),
++            )
++            .await
++            .map_err(|error| {
++                HttpError::bad_request(format!("Failed to fetch Git repository: {error}"))
++            })?;
++            let connection = GitConnection {
++                app_id: app_id.clone(),
++                clone_url,
++                created_at: now,
++            };
++            (
++                AppSource::Git,
++                branch,
++                Some(NewAppConnection::Git(connection)),
++            )
++        }
++    };
+ 
+     let new_app = App {
+         id: app_id.clone(),
+         slug: slug.clone(),
+         name: name.clone(),
+         repo_path,
+-        default_branch: "main".into(),
+-        status: "idle".into(),
++        default_branch,
++        status: AppStatus::Idle,
+         created_at: now,
+         auto_deploy: true,
++        source,
+     };
+ 
+     let new_member = AppMember {
+@@ -169,9 +328,15 @@ async fn create_app(
+         added_at: now,
+     };
+ 
+-    let new_app = AppRepo::create(&storage.db_pool, new_app, new_member).await?;
++    let new_app = match connection {
++        Some(connection) => {
++            AppRepo::create_with_connection(&state.storage.db_pool, new_app, new_member, connection)
++                .await?
++        }
++        None => AppRepo::create(&state.storage.db_pool, new_app, new_member).await?,
++    };
+ 
+-    create_app_network(&docker, &app_id).await?;
++    create_app_network(&state.clients.docker, &app_id).await?;
+ 
+     Ok(Json(serde_json::json!({
+         "app": new_app,
+@@ -179,11 +344,10 @@ async fn create_app(
+ }
+ 
+ async fn get_app(
+-    State(storage): State<Storage>,
+-    State(config): State<Config>,
++    State(state): State<AppState>,
+     ActiveApp { app, .. }: ActiveApp,
+ ) -> HttpResult<impl IntoResponse> {
+-    let domains = AppDomainRepo::list_for_app(&storage.db_pool, &app.id).await?;
++    let domains = AppDomainRepo::list_for_app(&state.storage.db_pool, &app.id).await?;
+     let url = match domains.first() {
+         Some(domain) => format!(
+             "https://{}",
+@@ -193,12 +357,12 @@ async fn get_app(
+                 .trim_start_matches("https://")
+         ),
+         None => {
+-            let scheme = if config.platform_domain.contains("localhost") {
++            let scheme = if state.config.platform_domain.contains("localhost") {
+                 "http"
+             } else {
+                 "https"
+             };
+-            format!("{}://{}.{}", scheme, app.slug, config.platform_domain)
++            format!("{}://{}.{}", scheme, app.slug, state.config.platform_domain)
+         }
+     };
+ 
+@@ -208,6 +372,70 @@ async fn get_app(
+     })))
+ }
+ 
++async fn get_connection(
++    State(state): State<AppState>,
++    ActiveApp { app, .. }: ActiveApp,
++) -> HttpResult<impl IntoResponse> {
++    let connection = match app.source {
++        AppSource::Local => None,
++        AppSource::Git => GitConnectionRepo::find_for_app(&state.storage.db_pool, &app.id)
++            .await?
++            .map(|connection| {
++                serde_json::json!({
++                    "clone_url": connection.clone_url,
++                })
++            }),
++        AppSource::Github => {
++            let connection =
++                GithubConnectionRepo::find_for_app(&state.storage.db_pool, &app.id).await?;
++            match connection {
++                Some(connection) => {
++                    let repository = if connection.status == ConnectionStatus::Connected {
++                        match &state.clients.github {
++                            Some(github) => match github
++                                .get_repository(
++                                    connection.installation_id,
++                                    connection.repository_id,
++                                )
++                                .await
++                            {
++                                Ok(repository) => Some(repository),
++                                Err(GithubError::AccessRevoked) => {
++                                    GithubConnectionRepo::update_status(
++                                        &state.storage.db_pool,
++                                        &app.id,
++                                        ConnectionStatus::Disconnected,
++                                    )
++                                    .await?;
++                                    None
++                                }
++                                Err(error) => {
++                                    return Err(HttpError::internal(anyhow::Error::from(error)));
++                                }
++                            },
++                            None => None,
++                        }
++                    } else {
++                        None
++                    };
++                    Some(serde_json::json!({
++                        "repository": repository.map(|repository| serde_json::json!({
++                            "full_name": repository.full_name,
++                            "html_url": repository.html_url,
++                            "default_branch": repository.default_branch,
++                        })),
++                    }))
++                }
++                None => None,
++            }
++        }
++    };
++
++    Ok(Json(serde_json::json!({
++        "connection": connection,
++    })))
++}
++
+ async fn delete_app(
+     State(docker): State<Docker>,
+     State(db_pool): State<DbPool>,
+@@ -299,20 +527,6 @@ async fn delete_app(
+     })))
+ }
+ 
+-fn derive_runtime_status(deployments: &[Deployment]) -> &'static str {
+-    if deployments
+-        .iter()
+-        .any(|d| d.status == DeploymentStatus::Running)
+-    {
+-        return "running";
+-    }
+-    match deployments.first().map(|d| d.status) {
+-        Some(DeploymentStatus::Building) | Some(DeploymentStatus::Pending) => "deploying",
+-        Some(DeploymentStatus::Failed) => "failed",
+-        _ => "idle",
+-    }
+-}
+-
+ async fn list_apps(
+     State(storage): State<Storage>,
+     State(config): State<Config>,
+@@ -337,7 +551,6 @@ async fn list_apps(
+ 
+     let mut items = Vec::with_capacity(user_apps.len());
+     for app in user_apps {
+-        let deployments = DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
+         let url = match primary_domains.get(&app.id) {
+             Some(domain) => format!(
+                 "https://{}",
+@@ -350,7 +563,6 @@ async fn list_apps(
+         items.push(serde_json::json!({
+             "app": app,
+             "url": url,
+-            "runtime_status": derive_runtime_status(&deployments),
+         }));
+     }
+ 
+@@ -395,3 +607,81 @@ async fn update_settings(
+         "success": true,
+     })))
+ }
++
++#[derive(Deserialize)]
++struct ReconnectGithubReq {
++    installation_id: i64,
++    repository_id: i64,
++}
++
++async fn reconnect_github(
++    State(state): State<AppState>,
++    ActiveApp { app, user }: ActiveApp,
++    Json(payload): Json<ReconnectGithubReq>,
++) -> HttpResult<impl IntoResponse> {
++    if app.source != AppSource::Github {
++        return Err(HttpError::bad_request("App does not use GitHub"));
++    }
++    if user.role != UserRole::Admin
++        && !AppRepo::is_owner(&state.storage.db_pool, &app.id, &user.id).await?
++    {
++        return Err(HttpError::forbidden(
++            "Only app owners can change the GitHub connection",
++        ));
++    }
++
++    let github = state
++        .clients
++        .github
++        .as_ref()
++        .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
++    ensure_github_installation_access(&state, &user.id, payload.installation_id).await?;
++
++    let repository = sync_selected_github_repository(
++        github,
++        &state.runtime,
++        &app.id,
++        std::path::PathBuf::from(&app.repo_path),
++        payload.installation_id,
++        payload.repository_id,
++    )
++    .await
++    .map_err(|error| {
++        HttpError::bad_request(format!("Failed to fetch GitHub repository: {}", error))
++    })?;
++
++    GithubConnectionRepo::reconnect(
++        &state.storage.db_pool,
++        &app.id,
++        payload.installation_id,
++        payload.repository_id,
++        &repository.default_branch,
++    )
++    .await?;
++
++    Ok(StatusCode::NO_CONTENT)
++}
++
++async fn disconnect_github(
++    State(state): State<AppState>,
++    ActiveApp { app, user }: ActiveApp,
++) -> HttpResult<impl IntoResponse> {
++    if app.source != AppSource::Github {
++        return Err(HttpError::bad_request("App does not use GitHub"));
++    }
++    if user.role != UserRole::Admin
++        && !AppRepo::is_owner(&state.storage.db_pool, &app.id, &user.id).await?
++    {
++        return Err(HttpError::forbidden(
++            "Only app owners can change the GitHub connection",
++        ));
++    }
++    GithubConnectionRepo::update_status(
++        &state.storage.db_pool,
++        &app.id,
++        ConnectionStatus::Disconnected,
++    )
++    .await?;
++
++    Ok(StatusCode::NO_CONTENT)
++}
+diff --git a/crates/slasha-server/src/routing/api/apps/mod.rs b/crates/slasha-server/src/routing/api/apps/mod.rs
+index a90073f..fce0804 100644
+--- a/crates/slasha-server/src/routing/api/apps/mod.rs
++++ b/crates/slasha-server/src/routing/api/apps/mod.rs
+@@ -9,10 +9,12 @@ mod service_env;
+ mod services;
+ mod volumes;
+ 
+-use axum::{Json, Router, response::IntoResponse, routing::get};
++use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
++use slasha_db::app::AppSource;
+ 
+ use crate::{
+     AppState,
++    connections::sync_external_app,
+     error::{HttpError, HttpResult},
+     extractors::app::ActiveApp,
+ };
+@@ -48,7 +50,21 @@ fn get_all_commits(repo_path: &str, branch_name: &str) -> anyhow::Result<Vec<Com
+     Ok(commits)
+ }
+ 
+-async fn list_commits(ActiveApp { app, .. }: ActiveApp) -> HttpResult<impl IntoResponse> {
++async fn list_commits(
++    State(state): State<AppState>,
++    ActiveApp { mut app, .. }: ActiveApp,
++) -> HttpResult<impl IntoResponse> {
++    if app.source != AppSource::Local {
++        sync_external_app(
++            state.clients.github.as_ref(),
++            &state.storage,
++            &state.runtime,
++            &mut app,
++        )
++        .await
++        .map_err(|error| HttpError::bad_request(error.to_string()))?;
++    }
++
+     let commits = get_all_commits(&app.repo_path, &app.default_branch)
+         .map_err(|e| HttpError::internal(anyhow::anyhow!("Failed to fetch commits: {}", e)))?;
+ 
+diff --git a/crates/slasha-server/src/routing/api/github.rs b/crates/slasha-server/src/routing/api/github.rs
+new file mode 100644
+index 0000000..df97659
+--- /dev/null
++++ b/crates/slasha-server/src/routing/api/github.rs
+@@ -0,0 +1,209 @@
++use axum::{
++    Json, Router,
++    extract::{Path, Query, State},
++    http::StatusCode,
++    response::{IntoResponse, Redirect},
++    routing::{delete, get, post},
++};
++use chrono::Utc;
++use serde::Deserialize;
++use slasha_db::{
++    github_connection::GithubInstallation,
++    repos::{github_connection::GithubConnectionRepo, user::UserRepo},
++};
++
++use crate::{
++    AppState,
++    connections::{GithubError, create_state, handle_webhook, verify_state},
++    error::{HttpError, HttpResult},
++    extractors::auth::AuthUser,
++};
++
++pub fn router() -> Router<AppState> {
++    Router::new()
++        .route("/status", get(status))
++        .route("/install", post(install))
++        .route("/callback", get(callback))
++        .route("/repositories", get(repositories))
++        .route(
++            "/installations/{installation_id}",
++            delete(remove_installation),
++        )
++        .route("/webhook", post(handle_webhook))
++}
++
++fn get_github_client(state: &AppState) -> HttpResult<&crate::connections::GithubClient> {
++    state
++        .clients
++        .github
++        .as_ref()
++        .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))
++}
++
++async fn status(State(state): State<AppState>) -> Json<serde_json::Value> {
++    Json(serde_json::json!({
++        "enabled": state.clients.github.is_some(),
++    }))
++}
++
++#[derive(Deserialize)]
++struct InstallReq {
++    redirect_to: String,
++}
++
++async fn install(
++    State(state): State<AppState>,
++    AuthUser(user): AuthUser,
++    Json(payload): Json<InstallReq>,
++) -> HttpResult<impl IntoResponse> {
++    let github_client = get_github_client(&state)?;
++    let redirect_to = validate_redirect_target(&payload.redirect_to)?;
++    let state_token = create_state(&user.id, &redirect_to, &state.config.jwt_secret)?;
++    let url = github_client
++        .get_installation_url(&state_token)
++        .await
++        .map_err(|e| HttpError::internal(anyhow::Error::from(e)))?;
++    Ok(Json(serde_json::json!({ "url": url })))
++}
++
++fn validate_redirect_target(target: &str) -> HttpResult<String> {
++    if !target.starts_with('/') || target.starts_with("//") {
++        return Err(HttpError::bad_request(
++            "GitHub redirect must be an application-relative path",
++        ));
++    }
++    Ok(target.to_string())
++}
++
++#[derive(Deserialize)]
++struct CallbackQuery {
++    code: String,
++    state: String,
++    installation_id: i64,
++}
++
++async fn callback(
++    State(state): State<AppState>,
++    Query(query): Query<CallbackQuery>,
++) -> HttpResult<Redirect> {
++    let github_client = get_github_client(&state)?;
++    let (user_id, redirect_to) = verify_state(&query.state, &state.config.jwt_secret)
++        .map_err(|_| HttpError::bad_request("Invalid or expired GitHub state"))?;
++    UserRepo::find_by_id(&state.storage.db_pool, &user_id)
++        .await
++        .map_err(|_| HttpError::unauthorized())?;
++
++    let user_token = github_client
++        .exchange_oauth_code(&query.code)
++        .await
++        .map_err(|e| HttpError::internal(anyhow::Error::from(e)))?;
++
++    if !github_client
++        .user_has_installation_access(&user_token, query.installation_id)
++        .await
++        .map_err(|e| HttpError::internal(anyhow::Error::from(e)))?
++    {
++        return Err(HttpError::forbidden(
++            "GitHub installation is not accessible to this user",
++        ));
++    }
++
++    GithubConnectionRepo::save_installation(
++        &state.storage.db_pool,
++        GithubInstallation {
++            user_id: user_id.clone(),
++            installation_id: query.installation_id,
++            created_at: Utc::now().naive_utc(),
++        },
++    )
++    .await?;
++
++    Ok(Redirect::to(&redirect_to))
++}
++
++async fn repositories(
++    State(state): State<AppState>,
++    AuthUser(user): AuthUser,
++) -> HttpResult<impl IntoResponse> {
++    let github_client = get_github_client(&state)?;
++    let db_installations =
++        GithubConnectionRepo::list_installations_for_user(&state.storage.db_pool, &user.id).await?;
++
++    let mut installations = Vec::new();
++    let mut all_repositories = Vec::new();
++
++    for db_inst in db_installations {
++        let installation_id = db_inst.installation_id;
++        let gh_inst = match github_client.get_installation(installation_id).await {
++            Ok(inst) => inst,
++            Err(GithubError::AccessRevoked) => {
++                GithubConnectionRepo::disconnect_installation(
++                    &state.storage.db_pool,
++                    installation_id,
++                )
++                .await?;
++                continue;
++            }
++            Err(error) => return Err(HttpError::internal(anyhow::Error::from(error))),
++        };
++
++        let repositories = match github_client.get_repositories(installation_id).await {
++            Ok(repos) => repos,
++            Err(GithubError::AccessRevoked) => {
++                GithubConnectionRepo::disconnect_installation(
++                    &state.storage.db_pool,
++                    installation_id,
++                )
++                .await?;
++                continue;
++            }
++            Err(error) => return Err(HttpError::internal(anyhow::Error::from(error))),
++        };
++
++        installations.push(serde_json::json!({
++            "installation_id": gh_inst.id,
++            "configure_url": gh_inst.html_url,
++            "repositories_count": repositories.len(),
++        }));
++
++        for repo in repositories {
++            all_repositories.push(serde_json::json!({
++                "id": repo.id,
++                "full_name": repo.full_name,
++                "default_branch": repo.default_branch,
++                "private": repo.private,
++                "installation_id": installation_id,
++            }));
++        }
++    }
++
++    Ok(Json(serde_json::json!({
++        "installations": installations,
++        "repositories": all_repositories,
++    })))
++}
++
++async fn remove_installation(
++    State(state): State<AppState>,
++    AuthUser(user): AuthUser,
++    Path(installation_id): Path<i64>,
++) -> HttpResult<impl IntoResponse> {
++    if !GithubConnectionRepo::user_has_installation(
++        &state.storage.db_pool,
++        &user.id,
++        installation_id,
++    )
++    .await?
++    {
++        return Err(HttpError::not_found("GitHub installation not found"));
++    }
++    let github_client = get_github_client(&state)?;
++    match github_client.delete_installation(installation_id).await {
++        Ok(()) | Err(GithubError::AccessRevoked) => {}
++        Err(error) => return Err(HttpError::internal(anyhow::Error::from(error))),
++    }
++
++    GithubConnectionRepo::disconnect_installation(&state.storage.db_pool, installation_id).await?;
++
++    Ok(StatusCode::NO_CONTENT)
++}
+diff --git a/crates/slasha-server/src/routing/api/mod.rs b/crates/slasha-server/src/routing/api/mod.rs
+index eb8fc57..2490b58 100644
+--- a/crates/slasha-server/src/routing/api/mod.rs
++++ b/crates/slasha-server/src/routing/api/mod.rs
+@@ -6,6 +6,7 @@ use crate::{AppState, error::HttpResult};
+ pub mod alerts;
+ pub mod apps;
+ pub mod auth;
++pub mod github;
+ pub mod monitoring;
+ pub mod service_kinds;
+ pub mod ssh_keys;
+@@ -17,6 +18,7 @@ pub fn router(state: AppState) -> Router<AppState> {
+     Router::new()
+         .route("/health", get(health_check))
+         .nest("/auth", auth::router())
++        .nest("/github", github::router())
+         .nest("/apps", apps::router())
+         .nest(
+             "/alerts",
+diff --git a/crates/slasha-server/src/routing/git.rs b/crates/slasha-server/src/routing/git.rs
+index 9719614..00b474c 100644
+--- a/crates/slasha-server/src/routing/git.rs
++++ b/crates/slasha-server/src/routing/git.rs
+@@ -92,6 +92,12 @@ async fn info_refs(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoRes
+         )
+         .into());
+     };
++    if !auth.app.source.accepts_pushes() && service == "git-receive-pack" {
++        return Err(GitError::BadRequest(
++            "Externally sourced apps do not accept direct pushes".into(),
++        )
++        .into());
++    }
+ 
+     let git_protocol = req
+         .headers()
+@@ -159,6 +165,12 @@ async fn receive_pack(
+     auth: GitAuth,
+     req: Request<Body>,
+ ) -> HttpResult<impl IntoResponse> {
++    if !auth.app.source.accepts_pushes() {
++        return Err(GitError::BadRequest(
++            "Externally sourced apps do not accept direct pushes".into(),
++        )
++        .into());
++    }
+     let auto_deploy = AutoDeploy {
+         docker,
+         db_pool,
+diff --git a/crates/slasha-server/src/state.rs b/crates/slasha-server/src/state.rs
+index e50e6bf..b2ffe32 100644
+--- a/crates/slasha-server/src/state.rs
++++ b/crates/slasha-server/src/state.rs
+@@ -8,19 +8,21 @@ use bollard::Docker;
+ use slasha_db::DbPool;
+ use tokio::sync::Notify;
+ 
+-use crate::{docker::logs::LogManager, proxy::CaddyClient, utils};
++use crate::{connections::GithubClient, docker::logs::LogManager, proxy::CaddyClient, utils};
+ 
+ #[derive(Clone)]
+ pub struct Clients {
+     pub docker: Docker,
+     pub caddy: CaddyClient,
++    pub github: Option<GithubClient>,
+ }
+ 
+ impl Clients {
+-    pub fn new(docker: Docker) -> Self {
++    pub fn new(docker: Docker, github: Option<GithubClient>) -> Self {
+         Self {
+             docker,
+             caddy: CaddyClient::default(),
++            github,
+         }
+     }
+ }
+@@ -46,6 +48,7 @@ pub struct Runtime {
+     pub log_manager: Arc<LogManager>,
+     pub proxy_sync_trigger: Arc<Notify>,
+     pub scaling_locks: Arc<dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
++    pub connection_sync_locks: Arc<dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+ }
+ 
+ impl Runtime {
+@@ -54,6 +57,7 @@ impl Runtime {
+             log_manager: Arc::new(LogManager::new(utils::ensure_dir(logs_dir))),
+             proxy_sync_trigger,
+             scaling_locks: Arc::new(dashmap::DashMap::new()),
++            connection_sync_locks: Arc::new(dashmap::DashMap::new()),
+         })
+     }
+ 
+@@ -63,6 +67,13 @@ impl Runtime {
+             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+             .clone()
+     }
++
++    pub fn get_connection_sync_lock(&self, app_id: &str) -> Arc<tokio::sync::Mutex<()>> {
++        self.connection_sync_locks
++            .entry(app_id.to_string())
++            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
++            .clone()
++    }
+ }
+ 
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+diff --git a/web/app/components/apps/app-card.tsx b/web/app/components/apps/app-card.tsx
+index 28a2de5..6ecd4c8 100644
+--- a/web/app/components/apps/app-card.tsx
++++ b/web/app/components/apps/app-card.tsx
+@@ -2,7 +2,7 @@ import { Link } from 'react-router';
+ import { ArrowUpRight, GitBranchIcon } from 'lucide-react';
+ import type { AppListItem } from '~/queries/apps';
+ import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
+-import { statusFromRuntime } from '~/utils/app-status';
++import { getAppStatusView } from '~/utils/app-status';
+ 
+ type AppCardProps = {
+   item: AppListItem;
+@@ -10,8 +10,8 @@ type AppCardProps = {
+ 
+ export function AppCard(props: AppCardProps) {
+   const { item } = props;
+-  const { app, url, runtime_status } = item;
+-  const status = statusFromRuntime(runtime_status);
++  const { app, url } = item;
++  const status = getAppStatusView(app.status);
+ 
+   return (
+     <Link
+diff --git a/web/app/components/apps/app-runtime-badge.tsx b/web/app/components/apps/app-runtime-badge.tsx
+index 4e3714e..e569267 100644
+--- a/web/app/components/apps/app-runtime-badge.tsx
++++ b/web/app/components/apps/app-runtime-badge.tsx
+@@ -5,15 +5,15 @@ import {
+   XCircle,
+   type LucideIcon,
+ } from 'lucide-react';
+-import type { AppRuntimeStatus, AppRuntimeTone } from '~/utils/app-status';
++import type { AppStatusTone, AppStatusView } from '~/utils/app-status';
+ import { cn } from '~/utils/classname';
+ 
+ type AppRuntimeBadgeProps = {
+-  status: AppRuntimeStatus;
++  status: AppStatusView;
+ };
+ 
+ const TONE_STYLES: Record<
+-  AppRuntimeTone,
++  AppStatusTone,
+   { icon: LucideIcon; className: string; spin?: boolean }
+ > = {
+   live: {
+diff --git a/web/app/components/apps/deployments.tsx b/web/app/components/apps/deployments.tsx
+index e5ff819..688b9a8 100644
+--- a/web/app/components/apps/deployments.tsx
++++ b/web/app/components/apps/deployments.tsx
+@@ -9,13 +9,15 @@ import { VStack } from '~/components/interface/stacks';
+ import { toast } from 'sonner';
+ import { CommitSelector } from '~/components/apps/commit-selector';
+ import { DeploymentRow } from '~/components/apps/deployment-row';
++import type { App } from '~/models/app';
+ 
+ type DeploymentsViewProps = {
+-  appSlug: string;
++  app: App;
+ };
+ 
+ export function DeploymentsView(props: DeploymentsViewProps) {
+-  const { appSlug } = props;
++  const { app } = props;
++  const appSlug = app.slug;
+   const navigate = useNavigate();
+   const { data, isLoading } = useQuery({
+     ...getDeploymentsOptions(appSlug),
+@@ -97,17 +99,22 @@ export function DeploymentsView(props: DeploymentsViewProps) {
+           <VStack alignItems="center" space={1}>
+             <p className="text-sm font-medium text-text">No deployments yet</p>
+             <p className="max-w-[340px] text-center text-xs text-text-tertiary">
+-              Add the remote and push — slasha deploys every push to your
+-              default branch automatically. Or trigger one now.
++              {app.source === 'local'
++                ? 'Add the remote and push to deploy your default branch, or trigger a deployment now.'
++                : app.source === 'github'
++                  ? 'Push to the connected GitHub repository for automatic deployments, or deploy the latest commit now.'
++                  : 'Deploy the latest commit from the configured Git repository.'}
+             </p>
+           </VStack>
+-          <pre className="w-full max-w-md overflow-x-auto rounded-lg border border-border bg-black/40 p-4 text-left font-mono text-[12px] leading-relaxed text-text-secondary">
+-            <span className="select-none text-text-tertiary">$ </span>git remote
+-            add slasha {cloneUrl}
+-            {'\n'}
+-            <span className="select-none text-text-tertiary">$ </span>git push
+-            slasha main
+-          </pre>
++          {app.source === 'local' && (
++            <pre className="w-full max-w-md overflow-x-auto rounded-lg border border-border bg-black/40 p-4 text-left font-mono text-[12px] leading-relaxed text-text-secondary">
++              <span className="select-none text-text-tertiary">$ </span>git
++              remote add slasha {cloneUrl}
++              {'\n'}
++              <span className="select-none text-text-tertiary">$ </span>git push
++              slasha {app.default_branch}
++            </pre>
++          )}
+           <Button
+             label="Deploy now"
+             icon={<Play className="size-3.5" />}
+diff --git a/web/app/components/apps/git-connection-manager.tsx b/web/app/components/apps/git-connection-manager.tsx
+new file mode 100644
+index 0000000..2ba865d
+--- /dev/null
++++ b/web/app/components/apps/git-connection-manager.tsx
+@@ -0,0 +1,52 @@
++import { ExternalLink, GitBranch, Link as LinkIcon } from 'lucide-react';
++import type { App } from '~/models/app';
++import type { GitAppConnection } from '~/queries/apps';
++
++type Props = {
++  app: App;
++  connection?: GitAppConnection;
++};
++
++export function GitConnectionManager({ app, connection }: Props) {
++  if (app.source !== 'git' || !connection) {
++    return null;
++  }
++
++  return (
++    <div>
++      <h3 className="text-[14px] font-semibold text-text">Git Repository</h3>
++      <p className="mt-1 text-[13px] text-text-tertiary">
++        Source repository mirrored by this application.
++      </p>
++
++      <div className="mt-6 border border-border bg-surface p-6">
++        <div className="grid gap-5 sm:grid-cols-2">
++          <div className="min-w-0">
++            <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
++              <LinkIcon className="size-3.5" />
++              Repository
++            </div>
++            <a
++              href={connection.clone_url}
++              target="_blank"
++              rel="noreferrer"
++              className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-text hover:underline"
++            >
++              <span className="truncate">{connection.clone_url}</span>
++              <ExternalLink className="size-3.5 shrink-0 text-text-tertiary" />
++            </a>
++          </div>
++          <div>
++            <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
++              <GitBranch className="size-3.5" />
++              Branch
++            </div>
++            <p className="mt-1.5 font-mono text-[13px] font-medium text-text">
++              {app.default_branch}
++            </p>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/web/app/components/apps/github-connection-manager.tsx b/web/app/components/apps/github-connection-manager.tsx
+new file mode 100644
+index 0000000..ec5ef25
+--- /dev/null
++++ b/web/app/components/apps/github-connection-manager.tsx
+@@ -0,0 +1,233 @@
++import { useState } from 'react';
++import { ExternalLink } from 'lucide-react';
++import { toast } from 'sonner';
++import { Github } from '~/components/icons/github';
++import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
++import { Button } from '~/components/interface/button';
++import { Label } from '~/components/interface/label';
++import type { App } from '~/models/app';
++import type { GithubAppConnection } from '~/queries/apps';
++import {
++  getGithubRepositoriesOptions,
++  getGithubStatusOptions,
++  useInstallGithub,
++} from '~/queries/github';
++import { useDisconnectGithub, useReconnectGithub } from '~/queries/apps';
++import { queryClient } from '~/utils/query-client';
++import { RepositorySelect } from './repository-select';
++
++interface Props {
++  app: App;
++  connection?: GithubAppConnection;
++}
++
++export function GithubConnectionManager({ app, connection }: Props) {
++  const [isEditing, setIsEditing] = useState(false);
++  const [selectedRepository, setSelectedRepository] = useState<string>('');
++
++  const { data: githubStatus } = useSuspenseQuery(getGithubStatusOptions());
++  const { data: reposData, isLoading: reposLoading } = useQuery({
++    ...getGithubRepositoriesOptions(),
++    enabled: isEditing && githubStatus?.enabled === true,
++  });
++
++  const installGithub = useInstallGithub();
++  const reconnectGithub = useReconnectGithub();
++  const disconnectGithub = useDisconnectGithub();
++
++  if (app.source !== 'github') {
++    return null;
++  }
++
++  const repository = connection?.repository;
++  const isConnected = repository != null;
++
++  const handleConnectGithub = async () => {
++    try {
++      const data = await installGithub.mutateAsync({
++        redirect_to: window.location.pathname,
++      });
++      window.location.href = data.url;
++    } catch (err: any) {
++      toast.error(err.message || 'Failed to connect to GitHub');
++    }
++  };
++
++  const handleReconnect = async () => {
++    if (!selectedRepository) {
++      toast.error('Please select a repository');
++      return;
++    }
++    const repositories = reposData?.repositories || [];
++    const selectedRepoObj = repositories.find(
++      (r) => r.id.toString() === selectedRepository
++    );
++    if (!selectedRepoObj) {
++      toast.error('The selected repository is no longer available');
++      return;
++    }
++
++    const promise = reconnectGithub.mutateAsync({
++      appSlug: app.slug,
++      installation_id: selectedRepoObj.installation_id,
++      repository_id: selectedRepoObj.id,
++    });
++
++    toast.promise(promise, {
++      loading: 'Connecting repository...',
++      success: 'Repository connected successfully',
++      error: 'Failed to connect repository',
++    });
++
++    try {
++      await promise;
++      await queryClient.invalidateQueries({ queryKey: ['apps', app.slug] });
++      setIsEditing(false);
++    } catch {}
++  };
++
++  const handleDisconnect = async () => {
++    if (
++      !confirm(
++        'Are you sure you want to disconnect this repository? Automatic deployments will stop.'
++      )
++    ) {
++      return;
++    }
++    const promise = disconnectGithub.mutateAsync(app.slug);
++
++    toast.promise(promise, {
++      loading: 'Disconnecting repository...',
++      success: 'Repository disconnected successfully',
++      error: 'Failed to disconnect repository',
++    });
++
++    try {
++      await promise;
++      await queryClient.invalidateQueries({ queryKey: ['apps', app.slug] });
++    } catch {}
++  };
++
++  const repositories = reposData?.repositories || [];
++
++  return (
++    <div>
++      <h3 className="text-[14px] font-semibold text-text">GitHub Connection</h3>
++      <p className="mt-1 text-[13px] text-text-tertiary">
++        Manage the GitHub repository connected to this application.
++      </p>
++
++      <div className="mt-6 rounded-lg border border-border bg-surface p-6">
++        {!isEditing ? (
++          <div className="flex items-center justify-between">
++            <div className="flex items-center gap-3">
++              <Github className="size-5 text-text" />
++              <div>
++                {isConnected ? (
++                  <>
++                    <a
++                      href={repository.html_url}
++                      target="_blank"
++                      rel="noreferrer"
++                      className="flex items-center gap-1.5 text-[13px] font-medium text-text hover:underline"
++                    >
++                      {repository.full_name}
++                      <ExternalLink className="size-3.5 text-text-tertiary" />
++                    </a>
++                    <p className="text-[12px] text-text-secondary mt-0.5">
++                      Branch:{' '}
++                      <span className="font-mono">
++                        {repository.default_branch}
++                      </span>
++                    </p>
++                  </>
++                ) : (
++                  <p className="text-[13px] font-medium text-amber-500">
++                    Not connected or repository not found
++                  </p>
++                )}
++              </div>
++            </div>
++            <div className="flex gap-2">
++              {isConnected && (
++                <Button
++                  variant="ghost"
++                  label="Disconnect"
++                  onClick={handleDisconnect}
++                  isDisabled={disconnectGithub.isPending}
++                  className="text-red-500 hover:text-red-500"
++                />
++              )}
++              <Button
++                color="neutral"
++                label={isConnected ? 'Change Repository' : 'Connect Repository'}
++                onClick={() => setIsEditing(true)}
++              />
++            </div>
++          </div>
++        ) : (
++          <div className="space-y-4">
++            {reposLoading ? (
++              <p className="text-sm text-text-tertiary">
++                Loading repositories...
++              </p>
++            ) : repositories.length === 0 ? (
++              <div className="text-center py-4">
++                <p className="mb-4 text-sm text-text-secondary">
++                  You haven't connected any GitHub accounts yet.
++                </p>
++                <Button
++                  type="button"
++                  color="neutral"
++                  label="Connect GitHub Account"
++                  onClick={handleConnectGithub}
++                  isLoading={installGithub.isPending}
++                />
++              </div>
++            ) : (
++              <div className="space-y-4">
++                <div className="space-y-1.5">
++                  <div className="flex items-center justify-between">
++                    <Label className="text-[12px] font-medium text-text-tertiary">
++                      Repository
++                    </Label>
++                    <button
++                      type="button"
++                      onClick={handleConnectGithub}
++                      className="text-[12px] font-medium text-text-secondary hover:text-text hover:underline"
++                      disabled={installGithub.isPending}
++                    >
++                      Connect another account
++                    </button>
++                  </div>
++                  <RepositorySelect
++                    repositories={repositories}
++                    value={selectedRepository}
++                    onChange={setSelectedRepository}
++                  />
++                </div>
++
++                <div className="flex justify-end gap-2 pt-2">
++                  <Button
++                    variant="ghost"
++                    label="Cancel"
++                    onClick={() => setIsEditing(false)}
++                    isDisabled={reconnectGithub.isPending}
++                  />
++                  <Button
++                    label="Save Connection"
++                    onClick={handleReconnect}
++                    isLoading={reconnectGithub.isPending}
++                    isDisabled={
++                      !selectedRepository || reconnectGithub.isPending
++                    }
++                  />
++                </div>
++              </div>
++            )}
++          </div>
++        )}
++      </div>
++    </div>
++  );
++}
+diff --git a/web/app/components/apps/repository-select.tsx b/web/app/components/apps/repository-select.tsx
+new file mode 100644
+index 0000000..e0d4370
+--- /dev/null
++++ b/web/app/components/apps/repository-select.tsx
+@@ -0,0 +1,131 @@
++import { useEffect, useRef, useState } from 'react';
++import { ChevronDown, Globe, Lock, Search } from 'lucide-react';
++import type { GithubRepository } from '~/queries/github';
++import { cn } from '~/utils/classname';
++
++interface RepositorySelectProps {
++  repositories: GithubRepository[];
++  value: string;
++  onChange: (value: string) => void;
++}
++
++export function RepositorySelect({
++  repositories,
++  value,
++  onChange,
++}: RepositorySelectProps) {
++  const [isOpen, setIsOpen] = useState(false);
++  const [search, setSearch] = useState('');
++  const containerRef = useRef<HTMLDivElement>(null);
++
++  // Close dropdown on click outside
++  useEffect(() => {
++    function handleClickOutside(event: MouseEvent) {
++      if (
++        containerRef.current &&
++        !containerRef.current.contains(event.target as Node)
++      ) {
++        setIsOpen(false);
++      }
++    }
++    document.addEventListener('mousedown', handleClickOutside);
++    return () => document.removeEventListener('mousedown', handleClickOutside);
++  }, []);
++
++  const selectedRepo = repositories.find((r) => r.id.toString() === value);
++
++  const filteredRepos = repositories.filter((repo) =>
++    repo.full_name.toLowerCase().includes(search.toLowerCase())
++  );
++
++  return (
++    <div ref={containerRef} className="relative w-full">
++      <button
++        type="button"
++        onClick={() => setIsOpen(!isOpen)}
++        className={cn(
++          'flex h-10 w-full items-center justify-between rounded-md border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-all hover:border-text-secondary focus:border-text-secondary',
++          isOpen && 'border-text-secondary ring-1 ring-text-secondary/10'
++        )}
++      >
++        {selectedRepo ? (
++          <div className="flex items-center gap-2 truncate">
++            {selectedRepo.private ? (
++              <Lock className="size-3.5 text-text-secondary shrink-0" />
++            ) : (
++              <Globe className="size-3.5 text-text-secondary shrink-0" />
++            )}
++            <span className="font-medium truncate">
++              {selectedRepo.full_name}
++            </span>
++          </div>
++        ) : (
++          <span className="text-text-tertiary">Select a repository...</span>
++        )}
++        <ChevronDown
++          className={cn(
++            'size-4 text-text-tertiary transition-transform duration-200',
++            isOpen && 'rotate-180'
++          )}
++        />
++      </button>
++
++      {isOpen && (
++        <div className="absolute z-50 mt-1.5 w-full rounded-md border border-border bg-surface shadow-lg animate-in fade-in-50 slide-in-from-top-1">
++          <div className="relative border-b border-border p-2">
++            <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
++            <input
++              type="text"
++              placeholder="Search repositories..."
++              value={search}
++              onChange={(e) => setSearch(e.target.value)}
++              className="h-9 w-full rounded-md bg-surface-secondary pl-9 pr-3 text-sm text-text placeholder:text-text-tertiary outline-none border-0 ring-0 focus:ring-1 focus:ring-text-secondary/20"
++              autoFocus
++            />
++          </div>
++
++          <ul className="max-h-60 overflow-y-auto p-1.5 space-y-0.5 scrollbar-thin">
++            {filteredRepos.length === 0 ? (
++              <li className="px-3 py-4 text-center text-xs text-text-tertiary">
++                No repositories found
++              </li>
++            ) : (
++              filteredRepos.map((repo) => {
++                const isSelected = repo.id.toString() === value;
++                return (
++                  <li key={repo.id}>
++                    <button
++                      type="button"
++                      onClick={() => {
++                        onChange(repo.id.toString());
++                        setIsOpen(false);
++                        setSearch('');
++                      }}
++                      className={cn(
++                        'flex w-full items-center justify-between rounded px-3 py-2 text-left text-sm transition-colors hover:bg-surface-secondary',
++                        isSelected &&
++                          'bg-surface-secondary text-text font-medium'
++                      )}
++                    >
++                      <div className="flex items-center gap-2 truncate">
++                        {repo.private ? (
++                          <Lock className="size-3.5 text-text-tertiary shrink-0" />
++                        ) : (
++                          <Globe className="size-3.5 text-text-tertiary shrink-0" />
++                        )}
++                        <span className="truncate">{repo.full_name}</span>
++                      </div>
++                      <span className="text-[11px] text-text-tertiary font-mono bg-border/40 px-1.5 py-0.5 rounded">
++                        {repo.default_branch}
++                      </span>
++                    </button>
++                  </li>
++                );
++              })
++            )}
++          </ul>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/web/app/components/icons/github.tsx b/web/app/components/icons/github.tsx
+new file mode 100644
+index 0000000..0cfbec4
+--- /dev/null
++++ b/web/app/components/icons/github.tsx
+@@ -0,0 +1,14 @@
++import type { SVGProps } from 'react';
++
++export function Github(props: SVGProps<SVGSVGElement>) {
++  return (
++    <svg
++      viewBox="0 0 24 24"
++      fill="currentColor"
++      xmlns="http://www.w3.org/2000/svg"
++      {...props}
++    >
++      <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.379.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z" />
++    </svg>
++  );
++}
+diff --git a/web/app/models/app_backup.ts b/web/app/models/app-backup.ts
+similarity index 100%
+rename from web/app/models/app_backup.ts
+rename to web/app/models/app-backup.ts
+diff --git a/web/app/models/app.ts b/web/app/models/app.ts
+index b4323de..4c861f1 100644
+--- a/web/app/models/app.ts
++++ b/web/app/models/app.ts
+@@ -6,9 +6,10 @@ export type App = {
+   name: string;
+   repo_path: string;
+   default_branch: string;
+-  status: string;
++  status: AppStatus;
+   created_at: string;
+   auto_deploy: boolean;
++  source: AppSource;
+ };
+ 
+ export type AppDomain = {
+@@ -35,3 +36,7 @@ export type AppMember = {
+ };
+ 
+ export type AppMemberRole = 'Owner' | 'Admin' | 'Member';
++
++export type AppSource = 'local' | 'github' | 'git';
++
++export type AppStatus = 'idle' | 'building' | 'running' | 'failed';
+diff --git a/web/app/models/app_metrics.ts b/web/app/models/app_metrics.ts
+deleted file mode 100644
+index d8efcd2..0000000
+--- a/web/app/models/app_metrics.ts
++++ /dev/null
+@@ -1,14 +0,0 @@
+-// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+-
+-export type AppMetrics = {
+-  id: string;
+-  app_id: string;
+-  cpu_usage: number;
+-  memory_used: number;
+-  memory_limit: number;
+-  network_rx_bps: number;
+-  network_tx_bps: number;
+-  disk_read_bps: number;
+-  disk_write_bps: number;
+-  created_at: string;
+-};
+diff --git a/web/app/models/app_scale.ts b/web/app/models/app_scale.ts
+deleted file mode 100644
+index 8d6f09a..0000000
+--- a/web/app/models/app_scale.ts
++++ /dev/null
+@@ -1,19 +0,0 @@
+-// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+-
+-export type AppScale = {
+-  id: string;
+-  app_id: string;
+-  process_type: ProcessType;
+-  desired: number;
+-};
+-
+-export type ProcessContainer = {
+-  name: string;
+-  process_type: ProcessType;
+-  instance_index: number;
+-  status: ProcessStatus;
+-};
+-
+-export type ProcessStatus = 'Running' | 'Stopped';
+-
+-export type ProcessType = 'web' | 'worker' | 'release';
+diff --git a/web/app/models/connection.ts b/web/app/models/connection.ts
+new file mode 100644
+index 0000000..404c658
+--- /dev/null
++++ b/web/app/models/connection.ts
+@@ -0,0 +1,23 @@
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++export type GitConnection = {
++  app_id: string;
++  clone_url: string;
++  created_at: string;
++};
++
++export type ConnectionStatus = 'connected' | 'disconnected';
++
++export type GithubConnection = {
++  app_id: string;
++  installation_id: bigint;
++  repository_id: bigint;
++  status: ConnectionStatus;
++  created_at: string;
++  updated_at: string;
++};
++
++export type GithubInstallation = {
++  user_id: string;
++  installation_id: bigint;
++  created_at: string;
++};
+diff --git a/web/app/models/git.ts b/web/app/models/git.ts
+deleted file mode 100644
+index ef92920..0000000
+--- a/web/app/models/git.ts
++++ /dev/null
+@@ -1,8 +0,0 @@
+-// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+-
+-export type Commit = {
+-  sha: string;
+-  message: string;
+-  date: bigint;
+-  author: string;
+-};
+diff --git a/web/app/models/server_metrics.ts b/web/app/models/server_metrics.ts
+deleted file mode 100644
+index 9a34bb6..0000000
+--- a/web/app/models/server_metrics.ts
++++ /dev/null
+@@ -1,16 +0,0 @@
+-// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+-
+-export type ServerMetrics = {
+-  id: string;
+-  cpu_usage: number;
+-  memory_used: number;
+-  memory_total: number;
+-  swap_used: number;
+-  swap_total: number;
+-  disk_used: number;
+-  disk_total: number;
+-  network_rx_bps: number;
+-  network_tx_bps: number;
+-  load_average: number;
+-  created_at: string;
+-};
+diff --git a/web/app/models/ssh_key.ts b/web/app/models/ssh_key.ts
+deleted file mode 100644
+index 622d678..0000000
+--- a/web/app/models/ssh_key.ts
++++ /dev/null
+@@ -1,9 +0,0 @@
+-// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+-
+-export type SshKey = {
+-  id: string;
+-  user_id: string;
+-  title: string | null;
+-  public_key: string;
+-  created_at: string;
+-};
+diff --git a/web/app/queries/apps.ts b/web/app/queries/apps.ts
+index 2128ce4..6587f2a 100644
+--- a/web/app/queries/apps.ts
++++ b/web/app/queries/apps.ts
+@@ -1,19 +1,40 @@
+ import { queryOptions, useMutation } from '@tanstack/react-query';
+ import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
+-import type { App } from '~/models/app';
++import type { App, AppSource } from '~/models/app';
+ import type { AppScale } from '~/models/app-scale';
+ import type { AppDomain } from '~/models/app';
+ import type { DomainHealth } from '~/models/domain-health';
+ 
+ import type { AppMetrics } from '~/models/app-metrics';
++import type { GitConnection } from '~/models/connection';
+ 
+ export type AppListItem = {
+   app: App;
+   url: string;
+-  runtime_status: string;
+ };
+ 
+-type CreateAppPayload = { name: string };
++type CreateAppPayload<Source extends AppSource = AppSource> = {
++  name: string;
++  source: Source;
++} & (Source extends 'github'
++  ? { installation_id: number; repository_id: number }
++  : Source extends 'git'
++    ? { url: string; branch?: string }
++    : Record<never, never>);
++
++export type GitAppConnection = Pick<GitConnection, 'clone_url'>;
++
++export type GithubConnectionRepository = {
++  full_name: string;
++  html_url: string;
++  default_branch: string;
++};
++
++export type GithubAppConnection = {
++  repository: GithubConnectionRepository | null;
++};
++
++export type AppConnection = GitAppConnection | GithubAppConnection;
+ 
+ type UpdateAppEnvVarsPayload = {
+   appSlug: string;
+@@ -50,7 +71,19 @@ export function getCheckSlugOptions(name: string) {
+ export function getAppOptions(slug: string) {
+   return queryOptions({
+     queryKey: ['apps', slug],
+-    queryFn: () => httpGet<{ app: App; url: string }>(`apps/${slug}`),
++    queryFn: () =>
++      httpGet<{
++        app: App;
++        url: string;
++      }>(`apps/${slug}`),
++  });
++}
++
++export function getAppConnectionOptions(slug: string) {
++  return queryOptions({
++    queryKey: ['apps', slug, 'connection'],
++    queryFn: () =>
++      httpGet<{ connection?: AppConnection }>(`apps/${slug}/connection`),
+   });
+ }
+ 
+@@ -159,3 +192,24 @@ export function useUpdateAppSettings() {
+       }),
+   });
+ }
++
++export function useReconnectGithub() {
++  return useMutation({
++    mutationFn: (data: {
++      appSlug: string;
++      installation_id: number;
++      repository_id: number;
++    }) =>
++      httpPut<void>(`apps/${data.appSlug}/connection/github`, {
++        installation_id: data.installation_id,
++        repository_id: data.repository_id,
++      }),
++  });
++}
++
++export function useDisconnectGithub() {
++  return useMutation({
++    mutationFn: (appSlug: string) =>
++      httpDelete<void>(`apps/${appSlug}/connection/github`),
++  });
++}
+diff --git a/web/app/queries/github.ts b/web/app/queries/github.ts
+new file mode 100644
+index 0000000..b81533f
+--- /dev/null
++++ b/web/app/queries/github.ts
+@@ -0,0 +1,50 @@
++import { queryOptions, useMutation } from '@tanstack/react-query';
++import { httpDelete, httpGet, httpPost } from '~/utils/http';
++
++export type GithubRepository = {
++  id: number;
++  full_name: string;
++  default_branch: string;
++  private: boolean;
++  installation_id: number;
++};
++
++export type GithubInstallationInfo = {
++  installation_id: number;
++  configure_url: string;
++  repositories_count: number;
++};
++
++export function getGithubStatusOptions() {
++  return queryOptions({
++    queryKey: ['github', 'status'],
++    queryFn: () => httpGet<{ enabled: boolean }>('github/status'),
++  });
++}
++
++export function useInstallGithub() {
++  return useMutation({
++    mutationFn: (data: { redirect_to: string }) =>
++      httpPost<{ url: string }>('github/install', {
++        redirect_to: data.redirect_to,
++      }),
++  });
++}
++
++export function getGithubRepositoriesOptions() {
++  return queryOptions({
++    queryKey: ['github', 'repositories'],
++    queryFn: () =>
++      httpGet<{
++        installations: GithubInstallationInfo[];
++        repositories: GithubRepository[];
++      }>('github/repositories'),
++  });
++}
++
++export function useRemoveGithubInstallation() {
++  return useMutation({
++    mutationFn: (installationId: number) =>
++      httpDelete<void>(`github/installations/${installationId}`),
++  });
++}
+diff --git a/web/app/routes/_user.apps.$slug._index.tsx b/web/app/routes/_user.apps.$slug._index.tsx
+index 3f374a6..8376fdd 100644
+--- a/web/app/routes/_user.apps.$slug._index.tsx
++++ b/web/app/routes/_user.apps.$slug._index.tsx
+@@ -9,15 +9,20 @@ import { CodeViewer } from '~/components/apps/code-viewer';
+ import { FolderViewer } from '~/components/apps/folder-viewer';
+ import { EmptyPage } from '~/components/global/empty-page';
+ import { queryClient } from '~/utils/query-client';
++import { getAppOptions } from '~/queries/apps';
+ 
+ export async function clientLoader(args: { params: { slug: string } }) {
+   const { params } = args;
+-  await queryClient.ensureQueryData(getFileTreeOptions(params.slug));
++  await Promise.all([
++    queryClient.ensureQueryData(getFileTreeOptions(params.slug)),
++    queryClient.ensureQueryData(getAppOptions(params.slug)),
++  ]);
+ }
+ 
+ export default function AppFilesPage() {
+   const { slug } = useParams();
+   const { data: treeData } = useSuspenseQuery(getFileTreeOptions(slug!));
++  const { data: appData } = useSuspenseQuery(getAppOptions(slug!));
+ 
+   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+@@ -70,7 +75,11 @@ export default function AppFilesPage() {
+           className="flex-1"
+           icon={GitBranch}
+           title="No commits yet"
+-          subtitle="Push code to this repository to see the file tree."
++          subtitle={
++            appData.app.source === 'local'
++              ? 'Push code to this repository to see the file tree.'
++              : 'Deploy the connected repository to see its file tree.'
++          }
+         />
+       </div>
+     );
+diff --git a/web/app/routes/_user.apps.$slug.deployments.tsx b/web/app/routes/_user.apps.$slug.deployments.tsx
+index 3b6fc67..ef130f8 100644
+--- a/web/app/routes/_user.apps.$slug.deployments.tsx
++++ b/web/app/routes/_user.apps.$slug.deployments.tsx
+@@ -1,14 +1,20 @@
+ import { useParams } from 'react-router';
+ import { DeploymentsView } from '~/components/apps/deployments';
+ import { getDeploymentsOptions } from '~/queries/deployments';
++import { getAppOptions } from '~/queries/apps';
+ import { queryClient } from '~/utils/query-client';
++import { useSuspenseQuery } from '@tanstack/react-query';
+ 
+ export async function clientLoader(args: { params: { slug: string } }) {
+   const { params } = args;
+-  await queryClient.ensureQueryData(getDeploymentsOptions(params.slug));
++  await Promise.all([
++    queryClient.ensureQueryData(getDeploymentsOptions(params.slug)),
++    queryClient.ensureQueryData(getAppOptions(params.slug)),
++  ]);
+ }
+ 
+ export default function AppDeploymentsPage() {
+   const { slug } = useParams();
+-  return <DeploymentsView appSlug={slug!} />;
++  const { data } = useSuspenseQuery(getAppOptions(slug!));
++  return <DeploymentsView app={data.app} />;
+ }
+diff --git a/web/app/routes/_user.apps.$slug.settings.tsx b/web/app/routes/_user.apps.$slug.settings.tsx
+index d7e734f..fd620a2 100644
+--- a/web/app/routes/_user.apps.$slug.settings.tsx
++++ b/web/app/routes/_user.apps.$slug.settings.tsx
+@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
+ import { useSuspenseQuery } from '@tanstack/react-query';
+ import {
+   getAppDomainsOptions,
++  getAppConnectionOptions,
+   getAppEnvSuggestionsOptions,
+   getAppEnvVarsOptions,
+   getAppOptions,
+@@ -12,6 +13,8 @@ import { Settings as SettingsIcon } from 'lucide-react';
+ import { AppEnvEditor } from '~/components/apps/app-env-editor';
+ import { AppNameManager } from '~/components/apps/app-name-manager';
+ import { AutoDeployManager } from '~/components/apps/auto-deploy-manager';
++import { GithubConnectionManager } from '~/components/apps/github-connection-manager';
++import { GitConnectionManager } from '~/components/apps/git-connection-manager';
+ import { BackupManager } from '~/components/apps/backup-manager';
+ import { DomainManager } from '~/components/apps/domain-manager';
+ import { StorageManager } from '~/components/apps/storage-manager';
+@@ -20,11 +23,14 @@ import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
+ import { SectionHeader } from '~/components/interface/section-header';
+ import { getBackupOptions, getVolumesOptions } from '~/queries/storage';
+ import { queryClient } from '~/utils/query-client';
++import { getGithubStatusOptions } from '~/queries/github';
+ 
+ export async function clientLoader(args: { params: { slug: string } }) {
+   const { params } = args;
+   await Promise.all([
+     queryClient.ensureQueryData(getAppOptions(params.slug)),
++    queryClient.ensureQueryData(getAppConnectionOptions(params.slug)),
++    queryClient.ensureQueryData(getGithubStatusOptions()),
+     queryClient.ensureQueryData(getAppEnvVarsOptions(params.slug)),
+     queryClient.ensureQueryData(getAppEnvSuggestionsOptions(params.slug)),
+     queryClient.ensureQueryData(getAppDomainsOptions(params.slug)),
+@@ -38,6 +44,9 @@ export default function AppSettingsPage() {
+   const navigate = useNavigate();
+   const deleteApp = useDeleteApp();
+   const { data } = useSuspenseQuery(getAppOptions(slug!));
++  const { data: connectionData } = useSuspenseQuery(
++    getAppConnectionOptions(slug!)
++  );
+   const app = data.app;
+   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+ 
+@@ -58,6 +67,32 @@ export default function AppSettingsPage() {
+         <div className="max-w-3xl mb-8">
+           <AppEnvEditor appSlug={slug!} />
+         </div>
++        {app.source === 'github' && (
++          <div className="max-w-3xl mb-8">
++            <GithubConnectionManager
++              app={app}
++              connection={
++                connectionData.connection &&
++                'repository' in connectionData.connection
++                  ? connectionData.connection
++                  : undefined
++              }
++            />
++          </div>
++        )}
++        {app.source === 'git' && (
++          <div className="max-w-3xl mb-8">
++            <GitConnectionManager
++              app={app}
++              connection={
++                connectionData.connection &&
++                'clone_url' in connectionData.connection
++                  ? connectionData.connection
++                  : undefined
++              }
++            />
++          </div>
++        )}
+         <div className="max-w-3xl mb-8">
+           <DomainManager appSlug={slug!} />
+         </div>
+diff --git a/web/app/routes/_user.apps.$slug.tsx b/web/app/routes/_user.apps.$slug.tsx
+index 8c3b95b..f87c351 100644
+--- a/web/app/routes/_user.apps.$slug.tsx
++++ b/web/app/routes/_user.apps.$slug.tsx
+@@ -7,7 +7,7 @@ import { getDeploymentsOptions } from '~/queries/deployments';
+ import type { App } from '~/models/app';
+ import { TabNav } from '~/components/interface/tab-nav';
+ import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
+-import { deriveAppStatus, type AppRuntimeStatus } from '~/utils/app-status';
++import { deriveAppStatus, type AppStatusView } from '~/utils/app-status';
+ import { cn } from '~/utils/classname';
+ import { queryClient } from '~/utils/query-client';
+ 
+@@ -27,7 +27,7 @@ type Protocol = 'https' | 'ssh';
+ 
+ type AppToolbarProps = {
+   app: App;
+-  status: AppRuntimeStatus;
++  status: AppStatusView;
+   url: string;
+ };
+ 
+@@ -89,49 +89,51 @@ function AppToolbar(props: AppToolbarProps) {
+         ) : null}
+       </div>
+ 
+-      <div className="flex items-center rounded border border-border bg-surface">
+-        <button
+-          onClick={() => {
+-            setProtocol('https');
+-          }}
+-          className={cn(
+-            'h-7 px-2.5 text-[11px] font-medium transition-colors',
+-            protocol === 'https'
+-              ? 'bg-white/[0.06] text-text'
+-              : 'text-text-tertiary hover:text-text'
+-          )}
+-        >
+-          HTTPS
+-        </button>
+-        <button
+-          onClick={() => {
+-            setProtocol('ssh');
+-          }}
+-          className={cn(
+-            'h-7 border-l border-border px-2.5 text-[11px] font-medium transition-colors',
+-            protocol === 'ssh'
+-              ? 'bg-white/[0.06] text-text'
+-              : 'text-text-tertiary hover:text-text'
+-          )}
+-        >
+-          SSH
+-        </button>
+-        <div className="h-7 w-px bg-border" />
+-        <code className="max-w-[320px] truncate px-2.5 font-mono text-[11px] text-text-secondary">
+-          {url}
+-        </code>
+-        <button
+-          onClick={handleCopy}
+-          aria-label="Copy clone URL"
+-          className="flex h-7 w-8 items-center justify-center border-l border-border text-text-tertiary transition-colors hover:text-text"
+-        >
+-          {copied ? (
+-            <Check className="size-3.5 text-emerald-400" />
+-          ) : (
+-            <Copy className="size-3.5" />
+-          )}
+-        </button>
+-      </div>
++      {app.source === 'local' && (
++        <div className="flex items-center rounded border border-border bg-surface">
++          <button
++            onClick={() => {
++              setProtocol('https');
++            }}
++            className={cn(
++              'h-7 px-2.5 text-[11px] font-medium transition-colors',
++              protocol === 'https'
++                ? 'bg-white/[0.06] text-text'
++                : 'text-text-tertiary hover:text-text'
++            )}
++          >
++            HTTPS
++          </button>
++          <button
++            onClick={() => {
++              setProtocol('ssh');
++            }}
++            className={cn(
++              'h-7 border-l border-border px-2.5 text-[11px] font-medium transition-colors',
++              protocol === 'ssh'
++                ? 'bg-white/[0.06] text-text'
++                : 'text-text-tertiary hover:text-text'
++            )}
++          >
++            SSH
++          </button>
++          <div className="h-7 w-px bg-border" />
++          <code className="max-w-[320px] truncate px-2.5 font-mono text-[11px] text-text-secondary">
++            {url}
++          </code>
++          <button
++            onClick={handleCopy}
++            aria-label="Copy clone URL"
++            className="flex h-7 w-8 items-center justify-center border-l border-border text-text-tertiary transition-colors hover:text-text"
++          >
++            {copied ? (
++              <Check className="size-3.5 text-emerald-400" />
++            ) : (
++              <Copy className="size-3.5" />
++            )}
++          </button>
++        </div>
++      )}
+     </div>
+   );
+ }
+diff --git a/web/app/routes/_user.apps.new.tsx b/web/app/routes/_user.apps.new.tsx
+index 34b81f9..ae44783 100644
+--- a/web/app/routes/_user.apps.new.tsx
++++ b/web/app/routes/_user.apps.new.tsx
+@@ -1,124 +1,337 @@
+-import { useEffect, useState } from 'react';
++import { useState } from 'react';
+ import { useNavigate } from 'react-router';
+ import { toast } from 'sonner';
+-import { useQuery } from '@tanstack/react-query';
++import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
++import { GitBranch, Link as LinkIcon } from 'lucide-react';
++import { Github } from '~/components/icons/github';
+ import { Button } from '~/components/interface/button';
+ import { Input } from '~/components/interface/input';
+ import { Label } from '~/components/interface/label';
+ import { getCheckSlugOptions, useCreateApp } from '~/queries/apps';
++import { RepositorySelect } from '~/components/apps/repository-select';
++import {
++  getGithubRepositoriesOptions,
++  getGithubStatusOptions,
++  useInstallGithub,
++} from '~/queries/github';
+ import { queryClient } from '~/utils/query-client';
+ import { useDebounce } from '~/hooks/use-debounce';
++import type { AppSource } from '~/models/app';
+ 
+ export function meta() {
+   return [{ title: 'New app · slasha' }];
+ }
+ 
++export async function clientLoader() {
++  await queryClient.ensureQueryData(getGithubStatusOptions());
++}
++
+ export default function NewApp() {
+   const navigate = useNavigate();
+   const createApp = useCreateApp();
++  const installGithub = useInstallGithub();
++
+   const [name, setName] = useState('');
++  const [source, setSource] = useState<AppSource>('local');
++  const [selectedRepository, setSelectedRepository] = useState<string>('');
++  const [gitUrl, setGitUrl] = useState('');
++  const [gitBranch, setGitBranch] = useState('');
++
+   const debouncedName = useDebounce(name, 300);
+ 
+-  const { data: slugCheck, isFetching } = useQuery({
++  const { data: slugCheck, isFetching: slugChecking } = useQuery({
+     ...getCheckSlugOptions(debouncedName),
+     enabled: debouncedName.trim().length > 0,
+   });
+ 
++  const { data: githubStatus } = useSuspenseQuery(getGithubStatusOptions());
++  const { data: reposData, isLoading: reposLoading } = useQuery({
++    ...getGithubRepositoriesOptions(),
++    enabled: githubStatus?.enabled === true && source === 'github',
++  });
++
+   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+     e.preventDefault();
+-    const formData = new FormData(e.currentTarget);
+-    const submittedName = formData.get('name') as string;
+ 
+-    const promise = createApp.mutateAsync({ name: submittedName });
++    if (source === 'github' && !selectedRepository) {
++      toast.error('Please select a GitHub repository');
++      return;
++    }
++
++    const repositories = reposData?.repositories || [];
++    const selectedRepoObj = repositories.find(
++      (r) => r.id.toString() === selectedRepository
++    );
++
++    if (source === 'github' && !selectedRepoObj) {
++      toast.error('The selected GitHub repository is no longer available');
++      return;
++    }
++
++    const payload =
++      source === 'github'
++        ? {
++            name,
++            source,
++            installation_id: selectedRepoObj!.installation_id,
++            repository_id: selectedRepoObj!.id,
++          }
++        : source === 'git'
++          ? {
++              name,
++              source,
++              url: gitUrl.trim(),
++              ...(gitBranch.trim() ? { branch: gitBranch.trim() } : {}),
++            }
++          : { name, source };
++    const promise = createApp.mutateAsync(payload);
+ 
+     toast.promise(promise, {
+       loading: 'Creating application...',
+-      success: `Successfully created ${submittedName}`,
+-      error: (err) =>
+-        err.response?.data?.error ||
+-        err.message ||
+-        'Failed to create application.',
++      success: `Successfully created ${name}`,
++      error: (err) => err.message || 'Failed to create application.',
+     });
+ 
+     try {
+       const data = await promise;
+-      await queryClient.invalidateQueries({ queryKey: ['apps'] });
++      void queryClient.invalidateQueries({ queryKey: ['apps'] });
+       navigate(`/apps/${data.app.slug}`);
+     } catch {}
+   };
+ 
++  const handleConnectGithub = async () => {
++    try {
++      const data = await installGithub.mutateAsync({
++        redirect_to: window.location.pathname,
++      });
++      window.location.href = data.url;
++    } catch (err: any) {
++      toast.error(err.message || 'Failed to connect to GitHub');
++    }
++  };
++
++  const installations = reposData?.installations || [];
++  const repositories = reposData?.repositories || [];
++
+   return (
+     <div>
+       <div>
+         <h3 className="font-semibold text-text">New app</h3>
+         <p className="mt-2 text-sm text-text-secondary">
+-          Give your application a name. We'll set up a git repository for you.
++          Give your application a name and choose how to deploy it.
+         </p>
+       </div>
+ 
+       <div className="mt-6">
+-        <form onSubmit={handleSubmit} className="w-full max-w-md">
+-          <div className="space-y-5">
+-            <div className="space-y-1.5">
+-              <Label
+-                htmlFor="name"
+-                className="text-[13px] font-medium text-text-secondary"
+-              >
+-                Application name
+-              </Label>
+-              <Input
+-                id="name"
+-                name="name"
+-                type="text"
+-                required
+-                placeholder="my-awesome-app"
+-                autoFocus
+-                className="h-10"
+-                value={name}
+-                onChange={(e) => setName(e.target.value)}
+-              />
+-              <div className="h-5">
+-                {name.trim() === '' ? (
+-                  <p className="text-xs text-text-tertiary">
+-                    Used to generate the slug and git repository name.
+-                  </p>
+-                ) : isFetching || debouncedName !== name ? (
+-                  <p className="text-xs text-text-tertiary animate-pulse">
+-                    Checking availability...
+-                  </p>
+-                ) : slugCheck ? (
+-                  <p className="text-xs text-text-tertiary">
+-                    Repository:{' '}
+-                    <span className="font-mono text-text-secondary">
+-                      {slugCheck.slug}.git
++        <form onSubmit={handleSubmit} className="w-full max-w-md space-y-6">
++          <div className="space-y-1.5">
++            <Label
++              htmlFor="name"
++              className="text-[13px] font-medium text-text-secondary"
++            >
++              Application name
++            </Label>
++            <Input
++              id="name"
++              name="name"
++              type="text"
++              required
++              placeholder="my-awesome-app"
++              autoFocus
++              className="h-10"
++              value={name}
++              onChange={(e) => setName(e.target.value)}
++            />
++            <div className="h-5">
++              {createApp.isPending ? null : name.trim() === '' ? (
++                <p className="text-xs text-text-tertiary">
++                  Used to generate the slug and git repository name.
++                </p>
++              ) : slugChecking || debouncedName !== name ? (
++                <p className="text-xs text-text-tertiary animate-pulse">
++                  Checking availability...
++                </p>
++              ) : slugCheck ? (
++                <p className="text-xs text-text-tertiary">
++                  URL:{' '}
++                  <span className="font-mono text-text-secondary">
++                    {slugCheck.slug}
++                  </span>
++                  {!slugCheck.available && (
++                    <span className="ml-2 text-amber-500/90">
++                      (Name taken, using suggested unique name)
+                     </span>
+-                    {!slugCheck.available && (
+-                      <span className="ml-2 text-amber-500/90">
+-                        (Name taken, using suggested unique name)
+-                      </span>
+-                    )}
+-                  </p>
+-                ) : null}
+-              </div>
++                  )}
++                </p>
++              ) : null}
+             </div>
++          </div>
+ 
+-            <div className="flex items-center justify-end gap-2 pt-2">
++          <div className="space-y-4 pt-2">
++            <Label className="text-[13px] font-medium text-text-secondary">
++              Deployment Source
++            </Label>
++            <div className="grid grid-cols-3 gap-2">
++              <Button
++                color={source === 'local' ? 'primary' : 'neutral'}
++                label="Slasha Git"
++                type="button"
++                onClick={() => setSource('local')}
++              />
+               <Button
+-                variant="ghost"
+-                label="Cancel"
+-                onClick={() => navigate('/apps')}
+-                isDisabled={createApp.isPending}
++                color={source === 'github' ? 'primary' : 'neutral'}
++                label="GitHub"
++                type="button"
++                icon={<Github className="size-4" />}
++                onClick={() => setSource('github')}
++                isDisabled={!githubStatus?.enabled}
+               />
+               <Button
+-                type="submit"
+-                label="Create app"
+-                isLoading={createApp.isPending}
+-                isDisabled={
+-                  createApp.isPending || debouncedName !== name || isFetching
+-                }
++                color={source === 'git' ? 'primary' : 'neutral'}
++                label="Git URL"
++                type="button"
++                icon={<GitBranch className="size-4" />}
++                onClick={() => setSource('git')}
+               />
+             </div>
+           </div>
++
++          {source === 'github' && (
++            <div className="space-y-4 rounded-lg border border-border bg-surface p-4">
++              {reposLoading ? (
++                <p className="text-sm text-text-tertiary">
++                  Loading repositories...
++                </p>
++              ) : installations.length === 0 ? (
++                <div className="text-center">
++                  <p className="mb-4 text-sm text-text-secondary">
++                    You haven't connected any GitHub accounts yet.
++                  </p>
++                  <Button
++                    type="button"
++                    color="neutral"
++                    label="Connect GitHub Account"
++                    onClick={handleConnectGithub}
++                    isLoading={installGithub.isPending}
++                  />
++                </div>
++              ) : repositories.length === 0 ? (
++                <div className="text-center py-4">
++                  <p className="mb-4 text-sm text-text-secondary">
++                    No repositories found in your connected installations.
++                  </p>
++                  <button
++                    type="button"
++                    onClick={handleConnectGithub}
++                    className="text-sm font-medium text-text-secondary hover:text-text hover:underline"
++                    disabled={installGithub.isPending}
++                  >
++                    Connect another account
++                  </button>
++                </div>
++              ) : (
++                <>
++                  <div className="space-y-1.5">
++                    <div className="flex items-center justify-between">
++                      <Label className="text-[12px] font-medium text-text-tertiary">
++                        Repository
++                      </Label>
++                      <button
++                        type="button"
++                        onClick={handleConnectGithub}
++                        className="text-[12px] font-medium text-text-secondary hover:text-text hover:underline"
++                        disabled={installGithub.isPending}
++                      >
++                        Connect another account
++                      </button>
++                    </div>
++                    <RepositorySelect
++                      repositories={repositories}
++                      value={selectedRepository}
++                      onChange={setSelectedRepository}
++                    />
++                  </div>
++                </>
++              )}
++            </div>
++          )}
++
++          {source === 'local' && (
++            <div className="rounded-lg border border-border bg-surface p-4">
++              <p className="text-sm text-text-secondary leading-relaxed">
++                Slasha will host a Git repository for this app. Push to it over
++                HTTPS or SSH with Git to trigger deployments.
++              </p>
++            </div>
++          )}
++
++          {source === 'git' && (
++            <div className="space-y-4 rounded-lg border border-border bg-surface p-4">
++              <div className="space-y-1.5">
++                <Label
++                  htmlFor="git-url"
++                  className="text-[12px] font-medium text-text-tertiary"
++                >
++                  Repository URL
++                </Label>
++                <div className="relative">
++                  <LinkIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
++                  <Input
++                    id="git-url"
++                    type="url"
++                    required
++                    value={gitUrl}
++                    onChange={(event) => setGitUrl(event.target.value)}
++                    placeholder="https://example.com/team/repository.git"
++                    className="h-10 pl-9 font-mono text-[13px]"
++                  />
++                </div>
++                <p className="text-xs text-text-tertiary">
++                  Public HTTP(S) repositories only.
++                </p>
++              </div>
++              <div className="space-y-1.5">
++                <Label
++                  htmlFor="git-branch"
++                  className="text-[12px] font-medium text-text-tertiary"
++                >
++                  Branch
++                </Label>
++                <div className="relative">
++                  <GitBranch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
++                  <Input
++                    id="git-branch"
++                    value={gitBranch}
++                    onChange={(event) => setGitBranch(event.target.value)}
++                    placeholder="Remote default branch"
++                    className="h-10 pl-9 font-mono text-[13px]"
++                  />
++                </div>
++              </div>
++            </div>
++          )}
++
++          <div className="flex items-center justify-end gap-2 pt-4">
++            <Button
++              variant="ghost"
++              label="Cancel"
++              type="button"
++              onClick={() => navigate('/apps')}
++              isDisabled={createApp.isPending}
++            />
++            <Button
++              type="submit"
++              label="Create app"
++              isLoading={createApp.isPending}
++              isDisabled={
++                createApp.isPending ||
++                debouncedName !== name ||
++                slugChecking ||
++                (source === 'github' && !selectedRepository) ||
++                (source === 'git' && !gitUrl.trim())
++              }
++            />
++          </div>
+         </form>
+       </div>
+     </div>
+diff --git a/web/app/routes/_user.settings.connections.tsx b/web/app/routes/_user.settings.connections.tsx
+new file mode 100644
+index 0000000..e8ab49c
+--- /dev/null
++++ b/web/app/routes/_user.settings.connections.tsx
+@@ -0,0 +1,153 @@
++import { useSuspenseQuery } from '@tanstack/react-query';
++import { Trash2Icon } from 'lucide-react';
++import { toast } from 'sonner';
++import { Github } from '~/components/icons/github';
++import { Button } from '~/components/interface/button';
++import { VStack } from '~/components/interface/stacks';
++import {
++  getGithubRepositoriesOptions,
++  getGithubStatusOptions,
++  useInstallGithub,
++  useRemoveGithubInstallation,
++} from '~/queries/github';
++import { queryClient } from '~/utils/query-client';
++
++export function meta() {
++  return [{ title: 'Connections · slasha' }];
++}
++
++export async function clientLoader() {
++  const status = await queryClient.ensureQueryData(getGithubStatusOptions());
++  if (status.enabled) {
++    await queryClient.ensureQueryData(getGithubRepositoriesOptions());
++  }
++}
++
++function EnabledGithubConnections() {
++  const { data } = useSuspenseQuery(getGithubRepositoriesOptions());
++  const installGithub = useInstallGithub();
++  const removeInstallation = useRemoveGithubInstallation();
++
++  const handleConnect = async () => {
++    try {
++      const response = await installGithub.mutateAsync({
++        redirect_to: window.location.pathname,
++      });
++      window.location.href = response.url;
++    } catch (error: any) {
++      toast.error(error.message || 'Failed to connect to GitHub');
++    }
++  };
++
++  const handleDisconnect = async (installationId: number) => {
++    if (
++      !confirm(
++        'Are you sure you want to disconnect this GitHub installation? This may affect apps using it.'
++      )
++    ) {
++      return;
++    }
++
++    const promise = removeInstallation.mutateAsync(installationId);
++    toast.promise(promise, {
++      loading: 'Disconnecting...',
++      success: 'GitHub installation disconnected',
++      error: 'Failed to disconnect GitHub',
++    });
++    try {
++      await promise;
++      await queryClient.invalidateQueries({
++        queryKey: ['github', 'repositories'],
++      });
++    } catch {}
++  };
++
++  return (
++    <VStack space={4}>
++      <div className="flex items-center justify-between rounded-lg border border-border bg-surface p-4">
++        <div className="flex items-center gap-3">
++          <Github className="size-5 text-text" />
++          <div>
++            <p className="text-sm font-medium text-text">GitHub</p>
++            <p className="text-xs text-text-secondary">
++              Connect to deploy from GitHub repositories
++            </p>
++          </div>
++        </div>
++        <Button
++          color="neutral"
++          label="Connect"
++          onClick={handleConnect}
++          isLoading={installGithub.isPending}
++        />
++      </div>
++
++      {data.installations.length > 0 && (
++        <div className="space-y-4 pt-4">
++          <h4 className="text-sm font-medium text-text">
++            Connected Installations
++          </h4>
++          {data.installations.map((installation) => (
++            <div
++              key={installation.installation_id}
++              className="flex items-center justify-between rounded-lg border border-border p-4"
++            >
++              <div>
++                <p className="text-sm font-medium text-text">
++                  GitHub Installation #{installation.installation_id}
++                </p>
++                <p className="text-xs text-text-secondary mt-1">
++                  {installation.repositories_count}{' '}
++                  {installation.repositories_count === 1
++                    ? 'repository'
++                    : 'repositories'}{' '}
++                  connected
++                </p>
++                <a
++                  href={installation.configure_url}
++                  target="_blank"
++                  rel="noreferrer"
++                  className="text-xs text-text-tertiary hover:text-text mt-2 block hover:underline"
++                >
++                  Configure on GitHub
++                </a>
++              </div>
++              <Button
++                variant="ghost"
++                size="sm"
++                icon={<Trash2Icon className="size-4" />}
++                onClick={() => handleDisconnect(installation.installation_id)}
++                className="text-red-500/80 hover:text-red-500 hover:bg-red-500/10"
++              />
++            </div>
++          ))}
++        </div>
++      )}
++    </VStack>
++  );
++}
++
++export default function ConnectionsSettings() {
++  const { data: status } = useSuspenseQuery(getGithubStatusOptions());
++
++  return (
++    <div className="space-y-6 max-w-xl">
++      <div>
++        <h3 className="font-semibold text-text">Connected Accounts</h3>
++        <p className="mt-2 text-sm text-text-secondary">
++          Manage integrations with external services like GitHub.
++        </p>
++      </div>
++
++      {status.enabled ? (
++        <EnabledGithubConnections />
++      ) : (
++        <div className="rounded-lg border border-border bg-surface p-6">
++          <p className="text-sm text-text-secondary">
++            GitHub integration is not enabled on this Slasha instance.
++          </p>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/web/app/routes/_user.settings.tsx b/web/app/routes/_user.settings.tsx
+index af23b73..b87298e 100644
+--- a/web/app/routes/_user.settings.tsx
++++ b/web/app/routes/_user.settings.tsx
+@@ -8,6 +8,7 @@ export default function SettingsLayout() {
+ 
+   const tabs = [
+     { label: 'Account', to: '/settings/account' },
++    { label: 'Connections', to: '/settings/connections' },
+     { label: 'SSH Keys', to: '/settings/ssh-keys' },
+   ];
+ 
+diff --git a/web/app/utils/app-status.ts b/web/app/utils/app-status.ts
+index 28db597..896d13b 100644
+--- a/web/app/utils/app-status.ts
++++ b/web/app/utils/app-status.ts
+@@ -1,18 +1,19 @@
+ import type { Deployment } from '~/models/deployment';
++import type { AppStatus } from '~/models/app';
+ import { parseUTC } from '~/utils/format';
+ 
+-export type AppRuntimeTone = 'live' | 'deploying' | 'failed' | 'idle';
++export type AppStatusTone = 'live' | 'deploying' | 'failed' | 'idle';
+ 
+-export type AppRuntimeStatus = {
++export type AppStatusView = {
+   label: string;
+-  tone: AppRuntimeTone;
++  tone: AppStatusTone;
+ };
+ 
+-export function statusFromRuntime(runtimeStatus: string): AppRuntimeStatus {
+-  switch (runtimeStatus) {
++export function getAppStatusView(status: AppStatus): AppStatusView {
++  switch (status) {
+     case 'running':
+       return { label: 'Live', tone: 'live' };
+-    case 'deploying':
++    case 'building':
+       return { label: 'Deploying', tone: 'deploying' };
+     case 'failed':
+       return { label: 'Failed', tone: 'failed' };
+@@ -21,7 +22,7 @@ export function statusFromRuntime(runtimeStatus: string): AppRuntimeStatus {
+   }
+ }
+ 
+-export function deriveAppStatus(deployments: Deployment[]): AppRuntimeStatus {
++export function deriveAppStatus(deployments: Deployment[]): AppStatusView {
+   if (deployments.some((d) => d.status === 'Running')) {
+     return { label: 'Live', tone: 'live' };
+   }
+diff --git a/web/app/utils/http.ts b/web/app/utils/http.ts
+index b6a821f..21058c1 100644
+--- a/web/app/utils/http.ts
++++ b/web/app/utils/http.ts
+@@ -54,7 +54,12 @@ export async function httpCall<ResponseType = AppResponse>(
+     // @ts-ignore
+     const doesAcceptHtml = options?.headers?.['Accept'] === 'text/html';
+ 
+-    const data = doesAcceptHtml ? await response.text() : await response.json();
++    const data =
++      response.status === 204
++        ? undefined
++        : doesAcceptHtml
++          ? await response.text()
++          : await response.json();
+ 
+     // Logout user if token is invalid
+     if (response.status === 401 && (options?.handleUnauthorized ?? true)) {

@@ -2,7 +2,7 @@ import { Link } from 'react-router';
 import { ArrowUpRight, GitBranchIcon } from 'lucide-react';
 import type { AppListItem } from '~/queries/apps';
 import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
-import { statusFromRuntime } from '~/utils/app-status';
+import { getAppStatusView } from '~/utils/app-status';
 
 type AppCardProps = {
   item: AppListItem;
@@ -10,8 +10,8 @@ type AppCardProps = {
 
 export function AppCard(props: AppCardProps) {
   const { item } = props;
-  const { app, url, runtime_status } = item;
-  const status = statusFromRuntime(runtime_status);
+  const { app, url } = item;
+  const status = getAppStatusView(app.status);
 
   return (
     <Link

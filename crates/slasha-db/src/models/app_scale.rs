@@ -19,7 +19,7 @@ use crate::models::app_scale::deserialize::FromSqlRow;
     Queryable, Selectable, Insertable, AsChangeset, Debug, Clone, Serialize, Deserialize, TS,
 )]
 #[diesel(table_name = crate::models::schema::app_scale)]
-#[ts(export, export_to = "./app_scale.ts")]
+#[ts(export, export_to = "./app-scale.ts")]
 pub struct AppScale {
     pub id: String,
     pub app_id: String,
@@ -45,7 +45,7 @@ pub struct AppScale {
 #[strum(serialize_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 #[diesel(sql_type = diesel::sql_types::Text)]
-#[ts(export, export_to = "./app_scale.ts")]
+#[ts(export, export_to = "./app-scale.ts")]
 pub enum ProcessType {
     Web,
     Worker,
@@ -53,14 +53,14 @@ pub enum ProcessType {
 }
 
 #[derive(Debug, Clone, serde::Serialize, TS)]
-#[ts(export, export_to = "./app_scale.ts")]
+#[ts(export, export_to = "./app-scale.ts")]
 pub enum ProcessStatus {
     Running,
     Stopped,
 }
 
 #[derive(Debug, Clone, serde::Serialize, TS)]
-#[ts(export, export_to = "./app_scale.ts")]
+#[ts(export, export_to = "./app-scale.ts")]
 pub struct ProcessContainer {
     pub name: String,
     pub process_type: ProcessType,

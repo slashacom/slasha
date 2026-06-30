@@ -10,10 +10,12 @@ mod service_env;
 mod services;
 mod volumes;
 
-use axum::{Json, Router, response::IntoResponse, routing::get};
+use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
+use slasha_db::app::AppSource;
 
 use crate::{
     AppState,
+    connections::sync_external_app,
     error::{HttpError, HttpResult},
     extractors::app::ActiveApp,
 };
@@ -49,7 +51,21 @@ fn get_all_commits(repo_path: &str, branch_name: &str) -> anyhow::Result<Vec<Com
     Ok(commits)
 }
 
-async fn list_commits(ActiveApp { app, .. }: ActiveApp) -> HttpResult<impl IntoResponse> {
+async fn list_commits(
+    State(state): State<AppState>,
+    ActiveApp { mut app, .. }: ActiveApp,
+) -> HttpResult<impl IntoResponse> {
+    if app.source != AppSource::Local {
+        sync_external_app(
+            state.clients.github.as_ref(),
+            &state.storage,
+            &state.runtime,
+            &mut app,
+        )
+        .await
+        .map_err(|error| HttpError::bad_request(error.to_string()))?;
+    }
+
     let commits = get_all_commits(&app.repo_path, &app.default_branch)
         .map_err(|e| HttpError::internal(anyhow::anyhow!("Failed to fetch commits: {}", e)))?;
 

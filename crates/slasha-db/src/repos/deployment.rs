@@ -5,8 +5,9 @@ use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
     models::{
+        app::AppStatus,
         deployment::{Deployment, DeploymentStatus},
-        schema::deployments,
+        schema::{apps, deployments},
     },
 };
 
@@ -95,9 +96,12 @@ impl DeploymentRepo {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            diesel::insert_into(deployments::table)
-                .values(&deployment)
-                .execute(&mut conn)?;
+            conn.transaction::<_, DbError, _>(|tx| {
+                diesel::insert_into(deployments::table)
+                    .values(&deployment)
+                    .execute(tx)?;
+                sync_app_status(tx, &deployment.app_id)
+            })?;
             Ok(deployment)
         })
         .await?
@@ -108,13 +112,19 @@ impl DeploymentRepo {
         let id = id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            diesel::update(deployments::table.filter(deployments::id.eq(&id)))
-                .set((
-                    deployments::status.eq(status.to_string()),
-                    deployments::updated_at.eq(chrono::Utc::now().naive_utc()),
-                ))
-                .execute(&mut conn)?;
-            Ok(())
+            conn.transaction::<_, DbError, _>(|tx| {
+                diesel::update(deployments::table.filter(deployments::id.eq(&id)))
+                    .set((
+                        deployments::status.eq(status.to_string()),
+                        deployments::updated_at.eq(chrono::Utc::now().naive_utc()),
+                    ))
+                    .execute(tx)?;
+                let app_id = deployments::table
+                    .filter(deployments::id.eq(&id))
+                    .select(deployments::app_id)
+                    .first::<String>(tx)?;
+                sync_app_status(tx, &app_id)
+            })
         })
         .await?
     }
@@ -128,15 +138,19 @@ impl DeploymentRepo {
         let id = id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            diesel::update(deployments::table.filter(deployments::id.eq(&id)))
-                .set((
-                    deployments::status.eq(DeploymentStatus::Pending.to_string()),
-                    deployments::updated_at.eq(now),
-                ))
-                .execute(&mut conn)?;
-            Ok(deployments::table
-                .filter(deployments::id.eq(&id))
-                .first::<Deployment>(&mut conn)?)
+            conn.transaction::<_, DbError, _>(|tx| {
+                diesel::update(deployments::table.filter(deployments::id.eq(&id)))
+                    .set((
+                        deployments::status.eq(DeploymentStatus::Pending.to_string()),
+                        deployments::updated_at.eq(now),
+                    ))
+                    .execute(tx)?;
+                let deployment = deployments::table
+                    .filter(deployments::id.eq(&id))
+                    .first::<Deployment>(tx)?;
+                sync_app_status(tx, &deployment.app_id)?;
+                Ok(deployment)
+            })
         })
         .await?
     }
@@ -166,9 +180,33 @@ impl DeploymentRepo {
                 }
 
                 diesel::delete(deployments::table.filter(deployments::id.eq(&id))).execute(tx)?;
+                sync_app_status(tx, &app_id)?;
                 Ok(dep)
             })
         })
         .await?
     }
+}
+
+fn sync_app_status(conn: &mut SqliteConnection, app_id: &str) -> DbResult<()> {
+    let deployments = deployments::table
+        .filter(deployments::app_id.eq(app_id))
+        .order(deployments::created_at.desc())
+        .load::<Deployment>(conn)?;
+    let status = if deployments
+        .iter()
+        .any(|deployment| deployment.status == DeploymentStatus::Running)
+    {
+        AppStatus::Running
+    } else {
+        match deployments.first().map(|deployment| deployment.status) {
+            Some(DeploymentStatus::Pending | DeploymentStatus::Building) => AppStatus::Building,
+            Some(DeploymentStatus::Failed) => AppStatus::Failed,
+            _ => AppStatus::Idle,
+        }
+    };
+    diesel::update(apps::table.filter(apps::id.eq(app_id)))
+        .set(apps::status.eq(status))
+        .execute(conn)?;
+    Ok(())
 }

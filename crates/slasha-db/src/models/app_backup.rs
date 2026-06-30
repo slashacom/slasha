@@ -4,7 +4,7 @@ use ts_rs::TS;
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
 #[diesel(table_name = crate::models::schema::app_backups)]
-#[ts(export, export_to = "./app_backup.ts")]
+#[ts(export, export_to = "./app-backup.ts")]
 pub struct AppBackup {
     pub id: String,
     pub app_id: String,

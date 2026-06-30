@@ -54,7 +54,12 @@ export async function httpCall<ResponseType = AppResponse>(
     // @ts-ignore
     const doesAcceptHtml = options?.headers?.['Accept'] === 'text/html';
 
-    const data = doesAcceptHtml ? await response.text() : await response.json();
+    const data =
+      response.status === 204
+        ? undefined
+        : doesAcceptHtml
+          ? await response.text()
+          : await response.json();
 
     // Logout user if token is invalid
     if (response.status === 401 && (options?.handleUnauthorized ?? true)) {

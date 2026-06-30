@@ -8,6 +8,7 @@ export default function SettingsLayout() {
 
   const tabs = [
     { label: 'Account', to: '/settings/account' },
+    { label: 'Connections', to: '/settings/connections' },
     { label: 'SSH Keys', to: '/settings/ssh-keys' },
   ];
 
