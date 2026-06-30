@@ -205,11 +205,11 @@ async fn run_cron_container(
                 image: Some(image_tag(&app.slug, &deployment.commit_sha)),
                 labels: Some(labels),
                 env,
-                cmd: Some(vec![
-                    "sh".to_string(),
-                    "-c".to_string(),
-                    command.to_string(),
-                ]),
+                // Override the image entrypoint: buildpack images often set one
+                // (e.g. ["/bin/bash", "-c"]) that would otherwise swallow our
+                // args and never run the command.
+                entrypoint: Some(vec!["sh".to_string(), "-c".to_string()]),
+                cmd: Some(vec![command.to_string()]),
                 host_config: Some(HostConfig {
                     restart_policy: Some(RestartPolicy {
                         name: Some(RestartPolicyNameEnum::EMPTY),
