@@ -14,6 +14,7 @@ import {
 } from '~/queries/github-app';
 import { useDisconnectGithub, useReconnectGithub } from '~/queries/apps';
 import { queryClient } from '~/utils/query-client';
+import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { RepositorySelect } from './repository-select';
 
 interface Props {
@@ -24,6 +25,7 @@ interface Props {
 export function GithubConnectionManager({ app, connection }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const [selectedRepository, setSelectedRepository] = useState<string>('');
+  const [isDisconnectDialogOpen, setIsDisconnectDialogOpen] = useState(false);
 
   const { data: githubStatus } = useSuspenseQuery(getGithubStatusOptions());
   const { data: reposData, isLoading: reposLoading } = useQuery({
@@ -87,13 +89,6 @@ export function GithubConnectionManager({ app, connection }: Props) {
   };
 
   const handleDisconnect = async () => {
-    if (
-      !confirm(
-        'Are you sure you want to disconnect this repository? Automatic deployments will stop.'
-      )
-    ) {
-      return;
-    }
     const promise = disconnectGithub.mutateAsync(app.slug);
 
     toast.promise(promise, {
@@ -105,6 +100,7 @@ export function GithubConnectionManager({ app, connection }: Props) {
     try {
       await promise;
       await queryClient.invalidateQueries({ queryKey: ['apps', app.slug] });
+      setIsDisconnectDialogOpen(false);
     } catch {}
   };
 
@@ -153,7 +149,7 @@ export function GithubConnectionManager({ app, connection }: Props) {
                 <Button
                   variant="ghost"
                   label="Disconnect"
-                  onClick={handleDisconnect}
+                  onClick={() => setIsDisconnectDialogOpen(true)}
                   isDisabled={disconnectGithub.isPending}
                   className="text-red-500 hover:text-red-500"
                 />
@@ -228,6 +224,15 @@ export function GithubConnectionManager({ app, connection }: Props) {
           </div>
         )}
       </div>
+
+      <ConfirmationDialog
+        open={isDisconnectDialogOpen}
+        onOpenChange={setIsDisconnectDialogOpen}
+        title="Disconnect Repository"
+        description="Are you sure you want to disconnect this repository?"
+        confirmLabel="Disconnect"
+        onConfirm={handleDisconnect}
+      />
     </div>
   );
 }

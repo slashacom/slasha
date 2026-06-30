@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { Trash2Icon } from 'lucide-react';
+import { Trash2Icon, PencilIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState } from 'react';
 import { Github } from '~/components/icons/github';
@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '~/components/interface/dialog';
+import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import {
   getGithubRepositoriesOptions,
   getGithubStatusOptions,
@@ -47,6 +48,7 @@ function EnabledGithubConnections() {
   const { data } = useSuspenseQuery(getGithubRepositoriesOptions());
   const installGithub = useInstallGithub();
   const removeInstallation = useRemoveGithubInstallation();
+  const [disconnectId, setDisconnectId] = useState<number | null>(null);
 
   const handleConnect = async () => {
     try {
@@ -59,16 +61,9 @@ function EnabledGithubConnections() {
     }
   };
 
-  const handleDisconnect = async (installationId: number) => {
-    if (
-      !confirm(
-        'Are you sure you want to disconnect this GitHub installation? This may affect apps using it.'
-      )
-    ) {
-      return;
-    }
-
-    const promise = removeInstallation.mutateAsync(installationId);
+  const handleDisconnect = async () => {
+    if (disconnectId === null) return;
+    const promise = removeInstallation.mutateAsync(disconnectId);
     toast.promise(promise, {
       loading: 'Disconnecting...',
       success: 'GitHub installation disconnected',
@@ -79,6 +74,7 @@ function EnabledGithubConnections() {
       await queryClient.invalidateQueries({
         queryKey: ['github', 'repositories'],
       });
+      setDisconnectId(null);
     } catch {}
   };
 
@@ -136,13 +132,22 @@ function EnabledGithubConnections() {
                 variant="ghost"
                 size="sm"
                 icon={<Trash2Icon className="size-4" />}
-                onClick={() => handleDisconnect(installation.installation_id)}
+                onClick={() => setDisconnectId(installation.installation_id)}
                 className="text-red-500/80 hover:text-red-500 hover:bg-red-500/10"
               />
             </div>
           ))}
         </div>
       )}
+
+      <ConfirmationDialog
+        open={disconnectId !== null}
+        onOpenChange={(open) => !open && setDisconnectId(null)}
+        title="Disconnect GitHub Installation"
+        description="Are you sure you want to disconnect this GitHub installation? This may affect apps using it."
+        confirmLabel="Disconnect"
+        onConfirm={handleDisconnect}
+      />
     </VStack>
   );
 }
@@ -153,6 +158,7 @@ function GithubAppSetupManager() {
   const updateCredentials = useUpdateGithubCredentials();
   const deleteSetup = useDeleteGithubSetup();
   const [isEditing, setIsEditing] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const handleBeginSetup = async () => {
     try {
@@ -197,17 +203,11 @@ function GithubAppSetupManager() {
   };
 
   const handleDelete = async () => {
-    if (
-      !confirm(
-        'Are you sure you want to delete the GitHub App configuration? This will break all GitHub integrations.'
-      )
-    ) {
-      return;
-    }
     const promise = deleteSetup.mutateAsync();
     toast.promise(promise, {
       loading: 'Deleting setup...',
       success: () => {
+        setIsDeleteDialogOpen(false);
         queryClient.invalidateQueries({
           queryKey: ['github', 'app-setup', 'status'],
         });
@@ -221,10 +221,9 @@ function GithubAppSetupManager() {
   return (
     <VStack space={4} className="border-t border-border pt-6 mt-6">
       <div>
-        <h4 className="font-medium text-text">Platform Setup: GitHub App</h4>
+        <h4 className="font-medium text-text">GitHub App Setup</h4>
         <p className="text-sm text-text-secondary mt-1">
-          Configure the GitHub App to enable GitHub integration for this Slasha
-          instance.
+          Configure a GitHub App to enable deploying from GitHub repositories.
         </p>
       </div>
 
@@ -240,26 +239,20 @@ function GithubAppSetupManager() {
                 {new Date(setupStatus.created_at!).toLocaleDateString()}
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-1">
               <Button
                 size="sm"
-                color="neutral"
-                label="Recreate"
-                onClick={handleBeginSetup}
-                isLoading={beginSetup.isPending}
-              />
-              <Button
-                size="sm"
-                color="neutral"
-                label="Edit"
+                variant="ghost"
+                icon={<PencilIcon className="size-4" />}
                 onClick={() => setIsEditing(true)}
               />
               <Button
                 size="sm"
                 variant="ghost"
-                className="text-red-500"
-                onClick={handleDelete}
+                color="error"
+                onClick={() => setIsDeleteDialogOpen(true)}
                 isLoading={deleteSetup.isPending}
+                icon={<Trash2Icon className="size-4" />}
               />
             </div>
           </div>
@@ -351,6 +344,15 @@ function GithubAppSetupManager() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmationDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        title="Delete GitHub App Setup"
+        description="Are you sure you want to delete the GitHub App configuration?"
+        confirmLabel="Delete"
+        onConfirm={handleDelete}
+      />
     </VStack>
   );
 }
