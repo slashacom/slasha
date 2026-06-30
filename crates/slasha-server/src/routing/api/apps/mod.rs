@@ -56,14 +56,10 @@ async fn list_commits(
     ActiveApp { mut app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Local {
-        sync_external_app(
-            state.clients.github.as_ref(),
-            &state.storage,
-            &state.runtime,
-            &mut app,
-        )
-        .await
-        .map_err(|error| HttpError::bad_request(error.to_string()))?;
+        let github = state.github_client().await;
+        sync_external_app(github.as_ref(), &state.storage, &state.runtime, &mut app)
+            .await
+            .map_err(|error| HttpError::bad_request(error.to_string()))?;
     }
 
     let commits = get_all_commits(&app.repo_path, &app.default_branch)

@@ -162,13 +162,12 @@ async fn prepare_github_connection(
     repository_id: i64,
 ) -> HttpResult<(String, GithubConnection)> {
     let github = state
-        .clients
-        .github
-        .as_ref()
+        .github_client()
+        .await
         .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
     ensure_github_installation_access(state, user_id, installation_id).await?;
     let repository = sync_selected_github_repository(
-        github,
+        &github,
         &state.runtime,
         app_id,
         std::path::PathBuf::from(repo_path),
@@ -391,7 +390,8 @@ async fn get_connection(
             match connection {
                 Some(connection) => {
                     let repository = if connection.status == ConnectionStatus::Connected {
-                        match &state.clients.github {
+                        let github = state.github_client().await;
+                        match github {
                             Some(github) => match github
                                 .get_repository(
                                     connection.installation_id,
@@ -631,14 +631,13 @@ async fn reconnect_github(
     }
 
     let github = state
-        .clients
-        .github
-        .as_ref()
+        .github_client()
+        .await
         .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
     ensure_github_installation_access(&state, &user.id, payload.installation_id).await?;
 
     let repository = sync_selected_github_repository(
-        github,
+        &github,
         &state.runtime,
         &app.id,
         std::path::PathBuf::from(&app.repo_path),

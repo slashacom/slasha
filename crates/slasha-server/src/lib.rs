@@ -24,6 +24,7 @@ use std::net::SocketAddr;
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenv::dotenv;
 pub use error::{HttpError, HttpResult};
+use slasha_db::repos::github_app_config::GithubAppConfigRepo;
 pub use state::AppState;
 use tokio::net::TcpListener;
 use tracing::info;
@@ -102,15 +103,20 @@ pub async fn serve() -> anyhow::Result<()> {
 
     let docker_client =
         bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");
-    let github_client = connections::GithubClient::from_env()?;
 
     proxy::container::ensure_caddy_ready(&docker_client).await?;
 
-    let clients = Clients::new(docker_client.clone(), github_client);
     let storage = Storage::new(&db_path, repos_dir)?;
 
     run_migrations(db_path.to_str().expect("Invalid DB path"));
 
+    let github_config = GithubAppConfigRepo::get(&storage.db_pool).await?;
+    let github_client = github_config
+        .as_ref()
+        .map(connections::GithubClient::from_config)
+        .transpose()?;
+
+    let clients = Clients::new(docker_client.clone(), github_client);
     metrics::app::AppMetricsCollector::new(storage.db_pool.clone(), docker_client.clone()).spawn();
     metrics::server::ServerMetricsCollector::new(storage.db_pool.clone()).spawn();
     alerts::spawn_alert_worker(storage.db_pool.clone(), config.clone());

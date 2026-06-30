@@ -153,11 +153,11 @@ diesel::table! {
         timezone -> Text,
         enabled -> Bool,
         timeout_secs -> Integer,
-        runtime -> Text,
         last_run_at -> Nullable<Timestamp>,
         next_run_at -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        runtime -> Text,
     }
 }
 
@@ -192,6 +192,19 @@ diesel::table! {
         app_id -> Text,
         clone_url -> Text,
         created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    github_app_config (id) {
+        id -> Text,
+        app_id -> Text,
+        client_id -> Text,
+        client_secret -> Text,
+        private_key -> Text,
+        webhook_secret -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -312,6 +325,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     cron_runs,
     deployments,
     git_connections,
+    github_app_config,
     github_connections,
     github_installations,
     server_metrics,

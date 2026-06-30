@@ -11,7 +11,7 @@ import {
   getGithubRepositoriesOptions,
   getGithubStatusOptions,
   useInstallGithub,
-} from '~/queries/github';
+} from '~/queries/github-app';
 import { useDisconnectGithub, useReconnectGithub } from '~/queries/apps';
 import { queryClient } from '~/utils/query-client';
 import { RepositorySelect } from './repository-select';

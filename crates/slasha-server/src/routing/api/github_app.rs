@@ -32,17 +32,16 @@ pub fn router() -> Router<AppState> {
         .route("/webhook", post(handle_webhook))
 }
 
-fn get_github_client(state: &AppState) -> HttpResult<&crate::connections::GithubClient> {
+async fn get_github_client(state: &AppState) -> HttpResult<crate::connections::GithubClient> {
     state
-        .clients
-        .github
-        .as_ref()
+        .github_client()
+        .await
         .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))
 }
 
 async fn status(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({
-        "enabled": state.clients.github.is_some(),
+        "enabled": state.github_client().await.is_some(),
     }))
 }
 
@@ -56,7 +55,7 @@ async fn install(
     AuthUser(user): AuthUser,
     Json(payload): Json<InstallReq>,
 ) -> HttpResult<impl IntoResponse> {
-    let github_client = get_github_client(&state)?;
+    let github_client = get_github_client(&state).await?;
     let redirect_to = validate_redirect_target(&payload.redirect_to)?;
     let state_token = create_state(&user.id, &redirect_to, &state.config.jwt_secret)?;
     let url = github_client
@@ -86,7 +85,7 @@ async fn callback(
     State(state): State<AppState>,
     Query(query): Query<CallbackQuery>,
 ) -> HttpResult<Redirect> {
-    let github_client = get_github_client(&state)?;
+    let github_client = get_github_client(&state).await?;
     let (user_id, redirect_to) = verify_state(&query.state, &state.config.jwt_secret)
         .map_err(|_| HttpError::bad_request("Invalid or expired GitHub state"))?;
     UserRepo::find_by_id(&state.storage.db_pool, &user_id)
@@ -125,7 +124,7 @@ async fn repositories(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
 ) -> HttpResult<impl IntoResponse> {
-    let github_client = get_github_client(&state)?;
+    let github_client = get_github_client(&state).await?;
     let db_installations =
         GithubConnectionRepo::list_installations_for_user(&state.storage.db_pool, &user.id).await?;
 
@@ -197,7 +196,7 @@ async fn remove_installation(
     {
         return Err(HttpError::not_found("GitHub installation not found"));
     }
-    let github_client = get_github_client(&state)?;
+    let github_client = get_github_client(&state).await?;
     match github_client.delete_installation(installation_id).await {
         Ok(()) | Err(GithubError::AccessRevoked) => {}
         Err(error) => return Err(HttpError::internal(anyhow::Error::from(error))),
