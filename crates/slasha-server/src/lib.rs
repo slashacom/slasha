@@ -51,11 +51,13 @@ fn setup_dirs() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) 
     (db_path, repos_dir, logs_dir)
 }
 
-fn run_migrations(storage: &Storage) {
-    let mut conn = storage
-        .db_pool
-        .get()
-        .expect("Failed to get DB connection from pool");
+fn run_migrations(db_path: &str) {
+    use diesel::{Connection, sqlite::SqliteConnection};
+
+    // Migrations run on a dedicated connection that leaves foreign keys at SQLite's
+    // default (off). The runtime pool enforces them, but a table-rebuild migration
+    // under enforcement would cascade-delete rows, so migrations must not enforce.
+    let mut conn = SqliteConnection::establish(db_path).expect("Failed to connect for migrations");
 
     conn.run_pending_migrations(MIGRATIONS)
         .expect("Failed to run migrations");
@@ -105,7 +107,7 @@ pub async fn serve() -> anyhow::Result<()> {
     let clients = Clients::new(docker_client.clone());
     let storage = Storage::new(&db_path, repos_dir)?;
 
-    run_migrations(&storage);
+    run_migrations(db_path.to_str().expect("Invalid DB path"));
 
     metrics::app::AppMetricsCollector::new(storage.db_pool.clone(), docker_client.clone()).spawn();
     metrics::server::ServerMetricsCollector::new(storage.db_pool.clone()).spawn();

@@ -16,6 +16,12 @@ impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for WalCustomize
         diesel::sql_query("PRAGMA journal_mode=WAL;")
             .execute(conn)
             .map_err(diesel::r2d2::Error::QueryError)?;
+        // Enforce foreign keys so ON DELETE CASCADE actually fires; SQLite leaves
+        // this off per connection by default. Migrations use a separate, un-enforced
+        // connection (see run_migrations) so table rebuilds don't cascade-delete.
+        diesel::sql_query("PRAGMA foreign_keys=ON;")
+            .execute(conn)
+            .map_err(diesel::r2d2::Error::QueryError)?;
         Ok(())
     }
 }
