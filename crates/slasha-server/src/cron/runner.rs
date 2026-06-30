@@ -7,8 +7,8 @@ use bollard::{
         RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
     },
     query_parameters::{
-        CreateContainerOptions, RemoveContainerOptionsBuilder, StartContainerOptionsBuilder,
-        WaitContainerOptions,
+        CreateContainerOptions, CreateImageOptions, RemoveContainerOptionsBuilder,
+        StartContainerOptionsBuilder, WaitContainerOptions,
     },
 };
 use chrono::Utc;
@@ -16,7 +16,7 @@ use futures_util::StreamExt;
 use slasha_db::{
     DbPool,
     app::App,
-    cron::{CronJob, CronRun, CronRunStatus},
+    cron::{CronJob, CronRun, CronRunStatus, CronRuntime},
     deployment::{Deployment, DeploymentStatus},
     repos::{app::AppRepo, cron::CronRunRepo, deployment::DeploymentRepo, service::ServiceRepo},
 };
@@ -31,6 +31,10 @@ use crate::{
     },
     proxy::container::PROXY_NETWORK_NAME,
 };
+
+/// Lightweight image used by utility crons so webhook/HTTP jobs (curl) work
+/// without the app image needing those tools installed.
+const UTILITY_IMAGE: &str = "curlimages/curl:latest";
 
 enum CronOutcome {
     Completed { exit_code: i64 },
@@ -90,22 +94,26 @@ async fn execute(
         .await
         .map_err(|e| e.to_string())?;
 
-    let deployment = DeploymentRepo::list_active_for_app(db_pool, &job.app_id)
+    let running = DeploymentRepo::list_active_for_app(db_pool, &job.app_id)
         .await
         .map_err(|e| e.to_string())?
         .into_iter()
-        .find(|d| matches!(d.status, DeploymentStatus::Running))
-        .ok_or_else(|| "no running deployment to run the command against".to_string())?;
+        .find(|d| matches!(d.status, DeploymentStatus::Running));
 
-    let app_vars = AppRepo::get_env_vars(db_pool, &app.id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let services = ServiceRepo::list_for_app(db_pool, &app.id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let env_map = resolve_app_env(db_pool, &app, &deployment, app_vars, services)
-        .await
-        .map_err(|e| e.to_string())?;
+    let image = match job.runtime {
+        CronRuntime::App => {
+            let deployment = running
+                .as_ref()
+                .ok_or_else(|| "no running deployment to run the command against".to_string())?;
+            image_tag(&app.slug, &deployment.commit_sha)
+        }
+        CronRuntime::Utility => {
+            ensure_image(docker, UTILITY_IMAGE).await?;
+            UTILITY_IMAGE.to_string()
+        }
+    };
+
+    let env_map = resolve_cron_env(db_pool, &app, running.as_ref()).await?;
 
     let log = log_manager
         .get_logger(&LogKey::Cron {
@@ -119,7 +127,8 @@ async fn execute(
         docker,
         &log,
         &app,
-        &deployment,
+        &image,
+        job.runtime,
         &job.id,
         run_id,
         &job.command,
@@ -130,11 +139,56 @@ async fn execute(
     .map_err(|e| e.to_string())
 }
 
+/// Resolve the env the command runs with. When a running deployment exists we
+/// reuse the full deployment resolution (service refs, system keys); otherwise
+/// — only reachable for utility crons — we fall back to the app's raw vars so
+/// secrets like webhook URLs are still available.
+async fn resolve_cron_env(
+    db_pool: &DbPool,
+    app: &App,
+    deployment: Option<&Deployment>,
+) -> Result<HashMap<String, String>, String> {
+    let app_vars = AppRepo::get_env_vars(db_pool, &app.id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let Some(deployment) = deployment else {
+        return Ok(app_vars.into_iter().map(|v| (v.key, v.value)).collect());
+    };
+
+    let services = ServiceRepo::list_for_app(db_pool, &app.id)
+        .await
+        .map_err(|e| e.to_string())?;
+    resolve_app_env(db_pool, app, deployment, app_vars, services)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn ensure_image(docker: &Docker, image: &str) -> Result<(), String> {
+    if docker.inspect_image(image).await.is_ok() {
+        return Ok(());
+    }
+
+    let mut stream = docker.create_image(
+        Some(CreateImageOptions {
+            from_image: Some(image.to_string()),
+            ..Default::default()
+        }),
+        None,
+        None,
+    );
+    while let Some(item) = stream.next().await {
+        item.map_err(|e| format!("failed to pull {}: {}", image, e))?;
+    }
+    Ok(())
+}
+
 async fn run_cron_container(
     docker: &Docker,
     log: &LogHandle,
     app: &App,
-    deployment: &Deployment,
+    image: &str,
+    runtime: CronRuntime,
     cron_job_id: &str,
     cron_run_id: &str,
     command: &str,
@@ -145,19 +199,26 @@ async fn run_cron_container(
 
     log.send(format!("Running command: {}", command)).await?;
 
-    let volume_name = app_volume_name(&app.id, MANAGED_DATA_PATH);
-    docker
-        .create_volume(VolumeCreateRequest {
-            name: Some(volume_name.clone()),
-            ..Default::default()
-        })
-        .await?;
-    let mounts = vec![Mount {
-        typ: Some(MountTypeEnum::VOLUME),
-        source: Some(volume_name),
-        target: Some(MANAGED_DATA_PATH.to_string()),
-        ..Default::default()
-    }];
+    // Utility crons run a generic image, so the app's data volume isn't theirs
+    // to mount; only app-image crons share the app's managed data.
+    let mounts = match runtime {
+        CronRuntime::App => {
+            let volume_name = app_volume_name(&app.id, MANAGED_DATA_PATH);
+            docker
+                .create_volume(VolumeCreateRequest {
+                    name: Some(volume_name.clone()),
+                    ..Default::default()
+                })
+                .await?;
+            Some(vec![Mount {
+                typ: Some(MountTypeEnum::VOLUME),
+                source: Some(volume_name),
+                target: Some(MANAGED_DATA_PATH.to_string()),
+                ..Default::default()
+            }])
+        }
+        CronRuntime::Utility => None,
+    };
 
     let mut labels: HashMap<String, String> = HashMap::new();
     labels.insert("slasha.managed".into(), "true".into());
@@ -202,7 +263,7 @@ async fn run_cron_container(
                 ..Default::default()
             }),
             ContainerCreateBody {
-                image: Some(image_tag(&app.slug, &deployment.commit_sha)),
+                image: Some(image.to_string()),
                 labels: Some(labels),
                 env,
                 // Override the image entrypoint: buildpack images often set one
@@ -215,7 +276,7 @@ async fn run_cron_container(
                         name: Some(RestartPolicyNameEnum::EMPTY),
                         maximum_retry_count: None,
                     }),
-                    mounts: Some(mounts),
+                    mounts,
                     log_config: Some(default_log_config()),
                     ..Default::default()
                 }),

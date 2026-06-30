@@ -6,6 +6,7 @@ import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { Button } from '~/components/interface/button';
 import { SectionHeader } from '~/components/interface/section-header';
 import { CronRunHistory } from '~/components/apps/cron-run-history';
+import { CronRunStatusBadge } from '~/components/apps/cron-run-status-badge';
 import {
   getCronRunsOptions,
   getCronsOptions,
@@ -34,6 +35,7 @@ export default function CronDetailPage() {
     refetchInterval: 5000,
   });
   const cron = cronsData.crons.find((item) => item.id === cronId);
+  const latestRun = runsData?.runs?.[0];
 
   if (!cron) {
     return (
@@ -63,7 +65,19 @@ export default function CronDetailPage() {
       label: 'Next run',
       value: cron.enabled ? formatDate(cron.next_run_at) : '—',
     },
-    { label: 'Last run', value: formatDate(cron.last_run_at) },
+    {
+      label: 'Last run',
+      value: latestRun ? (
+        <div className="flex items-center gap-2">
+          <CronRunStatusBadge status={latestRun.status} />
+          <span className="text-xs font-normal text-text-tertiary">
+            {formatDate(latestRun.started_at ?? latestRun.created_at)}
+          </span>
+        </div>
+      ) : (
+        '—'
+      ),
+    },
     { label: 'Timeout', value: `${cron.timeout_secs}s` },
   ];
 
@@ -120,6 +134,8 @@ export default function CronDetailPage() {
             {cron.command}
           </pre>
           <p className="mt-3 text-[11px] text-text-tertiary">
+            Runtime:{' '}
+            {cron.runtime === 'utility' ? 'Utility (curl)' : 'App image'} ·
             Timezone: {cron.timezone}
           </p>
         </div>

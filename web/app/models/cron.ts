@@ -9,6 +9,7 @@ export type CronJob = {
   timezone: string;
   enabled: boolean;
   timeout_secs: number;
+  runtime: CronRuntime;
   last_run_at: string | null;
   next_run_at: string | null;
   created_at: string;
@@ -36,3 +37,5 @@ export type CronRunStatus =
   | 'skipped';
 
 export type CronRunTrigger = 'scheduled' | 'manual';
+
+export type CronRuntime = 'app' | 'utility';

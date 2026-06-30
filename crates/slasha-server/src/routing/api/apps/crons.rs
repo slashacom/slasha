@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -15,7 +15,7 @@ use futures_util::{StreamExt, stream};
 use serde::Deserialize;
 use slasha_db::{
     DbPool,
-    cron::{CronJob, CronRunTrigger},
+    cron::{CronJob, CronRunTrigger, CronRuntime},
     repos::cron::{CronJobRepo, CronRunRepo, new_run},
 };
 use tokio_stream::wrappers::BroadcastStream;
@@ -54,6 +54,7 @@ struct CronInput {
     timezone: Option<String>,
     enabled: bool,
     timeout_secs: Option<i32>,
+    runtime: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -69,6 +70,7 @@ struct ValidatedCron {
     timezone: String,
     enabled: bool,
     timeout_secs: i32,
+    runtime: CronRuntime,
     next_run_at: Option<NaiveDateTime>,
 }
 
@@ -98,6 +100,12 @@ fn validate(input: CronInput) -> HttpResult<ValidatedCron> {
         return Err(HttpError::bad_request("Timeout must be greater than zero."));
     }
 
+    let runtime = match input.runtime {
+        Some(runtime) if !runtime.trim().is_empty() => CronRuntime::from_str(runtime.trim())
+            .map_err(|_| HttpError::bad_request("Invalid runtime."))?,
+        _ => CronRuntime::App,
+    };
+
     let next_run_at = if input.enabled {
         parsed.next_after(Utc::now(), tz).map(|dt| dt.naive_utc())
     } else {
@@ -111,6 +119,7 @@ fn validate(input: CronInput) -> HttpResult<ValidatedCron> {
         timezone,
         enabled: input.enabled,
         timeout_secs,
+        runtime,
         next_run_at,
     })
 }
@@ -120,7 +129,21 @@ async fn list_crons(
     ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
     let crons = CronJobRepo::list_for_app(&db_pool, &app.id).await?;
-    Ok(Json(serde_json::json!({ "crons": crons })))
+
+    let mut items = Vec::with_capacity(crons.len());
+    for job in crons {
+        let last_run = CronRunRepo::latest_for_job(&db_pool, &job.id).await?;
+        let mut value = serde_json::to_value(&job).map_err(HttpError::internal)?;
+        if let serde_json::Value::Object(map) = &mut value {
+            map.insert(
+                "last_run".to_string(),
+                serde_json::to_value(last_run).map_err(HttpError::internal)?,
+            );
+        }
+        items.push(value);
+    }
+
+    Ok(Json(serde_json::json!({ "crons": items })))
 }
 
 async fn get_cron(
@@ -149,6 +172,7 @@ async fn create_cron(
         timezone: valid.timezone,
         enabled: valid.enabled,
         timeout_secs: valid.timeout_secs,
+        runtime: valid.runtime,
         last_run_at: None,
         next_run_at: valid.next_run_at,
         created_at: now,
@@ -178,6 +202,7 @@ async fn update_cron(
         timezone: valid.timezone,
         enabled: valid.enabled,
         timeout_secs: valid.timeout_secs,
+        runtime: valid.runtime,
         last_run_at: existing.last_run_at,
         next_run_at: valid.next_run_at,
         created_at: existing.created_at,

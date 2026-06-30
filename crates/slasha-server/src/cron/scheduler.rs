@@ -18,6 +18,15 @@ const TICK_INTERVAL: Duration = Duration::from_secs(30);
 pub fn spawn_cron_scheduler(db_pool: DbPool, docker: Docker, log_manager: Arc<LogManager>) {
     tokio::spawn(async move {
         info!(target: "slasha::cron", "cron scheduler started");
+        match CronRunRepo::fail_interrupted(&db_pool).await {
+            Ok(count) if count > 0 => {
+                warn!(target: "slasha::cron", count, "marked interrupted cron runs as failed")
+            }
+            Ok(_) => {}
+            Err(err) => {
+                error!(target: "slasha::cron", error = ?err, "failed to reconcile interrupted cron runs")
+            }
+        }
         loop {
             if let Err(err) = tick(&db_pool, &docker, &log_manager).await {
                 error!(target: "slasha::cron", error = ?err, "cron scheduler tick failed");

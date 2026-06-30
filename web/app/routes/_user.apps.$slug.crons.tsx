@@ -4,6 +4,7 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 import { Clock, Play, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
+import { CronRunStatusBadge } from '~/components/apps/cron-run-status-badge';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
@@ -69,6 +70,7 @@ export default function AppCronsPage() {
                   'Name',
                   'Schedule',
                   'Status',
+                  'Last run',
                   'Next run',
                   { label: '', align: 'right' },
                 ]}
@@ -93,6 +95,13 @@ export default function AppCronsPage() {
                       <AlertStatusBadge state={cron.enabled ? 'ok' : 'muted'}>
                         {cron.enabled ? 'Enabled' : 'Disabled'}
                       </AlertStatusBadge>
+                    </td>
+                    <td className="py-3 pr-4">
+                      {cron.last_run ? (
+                        <CronRunStatusBadge status={cron.last_run.status} />
+                      ) : (
+                        <span className="text-text-tertiary">—</span>
+                      )}
                     </td>
                     <td className="py-3 pr-4 text-text-secondary">
                       {cron.enabled ? formatDate(cron.next_run_at) : '—'}

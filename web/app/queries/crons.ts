@@ -1,7 +1,7 @@
 import { queryOptions, useMutation } from '@tanstack/react-query';
 import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
 import { queryClient } from '~/utils/query-client';
-import type { CronJob, CronRun } from '~/models/cron';
+import type { CronJob, CronRun, CronRuntime } from '~/models/cron';
 
 type CronPayload = {
   name: string;
@@ -10,12 +10,16 @@ type CronPayload = {
   timezone: string;
   enabled: boolean;
   timeout_secs: number;
+  runtime: CronRuntime;
 };
+
+export type CronJobWithLastRun = CronJob & { last_run: CronRun | null };
 
 export function getCronsOptions(appSlug: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'crons'],
-    queryFn: () => httpGet<{ crons: CronJob[] }>(`apps/${appSlug}/crons`),
+    queryFn: () =>
+      httpGet<{ crons: CronJobWithLastRun[] }>(`apps/${appSlug}/crons`),
   });
 }
 
