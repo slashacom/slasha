@@ -24,7 +24,6 @@ pub struct App {
     pub name: String,
     pub repo_path: String,
     pub default_branch: String,
-    pub status: AppStatus,
     pub created_at: chrono::NaiveDateTime,
     pub auto_deploy: bool,
     pub source: AppSource,
@@ -51,50 +50,6 @@ pub enum AppSource {
     Local,
     Github,
     Git,
-}
-
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    FromSqlRow,
-    AsExpression,
-    Display,
-    Copy,
-    Clone,
-    EnumString,
-    Serialize,
-    Deserialize,
-    TS,
-)]
-#[strum(serialize_all = "lowercase")]
-#[serde(rename_all = "lowercase")]
-#[diesel(sql_type = diesel::sql_types::Text)]
-#[ts(export, export_to = "./app.ts")]
-pub enum AppStatus {
-    Idle,
-    Building,
-    Running,
-    Failed,
-}
-
-impl ToSql<Text, Sqlite> for AppStatus
-where
-    str: ToSql<Text, Sqlite>,
-{
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
-        out.set_value(self.to_string());
-        Ok(IsNull::No)
-    }
-}
-
-impl FromSql<Text, Sqlite> for AppStatus {
-    fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
-        <String as FromSql<Text, Sqlite>>::from_sql(bytes).and_then(|value| {
-            AppStatus::from_str(&value)
-                .map_err(|_| format!("invalid app status '{}'", value).into())
-        })
-    }
 }
 
 impl AppSource {
