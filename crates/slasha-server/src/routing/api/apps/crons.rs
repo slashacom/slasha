@@ -215,11 +215,23 @@ async fn update_cron(
 
 async fn delete_cron(
     State(db_pool): State<DbPool>,
+    State(log_manager): State<Arc<LogManager>>,
     ActiveApp { app, .. }: ActiveApp,
     Path((_, cron_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
+
+    // Capture run ids before deletion cascades the rows away; the FK cascade
+    // clears the database rows but not their on-disk logs.
+    let run_ids = CronRunRepo::list_ids_for_job(&db_pool, &cron_id).await?;
     CronJobRepo::delete(&db_pool, &cron_id, &app.id).await?;
+
+    for run_id in run_ids {
+        if let Err(err) = log_manager.delete_cron_run_logs(&app.slug, &run_id).await {
+            tracing::warn!(target: "slasha::cron", run = %run_id, error = ?err, "failed to delete cron run logs");
+        }
+    }
+
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
 

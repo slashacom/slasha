@@ -163,6 +163,21 @@ impl LogManager {
         self.files.remove(&k);
     }
 
+    pub async fn delete_cron_run_logs(&self, app_slug: &str, run_id: &str) -> std::io::Result<()> {
+        let key = LogKey::Cron {
+            app_slug: app_slug.to_string(),
+            cron_run_id: run_id.to_string(),
+        };
+        self.remove(&key);
+
+        if let Some(run_dir) = key.as_path(&self.logs_dir).parent()
+            && tokio::fs::try_exists(run_dir).await.unwrap_or(false)
+        {
+            tokio::fs::remove_dir_all(run_dir).await?;
+        }
+        Ok(())
+    }
+
     pub async fn delete_app_logs(&self, app_slug: &str) -> std::io::Result<()> {
         let d_prefix = format!("d:{}:", app_slug);
         let s_prefix = format!("s:{}:", app_slug);

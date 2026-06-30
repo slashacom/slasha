@@ -180,6 +180,19 @@ impl CronRunRepo {
         .await?
     }
 
+    pub async fn list_ids_for_job(pool: &DbPool, cron_job_id: &str) -> DbResult<Vec<String>> {
+        let pool = pool.clone();
+        let cron_job_id = cron_job_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(cron_runs::table
+                .filter(cron_runs::cron_job_id.eq(&cron_job_id))
+                .select(cron_runs::id)
+                .load::<String>(&mut conn)?)
+        })
+        .await?
+    }
+
     pub async fn find(pool: &DbPool, id: &str, cron_job_id: &str) -> DbResult<CronRun> {
         let pool = pool.clone();
         let id = id.to_string();
