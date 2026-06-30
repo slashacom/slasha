@@ -2,8 +2,8 @@ pub mod alerts;
 #[cfg(feature = "bundle")]
 pub mod assets;
 pub mod auth;
-pub mod cron;
 pub mod connections;
+pub mod cron;
 pub mod docker;
 pub mod domain_health;
 pub mod error;

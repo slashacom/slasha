@@ -218,8 +218,9 @@ fn parse_value(token: &str, names: &[(&str, u32)], min: u32, max: u32) -> Result
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono_tz::UTC;
+
+    use super::*;
 
     fn at(s: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)
