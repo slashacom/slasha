@@ -4,9 +4,7 @@ use regex::Regex;
 use reqwest::Client;
 use serde_json::json;
 use slasha_db::{
-    models::alerts::{
-        AlertChannel, AlertChannelConfig, AlertNotificationKind, AlertRule, AlertRuleConfig,
-    },
+    models::alerts::{AlertChannel, AlertChannelConfig, AlertNotificationKind, AlertRule},
     repos::alerts::AlertChannelRepo,
 };
 use tokio::process::Command;
@@ -50,8 +48,6 @@ fn render_default_message(
         AlertNotificationKind::Resolved => ":white_check_mark:",
     };
 
-    let category = default_category(rule);
-
     let current_line = observation
         .current_value
         .map(|v| format!("\n> Current: {}", format_value(Some(v))))
@@ -67,7 +63,7 @@ fn render_default_message(
         .unwrap_or_default();
 
     format!(
-        "{emoji} *{category}*\n*{name}*{current_line}{limit_line}\n> Detail: {detail}{duration_line}",
+        "{emoji} *{name}*{current_line}{limit_line}\n> Detail: {detail}{duration_line}",
         name = rule.name,
         detail = observation.detail_display,
     )
@@ -95,21 +91,6 @@ fn format_value(value: Option<f32>) -> String {
         Some(v) if v.fract() == 0.0 => format!("{v:.0}"),
         Some(v) => format!("{v:.1}"),
         None => String::new(),
-    }
-}
-
-fn default_category(rule: &AlertRule) -> &'static str {
-    match &rule.config {
-        AlertRuleConfig::ServerCpu { .. }
-        | AlertRuleConfig::ServerMemory { .. }
-        | AlertRuleConfig::ServerLoadAverage { .. } => "Server Resource Alert",
-        AlertRuleConfig::AppCpu { .. } | AlertRuleConfig::AppMemory { .. } => {
-            "Application Resource Alert"
-        }
-        AlertRuleConfig::DomainTlsExpiry { .. }
-        | AlertRuleConfig::DomainDnsMisconfigured { .. } => "Domain Alert",
-        AlertRuleConfig::AppHealthCheck { .. } => "App Health Check Alert",
-        AlertRuleConfig::CronFailed { .. } => "Cron Job Alert",
     }
 }
 
