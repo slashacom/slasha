@@ -11,6 +11,7 @@ import type { GitConnection } from '~/models/connection';
 export type AppListItem = {
   app: App;
   url: string;
+  runtime_status: 'idle' | 'deploying' | 'running' | 'failed';
 };
 
 type CreateAppPayload<Source extends AppSource = AppSource> = {
@@ -75,6 +76,7 @@ export function getAppOptions(slug: string) {
       httpGet<{
         app: App;
         url: string;
+        runtime_status: string;
       }>(`apps/${slug}`),
   });
 }

@@ -136,7 +136,6 @@ diesel::table! {
         name -> Text,
         repo_path -> Text,
         default_branch -> Text,
-        status -> Text,
         created_at -> Timestamp,
         auto_deploy -> Bool,
         source -> Text,

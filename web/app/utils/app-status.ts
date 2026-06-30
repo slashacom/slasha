@@ -1,5 +1,4 @@
 import type { Deployment } from '~/models/deployment';
-import type { AppStatus } from '~/models/app';
 import { parseUTC } from '~/utils/format';
 
 export type AppStatusTone = 'live' | 'deploying' | 'failed' | 'idle';
@@ -9,11 +8,13 @@ export type AppStatusView = {
   tone: AppStatusTone;
 };
 
-export function getAppStatusView(status: AppStatus): AppStatusView {
+export function getAppStatusView(
+  status: 'idle' | 'deploying' | 'running' | 'failed'
+): AppStatusView {
   switch (status) {
     case 'running':
       return { label: 'Live', tone: 'live' };
-    case 'building':
+    case 'deploying':
       return { label: 'Deploying', tone: 'deploying' };
     case 'failed':
       return { label: 'Failed', tone: 'failed' };

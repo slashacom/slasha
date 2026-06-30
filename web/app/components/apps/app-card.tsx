@@ -10,8 +10,8 @@ type AppCardProps = {
 
 export function AppCard(props: AppCardProps) {
   const { item } = props;
-  const { app, url } = item;
-  const status = getAppStatusView(app.status);
+  const { app, url, runtime_status } = item;
+  const status = getAppStatusView(runtime_status);
 
   return (
     <Link

@@ -13,13 +13,15 @@ use chrono::Utc;
 use serde::Deserialize;
 use slasha_db::{
     DbPool, DbResult,
-    app::{App, AppMember, AppMemberRole, AppSource, AppStatus},
+    app::{App, AppMember, AppMemberRole, AppSource},
+    deployment::{Deployment, DeploymentStatus},
     git_connection::GitConnection,
     github_connection::{ConnectionStatus, GithubConnection},
     repos::{
         app::{AppRepo, NewAppConnection},
         app_domain::AppDomainRepo,
         app_scale::AppScaleRepo,
+        deployment::DeploymentRepo,
         git_connection::GitConnectionRepo,
         github_connection::GithubConnectionRepo,
         service::ServiceRepo,
@@ -314,7 +316,6 @@ async fn create_app(
         name: name.clone(),
         repo_path,
         default_branch,
-        status: AppStatus::Idle,
         created_at: now,
         auto_deploy: true,
         source,
@@ -365,9 +366,13 @@ async fn get_app(
         }
     };
 
+    let deployments = DeploymentRepo::list_for_app(&state.storage.db_pool, &app.id).await?;
+    let runtime_status = derive_runtime_status(&deployments);
+
     Ok(Json(serde_json::json!({
         "app": app,
         "url": url,
+        "runtime_status": runtime_status,
     })))
 }
 
@@ -527,6 +532,20 @@ async fn delete_app(
     })))
 }
 
+fn derive_runtime_status(deployments: &[Deployment]) -> &'static str {
+    if deployments
+        .iter()
+        .any(|d| d.status == DeploymentStatus::Running)
+    {
+        return "running";
+    }
+    match deployments.first().map(|d| d.status) {
+        Some(DeploymentStatus::Building) | Some(DeploymentStatus::Pending) => "deploying",
+        Some(DeploymentStatus::Failed) => "failed",
+        _ => "idle",
+    }
+}
+
 async fn list_apps(
     State(storage): State<Storage>,
     State(config): State<Config>,
@@ -551,6 +570,7 @@ async fn list_apps(
 
     let mut items = Vec::with_capacity(user_apps.len());
     for app in user_apps {
+        let deployments = DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
         let url = match primary_domains.get(&app.id) {
             Some(domain) => format!(
                 "https://{}",
@@ -563,6 +583,7 @@ async fn list_apps(
         items.push(serde_json::json!({
             "app": app,
             "url": url,
+            "runtime_status": derive_runtime_status(&deployments),
         }));
     }
 
