@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://slasha.com/docs
+    about: Check the docs first — your question may already be answered there.

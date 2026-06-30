@@ -1,0 +1,72 @@
+name: Bug report
+description: Report something that isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill out the sections below so we can reproduce it.
+
+        Found a security vulnerability? Do not file it here — email security@slasha.com instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce it?
+      placeholder: |
+        1. Run `slasha ...`
+        2. ...
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      description: Paste any error output or deployment logs. This is rendered as code, so no backticks needed.
+      render: shell
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Slasha version
+      description: Output of `slasha version`, or the version reported by the server.
+      placeholder: e.g. 0.1.2
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which part?
+      options:
+        - CLI
+        - Server / dashboard
+        - Deployment / build
+        - Managed service (Postgres / MySQL / MongoDB / Redis)
+        - Backups / Litestream
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Server OS
+      description: The Linux distribution and version running the Slasha server.
+      placeholder: e.g. Ubuntu 24.04
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and didn't find a duplicate.
+          required: true
