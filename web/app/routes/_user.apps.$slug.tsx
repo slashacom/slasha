@@ -168,6 +168,7 @@ export default function AppLayout() {
           { label: 'Deployments', to: `/apps/${slug}/deployments` },
           { label: 'Scaling', to: `/apps/${slug}/scaling` },
           { label: 'Services', to: `/apps/${slug}/services` },
+          { label: 'Crons', to: `/apps/${slug}/crons` },
           { label: 'Metrics', to: `/apps/${slug}/metrics` },
           { label: 'Settings', to: `/apps/${slug}/settings` },
         ]}

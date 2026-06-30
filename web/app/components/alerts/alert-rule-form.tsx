@@ -10,6 +10,7 @@ import { Switch } from '~/components/interface/switch';
 import { Textarea } from '~/components/interface/textarea';
 import type { AlertChannel, AlertRule, AlertRuleConfig } from '~/models/alerts';
 import type { App } from '~/models/app';
+import type { CronJob } from '~/models/cron';
 import { useCreateAlertRule, useUpdateAlertRule } from '~/queries/alerts';
 import {
   alertRuleKinds,
@@ -26,13 +27,14 @@ import { TemplateVarHelp } from './template-var-help';
 type AlertRuleFormProps = {
   apps: App[];
   channels: AlertChannel[];
+  crons: CronJob[];
   rule?: AlertRule;
   onCancel: () => void;
   onSaved: () => void;
 };
 
 export function AlertRuleForm(props: AlertRuleFormProps) {
-  const { apps, channels, rule, onCancel, onSaved } = props;
+  const { apps, channels, crons, rule, onCancel, onSaved } = props;
   const createRule = useCreateAlertRule();
   const updateRule = useUpdateAlertRule();
   const [draft, setDraft] = useState(() =>
@@ -268,6 +270,30 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
               />
             </FormField>
           </>
+        ) : null}
+
+        {draft.kind === 'cron_failed' ? (
+          <FormField label="Cron job">
+            <Select
+              value={draft.cron_job_id}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  cron_job_id: event.target.value,
+                }))
+              }
+            >
+              <option value="">Select a cron job</option>
+              {crons.map((cron) => {
+                const app = apps.find((item) => item.id === cron.app_id);
+                return (
+                  <option key={cron.id} value={cron.id}>
+                    {app ? `${app.name}: ${cron.name}` : cron.name}
+                  </option>
+                );
+              })}
+            </Select>
+          </FormField>
         ) : null}
       </FormSection>
 

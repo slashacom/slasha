@@ -2,13 +2,14 @@ import { useNavigate } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { AlertRuleForm } from '~/components/alerts/alert-rule-form';
 import { getAppsOptions } from '~/queries/apps';
-import { getAlertChannelsOptions } from '~/queries/alerts';
+import { getAlertChannelsOptions, getAllCronsOptions } from '~/queries/alerts';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader() {
   await Promise.all([
     queryClient.ensureQueryData(getAppsOptions()),
     queryClient.ensureQueryData(getAlertChannelsOptions()),
+    queryClient.ensureQueryData(getAllCronsOptions()),
   ]);
   return null;
 }
@@ -17,6 +18,7 @@ export default function NewAlertRulePage() {
   const navigate = useNavigate();
   const { data: appsData } = useSuspenseQuery(getAppsOptions());
   const { data: channelsData } = useSuspenseQuery(getAlertChannelsOptions());
+  const { data: cronsData } = useSuspenseQuery(getAllCronsOptions());
 
   return (
     <div className="p-8">
@@ -29,6 +31,7 @@ export default function NewAlertRulePage() {
       <AlertRuleForm
         apps={appsData.apps.map((item) => item.app)}
         channels={channelsData.channels}
+        crons={cronsData.crons}
         onCancel={() => navigate('/alerts/rules')}
         onSaved={() => navigate('/alerts/rules')}
       />
