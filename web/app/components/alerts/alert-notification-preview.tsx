@@ -37,15 +37,18 @@ function parseAlertMessage(message: string): ParsedAlertMessage {
   return { title, fields, lines: body };
 }
 
-export function NotificationMessagePreview(props: {
+type AlertNotificationPreviewProps = {
   message: string;
   className?: string;
-}) {
-  const parsed = parseAlertMessage(props.message);
+};
+
+export function AlertNotificationPreview(props: AlertNotificationPreviewProps) {
+  const { message, className } = props;
+  const parsed = parseAlertMessage(message);
   const previewFields = parsed.fields.slice(0, 2);
 
   return (
-    <div className={cn('min-w-0 space-y-1', props.className)}>
+    <div className={cn('min-w-0 space-y-1', className)}>
       <div className="truncate text-sm font-semibold tracking-tight text-text">
         {parsed.title ?? parsed.lines[0] ?? 'Notification'}
       </div>

@@ -2,14 +2,15 @@ import { useState } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { ArrowLeft, ShieldAlert } from 'lucide-react';
 import { useParams } from 'react-router';
+import { AlertCard } from '~/components/alerts/alert-card';
+import { AlertDetailStat } from '~/components/alerts/alert-detail-stat';
+import { AlertEmptyState } from '~/components/alerts/alert-empty-state';
+import { AlertNotificationDialog } from '~/components/alerts/alert-notification-dialog';
+import { AlertNotificationPreview } from '~/components/alerts/alert-notification-preview';
+import { AlertStat } from '~/components/alerts/alert-stat';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { configSummary } from '~/components/alerts/alert-definitions';
-import { AlertEmptyState } from '~/components/alerts/alert-empty-state';
-import {
-  NotificationDetailDialog,
-  formatNotificationKind,
-} from '~/components/alerts/alert-notification-dialog';
-import { NotificationMessagePreview } from '~/components/alerts/alert-notification-preview';
+import { formatNotificationKind } from '~/components/alerts/notification-kind';
 import { Button } from '~/components/interface/button';
 import { SectionHeader } from '~/components/interface/section-header';
 import { Table } from '~/components/interface/table';
@@ -20,17 +21,24 @@ import {
   getAlertRulesOptions,
 } from '~/queries/alerts';
 import { formatDate, formatMetric } from '~/utils/format';
+import { queryClient } from '~/utils/query-client';
+
+export async function clientLoader(args: { params: { id: string } }) {
+  const { params } = args;
+  await Promise.all([
+    queryClient.ensureQueryData(
+      getAlertIncidentNotificationsOptions(params.id)
+    ),
+    queryClient.ensureQueryData(getAlertRulesOptions()),
+    queryClient.ensureQueryData(getAppsOptions()),
+  ]);
+  return null;
+}
 
 export default function AlertIncidentDetailPage() {
-  const params = useParams();
-  const incidentId = params.id;
-
-  if (!incidentId) {
-    throw new Error('Missing incident id');
-  }
-
+  const { id } = useParams<{ id: string }>();
   const { data, refetch } = useSuspenseQuery(
-    getAlertIncidentNotificationsOptions(incidentId)
+    getAlertIncidentNotificationsOptions(id!)
   );
   const { data: rulesData } = useSuspenseQuery(getAlertRulesOptions());
   const { data: appsData } = useSuspenseQuery(getAppsOptions());
@@ -103,23 +111,23 @@ export default function AlertIncidentDetailPage() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <DetailStat label="Rule" value={ruleName} />
+            <AlertDetailStat label="Rule" value={ruleName} />
             {ruleCondition ? (
-              <DetailStat label="Condition" value={ruleCondition} />
+              <AlertDetailStat label="Condition" value={ruleCondition} />
             ) : null}
-            <DetailStat
+            <AlertDetailStat
               label="Trigger value"
               value={formatMetric(incident.trigger_value)}
             />
-            <DetailStat
+            <AlertDetailStat
               label="Current value"
               value={formatMetric(incident.current_value)}
             />
-            <DetailStat
+            <AlertDetailStat
               label="Recovery value"
               value={formatMetric(incident.recovery_value)}
             />
-            <DetailStat
+            <AlertDetailStat
               label="Threshold value"
               value={formatMetric(incident.threshold_value)}
             />
@@ -138,11 +146,11 @@ export default function AlertIncidentDetailPage() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <DetailStat
+            <AlertDetailStat
               label="Trigger count"
               value={String(notifications.length)}
             />
-            <DetailStat
+            <AlertDetailStat
               label="Latest event"
               value={
                 notifications[notifications.length - 1]
@@ -152,8 +160,11 @@ export default function AlertIncidentDetailPage() {
                   : '—'
               }
             />
-            <DetailStat label="Opened" value={formatDate(incident.opened_at)} />
-            <DetailStat
+            <AlertDetailStat
+              label="Opened"
+              value={formatDate(incident.opened_at)}
+            />
+            <AlertDetailStat
               label="Resolved"
               value={formatDate(incident.resolved_at)}
             />
@@ -189,7 +200,7 @@ export default function AlertIncidentDetailPage() {
                     </div>
                   </td>
                   <td className="py-4 pr-4">
-                    <NotificationMessagePreview
+                    <AlertNotificationPreview
                       message={notification.message}
                       className="max-w-[720px]"
                     />
@@ -212,67 +223,11 @@ export default function AlertIncidentDetailPage() {
         )}
       </AlertCard>
 
-      <NotificationDetailDialog
+      <AlertNotificationDialog
         notification={selectedNotification}
         open={selectedNotification !== null}
         onOpenChange={(open) => !open && setSelectedNotification(null)}
       />
-    </div>
-  );
-}
-
-function AlertStat(props: {
-  label: string;
-  value: React.ReactNode;
-  mono?: boolean;
-  valueClassName?: string;
-}) {
-  return (
-    <AlertCard className="p-5">
-      <p className="text-xs font-medium text-text-tertiary">{props.label}</p>
-      <div
-        className={
-          props.valueClassName ??
-          (props.mono === false
-            ? 'mt-2 text-lg font-semibold tracking-tight text-text'
-            : 'mt-2 break-all font-mono text-sm font-semibold tracking-tight text-text')
-        }
-      >
-        {props.value}
-      </div>
-    </AlertCard>
-  );
-}
-
-function AlertCard(props: { children: React.ReactNode; className?: string }) {
-  return (
-    <div
-      className={`rounded-lg border border-border bg-surface p-6${
-        props.className ? ` ${props.className}` : ''
-      }`}
-    >
-      {props.children}
-    </div>
-  );
-}
-
-function DetailStat(props: {
-  label: string;
-  value: React.ReactNode;
-  mono?: boolean;
-}) {
-  return (
-    <div className="rounded-md border border-border bg-bg/40 p-3">
-      <p className="text-xs font-medium text-text-tertiary">{props.label}</p>
-      <div
-        className={
-          props.mono
-            ? 'mt-1 break-all font-mono text-xs font-medium tracking-normal text-text-secondary'
-            : 'mt-1 text-sm font-semibold tracking-tight text-text'
-        }
-      >
-        {props.value}
-      </div>
     </div>
   );
 }

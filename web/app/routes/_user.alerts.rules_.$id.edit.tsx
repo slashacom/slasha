@@ -6,6 +6,16 @@ import {
   getAlertChannelsOptions,
   getAlertRulesOptions,
 } from '~/queries/alerts';
+import { queryClient } from '~/utils/query-client';
+
+export async function clientLoader() {
+  await Promise.all([
+    queryClient.ensureQueryData(getAlertRulesOptions()),
+    queryClient.ensureQueryData(getAlertChannelsOptions()),
+    queryClient.ensureQueryData(getAppsOptions()),
+  ]);
+  return null;
+}
 
 export default function EditAlertRulePage() {
   const navigate = useNavigate();

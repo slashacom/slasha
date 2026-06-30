@@ -24,9 +24,7 @@ export function AutoDeployManager(props: AutoDeployManagerProps) {
       toast.success(checked ? 'Auto-deploy enabled' : 'Auto-deploy disabled');
       queryClient.invalidateQueries({ queryKey: ['apps', app.slug] });
     } catch (e: any) {
-      toast.error(
-        e.response?.data?.error || 'Failed to update auto-deploy setting'
-      );
+      toast.error(e?.message || 'Failed to update auto-deploy setting');
     }
   };
 

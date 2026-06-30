@@ -13,6 +13,15 @@ import {
   getAlertRulesOptions,
 } from '~/queries/alerts';
 import { formatDate, formatMetric } from '~/utils/format';
+import { queryClient } from '~/utils/query-client';
+
+export async function clientLoader() {
+  await Promise.all([
+    queryClient.ensureQueryData(getAlertIncidentsOptions()),
+    queryClient.ensureQueryData(getAlertRulesOptions()),
+  ]);
+  return null;
+}
 
 export default function AlertsPage() {
   const { data, refetch } = useSuspenseQuery(getAlertIncidentsOptions());

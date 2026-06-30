@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
+import { FormField } from '~/components/interface/form-field';
 import { Input } from '~/components/interface/input';
-import { Label } from '~/components/interface/label';
 import { Select } from '~/components/interface/select';
 import { Switch } from '~/components/interface/switch';
 import type { AlertChannel, AlertChannelConfig } from '~/models/alerts';
@@ -67,8 +67,7 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
 
   return (
     <div className="max-w-xl space-y-5">
-      <div className="space-y-2">
-        <Label>Name</Label>
+      <FormField label="Name">
         <Input
           value={draft.name}
           onChange={(event) =>
@@ -76,10 +75,9 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
           }
           placeholder="Production Slack"
         />
-      </div>
+      </FormField>
 
-      <div className="space-y-2">
-        <Label>Kind</Label>
+      <FormField label="Kind">
         <Select
           value={draft.kind}
           onChange={(event) => {
@@ -101,11 +99,10 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
         <p className="text-xs text-text-tertiary">
           {alertChannelRegistry[draft.kind].description}
         </p>
-      </div>
+      </FormField>
 
       {draft.kind === 'slack' ? (
-        <div className="space-y-2">
-          <Label>Slack webhook URL</Label>
+        <FormField label="Slack webhook URL">
           <Input
             value={draft.webhook_url}
             onChange={(event) =>
@@ -116,11 +113,10 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
             }
             placeholder="https://hooks.slack.com/services/..."
           />
-        </div>
+        </FormField>
       ) : (
         <>
-          <div className="space-y-2">
-            <Label>Bot token</Label>
+          <FormField label="Bot token">
             <Input
               value={draft.bot_token}
               onChange={(event) =>
@@ -131,9 +127,8 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
               }
               placeholder="123456:ABCDEF..."
             />
-          </div>
-          <div className="space-y-2">
-            <Label>Chat id</Label>
+          </FormField>
+          <FormField label="Chat id">
             <Input
               value={draft.chat_id}
               onChange={(event) =>
@@ -144,7 +139,7 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
               }
               placeholder="-1001234567890"
             />
-          </div>
+          </FormField>
         </>
       )}
 

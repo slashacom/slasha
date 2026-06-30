@@ -51,9 +51,7 @@ export function AppEnvEditor(props: AppEnvEditorProps) {
         queryKey: ['apps', appSlug, 'env-vars'],
       });
     } catch (e: any) {
-      toast.error(
-        e.response?.data?.error || 'Failed to save environment variables'
-      );
+      toast.error(e?.message || 'Failed to save environment variables');
     }
   };
 
