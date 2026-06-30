@@ -152,6 +152,7 @@ diesel::table! {
         timezone -> Text,
         enabled -> Bool,
         timeout_secs -> Integer,
+        runtime -> Text,
         last_run_at -> Nullable<Timestamp>,
         next_run_at -> Nullable<Timestamp>,
         created_at -> Timestamp,

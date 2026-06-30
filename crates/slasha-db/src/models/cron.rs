@@ -99,6 +99,46 @@ impl FromSql<Text, Sqlite> for CronRunTrigger {
 }
 
 #[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    FromSqlRow,
+    AsExpression,
+    Display,
+    Copy,
+    Clone,
+    EnumString,
+    Serialize,
+    Deserialize,
+    TS,
+)]
+#[strum(serialize_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+#[diesel(sql_type = diesel::sql_types::Text)]
+#[ts(export, export_to = "./cron.ts")]
+pub enum CronRuntime {
+    App,
+    Utility,
+}
+
+impl ToSql<Text, Sqlite> for CronRuntime
+where
+    str: ToSql<Text, Sqlite>,
+{
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        out.set_value(self.to_string());
+        Ok(IsNull::No)
+    }
+}
+
+impl FromSql<Text, Sqlite> for CronRuntime {
+    fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let value = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        CronRuntime::from_str(&value).map_err(|err| Box::new(err) as _)
+    }
+}
+
+#[derive(
     Queryable, Selectable, Insertable, AsChangeset, Debug, Clone, Serialize, Deserialize, TS,
 )]
 #[diesel(table_name = crate::models::schema::cron_jobs)]
@@ -112,6 +152,7 @@ pub struct CronJob {
     pub timezone: String,
     pub enabled: bool,
     pub timeout_secs: i32,
+    pub runtime: CronRuntime,
     pub last_run_at: Option<NaiveDateTime>,
     pub next_run_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,

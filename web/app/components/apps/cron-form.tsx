@@ -4,10 +4,11 @@ import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
 import { FormField } from '~/components/interface/form-field';
 import { Input } from '~/components/interface/input';
+import { Select } from '~/components/interface/select';
 import { Switch } from '~/components/interface/switch';
 import { Textarea } from '~/components/interface/textarea';
 import { useDebounce } from '~/hooks/use-debounce';
-import type { CronJob } from '~/models/cron';
+import type { CronJob, CronRuntime } from '~/models/cron';
 import {
   getCronPreviewOptions,
   useCreateCron,
@@ -33,6 +34,7 @@ export function CronForm(props: CronFormProps) {
   const [timeoutSecs, setTimeoutSecs] = useState(
     String(cron?.timeout_secs ?? 3600)
   );
+  const [runtime, setRuntime] = useState<CronRuntime>(cron?.runtime ?? 'app');
   const [enabled, setEnabled] = useState(cron?.enabled ?? true);
 
   const debouncedSchedule = useDebounce(schedule.trim(), 400);
@@ -69,6 +71,7 @@ export function CronForm(props: CronFormProps) {
       timezone: timezone.trim() || 'UTC',
       enabled,
       timeout_secs: timeout,
+      runtime,
     };
     const promise = cron
       ? updateCron.mutateAsync({ id: cron.id, data: payload })
@@ -112,12 +115,32 @@ export function CronForm(props: CronFormProps) {
         />
       </FormField>
 
+      <FormField label="Runtime" help="where the command runs">
+        <Select
+          value={runtime}
+          onChange={(event) => setRuntime(event.target.value as CronRuntime)}
+        >
+          <option value="app">App image</option>
+          <option value="utility">Utility (curl)</option>
+        </Select>
+      </FormField>
+
       <FormField label="Command">
         <Textarea
           value={command}
           onChange={(event) => setCommand(event.target.value)}
-          placeholder="npm run cleanup"
+          placeholder={
+            runtime === 'utility'
+              ? `curl -sS -X POST -d '{"text":"hello"}' "$SLACK_WEBHOOK_URL"`
+              : 'npm run cleanup'
+          }
+          className="font-mono"
         />
+        <p className="mt-2 text-xs text-text-tertiary">
+          {runtime === 'utility'
+            ? 'Runs in a lightweight container with curl available. Your app’s environment variables are injected — good for webhooks and HTTP calls.'
+            : 'Runs in your app’s container, with the same image, environment variables, and files. Available commands depend on what your image includes.'}
+        </p>
       </FormField>
 
       <div className="grid gap-5 sm:grid-cols-2">

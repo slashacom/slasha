@@ -106,6 +106,7 @@ impl CronJobRepo {
                     cron_jobs::timezone.eq(&job.timezone),
                     cron_jobs::enabled.eq(job.enabled),
                     cron_jobs::timeout_secs.eq(job.timeout_secs),
+                    cron_jobs::runtime.eq(job.runtime),
                     cron_jobs::next_run_at.eq(job.next_run_at),
                     cron_jobs::updated_at.eq(updated_at),
                 ))
@@ -247,6 +248,31 @@ impl CronRunRepo {
                 .count()
                 .get_result(&mut conn)?;
             Ok(count > 0)
+        })
+        .await?
+    }
+
+    /// Mark any runs left mid-flight as failed. Used on startup to clear runs
+    /// whose container died with the server, since a stuck Pending/Running row
+    /// would otherwise block the job forever via `has_active`.
+    pub async fn fail_interrupted(pool: &DbPool) -> DbResult<usize> {
+        let pool = pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let finished_at = Utc::now().naive_utc();
+            Ok(diesel::update(
+                cron_runs::table.filter(
+                    cron_runs::status
+                        .eq(CronRunStatus::Pending)
+                        .or(cron_runs::status.eq(CronRunStatus::Running)),
+                ),
+            )
+            .set((
+                cron_runs::status.eq(CronRunStatus::Failed),
+                cron_runs::error.eq(Some("Run interrupted by a server restart".to_string())),
+                cron_runs::finished_at.eq(Some(finished_at)),
+            ))
+            .execute(&mut conn)?)
         })
         .await?
     }
