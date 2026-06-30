@@ -23,6 +23,30 @@ type CronFormProps = {
   onSaved: () => void;
 };
 
+const SCHEDULE_PRESETS: { label: string; value: string }[] = [
+  { label: 'Every minute', value: '* * * * *' },
+  { label: 'Every 5 minutes', value: '*/5 * * * *' },
+  { label: 'Every 15 minutes', value: '*/15 * * * *' },
+  { label: 'Every 30 minutes', value: '*/30 * * * *' },
+  { label: 'Every hour', value: '0 * * * *' },
+  { label: 'Every day at midnight', value: '0 0 * * *' },
+  { label: 'Every day at 9 AM', value: '0 9 * * *' },
+  { label: 'Every Monday at 9 AM', value: '0 9 * * 1' },
+  { label: 'Every weekday at 9 AM', value: '0 9 * * 1-5' },
+  { label: 'First of the month', value: '0 0 1 * *' },
+];
+
+const SUPPORTED_TIMEZONES = (
+  Intl as typeof Intl & {
+    supportedValuesOf?: (key: 'timeZone') => string[];
+  }
+).supportedValuesOf?.('timeZone') ?? ['UTC'];
+
+const TIMEZONES = [
+  'UTC',
+  ...SUPPORTED_TIMEZONES.filter((zone) => zone !== 'UTC'),
+];
+
 export function CronForm(props: CronFormProps) {
   const { appSlug, cron, onCancel, onSaved } = props;
   const createCron = useCreateCron(appSlug);
@@ -43,6 +67,19 @@ export function CronForm(props: CronFormProps) {
     ...getCronPreviewOptions(appSlug, debouncedSchedule, debouncedTimezone),
     enabled: debouncedSchedule.length > 0,
   });
+
+  const matchedPreset = SCHEDULE_PRESETS.find(
+    (preset) => preset.value === schedule
+  );
+  const isCustomSchedule = !matchedPreset;
+
+  const handleScheduleSelect = (value: string) => {
+    if (value === 'custom') {
+      setSchedule('');
+      return;
+    }
+    setSchedule(value);
+  };
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -101,13 +138,26 @@ export function CronForm(props: CronFormProps) {
         />
       </FormField>
 
-      <FormField label="Schedule" help="cron expression">
-        <Input
-          value={schedule}
-          onChange={(event) => setSchedule(event.target.value)}
-          placeholder="0 3 * * *"
-          className="font-mono"
-        />
+      <FormField label="Schedule" help="how often the command runs">
+        <Select
+          value={isCustomSchedule ? 'custom' : schedule}
+          onChange={(event) => handleScheduleSelect(event.target.value)}
+        >
+          {SCHEDULE_PRESETS.map((preset) => (
+            <option key={preset.value} value={preset.value}>
+              {preset.label} ({preset.value})
+            </option>
+          ))}
+          <option value="custom">Custom expression…</option>
+        </Select>
+        {isCustomSchedule ? (
+          <Input
+            value={schedule}
+            onChange={(event) => setSchedule(event.target.value)}
+            placeholder="0 3 * * *"
+            className="mt-2 font-mono"
+          />
+        ) : null}
         <CronSchedulePreview
           loading={preview.isFetching}
           error={preview.isError ? (preview.error as Error).message : null}
@@ -144,12 +194,17 @@ export function CronForm(props: CronFormProps) {
       </FormField>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <FormField label="Timezone" help="IANA, e.g. America/New_York">
-          <Input
+        <FormField label="Timezone" help="schedule is evaluated in this zone">
+          <Select
             value={timezone}
             onChange={(event) => setTimezone(event.target.value)}
-            placeholder="UTC"
-          />
+          >
+            {TIMEZONES.map((zone) => (
+              <option key={zone} value={zone}>
+                {zone}
+              </option>
+            ))}
+          </Select>
         </FormField>
         <FormField label="Timeout (seconds)">
           <Input
