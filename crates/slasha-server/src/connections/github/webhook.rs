@@ -58,7 +58,7 @@ pub async fn handle(
     headers: HeaderMap,
     body: Bytes,
 ) -> HttpResult<StatusCode> {
-    verify_signature(&state, &headers, &body)?;
+    verify_signature(&state, &headers, &body).await?;
 
     let event = headers
         .get("x-github-event")
@@ -95,11 +95,10 @@ pub async fn handle(
     Ok(StatusCode::ACCEPTED)
 }
 
-fn verify_signature(state: &AppState, headers: &HeaderMap, body: &[u8]) -> HttpResult<()> {
+async fn verify_signature(state: &AppState, headers: &HeaderMap, body: &[u8]) -> HttpResult<()> {
     let github = state
-        .clients
-        .github
-        .as_ref()
+        .github_client()
+        .await
         .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
     let signature = headers
         .get("x-hub-signature-256")
@@ -144,7 +143,7 @@ async fn disconnect_repository(
 }
 
 async fn handle_push(state: AppState, payload: PushPayload) {
-    let Some(github) = state.clients.github.as_ref() else {
+    let Some(github) = state.github_client().await else {
         return;
     };
     let connections = match GithubConnectionRepo::list_for_repository(
@@ -169,7 +168,8 @@ async fn handle_push(state: AppState, payload: PushPayload) {
             Ok(app) if app.source == AppSource::Github => app,
             _ => continue,
         };
-        let repository = match sync_github_app(github, &state.storage, &state.runtime, &app).await {
+        let repository = match sync_github_app(&github, &state.storage, &state.runtime, &app).await
+        {
             Ok(repository) => repository,
             Err(error) => {
                 tracing::warn!(app_id = %app.id, error = %error, "github repository sync failed");

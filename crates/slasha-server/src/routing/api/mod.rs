@@ -6,7 +6,8 @@ use crate::{AppState, error::HttpResult};
 pub mod alerts;
 pub mod apps;
 pub mod auth;
-pub mod github;
+pub mod github_app;
+pub mod github_app_setup;
 pub mod monitoring;
 pub mod service_kinds;
 pub mod ssh_keys;
@@ -18,7 +19,16 @@ pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/health", get(health_check))
         .nest("/auth", auth::router())
-        .nest("/github", github::router())
+        .nest("/github-app", github_app::router())
+        .nest(
+            "/github-app/setup",
+            github_app_setup::router()
+                .route_layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    admin_middleware,
+                ))
+                .merge(github_app_setup::callback_router()),
+        )
         .nest("/apps", apps::router())
         .nest(
             "/alerts",
@@ -58,14 +68,12 @@ async fn health_check(
         status = "error";
     }
 
-    Ok(Json(
-        json!({
-            "status": status,
-            "version": env!("CARGO_PKG_VERSION"),
-            "services": {
-                "database": db_status,
-                "docker": docker_status,
-            }
-        }),
-    ))
+    Ok(Json(json!({
+        "status": status,
+        "version": env!("CARGO_PKG_VERSION"),
+        "services": {
+            "database": db_status,
+            "docker": docker_status,
+        }
+    })))
 }

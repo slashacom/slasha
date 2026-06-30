@@ -5,8 +5,8 @@ use std::{
 
 use axum::extract::FromRef;
 use bollard::Docker;
-use slasha_db::DbPool;
-use tokio::sync::Notify;
+use slasha_db::{DbPool, repos::github_app_config::GithubAppConfigRepo};
+use tokio::sync::{Notify, RwLock};
 
 use crate::{connections::GithubClient, docker::logs::LogManager, proxy::CaddyClient, utils};
 
@@ -14,7 +14,7 @@ use crate::{connections::GithubClient, docker::logs::LogManager, proxy::CaddyCli
 pub struct Clients {
     pub docker: Docker,
     pub caddy: CaddyClient,
-    pub github: Option<GithubClient>,
+    pub github: Arc<RwLock<Option<GithubClient>>>,
 }
 
 impl Clients {
@@ -22,7 +22,7 @@ impl Clients {
         Self {
             docker,
             caddy: CaddyClient::default(),
-            github,
+            github: Arc::new(RwLock::new(github)),
         }
     }
 }
@@ -138,6 +138,21 @@ impl AppState {
             runtime,
             config,
         }
+    }
+
+    pub async fn github_client(&self) -> Option<GithubClient> {
+        self.clients.github.read().await.clone()
+    }
+
+    pub async fn reload_github_client(&self) -> anyhow::Result<()> {
+        let config = GithubAppConfigRepo::get(&self.storage.db_pool).await?;
+        let client = config.as_ref().map(GithubClient::from_config).transpose()?;
+        *self.clients.github.write().await = client;
+        Ok(())
+    }
+
+    pub async fn clear_github_client(&self) {
+        *self.clients.github.write().await = None;
     }
 }
 

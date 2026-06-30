@@ -152,11 +152,11 @@ pub struct CronJob {
     pub timezone: String,
     pub enabled: bool,
     pub timeout_secs: i32,
-    pub runtime: CronRuntime,
     pub last_run_at: Option<NaiveDateTime>,
     pub next_run_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub runtime: CronRuntime,
 }
 
 #[derive(

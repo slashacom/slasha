@@ -4,6 +4,7 @@ use chrono::Utc;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
+use slasha_db::github_app_config::GithubAppConfig;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GithubError {
@@ -79,51 +80,19 @@ struct Repositories {
 }
 
 impl GithubClient {
-    pub fn from_env() -> anyhow::Result<Option<Self>> {
-        const ENV_VARS: [&str; 5] = [
-            "GITHUB_APP_ID",
-            "GITHUB_APP_CLIENT_ID",
-            "GITHUB_APP_CLIENT_SECRET",
-            "GITHUB_APP_PRIVATE_KEY",
-            "GITHUB_APP_WEBHOOK_SECRET",
-        ];
-
-        let present = ENV_VARS
-            .iter()
-            .filter(|name| std::env::var(name).map(|v| !v.is_empty()).unwrap_or(false))
-            .count();
-
-        if present == 0 {
-            return Ok(None);
-        }
-        if present < ENV_VARS.len() {
-            anyhow::bail!(
-                "GitHub integration is partially configured — set all of {:?} or none of them",
-                ENV_VARS
-            );
-        }
-
-        let app_id = std::env::var("GITHUB_APP_ID").unwrap();
-        let client_id = std::env::var("GITHUB_APP_CLIENT_ID").unwrap();
-        let client_secret = std::env::var("GITHUB_APP_CLIENT_SECRET").unwrap();
-        let private_key_pem = std::env::var("GITHUB_APP_PRIVATE_KEY")
-            .unwrap()
-            .replace("\\n", "\n");
-        let webhook_secret = std::env::var("GITHUB_APP_WEBHOOK_SECRET")
-            .unwrap()
-            .into_bytes();
+    pub fn from_config(config: &GithubAppConfig) -> anyhow::Result<Self> {
+        let private_key_pem = config.private_key.replace("\\n", "\n");
         let private_key = EncodingKey::from_rsa_pem(private_key_pem.as_bytes())?;
-
-        Ok(Some(Self {
+        Ok(Self {
             inner: Arc::new(Inner {
                 http: Client::builder().user_agent("slasha").build()?,
-                app_id,
-                client_id,
-                client_secret,
+                app_id: config.app_id.clone(),
+                client_id: config.client_id.clone(),
+                client_secret: config.client_secret.clone(),
                 private_key,
-                webhook_secret,
+                webhook_secret: config.webhook_secret.clone().into_bytes(),
             }),
-        }))
+        })
     }
 
     fn generate_app_jwt(&self) -> anyhow::Result<String> {

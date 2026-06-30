@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Globe, Lock, Search } from 'lucide-react';
-import type { GithubRepository } from '~/queries/github';
+import type { GithubRepository } from '~/queries/github-app';
 import { cn } from '~/utils/classname';
 
 interface RepositorySelectProps {

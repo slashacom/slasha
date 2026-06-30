@@ -13,7 +13,7 @@ import {
   getGithubRepositoriesOptions,
   getGithubStatusOptions,
   useInstallGithub,
-} from '~/queries/github';
+} from '~/queries/github-app';
 import { queryClient } from '~/utils/query-client';
 import { useDebounce } from '~/hooks/use-debounce';
 import type { AppSource } from '~/models/app';
