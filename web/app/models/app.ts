@@ -6,9 +6,10 @@ export type App = {
   name: string;
   repo_path: string;
   default_branch: string;
-  status: string;
+  status: AppStatus;
   created_at: string;
   auto_deploy: boolean;
+  source: AppSource;
 };
 
 export type AppDomain = {
@@ -35,3 +36,7 @@ export type AppMember = {
 };
 
 export type AppMemberRole = 'Owner' | 'Admin' | 'Member';
+
+export type AppSource = 'local' | 'github' | 'git';
+
+export type AppStatus = 'idle' | 'building' | 'running' | 'failed';

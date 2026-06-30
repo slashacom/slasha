@@ -1,18 +1,19 @@
 import type { Deployment } from '~/models/deployment';
+import type { AppStatus } from '~/models/app';
 import { parseUTC } from '~/utils/format';
 
-export type AppRuntimeTone = 'live' | 'deploying' | 'failed' | 'idle';
+export type AppStatusTone = 'live' | 'deploying' | 'failed' | 'idle';
 
-export type AppRuntimeStatus = {
+export type AppStatusView = {
   label: string;
-  tone: AppRuntimeTone;
+  tone: AppStatusTone;
 };
 
-export function statusFromRuntime(runtimeStatus: string): AppRuntimeStatus {
-  switch (runtimeStatus) {
+export function getAppStatusView(status: AppStatus): AppStatusView {
+  switch (status) {
     case 'running':
       return { label: 'Live', tone: 'live' };
-    case 'deploying':
+    case 'building':
       return { label: 'Deploying', tone: 'deploying' };
     case 'failed':
       return { label: 'Failed', tone: 'failed' };
@@ -21,7 +22,7 @@ export function statusFromRuntime(runtimeStatus: string): AppRuntimeStatus {
   }
 }
 
-export function deriveAppStatus(deployments: Deployment[]): AppRuntimeStatus {
+export function deriveAppStatus(deployments: Deployment[]): AppStatusView {
   if (deployments.some((d) => d.status === 'Running')) {
     return { label: 'Live', tone: 'live' };
   }

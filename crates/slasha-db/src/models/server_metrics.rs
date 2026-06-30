@@ -4,7 +4,7 @@ use ts_rs::TS;
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
 #[diesel(table_name = crate::models::schema::server_metrics)]
-#[ts(export, export_to = "./server_metrics.ts")]
+#[ts(export, export_to = "./server-metrics.ts")]
 pub struct ServerMetrics {
     pub id: String,
     pub cpu_usage: f32,

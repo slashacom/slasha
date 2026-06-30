@@ -4,14 +4,24 @@ use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
     models::{
-        app::{App, AppEnvVar, AppMember, AppMemberRole},
+        app::{App, AppEnvVar, AppMember, AppMemberRole, AppSource},
         deployment::Deployment,
-        schema::{app_env_vars, app_members, apps, deployments, users},
+        git_connection::GitConnection,
+        github_connection::GithubConnection,
+        schema::{
+            app_env_vars, app_members, apps, deployments, git_connections, github_connections,
+            users,
+        },
         user::{User, UserRole},
     },
 };
 
 pub struct AppRepo;
+
+pub enum NewAppConnection {
+    Git(GitConnection),
+    Github(GithubConnection),
+}
 
 impl AppRepo {
     pub async fn list_for_user(pool: &DbPool, user_id: &str) -> DbResult<Vec<App>> {
@@ -121,6 +131,53 @@ impl AppRepo {
         .await?
     }
 
+    pub async fn create_with_connection(
+        pool: &DbPool,
+        app: App,
+        member: AppMember,
+        connection: NewAppConnection,
+    ) -> DbResult<App> {
+        let pool = pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let (connection_app_id, expected_source) = match &connection {
+                NewAppConnection::Git(connection) => (&connection.app_id, AppSource::Git),
+                NewAppConnection::Github(connection) => (&connection.app_id, AppSource::Github),
+            };
+            if app.source != expected_source {
+                return Err(DbError::Data(
+                    "connection type does not match app source".to_string(),
+                ));
+            }
+            if connection_app_id != &app.id {
+                return Err(DbError::Data(
+                    "connection app id does not match app".to_string(),
+                ));
+            }
+            let mut conn = pool.get()?;
+            conn.transaction::<_, DbError, _>(|tx| {
+                diesel::insert_into(apps::table).values(&app).execute(tx)?;
+                diesel::insert_into(app_members::table)
+                    .values(&member)
+                    .execute(tx)?;
+                match &connection {
+                    NewAppConnection::Git(connection) => {
+                        diesel::insert_into(git_connections::table)
+                            .values(connection)
+                            .execute(tx)?;
+                    }
+                    NewAppConnection::Github(connection) => {
+                        diesel::insert_into(github_connections::table)
+                            .values(connection)
+                            .execute(tx)?;
+                    }
+                }
+                Ok(())
+            })?;
+            Ok(app)
+        })
+        .await?
+    }
+
     pub async fn delete(pool: &DbPool, app_id: &str) -> DbResult<Vec<Deployment>> {
         let pool = pool.clone();
         let app_id = app_id.to_string();
@@ -223,6 +280,23 @@ impl AppRepo {
             diesel::update(apps::table.filter(apps::id.eq(&id)))
                 .set(apps::name.eq(name))
                 .execute(&mut conn)?;
+            Ok(())
+        })
+        .await?
+    }
+
+    pub async fn update_default_branch(pool: &DbPool, id: &str, branch: &str) -> DbResult<()> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        let branch = branch.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let updated = diesel::update(apps::table.filter(apps::id.eq(&id)))
+                .set(apps::default_branch.eq(branch))
+                .execute(&mut conn)?;
+            if updated == 0 {
+                return Err(DbError::NotFound(format!("app '{}' not found", id)));
+            }
             Ok(())
         })
         .await?

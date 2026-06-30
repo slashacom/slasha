@@ -4,6 +4,7 @@ use anyhow::Context;
 use axum::{
     Json, Router,
     extract::State,
+    http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, post, put},
 };
@@ -12,11 +13,16 @@ use chrono::Utc;
 use serde::Deserialize;
 use slasha_db::{
     DbPool, DbResult,
-    app::{App, AppMember, AppMemberRole},
-    deployment::{Deployment, DeploymentStatus},
+    app::{App, AppMember, AppMemberRole, AppSource, AppStatus},
+    git_connection::GitConnection,
+    github_connection::{ConnectionStatus, GithubConnection},
     repos::{
-        app::AppRepo, app_domain::AppDomainRepo, app_scale::AppScaleRepo,
-        deployment::DeploymentRepo, service::ServiceRepo,
+        app::{AppRepo, NewAppConnection},
+        app_domain::AppDomainRepo,
+        app_scale::AppScaleRepo,
+        git_connection::GitConnectionRepo,
+        github_connection::GithubConnectionRepo,
+        service::ServiceRepo,
     },
     user::UserRole,
 };
@@ -24,6 +30,7 @@ use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::{
+    connections::{GithubError, sync_selected_git_repository, sync_selected_github_repository},
     docker::{
         deployment::{remove_app_volumes, remove_deployment_processes},
         network::{create_app_network, remove_app_network},
@@ -40,14 +47,35 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list_apps))
         .route("/check-slug", get(check_slug))
         .route("/{slug}", get(get_app))
+        .route("/{slug}/connection", get(get_connection))
         .route("/{slug}/scales", get(list_scales))
         .route("/{slug}", delete(delete_app))
         .route("/{slug}/settings", put(update_settings))
+        .route(
+            "/{slug}/connection/github",
+            put(reconnect_github).delete(disconnect_github),
+        )
 }
 
 #[derive(Deserialize)]
 struct CreateAppReq {
     name: String,
+    #[serde(flatten)]
+    source: CreateAppSource,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "source", rename_all = "lowercase")]
+enum CreateAppSource {
+    Local,
+    Github {
+        installation_id: i64,
+        repository_id: i64,
+    },
+    Git {
+        url: String,
+        branch: Option<String>,
+    },
 }
 
 #[derive(Deserialize)]
@@ -92,6 +120,99 @@ async fn generate_unique_slug(pool: &DbPool, name: &str) -> DbResult<(String, bo
     }
 }
 
+async fn init_local_repository(repo_path: &str) -> HttpResult<()> {
+    let output = Command::new("git")
+        .arg("init")
+        .arg("--bare")
+        .arg("--initial-branch=main")
+        .arg(repo_path)
+        .output()
+        .await
+        .context("Failed to init bare repo")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!("git init --bare failed: {}", stderr).into());
+    }
+    Ok(())
+}
+
+fn validate_public_git_url(value: &str) -> HttpResult<String> {
+    let value = value.trim();
+    let url = reqwest::Url::parse(value)
+        .map_err(|_| HttpError::bad_request("Git URL must be a valid HTTP(S) URL"))?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(HttpError::bad_request(
+            "Git URL must be a public HTTP(S) URL without credentials",
+        ));
+    }
+    Ok(url.to_string())
+}
+
+async fn prepare_github_connection(
+    state: &AppState,
+    user_id: &str,
+    app_id: &str,
+    repo_path: &str,
+    installation_id: i64,
+    repository_id: i64,
+) -> HttpResult<(String, GithubConnection)> {
+    let github = state
+        .clients
+        .github
+        .as_ref()
+        .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
+    ensure_github_installation_access(state, user_id, installation_id).await?;
+    let repository = sync_selected_github_repository(
+        github,
+        &state.runtime,
+        app_id,
+        std::path::PathBuf::from(repo_path),
+        installation_id,
+        repository_id,
+    )
+    .await
+    .map_err(|error| {
+        HttpError::bad_request(format!("Failed to fetch GitHub repository: {}", error))
+    })?;
+
+    let now = Utc::now().naive_utc();
+    Ok((
+        repository.default_branch,
+        GithubConnection {
+            app_id: app_id.to_string(),
+            installation_id,
+            repository_id,
+            status: ConnectionStatus::Connected,
+            created_at: now,
+            updated_at: now,
+        },
+    ))
+}
+
+async fn ensure_github_installation_access(
+    state: &AppState,
+    user_id: &str,
+    installation_id: i64,
+) -> HttpResult<()> {
+    if !GithubConnectionRepo::user_has_installation(
+        &state.storage.db_pool,
+        user_id,
+        installation_id,
+    )
+    .await?
+    {
+        return Err(HttpError::forbidden(
+            "GitHub installation is not connected to this user",
+        ));
+    }
+    Ok(())
+}
+
 async fn check_slug(
     State(storage): State<Storage>,
     axum::extract::Query(query): axum::extract::Query<CheckSlugReq>,
@@ -107,17 +228,17 @@ async fn check_slug(
 }
 
 async fn create_app(
-    State(docker): State<Docker>,
-    State(storage): State<Storage>,
+    State(state): State<AppState>,
     AuthUser(user): AuthUser,
     Json(payload): Json<CreateAppReq>,
 ) -> HttpResult<impl IntoResponse> {
     let name = payload.name.trim().to_string();
+
     if name.is_empty() {
         return Err(HttpError::bad_request("App name cannot be empty"));
     }
 
-    let (slug, _) = generate_unique_slug(&storage.db_pool, &name)
+    let (slug, _) = generate_unique_slug(&state.storage.db_pool, &name)
         .await
         .map_err(HttpError::internal)?;
 
@@ -127,39 +248,77 @@ async fn create_app(
         ));
     }
 
-    let repo_path = storage
+    let repo_path = state
+        .storage
         .repos_dir
         .join(format!("{}.git", slug))
         .to_str()
         .ok_or_else(|| HttpError::internal(anyhow::anyhow!("Invalid repo path")))?
         .to_string();
 
-    let git_status = Command::new("git")
-        .arg("init")
-        .arg("--bare")
-        .arg("--initial-branch=main")
-        .arg(&repo_path)
-        .output()
-        .await
-        .context("Failed to init bare repo")?;
-
-    if !git_status.status.success() {
-        let stderr = String::from_utf8_lossy(&git_status.stderr);
-        return Err(anyhow::anyhow!("git init --bare failed: {}", stderr).into());
-    }
-
     let now = Utc::now().naive_utc();
     let app_id = Uuid::new_v4().to_string();
+    let (source, default_branch, connection) = match payload.source {
+        CreateAppSource::Local => {
+            init_local_repository(&repo_path).await?;
+            (AppSource::Local, "main".to_string(), None)
+        }
+        CreateAppSource::Github {
+            installation_id,
+            repository_id,
+        } => {
+            let (branch, connection) = prepare_github_connection(
+                &state,
+                &user.id,
+                &app_id,
+                &repo_path,
+                installation_id,
+                repository_id,
+            )
+            .await?;
+            (
+                AppSource::Github,
+                branch,
+                Some(NewAppConnection::Github(connection)),
+            )
+        }
+        CreateAppSource::Git { url, branch } => {
+            let clone_url = validate_public_git_url(&url)?;
+            let requested_branch = branch
+                .map(|branch| branch.trim().to_string())
+                .filter(|branch| !branch.is_empty());
+            let branch = sync_selected_git_repository(
+                clone_url.clone(),
+                requested_branch,
+                std::path::PathBuf::from(&repo_path),
+            )
+            .await
+            .map_err(|error| {
+                HttpError::bad_request(format!("Failed to fetch Git repository: {error}"))
+            })?;
+            let connection = GitConnection {
+                app_id: app_id.clone(),
+                clone_url,
+                created_at: now,
+            };
+            (
+                AppSource::Git,
+                branch,
+                Some(NewAppConnection::Git(connection)),
+            )
+        }
+    };
 
     let new_app = App {
         id: app_id.clone(),
         slug: slug.clone(),
         name: name.clone(),
         repo_path,
-        default_branch: "main".into(),
-        status: "idle".into(),
+        default_branch,
+        status: AppStatus::Idle,
         created_at: now,
         auto_deploy: true,
+        source,
     };
 
     let new_member = AppMember {
@@ -169,9 +328,15 @@ async fn create_app(
         added_at: now,
     };
 
-    let new_app = AppRepo::create(&storage.db_pool, new_app, new_member).await?;
+    let new_app = match connection {
+        Some(connection) => {
+            AppRepo::create_with_connection(&state.storage.db_pool, new_app, new_member, connection)
+                .await?
+        }
+        None => AppRepo::create(&state.storage.db_pool, new_app, new_member).await?,
+    };
 
-    create_app_network(&docker, &app_id).await?;
+    create_app_network(&state.clients.docker, &app_id).await?;
 
     Ok(Json(serde_json::json!({
         "app": new_app,
@@ -179,11 +344,10 @@ async fn create_app(
 }
 
 async fn get_app(
-    State(storage): State<Storage>,
-    State(config): State<Config>,
+    State(state): State<AppState>,
     ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let domains = AppDomainRepo::list_for_app(&storage.db_pool, &app.id).await?;
+    let domains = AppDomainRepo::list_for_app(&state.storage.db_pool, &app.id).await?;
     let url = match domains.first() {
         Some(domain) => format!(
             "https://{}",
@@ -193,18 +357,82 @@ async fn get_app(
                 .trim_start_matches("https://")
         ),
         None => {
-            let scheme = if config.platform_domain.contains("localhost") {
+            let scheme = if state.config.platform_domain.contains("localhost") {
                 "http"
             } else {
                 "https"
             };
-            format!("{}://{}.{}", scheme, app.slug, config.platform_domain)
+            format!("{}://{}.{}", scheme, app.slug, state.config.platform_domain)
         }
     };
 
     Ok(Json(serde_json::json!({
         "app": app,
         "url": url,
+    })))
+}
+
+async fn get_connection(
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
+) -> HttpResult<impl IntoResponse> {
+    let connection = match app.source {
+        AppSource::Local => None,
+        AppSource::Git => GitConnectionRepo::find_for_app(&state.storage.db_pool, &app.id)
+            .await?
+            .map(|connection| {
+                serde_json::json!({
+                    "clone_url": connection.clone_url,
+                })
+            }),
+        AppSource::Github => {
+            let connection =
+                GithubConnectionRepo::find_for_app(&state.storage.db_pool, &app.id).await?;
+            match connection {
+                Some(connection) => {
+                    let repository = if connection.status == ConnectionStatus::Connected {
+                        match &state.clients.github {
+                            Some(github) => match github
+                                .get_repository(
+                                    connection.installation_id,
+                                    connection.repository_id,
+                                )
+                                .await
+                            {
+                                Ok(repository) => Some(repository),
+                                Err(GithubError::AccessRevoked) => {
+                                    GithubConnectionRepo::update_status(
+                                        &state.storage.db_pool,
+                                        &app.id,
+                                        ConnectionStatus::Disconnected,
+                                    )
+                                    .await?;
+                                    None
+                                }
+                                Err(error) => {
+                                    return Err(HttpError::internal(anyhow::Error::from(error)));
+                                }
+                            },
+                            None => None,
+                        }
+                    } else {
+                        None
+                    };
+                    Some(serde_json::json!({
+                        "repository": repository.map(|repository| serde_json::json!({
+                            "full_name": repository.full_name,
+                            "html_url": repository.html_url,
+                            "default_branch": repository.default_branch,
+                        })),
+                    }))
+                }
+                None => None,
+            }
+        }
+    };
+
+    Ok(Json(serde_json::json!({
+        "connection": connection,
     })))
 }
 
@@ -299,20 +527,6 @@ async fn delete_app(
     })))
 }
 
-fn derive_runtime_status(deployments: &[Deployment]) -> &'static str {
-    if deployments
-        .iter()
-        .any(|d| d.status == DeploymentStatus::Running)
-    {
-        return "running";
-    }
-    match deployments.first().map(|d| d.status) {
-        Some(DeploymentStatus::Building) | Some(DeploymentStatus::Pending) => "deploying",
-        Some(DeploymentStatus::Failed) => "failed",
-        _ => "idle",
-    }
-}
-
 async fn list_apps(
     State(storage): State<Storage>,
     State(config): State<Config>,
@@ -337,7 +551,6 @@ async fn list_apps(
 
     let mut items = Vec::with_capacity(user_apps.len());
     for app in user_apps {
-        let deployments = DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
         let url = match primary_domains.get(&app.id) {
             Some(domain) => format!(
                 "https://{}",
@@ -350,7 +563,6 @@ async fn list_apps(
         items.push(serde_json::json!({
             "app": app,
             "url": url,
-            "runtime_status": derive_runtime_status(&deployments),
         }));
     }
 
@@ -394,4 +606,82 @@ async fn update_settings(
     Ok(Json(serde_json::json!({
         "success": true,
     })))
+}
+
+#[derive(Deserialize)]
+struct ReconnectGithubReq {
+    installation_id: i64,
+    repository_id: i64,
+}
+
+async fn reconnect_github(
+    State(state): State<AppState>,
+    ActiveApp { app, user }: ActiveApp,
+    Json(payload): Json<ReconnectGithubReq>,
+) -> HttpResult<impl IntoResponse> {
+    if app.source != AppSource::Github {
+        return Err(HttpError::bad_request("App does not use GitHub"));
+    }
+    if user.role != UserRole::Admin
+        && !AppRepo::is_owner(&state.storage.db_pool, &app.id, &user.id).await?
+    {
+        return Err(HttpError::forbidden(
+            "Only app owners can change the GitHub connection",
+        ));
+    }
+
+    let github = state
+        .clients
+        .github
+        .as_ref()
+        .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
+    ensure_github_installation_access(&state, &user.id, payload.installation_id).await?;
+
+    let repository = sync_selected_github_repository(
+        github,
+        &state.runtime,
+        &app.id,
+        std::path::PathBuf::from(&app.repo_path),
+        payload.installation_id,
+        payload.repository_id,
+    )
+    .await
+    .map_err(|error| {
+        HttpError::bad_request(format!("Failed to fetch GitHub repository: {}", error))
+    })?;
+
+    GithubConnectionRepo::reconnect(
+        &state.storage.db_pool,
+        &app.id,
+        payload.installation_id,
+        payload.repository_id,
+        &repository.default_branch,
+    )
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn disconnect_github(
+    State(state): State<AppState>,
+    ActiveApp { app, user }: ActiveApp,
+) -> HttpResult<impl IntoResponse> {
+    if app.source != AppSource::Github {
+        return Err(HttpError::bad_request("App does not use GitHub"));
+    }
+    if user.role != UserRole::Admin
+        && !AppRepo::is_owner(&state.storage.db_pool, &app.id, &user.id).await?
+    {
+        return Err(HttpError::forbidden(
+            "Only app owners can change the GitHub connection",
+        ));
+    }
+    GithubConnectionRepo::update_status(
+        &state.storage.db_pool,
+        &app.id,
+        ConnectionStatus::Disconnected,
+    )
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -7,7 +7,7 @@ import { getDeploymentsOptions } from '~/queries/deployments';
 import type { App } from '~/models/app';
 import { TabNav } from '~/components/interface/tab-nav';
 import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
-import { deriveAppStatus, type AppRuntimeStatus } from '~/utils/app-status';
+import { deriveAppStatus, type AppStatusView } from '~/utils/app-status';
 import { cn } from '~/utils/classname';
 import { queryClient } from '~/utils/query-client';
 
@@ -27,7 +27,7 @@ type Protocol = 'https' | 'ssh';
 
 type AppToolbarProps = {
   app: App;
-  status: AppRuntimeStatus;
+  status: AppStatusView;
   url: string;
 };
 
@@ -89,49 +89,51 @@ function AppToolbar(props: AppToolbarProps) {
         ) : null}
       </div>
 
-      <div className="flex items-center rounded border border-border bg-surface">
-        <button
-          onClick={() => {
-            setProtocol('https');
-          }}
-          className={cn(
-            'h-7 px-2.5 text-[11px] font-medium transition-colors',
-            protocol === 'https'
-              ? 'bg-white/[0.06] text-text'
-              : 'text-text-tertiary hover:text-text'
-          )}
-        >
-          HTTPS
-        </button>
-        <button
-          onClick={() => {
-            setProtocol('ssh');
-          }}
-          className={cn(
-            'h-7 border-l border-border px-2.5 text-[11px] font-medium transition-colors',
-            protocol === 'ssh'
-              ? 'bg-white/[0.06] text-text'
-              : 'text-text-tertiary hover:text-text'
-          )}
-        >
-          SSH
-        </button>
-        <div className="h-7 w-px bg-border" />
-        <code className="max-w-[320px] truncate px-2.5 font-mono text-[11px] text-text-secondary">
-          {url}
-        </code>
-        <button
-          onClick={handleCopy}
-          aria-label="Copy clone URL"
-          className="flex h-7 w-8 items-center justify-center border-l border-border text-text-tertiary transition-colors hover:text-text"
-        >
-          {copied ? (
-            <Check className="size-3.5 text-emerald-400" />
-          ) : (
-            <Copy className="size-3.5" />
-          )}
-        </button>
-      </div>
+      {app.source === 'local' && (
+        <div className="flex items-center rounded border border-border bg-surface">
+          <button
+            onClick={() => {
+              setProtocol('https');
+            }}
+            className={cn(
+              'h-7 px-2.5 text-[11px] font-medium transition-colors',
+              protocol === 'https'
+                ? 'bg-white/[0.06] text-text'
+                : 'text-text-tertiary hover:text-text'
+            )}
+          >
+            HTTPS
+          </button>
+          <button
+            onClick={() => {
+              setProtocol('ssh');
+            }}
+            className={cn(
+              'h-7 border-l border-border px-2.5 text-[11px] font-medium transition-colors',
+              protocol === 'ssh'
+                ? 'bg-white/[0.06] text-text'
+                : 'text-text-tertiary hover:text-text'
+            )}
+          >
+            SSH
+          </button>
+          <div className="h-7 w-px bg-border" />
+          <code className="max-w-[320px] truncate px-2.5 font-mono text-[11px] text-text-secondary">
+            {url}
+          </code>
+          <button
+            onClick={handleCopy}
+            aria-label="Copy clone URL"
+            className="flex h-7 w-8 items-center justify-center border-l border-border text-text-tertiary transition-colors hover:text-text"
+          >
+            {copied ? (
+              <Check className="size-3.5 text-emerald-400" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -9,13 +9,15 @@ import { VStack } from '~/components/interface/stacks';
 import { toast } from 'sonner';
 import { CommitSelector } from '~/components/apps/commit-selector';
 import { DeploymentRow } from '~/components/apps/deployment-row';
+import type { App } from '~/models/app';
 
 type DeploymentsViewProps = {
-  appSlug: string;
+  app: App;
 };
 
 export function DeploymentsView(props: DeploymentsViewProps) {
-  const { appSlug } = props;
+  const { app } = props;
+  const appSlug = app.slug;
   const navigate = useNavigate();
   const { data, isLoading } = useQuery({
     ...getDeploymentsOptions(appSlug),
@@ -97,17 +99,22 @@ export function DeploymentsView(props: DeploymentsViewProps) {
           <VStack alignItems="center" space={1}>
             <p className="text-sm font-medium text-text">No deployments yet</p>
             <p className="max-w-[340px] text-center text-xs text-text-tertiary">
-              Add the remote and push — slasha deploys every push to your
-              default branch automatically. Or trigger one now.
+              {app.source === 'local'
+                ? 'Add the remote and push to deploy your default branch, or trigger a deployment now.'
+                : app.source === 'github'
+                  ? 'Push to the connected GitHub repository for automatic deployments, or deploy the latest commit now.'
+                  : 'Deploy the latest commit from the configured Git repository.'}
             </p>
           </VStack>
-          <pre className="w-full max-w-md overflow-x-auto rounded-lg border border-border bg-black/40 p-4 text-left font-mono text-[12px] leading-relaxed text-text-secondary">
-            <span className="select-none text-text-tertiary">$ </span>git remote
-            add slasha {cloneUrl}
-            {'\n'}
-            <span className="select-none text-text-tertiary">$ </span>git push
-            slasha main
-          </pre>
+          {app.source === 'local' && (
+            <pre className="w-full max-w-md overflow-x-auto rounded-lg border border-border bg-black/40 p-4 text-left font-mono text-[12px] leading-relaxed text-text-secondary">
+              <span className="select-none text-text-tertiary">$ </span>git
+              remote add slasha {cloneUrl}
+              {'\n'}
+              <span className="select-none text-text-tertiary">$ </span>git push
+              slasha {app.default_branch}
+            </pre>
+          )}
           <Button
             label="Deploy now"
             icon={<Play className="size-3.5" />}

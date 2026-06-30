@@ -3,6 +3,7 @@ pub mod alerts;
 pub mod assets;
 pub mod auth;
 pub mod cron;
+pub mod connections;
 pub mod docker;
 pub mod domain_health;
 pub mod error;
@@ -101,10 +102,11 @@ pub async fn serve() -> anyhow::Result<()> {
 
     let docker_client =
         bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");
+    let github_client = connections::GithubClient::from_env()?;
 
     proxy::container::ensure_caddy_ready(&docker_client).await?;
 
-    let clients = Clients::new(docker_client.clone());
+    let clients = Clients::new(docker_client.clone(), github_client);
     let storage = Storage::new(&db_path, repos_dir)?;
 
     run_migrations(db_path.to_str().expect("Invalid DB path"));

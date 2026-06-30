@@ -5,15 +5,15 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
-import type { AppRuntimeStatus, AppRuntimeTone } from '~/utils/app-status';
+import type { AppStatusTone, AppStatusView } from '~/utils/app-status';
 import { cn } from '~/utils/classname';
 
 type AppRuntimeBadgeProps = {
-  status: AppRuntimeStatus;
+  status: AppStatusView;
 };
 
 const TONE_STYLES: Record<
-  AppRuntimeTone,
+  AppStatusTone,
   { icon: LucideIcon; className: string; spin?: boolean }
 > = {
   live: {

@@ -9,15 +9,20 @@ import { CodeViewer } from '~/components/apps/code-viewer';
 import { FolderViewer } from '~/components/apps/folder-viewer';
 import { EmptyPage } from '~/components/global/empty-page';
 import { queryClient } from '~/utils/query-client';
+import { getAppOptions } from '~/queries/apps';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
-  await queryClient.ensureQueryData(getFileTreeOptions(params.slug));
+  await Promise.all([
+    queryClient.ensureQueryData(getFileTreeOptions(params.slug)),
+    queryClient.ensureQueryData(getAppOptions(params.slug)),
+  ]);
 }
 
 export default function AppFilesPage() {
   const { slug } = useParams();
   const { data: treeData } = useSuspenseQuery(getFileTreeOptions(slug!));
+  const { data: appData } = useSuspenseQuery(getAppOptions(slug!));
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -70,7 +75,11 @@ export default function AppFilesPage() {
           className="flex-1"
           icon={GitBranch}
           title="No commits yet"
-          subtitle="Push code to this repository to see the file tree."
+          subtitle={
+            appData.app.source === 'local'
+              ? 'Push code to this repository to see the file tree.'
+              : 'Deploy the connected repository to see its file tree.'
+          }
         />
       </div>
     );

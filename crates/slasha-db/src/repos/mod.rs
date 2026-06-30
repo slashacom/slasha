@@ -6,6 +6,8 @@ pub mod app_metrics;
 pub mod app_scale;
 pub mod cron;
 pub mod deployment;
+pub mod git_connection;
+pub mod github_connection;
 pub mod server_metrics;
 pub mod service;
 pub mod ssh_key;

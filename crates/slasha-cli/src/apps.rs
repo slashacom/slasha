@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
 use serde_json::json;
-use slasha_db::app::App;
+use slasha_db::app::{App, AppSource};
 
 use crate::{
     config::ProjectConfig,
@@ -20,19 +20,32 @@ fn ssh_git_url(state: &AppState, slug: &str) -> String {
 fn print_app(state: &AppState, app: &App) {
     cli_section(&app.name);
     cli_label("Slug", &app.slug);
-    cli_label("Status", &app.status);
+    cli_label("Status", app.status);
     cli_label("Branch", &app.default_branch);
+    cli_label("Source", app.source.to_string());
 
-    cli_section("Git remotes");
-    cli_label("HTTPS", git_remote_url(state, &app.slug));
-    cli_label("SSH", ssh_git_url(state, &app.slug));
+    match app.source {
+        AppSource::Local => {
+            cli_section("Git remotes");
+            cli_label("HTTPS", git_remote_url(state, &app.slug));
+            cli_label("SSH", ssh_git_url(state, &app.slug));
 
-    cli_section("Deploy");
-    cli_info(format!(
-        "  git remote add slasha {}",
-        ssh_git_url(state, &app.slug)
-    ));
-    cli_info("  git push -u slasha main".to_string());
+            cli_section("Deploy");
+            cli_info(format!(
+                "  git remote add slasha {}",
+                ssh_git_url(state, &app.slug)
+            ));
+            cli_info("  git push -u slasha main".to_string());
+        }
+        AppSource::Github => {
+            cli_section("Deploy");
+            cli_info("Push to the connected GitHub repository or deploy from the dashboard.");
+        }
+        AppSource::Git => {
+            cli_section("Deploy");
+            cli_info("Deployments are triggered from the dashboard.");
+        }
+    }
 }
 
 pub async fn handle_list(state: &AppState) -> Result<()> {
@@ -46,14 +59,15 @@ pub async fn handle_list(state: &AppState) -> Result<()> {
             cli_info("No apps yet. Run slasha create <name> to create one.");
         } else {
             print_table(
-                &["NAME", "SLUG", "STATUS", "BRANCH"],
+                &["NAME", "SLUG", "STATUS", "BRANCH", "SOURCE"],
                 apps.iter()
                     .map(|a| {
                         vec![
                             a.name.clone(),
                             a.slug.clone(),
-                            a.status.clone(),
+                            a.status.to_string(),
                             a.default_branch.clone(),
+                            a.source.to_string(),
                         ]
                     })
                     .collect(),
@@ -67,7 +81,7 @@ pub async fn handle_list(state: &AppState) -> Result<()> {
 pub async fn handle_create(state: &AppState, name: &str) -> Result<()> {
     let body = state
         .api_client
-        .post("/api/apps", &json!({ "name": name }))
+        .post("/api/apps", &json!({ "name": name, "source": "local" }))
         .await?;
 
     let app: App = serde_json::from_value(body["app"].clone()).context("Failed to parse app")?;
