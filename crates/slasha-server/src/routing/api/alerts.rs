@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
 };
 use chrono::Utc;
 use serde::Deserialize;
@@ -29,6 +29,7 @@ pub fn router() -> Router<AppState> {
             "/channels/{id}",
             get(get_channel).put(update_channel).delete(delete_channel),
         )
+        .route("/channels/{id}/test", post(test_channel))
         .route("/rules", get(list_rules).post(create_rule))
         .route(
             "/rules/{id}",
@@ -128,6 +129,21 @@ async fn delete_channel(
 ) -> HttpResult<impl IntoResponse> {
     AlertChannelRepo::delete(&storage.db_pool, &id).await?;
     Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+async fn test_channel(
+    State(storage): State<Storage>,
+    Path(id): Path<String>,
+) -> HttpResult<impl IntoResponse> {
+    let channel = AlertChannelRepo::find_by_id(&storage.db_pool, &id).await?;
+    let http_client = reqwest::Client::new();
+    let message = "This is a test message from Slasha. Your alert channel is configured correctly!";
+
+    crate::alerts::delivery::deliver_channel(&channel, message, &http_client)
+        .await
+        .map_err(|e| HttpError::bad_request(format!("Failed to send test message: {e}")))?;
+
+    Ok(Json(serde_json::json!({ "success": true })))
 }
 
 async fn list_rules(State(storage): State<Storage>) -> HttpResult<impl IntoResponse> {

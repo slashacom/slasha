@@ -1,4 +1,4 @@
-mod delivery;
+pub mod delivery;
 mod evaluation;
 mod worker;
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { Bell, Plus } from 'lucide-react';
+import { Bell, Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import {
@@ -111,16 +111,18 @@ export default function AlertsRulesPage() {
                       <div className="flex items-center justify-end gap-3">
                         <Link
                           to={`/alerts/rules/${rule.id}/edit`}
-                          className="text-xs !text-text-secondary !no-underline hover:!text-text"
+                          className="text-text-secondary transition-colors hover:text-text"
+                          title="Edit rule"
                         >
-                          Edit
+                          <Pencil className="size-4" />
                         </Link>
                         <button
                           type="button"
+                          title="Delete rule"
                           onClick={() => setRuleToDelete(rule)}
-                          className="text-xs text-red-400 transition-colors hover:text-red-300"
+                          className="text-red-400/80 transition-colors hover:text-red-400"
                         >
-                          Delete
+                          <Trash2 className="size-4" />
                         </button>
                       </div>
                     </td>
