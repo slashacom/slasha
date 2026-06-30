@@ -58,7 +58,7 @@ export function DomainManager(props: DomainManagerProps) {
       toast.success('Domain added successfully');
       queryClient.invalidateQueries({ queryKey: ['apps', appSlug, 'domains'] });
     } catch (e: any) {
-      toast.error(e.response?.data?.error || 'Failed to add domain');
+      toast.error(e?.message || 'Failed to add domain');
     }
   };
 
@@ -68,7 +68,7 @@ export function DomainManager(props: DomainManagerProps) {
       toast.success('Domain removed successfully');
       queryClient.invalidateQueries({ queryKey: ['apps', appSlug, 'domains'] });
     } catch (e: any) {
-      toast.error(e.response?.data?.error || 'Failed to remove domain');
+      toast.error(e?.message || 'Failed to remove domain');
     }
   };
 

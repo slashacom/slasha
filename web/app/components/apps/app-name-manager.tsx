@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useUpdateAppSettings } from '~/queries/apps';
 import type { App } from '~/models/app';
 import { Button } from '~/components/interface/button';
+import { Input } from '~/components/interface/input';
 import { HStack, VStack } from '~/components/interface/stacks';
 
 type AppNameManagerProps = {
@@ -18,21 +19,25 @@ export function AppNameManager(props: AppNameManagerProps) {
   const [name, setName] = useState(app.name);
 
   const handleSave = async () => {
-    if (!name.trim() || name.trim() === app.name) {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === app.name) {
       return;
     }
 
-    try {
-      await updateSettings.mutateAsync({
-        appSlug: app.slug,
-        name: name.trim(),
-      });
-      toast.success('App name updated successfully');
-      queryClient.invalidateQueries({ queryKey: ['apps', app.slug] });
-      queryClient.invalidateQueries({ queryKey: ['apps'] });
-    } catch (e: any) {
-      toast.error(e.response?.data?.error || 'Failed to update app name');
-    }
+    const promise = updateSettings.mutateAsync({
+      appSlug: app.slug,
+      name: trimmed,
+    });
+
+    toast.promise(promise, {
+      loading: 'Updating app name...',
+      success: () => {
+        queryClient.invalidateQueries({ queryKey: ['apps', app.slug] });
+        queryClient.invalidateQueries({ queryKey: ['apps'] });
+        return 'App name updated successfully';
+      },
+      error: (error) => error.message || 'Failed to update app name.',
+    });
   };
 
   return (
@@ -53,16 +58,14 @@ export function AppNameManager(props: AppNameManagerProps) {
                   URL will remain unchanged.
                 </p>
                 <div className="mt-4 flex items-center gap-3">
-                  <input
-                    type="text"
+                  <Input
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(event) => setName(event.target.value)}
                     placeholder="App Name"
-                    className="h-9 w-64 rounded-md border border-border bg-black/20 px-3 text-[13px] text-text placeholder:text-text-tertiary focus:border-text-secondary focus:outline-none focus:ring-1 focus:ring-text-secondary"
+                    className="w-64"
                   />
                   <Button
                     label="Save"
-                    color="primary"
                     size="sm"
                     onClick={handleSave}
                     disabled={

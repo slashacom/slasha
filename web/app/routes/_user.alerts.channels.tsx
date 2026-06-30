@@ -16,6 +16,12 @@ import {
 } from '~/queries/alerts';
 import { channelSummary } from '~/components/alerts/alert-definitions';
 import { formatDate } from '~/utils/format';
+import { queryClient } from '~/utils/query-client';
+
+export async function clientLoader() {
+  await queryClient.ensureQueryData(getAlertChannelsOptions());
+  return null;
+}
 
 export default function AlertsChannelsPage() {
   const navigate = useNavigate();

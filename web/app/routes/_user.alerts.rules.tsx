@@ -4,7 +4,10 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 import { Bell, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
-import { configSummary } from '~/components/alerts/alert-definitions';
+import {
+  configSummary,
+  deliverySummary,
+} from '~/components/alerts/alert-definitions';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
@@ -17,6 +20,16 @@ import {
   getAlertRulesOptions,
   useDeleteAlertRule,
 } from '~/queries/alerts';
+import { queryClient } from '~/utils/query-client';
+
+export async function clientLoader() {
+  await Promise.all([
+    queryClient.ensureQueryData(getAlertRulesOptions()),
+    queryClient.ensureQueryData(getAlertChannelsOptions()),
+    queryClient.ensureQueryData(getAppsOptions()),
+  ]);
+  return null;
+}
 
 export default function AlertsRulesPage() {
   const navigate = useNavigate();
@@ -150,20 +163,4 @@ export default function AlertsRulesPage() {
       />
     </div>
   );
-}
-
-function deliverySummary(
-  rule: AlertRule,
-  channels: Map<string, { name: string }>
-) {
-  const targets = rule.channel_ids.map(
-    (id) => channels.get(id)?.name ?? 'Unknown channel'
-  );
-  if (rule.direct_webhook_url) {
-    targets.push('Webhook');
-  }
-  if (rule.shell_command) {
-    targets.push('Shell');
-  }
-  return targets.length > 0 ? targets.join(', ') : 'No delivery target';
 }

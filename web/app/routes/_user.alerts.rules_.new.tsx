@@ -3,6 +3,15 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 import { AlertRuleForm } from '~/components/alerts/alert-rule-form';
 import { getAppsOptions } from '~/queries/apps';
 import { getAlertChannelsOptions } from '~/queries/alerts';
+import { queryClient } from '~/utils/query-client';
+
+export async function clientLoader() {
+  await Promise.all([
+    queryClient.ensureQueryData(getAppsOptions()),
+    queryClient.ensureQueryData(getAlertChannelsOptions()),
+  ]);
+  return null;
+}
 
 export default function NewAlertRulePage() {
   const navigate = useNavigate();

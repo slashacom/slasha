@@ -34,10 +34,7 @@ export default function NewApp() {
     toast.promise(promise, {
       loading: 'Creating application...',
       success: `Successfully created ${submittedName}`,
-      error: (err) =>
-        err.response?.data?.error ||
-        err.message ||
-        'Failed to create application.',
+      error: (err) => err.message || 'Failed to create application.',
     });
 
     try {

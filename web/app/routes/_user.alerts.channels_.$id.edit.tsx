@@ -2,6 +2,12 @@ import { useNavigate, useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { AlertChannelForm } from '~/components/alerts/alert-channel-form';
 import { getAlertChannelsOptions } from '~/queries/alerts';
+import { queryClient } from '~/utils/query-client';
+
+export async function clientLoader() {
+  await queryClient.ensureQueryData(getAlertChannelsOptions());
+  return null;
+}
 
 export default function EditAlertChannelPage() {
   const navigate = useNavigate();

@@ -6,13 +6,16 @@ import {
 } from '~/components/interface/dropdown-menu';
 import type { AlertChannel } from '~/models/alerts';
 
-export function ChannelMultiSelect(props: {
+type AlertChannelMultiSelectProps = {
   channels: AlertChannel[];
   selectedIds: string[];
   onChange: (ids: string[]) => void;
-}) {
-  const selectedChannels = props.channels.filter((channel) =>
-    props.selectedIds.includes(channel.id)
+};
+
+export function AlertChannelMultiSelect(props: AlertChannelMultiSelectProps) {
+  const { channels, selectedIds, onChange } = props;
+  const selectedChannels = channels.filter((channel) =>
+    selectedIds.includes(channel.id)
   );
 
   return (
@@ -35,13 +38,13 @@ export function ChannelMultiSelect(props: {
           align="start"
           className="w-[var(--radix-dropdown-menu-trigger-width)]"
         >
-          {props.channels.length === 0 ? (
+          {channels.length === 0 ? (
             <div className="px-2 py-2 text-xs text-text-tertiary">
               Add a channel first, then select it here.
             </div>
           ) : (
-            props.channels.map((channel) => {
-              const checked = props.selectedIds.includes(channel.id);
+            channels.map((channel) => {
+              const checked = selectedIds.includes(channel.id);
 
               return (
                 <DropdownMenuCheckboxItem
@@ -49,10 +52,10 @@ export function ChannelMultiSelect(props: {
                   checked={checked}
                   onSelect={(event) => event.preventDefault()}
                   onCheckedChange={(nextChecked) =>
-                    props.onChange(
+                    onChange(
                       nextChecked
-                        ? [...props.selectedIds, channel.id]
-                        : props.selectedIds.filter((id) => id !== channel.id)
+                        ? [...selectedIds, channel.id]
+                        : selectedIds.filter((id) => id !== channel.id)
                     )
                   }
                   className="items-start py-2"

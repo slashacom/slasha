@@ -48,10 +48,7 @@ export function ServiceEnvEditor(props: ServiceEnvEditorProps) {
       toast.success('Service environment variables saved');
       onSaveSuccess?.();
     } catch (e: any) {
-      toast.error(
-        e.response?.data?.error ||
-          'Failed to save service environment variables'
-      );
+      toast.error(e?.message || 'Failed to save service environment variables');
     }
   };
 

@@ -86,8 +86,12 @@ export const alertChannelRegistry = {
     buildConfig: (draft) => {
       const bot_token = draft.bot_token.trim();
       const chat_id = draft.chat_id.trim();
-      if (!bot_token) return { error: 'Telegram bot token is required.' };
-      if (!chat_id) return { error: 'Telegram chat id is required.' };
+      if (!bot_token) {
+        return { error: 'Telegram bot token is required.' };
+      }
+      if (!chat_id) {
+        return { error: 'Telegram chat id is required.' };
+      }
       return { config: { kind: 'telegram', bot_token, chat_id } };
     },
     summary: (config) => `Telegram chat ${config.chat_id}`,
@@ -173,7 +177,9 @@ export const alertRuleRegistry = {
     defaults: { domain: '', days_before: '30' },
     buildConfig: (draft) => {
       const domain = draft.domain.trim();
-      if (!domain) return { error: 'Domain is required.' };
+      if (!domain) {
+        return { error: 'Domain is required.' };
+      }
       return numberConfig(
         draft.days_before,
         'Days before expiry must be a number.',
@@ -206,10 +212,14 @@ export const alertRuleRegistry = {
     defaults: { app_id: '', health_check_url: '' },
     buildConfig: (draft) => {
       const app_id = draft.app_id.trim();
-      if (!app_id) return { error: 'Select an app for the rule.' };
+      if (!app_id) {
+        return { error: 'Select an app for the rule.' };
+      }
 
       const url = draft.health_check_url.trim();
-      if (!url) return { error: 'Health check URL is required.' };
+      if (!url) {
+        return { error: 'Health check URL is required.' };
+      }
 
       try {
         const parsed = new URL(url);
@@ -362,9 +372,27 @@ export function configSummary(rule: AlertRule, apps: AppSummary[]) {
   );
 }
 
-export function parseNumber(value: string) {
+export function deliverySummary(
+  rule: AlertRule,
+  channels: Map<string, { name: string }>
+) {
+  const targets = rule.channel_ids.map(
+    (id) => channels.get(id)?.name ?? 'Unknown channel'
+  );
+  if (rule.direct_webhook_url) {
+    targets.push('Webhook');
+  }
+  if (rule.shell_command) {
+    targets.push('Shell');
+  }
+  return targets.length > 0 ? targets.join(', ') : 'No delivery target';
+}
+
+function parseNumber(value: string) {
   const trimmed = value.trim();
-  if (!trimmed) return null;
+  if (!trimmed) {
+    return null;
+  }
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -383,7 +411,9 @@ function buildAppConfig<T>(
   create: (appId: string, threshold: number) => T
 ): BuildResult<T> {
   const appId = draft.app_id.trim();
-  if (!appId) return { error: 'Select an app for the rule.' };
+  if (!appId) {
+    return { error: 'Select an app for the rule.' };
+  }
   return numberConfig(
     draft.threshold_percent,
     'Threshold must be a number.',

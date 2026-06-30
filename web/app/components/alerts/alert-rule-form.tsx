@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
+import { FormField } from '~/components/interface/form-field';
+import { FormSection } from '~/components/interface/form-section';
 import { Input } from '~/components/interface/input';
-import { Label } from '~/components/interface/label';
+import { NumberField } from '~/components/interface/number-field';
 import { Select } from '~/components/interface/select';
 import { Switch } from '~/components/interface/switch';
 import { Textarea } from '~/components/interface/textarea';
@@ -17,7 +19,9 @@ import {
   emptyRuleDraft,
   ruleDraftFromRule,
 } from './alert-definitions';
-import { ChannelMultiSelect } from './alert-channel-multi-select';
+import { AlertChannelMultiSelect } from './alert-channel-multi-select';
+import { ShellCommandEnvHelp } from './shell-command-env-help';
+import { TemplateVarHelp } from './template-var-help';
 
 type AlertRuleFormProps = {
   apps: App[];
@@ -90,7 +94,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
         title="Trigger"
         description="Choose what Slasha should monitor and when it should alert."
       >
-        <Field label="Name">
+        <FormField label="Name">
           <Input
             value={draft.name}
             onChange={(event) =>
@@ -98,9 +102,9 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
             }
             placeholder="Server CPU warning"
           />
-        </Field>
+        </FormField>
 
-        <Field
+        <FormField
           label="Alert kind"
           help={alertRuleRegistry[draft.kind].description}
         >
@@ -130,7 +134,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
               </option>
             ))}
           </Select>
-        </Field>
+        </FormField>
 
         {draft.kind === 'server_cpu' || draft.kind === 'server_memory' ? (
           <NumberField
@@ -159,7 +163,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
 
         {draft.kind === 'app_cpu' || draft.kind === 'app_memory' ? (
           <>
-            <Field label="App">
+            <FormField label="App">
               <Select
                 value={draft.app_id}
                 onChange={(event) =>
@@ -176,7 +180,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
                   </option>
                 ))}
               </Select>
-            </Field>
+            </FormField>
             <NumberField
               label="Threshold percent"
               value={draft.threshold_percent}
@@ -192,7 +196,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
 
         {draft.kind === 'domain_tls_expiry' ? (
           <>
-            <Field label="Domain">
+            <FormField label="Domain">
               <Input
                 value={draft.domain}
                 onChange={(event) =>
@@ -203,7 +207,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
                 }
                 placeholder="example.com"
               />
-            </Field>
+            </FormField>
             <NumberField
               label="Days before expiry"
               value={draft.days_before}
@@ -217,7 +221,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
         ) : null}
 
         {draft.kind === 'domain_dns_misconfigured' ? (
-          <Field label="Domain">
+          <FormField label="Domain">
             <Input
               value={draft.domain}
               onChange={(event) =>
@@ -228,12 +232,12 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
               }
               placeholder="example.com"
             />
-          </Field>
+          </FormField>
         ) : null}
 
         {draft.kind === 'app_health_check' ? (
           <>
-            <Field label="App">
+            <FormField label="App">
               <Select
                 value={draft.app_id}
                 onChange={(event) =>
@@ -250,8 +254,8 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
                   </option>
                 ))}
               </Select>
-            </Field>
-            <Field label="Health check URL">
+            </FormField>
+            <FormField label="Health check URL">
               <Input
                 value={draft.health_check_url}
                 onChange={(event) =>
@@ -262,7 +266,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
                 }
                 placeholder="https://myapp.example.com/health"
               />
-            </Field>
+            </FormField>
           </>
         ) : null}
       </FormSection>
@@ -271,17 +275,17 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
         title="Delivery"
         description="Select reusable channels or configure an optional direct action."
       >
-        <Field label="Channels">
-          <ChannelMultiSelect
+        <FormField label="Channels">
+          <AlertChannelMultiSelect
             channels={channels}
             selectedIds={draft.channel_ids}
             onChange={(channel_ids) =>
               setDraft((current) => ({ ...current, channel_ids }))
             }
           />
-        </Field>
+        </FormField>
 
-        <Field label="Direct webhook URL" help="Optional">
+        <FormField label="Direct webhook URL" help="Optional">
           <Input
             value={draft.direct_webhook_url}
             onChange={(event) =>
@@ -292,9 +296,9 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
             }
             placeholder="https://..."
           />
-        </Field>
+        </FormField>
 
-        <Field label="Shell command" help="Optional">
+        <FormField label="Shell command" help="Optional">
           <Input
             value={draft.shell_command}
             onChange={(event) =>
@@ -306,14 +310,14 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
             placeholder="Command to run"
           />
           <ShellCommandEnvHelp />
-        </Field>
+        </FormField>
       </FormSection>
 
       <FormSection
         title="Behavior"
         description="Control notification content and repeat frequency."
       >
-        <Field label="Message template" help="Optional">
+        <FormField label="Message template" help="Optional">
           <Textarea
             value={draft.message_template}
             onChange={(event) =>
@@ -325,7 +329,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
             placeholder="Use {{value}}, {{detail}}, {{notification_status}}, {{alert_kind}}"
           />
           <TemplateVarHelp />
-        </Field>
+        </FormField>
 
         <NumberField
           label="Cooldown seconds"
@@ -362,122 +366,6 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
           isLoading={createRule.isPending || updateRule.isPending}
         />
         <Button label="Cancel" variant="ghost" onClick={onCancel} />
-      </div>
-    </div>
-  );
-}
-
-function FormSection(props: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="space-y-5">
-      <div>
-        <h3 className="text-xs font-medium text-text-tertiary">
-          {props.title}
-        </h3>
-        <p className="mt-1 text-[11px] text-text-tertiary">
-          {props.description}
-        </p>
-      </div>
-      {props.children}
-    </section>
-  );
-}
-
-function Field(props: {
-  label: string;
-  help?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <Label>{props.label}</Label>
-        {props.help ? (
-          <span className="text-[11px] text-text-tertiary">{props.help}</span>
-        ) : null}
-      </div>
-      {props.children}
-    </div>
-  );
-}
-
-function NumberField(props: {
-  label: string;
-  value: string;
-  min: number;
-  max?: number;
-  step: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Field label={props.label}>
-      <Input
-        type="number"
-        min={props.min}
-        max={props.max}
-        step={props.step}
-        value={props.value}
-        onChange={(event) => props.onChange(event.target.value)}
-      />
-    </Field>
-  );
-}
-
-function ShellCommandEnvHelp() {
-  const envs = [
-    ['SLASHA_ALERT_DETAIL', 'System-generated alert description'],
-    ['SLASHA_ALERT_VALUE', 'Current value'],
-    ['SLASHA_ALERT_KIND', 'Alert kind (server_cpu, app_memory, etc.)'],
-    ['SLASHA_ALERT_RULE_NAME', 'Rule name'],
-    ['SLASHA_ALERT_STATUS', 'triggered | renotified | resolved'],
-  ];
-
-  return (
-    <div className="rounded-md border border-border bg-bg/40 px-3 py-2">
-      <p className="text-[11px] text-text-tertiary">
-        Runs with <code className="font-mono text-text">sh -lc</code> and these
-        envs:
-      </p>
-      <div className="mt-2 grid gap-1">
-        {envs.map(([name, description]) => (
-          <div
-            key={name}
-            className="flex items-baseline justify-between gap-3 text-[11px]"
-          >
-            <code className="font-mono text-text-secondary">{name}</code>
-            <span className="text-text-tertiary">{description}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TemplateVarHelp() {
-  const vars = [
-    ['{{detail}}', 'System-generated alert description'],
-    ['{{value}}', 'Current metric value'],
-    ['{{notification_status}}', 'triggered | renotified | resolved'],
-    ['{{alert_kind}}', 'Alert kind (server_cpu, app_memory, etc.)'],
-  ];
-
-  return (
-    <div className="rounded-md border border-border bg-bg/40 px-3 py-2">
-      <p className="text-[11px] text-text-tertiary">Available variables:</p>
-      <div className="mt-2 grid gap-1">
-        {vars.map(([name, description]) => (
-          <div
-            key={name}
-            className="flex items-baseline justify-between gap-3 text-[11px]"
-          >
-            <code className="font-mono text-text-secondary">{name}</code>
-            <span className="text-text-tertiary">{description}</span>
-          </div>
-        ))}
       </div>
     </div>
   );
