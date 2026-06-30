@@ -27,6 +27,10 @@ pub enum LogKey {
         app_slug: String,
         service_name: String,
     },
+    Cron {
+        app_slug: String,
+        cron_run_id: String,
+    },
 }
 
 impl LogKey {
@@ -43,6 +47,12 @@ impl LogKey {
                 service_name,
             } => {
                 format!("s:{}:{}", app_slug, service_name)
+            }
+            LogKey::Cron {
+                app_slug,
+                cron_run_id,
+            } => {
+                format!("c:{}:{}", app_slug, cron_run_id)
             }
         }
     }
@@ -65,6 +75,14 @@ impl LogKey {
                 .join("services")
                 .join(service_name)
                 .join("service.log"),
+            LogKey::Cron {
+                app_slug,
+                cron_run_id,
+            } => logs_dir
+                .join(app_slug)
+                .join("cron")
+                .join(cron_run_id)
+                .join("run.log"),
         }
     }
 }
@@ -148,10 +166,12 @@ impl LogManager {
     pub async fn delete_app_logs(&self, app_slug: &str) -> std::io::Result<()> {
         let d_prefix = format!("d:{}:", app_slug);
         let s_prefix = format!("s:{}:", app_slug);
-        self.channels
-            .retain(|k, _| !k.starts_with(&d_prefix) && !k.starts_with(&s_prefix));
-        self.files
-            .retain(|k, _| !k.starts_with(&d_prefix) && !k.starts_with(&s_prefix));
+        let c_prefix = format!("c:{}:", app_slug);
+        let keep = |k: &String| {
+            !k.starts_with(&d_prefix) && !k.starts_with(&s_prefix) && !k.starts_with(&c_prefix)
+        };
+        self.channels.retain(|k, _| keep(k));
+        self.files.retain(|k, _| keep(k));
 
         let app_dir = self.logs_dir.join(app_slug);
         if app_dir.exists() {
