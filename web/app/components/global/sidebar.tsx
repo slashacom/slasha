@@ -66,6 +66,14 @@ export function Sidebar() {
       </nav>
 
       <div className="px-6 pb-6">
+        <a
+          href="https://github.com/slashacom/slasha/issues/new/choose"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block py-1.5 text-[14px] text-text-tertiary transition-colors hover:text-text-secondary"
+        >
+          Feedback
+        </a>
         <button
           onClick={handleLogout}
           className="block py-1.5 text-[14px] text-text-tertiary transition-colors hover:text-text-secondary"
