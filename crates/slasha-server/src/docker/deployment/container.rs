@@ -218,6 +218,20 @@ pub async fn create_process_container(
         },
     );
 
+    // Buildpack images often set an entrypoint like ["/bin/bash", "-c"] that
+    // swallows our arguments: docker would run `/bin/bash -c sh -c <script>`,
+    // where `bash -c` keeps only `sh` as the script and drops the rest. When we
+    // supply a command, override the entrypoint and pass the command as a single
+    // argument (mirrors the cron runner). With no command, fall back to the
+    // image's own entrypoint and cmd.
+    let (entrypoint, container_cmd) = match cmd {
+        Some(c) => (
+            Some(vec!["sh".to_string(), "-c".to_string()]),
+            Some(vec![c]),
+        ),
+        None => (None, None),
+    };
+
     docker_client
         .create_container(
             Some(CreateContainerOptions {
@@ -228,7 +242,8 @@ pub async fn create_process_container(
                 image: Some(image_tag(&app.slug, &deployment.commit_sha)),
                 labels: Some(labels),
                 env,
-                cmd: cmd.map(|c| vec!["sh".to_string(), "-c".to_string(), c]),
+                entrypoint,
+                cmd: container_cmd,
                 host_config: Some(HostConfig {
                     restart_policy: Some(match context.process_type {
                         ProcessType::Release => RestartPolicy {
