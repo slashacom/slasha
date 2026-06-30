@@ -83,6 +83,7 @@ async fn begin_setup(
         "redirect_url": format!("{}/api/github-app/setup/callback", base_url),
         "callback_urls": [format!("{}/api/github-app/callback", base_url)],
         "public": true,
+        "request_oauth_on_install": true,
         "default_permissions": {
             "contents": "read",
             "metadata": "read"
