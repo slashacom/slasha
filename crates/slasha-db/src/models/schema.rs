@@ -143,6 +143,37 @@ diesel::table! {
 }
 
 diesel::table! {
+    cron_jobs (id) {
+        id -> Text,
+        app_id -> Text,
+        name -> Text,
+        schedule -> Text,
+        command -> Text,
+        timezone -> Text,
+        enabled -> Bool,
+        timeout_secs -> Integer,
+        last_run_at -> Nullable<Timestamp>,
+        next_run_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    cron_runs (id) {
+        id -> Text,
+        cron_job_id -> Text,
+        status -> Text,
+        trigger_kind -> Text,
+        exit_code -> Nullable<Integer>,
+        error -> Nullable<Text>,
+        started_at -> Nullable<Timestamp>,
+        finished_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     deployments (id) {
         id -> Text,
         app_id -> Text,
@@ -226,6 +257,8 @@ diesel::joinable!(app_members -> apps (app_id));
 diesel::joinable!(app_members -> users (user_id));
 diesel::joinable!(app_metrics -> apps (app_id));
 diesel::joinable!(app_scale -> apps (app_id));
+diesel::joinable!(cron_jobs -> apps (app_id));
+diesel::joinable!(cron_runs -> cron_jobs (cron_job_id));
 diesel::joinable!(deployments -> apps (app_id));
 diesel::joinable!(service_env_vars -> services (service_id));
 diesel::joinable!(services -> apps (app_id));
@@ -243,6 +276,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     app_metrics,
     app_scale,
     apps,
+    cron_jobs,
+    cron_runs,
     deployments,
     server_metrics,
     service_env_vars,

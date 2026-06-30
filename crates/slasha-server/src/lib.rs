@@ -2,6 +2,7 @@ pub mod alerts;
 #[cfg(feature = "bundle")]
 pub mod assets;
 pub mod auth;
+pub mod cron;
 pub mod docker;
 pub mod domain_health;
 pub mod error;
@@ -113,6 +114,13 @@ pub async fn serve() -> anyhow::Result<()> {
     let proxy_sync_trigger =
         proxy::spawn_route_syncer(clients.clone(), storage.db_pool.clone(), config.clone());
     let runtime = Runtime::new(&logs_dir, proxy_sync_trigger).await?;
+
+    cron::spawn_cron_scheduler(
+        storage.db_pool.clone(),
+        clients.docker.clone(),
+        runtime.log_manager.clone(),
+    );
+
     let state = AppState::new(config, clients, storage, runtime);
 
     docker::sync::startup_container_sync(
