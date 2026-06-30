@@ -146,6 +146,9 @@ pub enum AlertRuleConfig {
         app_id: String,
         url: String,
     },
+    CronFailed {
+        cron_job_id: String,
+    },
 }
 
 impl AlertRuleConfig {
@@ -159,6 +162,7 @@ impl AlertRuleConfig {
             AlertRuleConfig::DomainTlsExpiry { .. } => "domain_tls_expiry",
             AlertRuleConfig::DomainDnsMisconfigured { .. } => "domain_dns_misconfigured",
             AlertRuleConfig::AppHealthCheck { .. } => "app_health_check",
+            AlertRuleConfig::CronFailed { .. } => "cron_failed",
         }
     }
 
@@ -176,6 +180,9 @@ impl AlertRuleConfig {
             AlertRuleConfig::DomainTlsExpiry { domain, .. }
             | AlertRuleConfig::DomainDnsMisconfigured { domain, .. } => {
                 format!("{kind}:{domain}")
+            }
+            AlertRuleConfig::CronFailed { cron_job_id } => {
+                format!("{kind}:{cron_job_id}")
             }
         }
     }
