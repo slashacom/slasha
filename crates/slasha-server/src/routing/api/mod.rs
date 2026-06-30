@@ -39,8 +39,33 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
 }
 
-async fn health_check() -> HttpResult<Json<Value>> {
+async fn health_check(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> HttpResult<Json<Value>> {
+    let mut status = "ok";
+    let mut db_status = "ok";
+    let mut docker_status = "ok";
+
+    if let Err(e) = state.storage.db_pool.get() {
+        tracing::error!("DB health check failed: {}", e);
+        db_status = "error";
+        status = "error";
+    }
+
+    if let Err(e) = state.clients.docker.ping().await {
+        tracing::error!("Docker health check failed: {}", e);
+        docker_status = "error";
+        status = "error";
+    }
+
     Ok(Json(
-        json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }),
+        json!({
+            "status": status,
+            "version": env!("CARGO_PKG_VERSION"),
+            "services": {
+                "database": db_status,
+                "docker": docker_status,
+            }
+        }),
     ))
 }
