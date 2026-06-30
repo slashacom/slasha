@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -11,8 +11,6 @@ import { toast } from 'sonner';
 
 import {
   getBackupOptions,
-  getBackupStatusOptions,
-  getReplicaHealthOptions,
   getVolumesOptions,
   useRestoreBackup,
   useSaveBackup,
@@ -32,7 +30,7 @@ type BackupManagerProps = {
   appSlug: string;
 };
 
-export function BackupManager(props: BackupManagerProps) {
+function BackupManagerComponent(props: BackupManagerProps) {
   const { appSlug } = props;
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery(getBackupOptions(appSlug));
@@ -55,20 +53,6 @@ export function BackupManager(props: BackupManagerProps) {
   // Show the body (form/footer) when the toggle is on, or when an enabled backup
   // is being toggled off and still needs a save to persist.
   const hasBody = enabled || savedEnabled;
-
-  const { data: statusData } = useQuery({
-    ...getBackupStatusOptions(appSlug),
-    refetchInterval: savedEnabled ? 10000 : false,
-  });
-  const status = statusData?.status;
-
-  const healthProbe = useQuery({
-    ...getReplicaHealthOptions(appSlug),
-    enabled: savedEnabled,
-    refetchInterval: savedEnabled ? 60000 : false,
-    refetchOnWindowFocus: false,
-  });
-  const health = healthProbe.data;
 
   useEffect(() => {
     if (!backup) {
@@ -157,13 +141,8 @@ export function BackupManager(props: BackupManagerProps) {
           </HStack>
         </div>
 
-        {enabled && savedEnabled && status ? (
-          <BackupStatusStrip
-            status={status}
-            health={health}
-            isChecking={healthProbe.isFetching}
-            onCheck={() => healthProbe.refetch()}
-          />
+        {enabled && savedEnabled ? (
+          <BackupStatusStrip appSlug={appSlug} />
         ) : null}
 
         {enabled ? (
@@ -305,3 +284,8 @@ export function BackupManager(props: BackupManagerProps) {
     </VStack>
   );
 }
+
+// Memoized so the app layout's deployments poll (which re-renders the settings
+// subtree every 10s) doesn't re-render this card. The only live part — the
+// status strip — owns its own polling and re-renders independently.
+export const BackupManager = memo(BackupManagerComponent);

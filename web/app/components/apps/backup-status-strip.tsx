@@ -1,15 +1,18 @@
+import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 
-import type { BackupStatus, ReplicaHealth } from '~/queries/storage';
+import {
+  getBackupStatusOptions,
+  getReplicaHealthOptions,
+  type BackupStatus,
+  type ReplicaHealth,
+} from '~/queries/storage';
 import { HStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
 import { formatRelativeTime } from '~/utils/format';
 
 type BackupStatusStripProps = {
-  status: BackupStatus;
-  health: ReplicaHealth | undefined;
-  isChecking: boolean;
-  onCheck: () => void;
+  appSlug: string;
 };
 
 function deriveView(status: BackupStatus, health: ReplicaHealth | undefined) {
@@ -34,10 +37,31 @@ function deriveView(status: BackupStatus, health: ReplicaHealth | undefined) {
   };
 }
 
+// The live status/probe polling lives here, in the leaf, so each refresh only
+// re-renders this strip — not the surrounding backup form and card shell.
 export function BackupStatusStrip(props: BackupStatusStripProps) {
-  const { status, health, isChecking, onCheck } = props;
+  const { appSlug } = props;
+
+  const { data: statusData } = useQuery({
+    ...getBackupStatusOptions(appSlug),
+    refetchInterval: 10000,
+  });
+  const healthProbe = useQuery({
+    ...getReplicaHealthOptions(appSlug),
+    refetchInterval: 60000,
+    refetchOnWindowFocus: false,
+  });
+
+  const status = statusData?.status;
+
+  if (!status) {
+    return null;
+  }
+
+  const health = healthProbe.data;
   const view = deriveView(status, health);
   const failing = health?.healthy === false;
+  const isChecking = healthProbe.isFetching;
 
   return (
     <div className="border-b border-border px-6 py-3">
@@ -53,7 +77,7 @@ export function BackupStatusStrip(props: BackupStatusStripProps) {
         </HStack>
         <button
           type="button"
-          onClick={onCheck}
+          onClick={() => healthProbe.refetch()}
           disabled={isChecking}
           className="inline-flex items-center gap-1 text-[11px] text-text-tertiary transition-colors hover:text-text disabled:opacity-50"
         >
