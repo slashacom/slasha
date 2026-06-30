@@ -8,7 +8,10 @@ use chrono::Utc;
 use serde::Deserialize;
 use slasha_db::{
     models::alerts::{AlertChannel, AlertChannelConfig, AlertRule, AlertRuleConfig},
-    repos::alerts::{AlertChannelRepo, AlertIncidentRepo, AlertNotificationRepo, AlertRuleRepo},
+    repos::{
+        alerts::{AlertChannelRepo, AlertIncidentRepo, AlertNotificationRepo, AlertRuleRepo},
+        cron::CronJobRepo,
+    },
 };
 use uuid::Uuid;
 
@@ -39,6 +42,12 @@ pub fn router() -> Router<AppState> {
             get(list_incident_notifications),
         )
         .route("/notifications", get(list_notifications))
+        .route("/crons", get(list_all_crons))
+}
+
+async fn list_all_crons(State(storage): State<Storage>) -> HttpResult<impl IntoResponse> {
+    let crons = CronJobRepo::list_all(&storage.db_pool).await?;
+    Ok(Json(serde_json::json!({ "crons": crons })))
 }
 
 #[derive(Deserialize)]
@@ -330,6 +339,11 @@ fn validate_rule_input(payload: &RuleInput) -> HttpResult<()> {
 
             if url.trim().is_empty() {
                 return Err(HttpError::bad_request("Health check URL cannot be empty"));
+            }
+        }
+        AlertRuleConfig::CronFailed { cron_job_id } => {
+            if cron_job_id.trim().is_empty() {
+                return Err(HttpError::bad_request("Cron job is required"));
             }
         }
     }
