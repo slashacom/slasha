@@ -9,6 +9,7 @@ import type {
   AlertRule,
   AlertRuleConfig,
 } from '~/models/alerts';
+import type { CronJob } from '~/models/cron';
 type AlertChannelPayload = {
   name: string;
   config: AlertChannelConfig;
@@ -25,6 +26,13 @@ type AlertRulePayload = {
   enabled: boolean;
   cooldown_secs?: number;
 };
+
+export function getAllCronsOptions() {
+  return queryOptions({
+    queryKey: ['alerts', 'crons'],
+    queryFn: () => httpGet<{ crons: CronJob[] }>('alerts/crons'),
+  });
+}
 
 export function getAlertChannelsOptions() {
   return queryOptions({

@@ -5,6 +5,7 @@ import { getAppsOptions } from '~/queries/apps';
 import {
   getAlertChannelsOptions,
   getAlertRulesOptions,
+  getAllCronsOptions,
 } from '~/queries/alerts';
 import { queryClient } from '~/utils/query-client';
 
@@ -13,6 +14,7 @@ export async function clientLoader() {
     queryClient.ensureQueryData(getAlertRulesOptions()),
     queryClient.ensureQueryData(getAlertChannelsOptions()),
     queryClient.ensureQueryData(getAppsOptions()),
+    queryClient.ensureQueryData(getAllCronsOptions()),
   ]);
   return null;
 }
@@ -23,6 +25,7 @@ export default function EditAlertRulePage() {
   const { data: rulesData } = useSuspenseQuery(getAlertRulesOptions());
   const { data: channelsData } = useSuspenseQuery(getAlertChannelsOptions());
   const { data: appsData } = useSuspenseQuery(getAppsOptions());
+  const { data: cronsData } = useSuspenseQuery(getAllCronsOptions());
   const rule = rulesData.rules.find((item) => item.id === id);
 
   if (!rule) {
@@ -45,6 +48,7 @@ export default function EditAlertRulePage() {
         rule={rule}
         apps={appsData.apps.map((item) => item.app)}
         channels={channelsData.channels}
+        crons={cronsData.crons}
         onCancel={() => navigate('/alerts/rules')}
         onSaved={() => navigate('/alerts/rules')}
       />

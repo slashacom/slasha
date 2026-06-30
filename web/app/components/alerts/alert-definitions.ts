@@ -25,6 +25,7 @@ export type RuleDraft = {
   domain: string;
   days_before: string;
   health_check_url: string;
+  cron_job_id: string;
   channel_ids: string[];
   direct_webhook_url: string;
   message_template: string;
@@ -235,6 +236,18 @@ export const alertRuleRegistry = {
     summary: (config, apps) =>
       `Health check for ${appName(config.app_id, apps)}: ${config.url}`,
   },
+  cron_failed: {
+    label: 'Cron Failed',
+    description: 'Trigger when the most recent run of a cron job fails.',
+    defaults: { cron_job_id: '' },
+    buildConfig: (draft) => {
+      const cron_job_id = draft.cron_job_id.trim();
+      return cron_job_id
+        ? { config: { kind: 'cron_failed', cron_job_id } }
+        : { error: 'Select a cron job for the rule.' };
+    },
+    summary: () => 'Latest run failed',
+  },
 } satisfies { [K in RuleKind]: RuleDefinition<K> };
 
 export const alertChannelKinds = Object.keys(
@@ -293,6 +306,7 @@ export function emptyRuleDraft(
     domain: '',
     days_before: '30',
     health_check_url: '',
+    cron_job_id: '',
     channel_ids: [],
     direct_webhook_url: '',
     message_template: '',
@@ -341,6 +355,9 @@ export function ruleDraftFromRule(
     case 'app_health_check':
       draft.app_id = cfg.app_id;
       draft.health_check_url = cfg.url;
+      break;
+    case 'cron_failed':
+      draft.cron_job_id = cfg.cron_job_id;
       break;
   }
 
