@@ -101,5 +101,5 @@ jobs:
           files: |
             dist/slasha-*.tar.gz
             dist/SHA256SUMS
-          generate_release_notes: true
+          generate_release_notes: false
           fail_on_unmatched_files: true
