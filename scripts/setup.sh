@@ -254,6 +254,23 @@ success "docker $(docker --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
 success "docker compose $(docker compose version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
 success "docker buildx $(docker buildx version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
 
+# railpack
+if command -v railpack >/dev/null 2>&1 || [[ -x "/usr/local/bin/railpack" ]]; then
+    success "railpack is already installed"
+else
+    info "railpack is missing. installing railpack..."
+    if command -v curl >/dev/null 2>&1; then
+        curl -sSL https://railpack.com/install.sh | $SUDO sh -s -- --bin-dir /usr/local/bin
+    else
+        wget -qO- https://railpack.com/install.sh | $SUDO sh -s -- --bin-dir /usr/local/bin
+    fi
+    
+    if ! command -v railpack >/dev/null 2>&1 && ! [[ -x "/usr/local/bin/railpack" ]]; then
+        err "failed to install railpack. please install it manually."
+    fi
+    success "railpack"
+fi
+
 # install binary
 if command -v slasha >/dev/null 2>&1 || [[ -x "/usr/local/bin/slasha" ]]; then
     success "slasha is already installed"
