@@ -217,3 +217,9 @@ export function useDisconnectGithub() {
       httpDelete<void>(`apps/${appSlug}/connection/github`),
   });
 }
+
+export function useSyncApp() {
+  return useMutation({
+    mutationFn: (appSlug: string) => httpPost<void>(`apps/${appSlug}/sync`, {}),
+  });
+}
