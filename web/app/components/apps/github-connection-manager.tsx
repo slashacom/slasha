@@ -11,7 +11,7 @@ import {
   getGithubRepositoriesOptions,
   getGithubStatusOptions,
   useInstallGithub,
-} from '~/queries/github-app';
+} from '~/queries/connections';
 import { useDisconnectGithub, useReconnectGithub } from '~/queries/apps';
 import { queryClient } from '~/utils/query-client';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';

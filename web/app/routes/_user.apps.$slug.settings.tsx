@@ -23,7 +23,7 @@ import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { SectionHeader } from '~/components/interface/section-header';
 import { getBackupOptions, getVolumesOptions } from '~/queries/storage';
 import { queryClient } from '~/utils/query-client';
-import { getGithubStatusOptions } from '~/queries/github-app';
+import { getGithubStatusOptions } from '~/queries/connections';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;

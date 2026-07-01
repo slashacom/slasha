@@ -1,4 +1,4 @@
-import { queryOptions, useMutation } from '@tanstack/react-query';
+import { queryOptions, useMutation, useQuery } from '@tanstack/react-query';
 import { httpDelete, httpGet, httpPatch, httpPost } from '~/utils/http';
 
 export type GithubRepository = {
@@ -18,14 +18,14 @@ export type GithubInstallationInfo = {
 export function getGithubStatusOptions() {
   return queryOptions({
     queryKey: ['github', 'status'],
-    queryFn: () => httpGet<{ enabled: boolean }>('github-app/status'),
+    queryFn: () => httpGet<{ enabled: boolean }>('connections/github/status'),
   });
 }
 
 export function useInstallGithub() {
   return useMutation({
     mutationFn: (data: { redirect_to: string }) =>
-      httpPost<{ url: string }>('github-app/install', {
+      httpPost<{ url: string }>('connections/github/install', {
         redirect_to: data.redirect_to,
       }),
   });
@@ -38,14 +38,14 @@ export function getGithubRepositoriesOptions() {
       httpGet<{
         installations: GithubInstallationInfo[];
         repositories: GithubRepository[];
-      }>('github-app/repositories'),
+      }>('connections/github/repositories'),
   });
 }
 
 export function useRemoveGithubInstallation() {
   return useMutation({
     mutationFn: (installationId: number) =>
-      httpDelete<void>(`github-app/installations/${installationId}`),
+      httpDelete<void>(`connections/github/installations/${installationId}`),
   });
 }
 
@@ -58,7 +58,7 @@ export type GithubSetupStatus = {
 export function getGithubSetupStatusOptions() {
   return queryOptions({
     queryKey: ['github', 'app-setup', 'status'],
-    queryFn: () => httpGet<GithubSetupStatus>('github-app/setup'),
+    queryFn: () => httpGet<GithubSetupStatus>('connections/github/setup'),
   });
 }
 
@@ -66,7 +66,7 @@ export function useBeginGithubSetup() {
   return useMutation({
     mutationFn: () =>
       httpPost<{ github_url: string; manifest: string }>(
-        'github-app/setup/begin',
+        'connections/github/setup/begin',
         {}
       ),
   });
@@ -83,12 +83,31 @@ export type UpdateGithubCredentialsPayload = {
 export function useUpdateGithubCredentials() {
   return useMutation({
     mutationFn: (data: UpdateGithubCredentialsPayload) =>
-      httpPatch<GithubSetupStatus>('github-app/setup', data),
+      httpPatch<GithubSetupStatus>('connections/github/setup', data),
   });
 }
 
 export function useDeleteGithubSetup() {
   return useMutation({
-    mutationFn: () => httpDelete<void>('github-app/setup'),
+    mutationFn: () => httpDelete<void>('connections/github/setup'),
+  });
+}
+
+export type GitRemoteResponse = {
+  default_branch: string | null;
+  branches: string[];
+};
+
+export function useGetRemoteBranchesQuery(url: string) {
+  return useQuery({
+    queryKey: ['git', 'remote-branches', url],
+    queryFn: () =>
+      httpGet<GitRemoteResponse>(
+        `connections/git/remote-branches?url=${encodeURIComponent(url)}`
+      ),
+    enabled:
+      url.trim().length > 0 &&
+      (url.startsWith('http://') || url.startsWith('https://')),
+    retry: false,
   });
 }

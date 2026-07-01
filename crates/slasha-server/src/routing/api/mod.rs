@@ -6,8 +6,7 @@ use crate::{AppState, error::HttpResult};
 pub mod alerts;
 pub mod apps;
 pub mod auth;
-pub mod github_app;
-pub mod github_app_setup;
+pub mod connections;
 pub mod monitoring;
 pub mod service_kinds;
 pub mod ssh_keys;
@@ -19,16 +18,7 @@ pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/health", get(health_check))
         .nest("/auth", auth::router())
-        .nest("/github-app", github_app::router())
-        .nest(
-            "/github-app/setup",
-            github_app_setup::router()
-                .route_layer(axum::middleware::from_fn_with_state(
-                    state.clone(),
-                    admin_middleware,
-                ))
-                .merge(github_app_setup::callback_router()),
-        )
+        .nest("/connections", connections::router(state.clone()))
         .nest("/apps", apps::router())
         .nest(
             "/alerts",

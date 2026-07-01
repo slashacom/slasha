@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
@@ -9,11 +9,13 @@ import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
 import { getCheckSlugOptions, useCreateApp } from '~/queries/apps';
 import { RepositorySelect } from '~/components/apps/repository-select';
+import { BranchSelect } from '~/components/apps/branch-select';
 import {
   getGithubRepositoriesOptions,
   getGithubStatusOptions,
   useInstallGithub,
-} from '~/queries/github-app';
+  useGetRemoteBranchesQuery,
+} from '~/queries/connections';
 import { queryClient } from '~/utils/query-client';
 import { useDebounce } from '~/hooks/use-debounce';
 import type { AppSource } from '~/models/app';
@@ -38,6 +40,16 @@ export default function NewApp() {
   const [gitBranch, setGitBranch] = useState('');
 
   const debouncedName = useDebounce(name, 300);
+  const debouncedGitUrl = useDebounce(gitUrl, 500);
+
+  const { data: remoteBranches, isFetching: branchesLoading } =
+    useGetRemoteBranchesQuery(debouncedGitUrl);
+
+  useEffect(() => {
+    if (remoteBranches?.default_branch && !gitBranch) {
+      setGitBranch(remoteBranches.default_branch);
+    }
+  }, [remoteBranches, gitBranch]);
 
   const { data: slugCheck, isFetching: slugChecking } = useQuery({
     ...getCheckSlugOptions(debouncedName),
@@ -298,14 +310,25 @@ export default function NewApp() {
                   Branch
                 </Label>
                 <div className="relative">
-                  <GitBranch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
-                  <Input
-                    id="git-branch"
-                    value={gitBranch}
-                    onChange={(event) => setGitBranch(event.target.value)}
-                    placeholder="Remote default branch"
-                    className="h-10 pl-9 font-mono text-[13px]"
-                  />
+                  {remoteBranches || branchesLoading ? (
+                    <BranchSelect
+                      branches={remoteBranches?.branches || []}
+                      value={gitBranch}
+                      onChange={setGitBranch}
+                      isLoading={branchesLoading}
+                    />
+                  ) : (
+                    <>
+                      <GitBranch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
+                      <Input
+                        id="git-branch"
+                        value={gitBranch}
+                        onChange={(event) => setGitBranch(event.target.value)}
+                        placeholder="Remote default branch"
+                        className="h-10 pl-9 font-mono text-[13px]"
+                      />
+                    </>
+                  )}
                 </div>
               </div>
             </div>
