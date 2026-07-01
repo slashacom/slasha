@@ -1,5 +1,13 @@
 import { useState, useEffect } from 'react';
-import { ExternalLink, Check, X } from 'lucide-react';
+import {
+  ExternalLink,
+  Check,
+  X,
+  RefreshCw,
+  Trash2,
+  ArrowRightLeft,
+  Pencil,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Github } from '~/components/icons/github';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
@@ -15,7 +23,11 @@ import {
   useGetGithubBranchesQuery,
   useUpdateConnectionBranch,
 } from '~/queries/connections';
-import { useDisconnectGithub, useReconnectGithub } from '~/queries/apps';
+import {
+  useDisconnectGithub,
+  useReconnectGithub,
+  useSyncApp,
+} from '~/queries/apps';
 import { queryClient } from '~/utils/query-client';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { RepositorySelect } from './repository-select';
@@ -44,6 +56,7 @@ export function GithubConnectionManager({ app, connection }: Props) {
   const reconnectGithub = useReconnectGithub();
   const disconnectGithub = useDisconnectGithub();
   const updateBranch = useUpdateConnectionBranch(app.slug);
+  const syncApp = useSyncApp();
 
   const { data: githubBranches, isFetching: branchesLoading } =
     useGetGithubBranchesQuery(
@@ -119,6 +132,21 @@ export function GithubConnectionManager({ app, connection }: Props) {
       await promise;
       await queryClient.invalidateQueries({ queryKey: ['apps', app.slug] });
       setIsDisconnectDialogOpen(false);
+    } catch {}
+  };
+
+  const handleSync = async () => {
+    const promise = syncApp.mutateAsync(app.slug);
+
+    toast.promise(promise, {
+      loading: 'Syncing repository...',
+      success: 'Repository synced successfully',
+      error: 'Failed to sync repository',
+    });
+
+    try {
+      await promise;
+      await queryClient.invalidateQueries({ queryKey: ['apps', app.slug] });
     } catch {}
   };
 
@@ -207,13 +235,14 @@ export function GithubConnectionManager({ app, connection }: Props) {
                             <span className="font-mono text-text font-medium">
                               {app.default_branch}
                             </span>
-                            <button
-                              type="button"
+                            <Button
+                              color="neutral"
+                              size="sm"
+                              variant="ghost"
+                              icon={<Pencil className="size-3.5" />}
                               onClick={() => setIsEditingBranch(true)}
-                              className="ml-1 text-[11px] font-medium text-text-secondary hover:text-text hover:underline"
-                            >
-                              Edit
-                            </button>
+                              title="Edit Branch"
+                            />
                           </>
                         )}
                       </div>
@@ -228,19 +257,38 @@ export function GithubConnectionManager({ app, connection }: Props) {
             </div>
             <div className="flex gap-2">
               {isConnected && (
+                <>
+                  <Button
+                    variant="ghost"
+                    icon={<RefreshCw className="size-4" />}
+                    onClick={handleSync}
+                    isDisabled={syncApp.isPending}
+                    title="Sync"
+                  />
+                  <Button
+                    variant="ghost"
+                    icon={<Trash2 className="size-4" />}
+                    onClick={() => setIsDisconnectDialogOpen(true)}
+                    isDisabled={disconnectGithub.isPending}
+                    className="text-red-500 hover:text-red-500"
+                    title="Disconnect"
+                  />
+                </>
+              )}
+              {isConnected ? (
                 <Button
                   variant="ghost"
-                  label="Disconnect"
-                  onClick={() => setIsDisconnectDialogOpen(true)}
-                  isDisabled={disconnectGithub.isPending}
-                  className="text-red-500 hover:text-red-500"
+                  icon={<ArrowRightLeft className="size-4" />}
+                  onClick={() => setIsEditing(true)}
+                  title="Change Repository"
+                />
+              ) : (
+                <Button
+                  color="neutral"
+                  label="Connect Repository"
+                  onClick={() => setIsEditing(true)}
                 />
               )}
-              <Button
-                color="neutral"
-                label={isConnected ? 'Change Repository' : 'Connect Repository'}
-                onClick={() => setIsEditing(true)}
-              />
             </div>
           </div>
         ) : (

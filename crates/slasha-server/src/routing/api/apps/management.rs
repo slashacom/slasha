@@ -63,6 +63,7 @@ pub fn router() -> Router<AppState> {
             put(reconnect_github).delete(disconnect_github),
         )
         .route("/{slug}/connection/branch", put(update_connection_branch))
+        .route("/{slug}/sync", post(sync_app))
 }
 
 #[derive(Deserialize)]
@@ -739,6 +740,28 @@ async fn update_connection_branch(
     )
     .await
     .map_err(|e| HttpError::bad_request(format!("Failed to sync with new branch: {}", e)))?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn sync_app(
+    State(state): State<AppState>,
+    ActiveAppOwner { mut app, user: _ }: ActiveAppOwner,
+) -> HttpResult<impl IntoResponse> {
+    if !matches!(app.source, AppSource::Git | AppSource::Github) {
+        return Err(HttpError::bad_request(
+            "App does not use a remote connection",
+        ));
+    }
+
+    sync_external_app(
+        state.github_client().await.as_ref(),
+        &state.storage,
+        &state.runtime,
+        &mut app,
+    )
+    .await
+    .map_err(|e| HttpError::bad_request(format!("Failed to sync repository: {}", e)))?;
 
     Ok(StatusCode::NO_CONTENT)
 }

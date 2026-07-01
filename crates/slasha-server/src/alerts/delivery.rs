@@ -48,24 +48,24 @@ fn render_default_message(
         AlertNotificationKind::Resolved => ":white_check_mark:",
     };
 
-    let current_line = observation
-        .current_value
-        .map(|v| format!("\n> Current: {}", format_value(Some(v))))
-        .unwrap_or_default();
-    let limit_line = observation
-        .threshold_value
-        .map(|v| format!("\n> Limit: {}", format_value(Some(v))))
-        .unwrap_or_default();
+    let mut body_lines = Vec::new();
+    if let Some(v) = observation.current_value {
+        body_lines.push(format!("Current: {}", format_value(Some(v))));
+    }
+    if let Some(v) = observation.threshold_value {
+        body_lines.push(format!("Limit: {}", format_value(Some(v))));
+    }
+    body_lines.push(format!("Detail: {}", observation.detail_display));
 
-    let now = chrono::Utc::now().naive_utc();
-    let duration_line = opened_at
-        .map(|oa| format!("\n> Duration: {}", format_duration(oa, now)))
-        .unwrap_or_default();
+    if let Some(oa) = opened_at {
+        let now = chrono::Utc::now().naive_utc();
+        body_lines.push(format!("Duration: {}", format_duration(oa, now)));
+    }
 
     format!(
-        "{emoji} *{name}*{current_line}{limit_line}\n> Detail: {detail}{duration_line}",
+        "{emoji} *{name}*\n> {body}",
         name = rule.name,
-        detail = observation.detail_display,
+        body = body_lines.join("\n> ")
     )
 }
 
