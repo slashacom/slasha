@@ -49,6 +49,7 @@ pub struct Runtime {
     pub proxy_sync_trigger: Arc<Notify>,
     pub scaling_locks: Arc<dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     pub connection_sync_locks: Arc<dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    pub deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
 }
 
 impl Runtime {
@@ -58,6 +59,7 @@ impl Runtime {
             proxy_sync_trigger,
             scaling_locks: Arc::new(dashmap::DashMap::new()),
             connection_sync_locks: Arc::new(dashmap::DashMap::new()),
+            deployment_tasks: Arc::new(dashmap::DashMap::new()),
         })
     }
 

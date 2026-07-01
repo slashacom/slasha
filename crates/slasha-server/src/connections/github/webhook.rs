@@ -205,6 +205,7 @@ async fn handle_push(state: AppState, payload: PushPayload) {
             state.storage.db_pool.clone(),
             state.runtime.log_manager.clone(),
             state.runtime.proxy_sync_trigger.clone(),
+            state.runtime.deployment_tasks.clone(),
             app,
             Some(payload.after.clone()),
         )

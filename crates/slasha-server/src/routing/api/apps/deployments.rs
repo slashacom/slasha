@@ -73,6 +73,7 @@ async fn trigger_deploy(
         state.storage.db_pool,
         state.runtime.log_manager,
         state.runtime.proxy_sync_trigger,
+        state.runtime.deployment_tasks.clone(),
         app,
         payload.commit_sha,
     )
@@ -130,6 +131,7 @@ async fn stop_deployment(
         &db_pool,
         &runtime.proxy_sync_trigger,
         &runtime.log_manager,
+        &runtime.deployment_tasks,
         &app,
         &deployment,
     )
@@ -144,8 +146,7 @@ async fn stop_deployment(
 async fn redeploy_deployment(
     State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
-    State(proxy_sync_trigger): State<Arc<Notify>>,
+    State(runtime): State<Runtime>,
     ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
@@ -153,8 +154,8 @@ async fn redeploy_deployment(
 
     remove_deployment_processes(
         &docker_client,
-        &proxy_sync_trigger,
-        &log_manager,
+        &runtime.proxy_sync_trigger,
+        &runtime.log_manager,
         &app,
         &deployment,
     )
@@ -164,14 +165,19 @@ async fn redeploy_deployment(
     let updated_deployment =
         DeploymentRepo::reset_to_pending(&db_pool, &deployment.id, now).await?;
 
-    tokio::spawn(run_deployment(
+    let handle = tokio::spawn(run_deployment(
         docker_client,
         db_pool,
-        log_manager,
-        proxy_sync_trigger,
+        runtime.log_manager.clone(),
+        runtime.proxy_sync_trigger.clone(),
+        runtime.deployment_tasks.clone(),
         app,
         updated_deployment.clone(),
     ));
+
+    runtime
+        .deployment_tasks
+        .insert(updated_deployment.id.clone(), handle.abort_handle());
 
     Ok(Json(
         serde_json::json!({ "deployment": updated_deployment }),

@@ -334,9 +334,14 @@ pub async fn stop_deployment_processes(
     db_pool: &DbPool,
     proxy_sync_trigger: &Arc<Notify>,
     log_manager: &LogManager,
+    deployment_tasks: &dashmap::DashMap<String, tokio::task::AbortHandle>,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
+    if let Some((_, handle)) = deployment_tasks.remove(&deployment.id) {
+        handle.abort();
+    }
+
     let processes = list_deployment_processes(docker_client, &deployment.id).await?;
 
     let stop_futures = processes.into_iter().map(|process| {
