@@ -10,9 +10,7 @@ pub use github::{
 use slasha_db::{
     app::{App, AppSource},
     github_connection::ConnectionStatus,
-    repos::{
-        app::AppRepo, git_connection::GitConnectionRepo, github_connection::GithubConnectionRepo,
-    },
+    repos::{git_connection::GitConnectionRepo, github_connection::GithubConnectionRepo},
 };
 
 use crate::state::{Runtime, Storage};
@@ -23,8 +21,7 @@ pub async fn sync_external_app(
     runtime: &Runtime,
     app: &mut App,
 ) -> anyhow::Result<()> {
-    let branch = match app.source {
-        AppSource::Local => return Ok(()),
+    match app.source {
         AppSource::Github => {
             sync_github_app(
                 github.ok_or_else(|| anyhow::anyhow!("GitHub integration is disabled"))?,
@@ -32,16 +29,13 @@ pub async fn sync_external_app(
                 runtime,
                 app,
             )
-            .await?
-            .default_branch
+            .await?;
         }
-        AppSource::Git => sync_git_app(storage, runtime, app).await?,
+        AppSource::Git => {
+            sync_git_app(storage, runtime, app).await?;
+        }
+        _ => return Ok(()),
     };
-
-    if branch != app.default_branch {
-        AppRepo::update_default_branch(&storage.db_pool, &app.id, &branch).await?;
-        app.default_branch = branch;
-    }
 
     Ok(())
 }
@@ -51,7 +45,7 @@ pub async fn sync_github_app(
     storage: &Storage,
     runtime: &Runtime,
     app: &App,
-) -> anyhow::Result<GithubRepository> {
+) -> anyhow::Result<()> {
     let connection = GithubConnectionRepo::find_for_app(&storage.db_pool, &app.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("GitHub connection not found"))?;
@@ -61,6 +55,7 @@ pub async fn sync_github_app(
 
     let lock = runtime.get_connection_sync_lock(&app.id);
     let _guard = lock.lock().await;
+
     let (repository, token) = match client
         .get_repository_with_token(connection.installation_id, connection.repository_id)
         .await
@@ -80,13 +75,14 @@ pub async fn sync_github_app(
 
     mirror::Mirror {
         remote_url: repository.clone_url.clone(),
-        branch: Some(repository.default_branch.clone()),
+        branch: Some(app.default_branch.clone()),
         path: PathBuf::from(&app.repo_path),
         auth: mirror::MirrorAuth::GithubToken(token),
     }
     .sync()
     .await?;
-    Ok(repository)
+
+    Ok(())
 }
 
 pub async fn sync_selected_github_repository(
@@ -96,20 +92,27 @@ pub async fn sync_selected_github_repository(
     repo_path: PathBuf,
     installation_id: i64,
     repository_id: i64,
+    branch: Option<String>,
 ) -> anyhow::Result<GithubRepository> {
+    // we need to acquire the lock since we also call this when reconnecting
     let lock = runtime.get_connection_sync_lock(app_id);
     let _guard = lock.lock().await;
+
     let (repository, token) = client
         .get_repository_with_token(installation_id, repository_id)
         .await?;
+
+    let branch = branch.or_else(|| Some(repository.default_branch.clone()));
+
     mirror::Mirror {
         remote_url: repository.clone_url.clone(),
-        branch: Some(repository.default_branch.clone()),
+        branch,
         path: repo_path,
         auth: mirror::MirrorAuth::GithubToken(token),
     }
     .sync()
     .await?;
+
     Ok(repository)
 }
 
@@ -117,8 +120,10 @@ async fn sync_git_app(storage: &Storage, runtime: &Runtime, app: &App) -> anyhow
     let connection = GitConnectionRepo::find_for_app(&storage.db_pool, &app.id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Git connection not found"))?;
+
     let lock = runtime.get_connection_sync_lock(&app.id);
     let _guard = lock.lock().await;
+
     sync_selected_git_repository(
         connection.clone_url,
         Some(app.default_branch.clone()),

@@ -79,6 +79,11 @@ struct Repositories {
     repositories: Vec<GithubRepository>,
 }
 
+#[derive(Deserialize)]
+struct Branch {
+    name: String,
+}
+
 impl GithubClient {
     pub fn from_config(config: &GithubAppConfig) -> anyhow::Result<Self> {
         let private_key_pem = config.private_key.replace("\\n", "\n");
@@ -320,5 +325,43 @@ impl GithubClient {
             )));
         }
         Ok((repository, token))
+    }
+
+    pub async fn get_branches(
+        &self,
+        installation_id: i64,
+        repository_id: i64,
+    ) -> GithubResult<Vec<String>> {
+        let max_per_page = 100;
+        let token = self.get_installation_token(installation_id).await?;
+
+        let mut all_branches = Vec::new();
+        let mut page = 1u32;
+
+        loop {
+            let batch = self
+                .inner
+                .http
+                .get(self.build_api_url(&format!(
+                    "/repositories/{}/branches?per_page={}&page={}",
+                    repository_id, max_per_page, page
+                )))
+                .bearer_auth(&token)
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<Vec<Branch>>()
+                .await?;
+
+            let fetched = batch.len() as u32;
+            all_branches.extend(batch.into_iter().map(|b| b.name));
+
+            if fetched < max_per_page {
+                break;
+            }
+            page += 1;
+        }
+
+        Ok(all_branches)
     }
 }

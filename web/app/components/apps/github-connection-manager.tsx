@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ExternalLink, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Github } from '~/components/icons/github';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { Button } from '~/components/interface/button';
+import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
 import type { App } from '~/models/app';
 import type { GithubAppConnection } from '~/queries/apps';
@@ -11,11 +12,14 @@ import {
   getGithubRepositoriesOptions,
   getGithubStatusOptions,
   useInstallGithub,
+  useGetGithubBranchesQuery,
+  useUpdateConnectionBranch,
 } from '~/queries/connections';
 import { useDisconnectGithub, useReconnectGithub } from '~/queries/apps';
 import { queryClient } from '~/utils/query-client';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { RepositorySelect } from './repository-select';
+import { BranchSelect } from './branch-select';
 
 interface Props {
   app: App;
@@ -27,6 +31,9 @@ export function GithubConnectionManager({ app, connection }: Props) {
   const [selectedRepository, setSelectedRepository] = useState<string>('');
   const [isDisconnectDialogOpen, setIsDisconnectDialogOpen] = useState(false);
 
+  const [isEditingBranch, setIsEditingBranch] = useState(false);
+  const [branchValue, setBranchValue] = useState(app.default_branch);
+
   const { data: githubStatus } = useSuspenseQuery(getGithubStatusOptions());
   const { data: reposData, isLoading: reposLoading } = useQuery({
     ...getGithubRepositoriesOptions(),
@@ -36,6 +43,17 @@ export function GithubConnectionManager({ app, connection }: Props) {
   const installGithub = useInstallGithub();
   const reconnectGithub = useReconnectGithub();
   const disconnectGithub = useDisconnectGithub();
+  const updateBranch = useUpdateConnectionBranch(app.slug);
+
+  const { data: githubBranches, isFetching: branchesLoading } =
+    useGetGithubBranchesQuery(
+      connection?.installation_id,
+      connection?.repository_id
+    );
+
+  useEffect(() => {
+    setBranchValue(app.default_branch);
+  }, [app.default_branch]);
 
   if (app.source !== 'github') {
     return null;
@@ -104,6 +122,17 @@ export function GithubConnectionManager({ app, connection }: Props) {
     } catch {}
   };
 
+  const handleSaveBranch = async () => {
+    if (!branchValue.trim()) return;
+    try {
+      await updateBranch.mutateAsync(branchValue.trim());
+      setIsEditingBranch(false);
+      toast.success('Successfully updated default branch');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update branch');
+    }
+  };
+
   const repositories = reposData?.repositories || [];
 
   return (
@@ -130,12 +159,65 @@ export function GithubConnectionManager({ app, connection }: Props) {
                       {repository.full_name}
                       <ExternalLink className="size-3.5 text-text-tertiary" />
                     </a>
-                    <p className="text-[12px] text-text-secondary mt-0.5">
-                      Branch:{' '}
-                      <span className="font-mono">
-                        {repository.default_branch}
-                      </span>
-                    </p>
+                    <div className="text-[12px] text-text-secondary mt-1">
+                      <div className="flex items-center gap-2">
+                        <span>Branch:</span>
+                        {isEditingBranch ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-48">
+                              {githubBranches || branchesLoading ? (
+                                <BranchSelect
+                                  branches={githubBranches?.branches || []}
+                                  value={branchValue}
+                                  onChange={setBranchValue}
+                                  isLoading={branchesLoading}
+                                />
+                              ) : (
+                                <Input
+                                  value={branchValue}
+                                  onChange={(e) =>
+                                    setBranchValue(e.target.value)
+                                  }
+                                  className="h-7 text-[12px]"
+                                />
+                              )}
+                            </div>
+                            <Button
+                              color="primary"
+                              size="sm"
+                              variant="ghost"
+                              icon={<Check className="size-3.5" />}
+                              onClick={handleSaveBranch}
+                              isLoading={updateBranch.isPending}
+                            />
+                            <Button
+                              color="neutral"
+                              size="sm"
+                              variant="ghost"
+                              icon={<X className="size-3.5" />}
+                              onClick={() => {
+                                setIsEditingBranch(false);
+                                setBranchValue(app.default_branch);
+                              }}
+                              isDisabled={updateBranch.isPending}
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <span className="font-mono text-text font-medium">
+                              {app.default_branch}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingBranch(true)}
+                              className="ml-1 text-[11px] font-medium text-text-secondary hover:text-text hover:underline"
+                            >
+                              Edit
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </>
                 ) : (
                   <p className="text-[13px] font-medium text-amber-500">

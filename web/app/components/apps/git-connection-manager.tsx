@@ -1,6 +1,21 @@
-import { ExternalLink, GitBranch, Link as LinkIcon } from 'lucide-react';
+import { useState } from 'react';
+import {
+  ExternalLink,
+  GitBranch,
+  Link as LinkIcon,
+  Check,
+  X,
+} from 'lucide-react';
 import type { App } from '~/models/app';
 import type { GitAppConnection } from '~/queries/apps';
+import {
+  useGetRemoteBranchesQuery,
+  useUpdateConnectionBranch,
+} from '~/queries/connections';
+import { BranchSelect } from './branch-select';
+import { Button } from '~/components/interface/button';
+import { Input } from '~/components/interface/input';
+import { toast } from 'sonner';
 
 type Props = {
   app: App;
@@ -8,9 +23,28 @@ type Props = {
 };
 
 export function GitConnectionManager({ app, connection }: Props) {
+  const [isEditingBranch, setIsEditingBranch] = useState(false);
+  const [branchValue, setBranchValue] = useState(app.default_branch);
+
+  const { data: remoteBranches, isFetching: branchesLoading } =
+    useGetRemoteBranchesQuery(connection?.clone_url || '');
+
+  const updateBranch = useUpdateConnectionBranch(app.slug);
+
   if (app.source !== 'git' || !connection) {
     return null;
   }
+
+  const handleSaveBranch = async () => {
+    if (!branchValue.trim()) return;
+    try {
+      await updateBranch.mutateAsync(branchValue.trim());
+      setIsEditingBranch(false);
+      toast.success('Successfully updated default branch');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update branch');
+    }
+  };
 
   return (
     <div>
@@ -41,9 +75,58 @@ export function GitConnectionManager({ app, connection }: Props) {
               <GitBranch className="size-3.5" />
               Branch
             </div>
-            <p className="mt-1.5 font-mono text-[13px] font-medium text-text">
-              {app.default_branch}
-            </p>
+            {isEditingBranch ? (
+              <div className="mt-1.5 flex items-center gap-2">
+                <div className="relative flex-1 min-w-0">
+                  {remoteBranches || branchesLoading ? (
+                    <BranchSelect
+                      branches={remoteBranches?.branches || []}
+                      value={branchValue}
+                      onChange={setBranchValue}
+                      isLoading={branchesLoading}
+                    />
+                  ) : (
+                    <Input
+                      value={branchValue}
+                      onChange={(e) => setBranchValue(e.target.value)}
+                      className="h-8 text-[13px]"
+                    />
+                  )}
+                </div>
+                <Button
+                  color="primary"
+                  size="sm"
+                  variant="ghost"
+                  icon={<Check className="size-4" />}
+                  onClick={handleSaveBranch}
+                  isLoading={updateBranch.isPending}
+                />
+                <Button
+                  color="neutral"
+                  size="sm"
+                  variant="ghost"
+                  icon={<X className="size-4" />}
+                  onClick={() => {
+                    setIsEditingBranch(false);
+                    setBranchValue(app.default_branch);
+                  }}
+                  isDisabled={updateBranch.isPending}
+                />
+              </div>
+            ) : (
+              <div className="mt-1.5 flex items-center gap-2">
+                <p className="font-mono text-[13px] font-medium text-text">
+                  {app.default_branch}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingBranch(true)}
+                  className="text-[12px] font-medium text-text-secondary hover:text-text hover:underline"
+                >
+                  Edit
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

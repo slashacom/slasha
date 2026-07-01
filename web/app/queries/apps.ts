@@ -32,6 +32,8 @@ export type GithubConnectionRepository = {
 };
 
 export type GithubAppConnection = {
+  installation_id: number;
+  repository_id: number;
   repository: GithubConnectionRepository | null;
 };
 
