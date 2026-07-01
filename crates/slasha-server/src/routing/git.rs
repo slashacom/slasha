@@ -32,6 +32,7 @@ struct AutoDeploy {
     db_pool: DbPool,
     log_manager: Arc<LogManager>,
     proxy_sync_trigger: Arc<Notify>,
+    deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
     config: crate::state::Config,
     app: App,
 }
@@ -95,6 +96,7 @@ async fn run_auto_deploy(ctx: AutoDeploy) {
         ctx.db_pool,
         ctx.log_manager,
         ctx.proxy_sync_trigger,
+        ctx.deployment_tasks,
         ctx.app,
         Some(head),
     )
@@ -234,8 +236,7 @@ async fn upload_pack(auth: GitAuth, req: Request<Body>) -> HttpResult<Response> 
 async fn receive_pack(
     State(docker): State<Docker>,
     State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
-    State(proxy_sync_trigger): State<Arc<Notify>>,
+    State(runtime): State<crate::state::Runtime>,
     State(config): State<Config>,
     auth: GitAuth,
     req: Request<Body>,
@@ -251,8 +252,9 @@ async fn receive_pack(
     let auto_deploy = AutoDeploy {
         docker,
         db_pool,
-        log_manager,
-        proxy_sync_trigger,
+        log_manager: runtime.log_manager,
+        proxy_sync_trigger: runtime.proxy_sync_trigger,
+        deployment_tasks: runtime.deployment_tasks,
         config,
         app: auth.app.clone(),
     };

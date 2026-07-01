@@ -214,6 +214,7 @@ pub async fn run_deployment(
     db_pool: DbPool,
     log_manager: Arc<LogManager>,
     proxy_sync_trigger: Arc<Notify>,
+    deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
     app: App,
     deployment: Deployment,
 ) -> DeploymentResult<()> {
@@ -236,6 +237,7 @@ pub async fn run_deployment(
         &db_pool,
         &proxy_sync_trigger,
         &log_manager,
+        &deployment_tasks,
         &app,
         &deployment,
         &mut rollback,
@@ -257,6 +259,8 @@ pub async fn run_deployment(
         let _ =
             DeploymentRepo::update_status(&db_pool, &deployment.id, DeploymentStatus::Failed).await;
 
+        deployment_tasks.remove(&deployment.id);
+
         return Ok(());
     }
 
@@ -268,6 +272,8 @@ pub async fn run_deployment(
     );
 
     rollback.disarm();
+    deployment_tasks.remove(&deployment.id);
+
     Ok(())
 }
 
@@ -276,6 +282,7 @@ async fn run_deployment_inner(
     db_pool: &DbPool,
     proxy_sync_trigger: &Arc<Notify>,
     log_manager: &Arc<LogManager>,
+    deployment_tasks: &dashmap::DashMap<String, tokio::task::AbortHandle>,
     app: &App,
     deployment: &Deployment,
     rollback: &mut Rollback,
@@ -451,6 +458,7 @@ async fn run_deployment_inner(
             db_pool,
             proxy_sync_trigger,
             log_manager,
+            deployment_tasks,
             app,
             &active_dep,
         )
@@ -493,6 +501,7 @@ pub async fn trigger_deployment(
     db_pool: DbPool,
     log_manager: Arc<LogManager>,
     proxy_sync_trigger: Arc<Notify>,
+    deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
     app: App,
     commit_sha: Option<String>,
 ) -> anyhow::Result<Option<Deployment>> {
@@ -525,14 +534,17 @@ pub async fn trigger_deployment(
 
     let deployment = DeploymentRepo::create(&db_pool, deployment).await?;
 
-    tokio::spawn(run_deployment(
+    let handle = tokio::spawn(run_deployment(
         docker_client,
         db_pool,
         log_manager,
         proxy_sync_trigger,
+        deployment_tasks.clone(),
         app,
         deployment.clone(),
     ));
+
+    deployment_tasks.insert(deployment.id.clone(), handle.abort_handle());
 
     Ok(Some(deployment))
 }
