@@ -50,6 +50,7 @@ sha2 = "0.11.0"
 hmac = "0.13.0"
 hex = "0.4.3"
 urlencoding = "2.1.3"
+async-compression = { version = "0.4.42", features = ["gzip", "tokio"] }
 
 [features]
 bundle = ["rust-embed", "mime_guess"]

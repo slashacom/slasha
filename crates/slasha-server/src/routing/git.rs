@@ -1,23 +1,20 @@
-use std::{io::Read, process::Stdio, sync::Arc};
+use std::{fs, os::unix::fs::PermissionsExt, process::Stdio, sync::Arc};
 
 use anyhow::Context;
+use async_compression::tokio::bufread::GzipDecoder;
 use axum::{
     Router,
     body::Body,
     extract::State,
     http::{Request, header},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use bollard::Docker;
-use flate2::read::GzDecoder;
+use futures_util::StreamExt;
 use slasha_db::{DbPool, app::App, repos::deployment::DeploymentRepo};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    process::Command,
-    sync::Notify,
-};
-use tokio_util::io::ReaderStream;
+use tokio::{io::AsyncReadExt, process::Command, sync::Notify};
+use tokio_util::io::{ReaderStream, StreamReader};
 
 use crate::{
     AppState,
@@ -27,6 +24,7 @@ use crate::{
     },
     error::HttpResult,
     extractors::git::{GitAuth, GitError},
+    state::Config,
 };
 
 struct AutoDeploy {
@@ -34,7 +32,46 @@ struct AutoDeploy {
     db_pool: DbPool,
     log_manager: Arc<LogManager>,
     proxy_sync_trigger: Arc<Notify>,
+    config: crate::state::Config,
     app: App,
+}
+
+fn push_success_message(app_slug: &str, platform_domain: &str, auto_deploy: bool) -> String {
+    let scheme = if platform_domain.contains("localhost") {
+        "http"
+    } else {
+        "https"
+    };
+    if auto_deploy {
+        format!(
+            "Push successful. Your application is being built and deployed.\nView deployment at: {}://{}/apps/{}",
+            scheme, platform_domain, app_slug
+        )
+    } else {
+        format!(
+            "Push successful. Start a deployment from the dashboard at {}://{}/apps/{} or trigger one using the CLI.",
+            scheme, platform_domain, app_slug
+        )
+    }
+}
+
+fn create_push_message_hook(
+    app_slug: &str,
+    platform_domain: &str,
+    auto_deploy: bool,
+) -> anyhow::Result<tempfile::TempDir> {
+    let hooks_dir = tempfile::tempdir().context("Failed to create Git hooks directory")?;
+    let hook_path = hooks_dir.path().join("post-receive");
+    let hook = format!(
+        "#!/bin/sh\nprintf '%s\\n' '{}' >&2\n",
+        push_success_message(app_slug, platform_domain, auto_deploy)
+    );
+
+    fs::write(&hook_path, hook).context("Failed to write post-receive hook")?;
+    fs::set_permissions(&hook_path, fs::Permissions::from_mode(0o700))
+        .context("Failed to make post-receive hook executable")?;
+
+    Ok(hooks_dir)
 }
 
 async fn run_auto_deploy(ctx: AutoDeploy) {
@@ -80,7 +117,41 @@ pub fn router() -> Router<AppState> {
         .route("/{slug}/git-receive-pack", post(receive_pack))
 }
 
-async fn info_refs(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoResponse> {
+fn packet_line(payload: &str) -> Vec<u8> {
+    format!("{:04x}{payload}", payload.len() + 4).into_bytes()
+}
+
+fn git_error_response(service: &str, message: &str, advertise_refs: bool) -> Response {
+    let mut body = Vec::new();
+    let response_type = if advertise_refs {
+        "advertisement"
+    } else {
+        "result"
+    };
+
+    if advertise_refs {
+        body.extend(packet_line(&format!("# service=git-{service}\n")));
+        body.extend_from_slice(b"0000");
+    }
+
+    body.extend(packet_line(&format!("ERR {message}\n")));
+
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                format!("application/x-git-{service}-{response_type}"),
+            ),
+            (header::CACHE_CONTROL, "no-cache".to_string()),
+            (header::PRAGMA, "no-cache".to_string()),
+            (header::EXPIRES, "Fri, 01 Jan 1980 00:00:00 GMT".to_string()),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+async fn info_refs(auth: GitAuth, req: Request<Body>) -> HttpResult<Response> {
     let query = req.uri().query().unwrap_or("");
     let service = if query == "service=git-upload-pack" {
         "git-upload-pack"
@@ -92,11 +163,13 @@ async fn info_refs(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoRes
         )
         .into());
     };
+
     if !auth.app.source.accepts_pushes() && service == "git-receive-pack" {
-        return Err(GitError::BadRequest(
-            "Externally sourced apps do not accept direct pushes".into(),
-        )
-        .into());
+        return Ok(git_error_response(
+            "receive-pack",
+            "Externally sourced apps do not accept direct pushes",
+            true,
+        ));
     }
 
     let git_protocol = req
@@ -150,10 +223,11 @@ async fn info_refs(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoRes
             (header::EXPIRES, "Fri, 01 Jan 1980 00:00:00 GMT"), // always fetch fresh info/refs
         ],
         body,
-    ))
+    )
+        .into_response())
 }
 
-async fn upload_pack(auth: GitAuth, req: Request<Body>) -> HttpResult<impl IntoResponse> {
+async fn upload_pack(auth: GitAuth, req: Request<Body>) -> HttpResult<Response> {
     handle_git_service("upload-pack", auth, req, None).await
 }
 
@@ -162,22 +236,27 @@ async fn receive_pack(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
+    State(config): State<Config>,
     auth: GitAuth,
     req: Request<Body>,
-) -> HttpResult<impl IntoResponse> {
+) -> HttpResult<Response> {
     if !auth.app.source.accepts_pushes() {
-        return Err(GitError::BadRequest(
-            "Externally sourced apps do not accept direct pushes".into(),
-        )
-        .into());
+        return Ok(git_error_response(
+            "receive-pack",
+            "Externally sourced apps do not accept direct pushes",
+            false,
+        ));
     }
+
     let auto_deploy = AutoDeploy {
         docker,
         db_pool,
         log_manager,
         proxy_sync_trigger,
+        config,
         app: auth.app.clone(),
     };
+
     handle_git_service("receive-pack", auth, req, Some(auto_deploy)).await
 }
 
@@ -186,7 +265,7 @@ async fn handle_git_service(
     auth: GitAuth,
     req: Request<Body>,
     auto_deploy: Option<AutoDeploy>,
-) -> HttpResult<impl IntoResponse> {
+) -> HttpResult<Response> {
     let git_protocol = req
         .headers()
         .get("Git-Protocol")
@@ -201,7 +280,22 @@ async fn handle_git_service(
         .map(|s| s.to_string())
         .unwrap_or_default();
 
+    let hooks_dir = auto_deploy
+        .as_ref()
+        .map(|ctx| {
+            create_push_message_hook(
+                &ctx.app.slug,
+                &ctx.config.platform_domain,
+                ctx.app.auto_deploy,
+            )
+        })
+        .transpose()?;
+
     let mut cmd = Command::new("git");
+    if let Some(hooks_dir) = &hooks_dir {
+        cmd.arg("-c")
+            .arg(format!("core.hooksPath={}", hooks_dir.path().display()));
+    }
     cmd.arg(service)
         .arg("--stateless-rpc")
         .arg(&auth.app.repo_path)
@@ -218,6 +312,7 @@ async fn handle_git_service(
     let stdout = child.stdout.take().unwrap();
 
     tokio::spawn(async move {
+        let _keep_alive = hooks_dir;
         let status = child.wait().await;
         if let Some(ctx) = auto_deploy
             && matches!(&status, Ok(s) if s.success())
@@ -226,26 +321,23 @@ async fn handle_git_service(
         }
     });
 
-    let body_bytes = axum::body::to_bytes(req.into_body(), 100 * 1024 * 1024)
-        .await
-        .context("Failed to read request body")?;
+    let body_stream = req.into_body().into_data_stream();
 
-    let final_body = if encoding.contains("gzip") {
-        let mut decoder = GzDecoder::new(&body_bytes[..]);
-        let mut decoded = Vec::new();
-        decoder
-            .read_to_end(&mut decoded)
-            .context("Failed to decompress body")?;
-        decoded
+    let io_stream = body_stream.map(|res| res.map_err(std::io::Error::other));
+    let mut reader = StreamReader::new(io_stream);
+
+    if encoding.contains("gzip") {
+        let mut decoder = GzipDecoder::new(reader);
+        tokio::io::copy(&mut decoder, &mut stdin)
+            .await
+            .context("Failed to write to git stdin")?;
     } else {
-        body_bytes.to_vec()
-    };
+        tokio::io::copy(&mut reader, &mut stdin)
+            .await
+            .context("Failed to write to git stdin")?;
+    }
 
-    stdin
-        .write_all(&final_body)
-        .await
-        .context("Failed to write to git stdin")?;
-    drop(stdin);
+    drop(stdin); // closing stdin tells git to exit
 
     let stream = ReaderStream::new(stdout);
     let body = Body::from_stream(stream);
@@ -258,5 +350,6 @@ async fn handle_git_service(
             (header::CACHE_CONTROL, "no-cache".to_string()),
         ],
         body,
-    ))
+    )
+        .into_response())
 }
