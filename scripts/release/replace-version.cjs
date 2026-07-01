@@ -9,7 +9,9 @@ if (!version) {
 const path = require('path');
 
 const files = [
-    path.join(__dirname, '../crates/slasha-cli/Cargo.toml')
+    path.join(__dirname, '../../crates/slasha-cli/Cargo.toml'),
+    path.join(__dirname, '../../crates/slasha-db/Cargo.toml'),
+    path.join(__dirname, '../../crates/slasha-server/Cargo.toml')
 ];
 
 for (const file of files) {
