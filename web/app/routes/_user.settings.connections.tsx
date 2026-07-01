@@ -79,66 +79,82 @@ function EnabledGithubConnections() {
   };
 
   return (
-    <VStack space={4}>
-      <div className="flex items-center justify-between rounded-lg border border-border bg-surface p-4">
+    <div className="rounded-lg border border-border bg-surface overflow-hidden">
+      <div className="flex items-center justify-between p-5 border-b border-border">
         <div className="flex items-center gap-3">
-          <Github className="size-5 text-text" />
+          <Github className="size-6 text-text" />
           <div>
-            <p className="text-sm font-medium text-text">GitHub</p>
-            <p className="text-xs text-text-secondary">
-              Connect to deploy from GitHub repositories
+            <h4 className="text-sm font-medium text-text">
+              GitHub Installations
+            </h4>
+            <p className="text-[13px] text-text-secondary mt-0.5">
+              Connect to deploy applications from your GitHub repositories
             </p>
           </div>
         </div>
-        <Button
-          color="neutral"
-          label="Connect"
-          onClick={handleConnect}
-          isLoading={installGithub.isPending}
-        />
+        {data.installations.length > 0 && (
+          <Button
+            size="sm"
+            color="neutral"
+            label="Connect Another"
+            onClick={handleConnect}
+            isLoading={installGithub.isPending}
+          />
+        )}
       </div>
 
-      {data.installations.length > 0 && (
-        <div className="space-y-4 pt-4">
-          <h4 className="text-sm font-medium text-text">
-            Connected Installations
-          </h4>
-          {data.installations.map((installation) => (
-            <div
-              key={installation.installation_id}
-              className="flex items-center justify-between rounded-lg border border-border p-4"
-            >
-              <div>
-                <p className="text-sm font-medium text-text">
-                  GitHub Installation #{installation.installation_id}
-                </p>
-                <p className="text-xs text-text-secondary mt-1">
-                  {installation.repositories_count}{' '}
-                  {installation.repositories_count === 1
-                    ? 'repository'
-                    : 'repositories'}{' '}
-                  connected
-                </p>
-                <a
-                  href={installation.configure_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-text-tertiary hover:text-text mt-2 block hover:underline"
-                >
-                  Configure on GitHub
-                </a>
+      <div className="p-0">
+        {data.installations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 px-6 text-center">
+            <p className="text-[13px] text-text-secondary mb-4">
+              No GitHub accounts connected yet.
+            </p>
+            <Button
+              color="neutral"
+              label="Connect GitHub Account"
+              onClick={handleConnect}
+              isLoading={installGithub.isPending}
+            />
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {data.installations.map((installation) => (
+              <div
+                key={installation.installation_id}
+                className="flex items-center justify-between p-5 hover:bg-surface-hover transition-colors"
+              >
+                <div>
+                  <p className="text-sm font-medium text-text">
+                    GitHub Installation #{installation.installation_id}
+                  </p>
+                  <p className="text-[13px] text-text-secondary mt-1">
+                    {installation.repositories_count}{' '}
+                    {installation.repositories_count === 1
+                      ? 'repository'
+                      : 'repositories'}{' '}
+                    connected
+                  </p>
+                  <a
+                    href={installation.configure_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[12px] text-text-tertiary hover:text-text mt-2 inline-block hover:underline"
+                  >
+                    Configure on GitHub
+                  </a>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<Trash2Icon className="size-4" />}
+                  onClick={() => setDisconnectId(installation.installation_id)}
+                  className="text-red-500/80 hover:text-red-500 hover:bg-red-500/10"
+                />
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={<Trash2Icon className="size-4" />}
-                onClick={() => setDisconnectId(installation.installation_id)}
-                className="text-red-500/80 hover:text-red-500 hover:bg-red-500/10"
-              />
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
       <ConfirmationDialog
         open={disconnectId !== null}
@@ -148,7 +164,7 @@ function EnabledGithubConnections() {
         confirmLabel="Disconnect"
         onConfirm={handleDisconnect}
       />
-    </VStack>
+    </div>
   );
 }
 
@@ -218,68 +234,8 @@ function GithubAppSetupManager() {
     });
   };
 
-  return (
-    <VStack space={4} className="border-t border-border pt-6 mt-6">
-      <div>
-        <h4 className="font-medium text-text">GitHub App Setup</h4>
-        <p className="text-sm text-text-secondary mt-1">
-          Configure a GitHub App to enable deploying from GitHub repositories.
-        </p>
-      </div>
-
-      <div className="rounded-lg border border-border bg-surface p-4">
-        {setupStatus.configured ? (
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-text">
-                Configured (App ID: {setupStatus.app_id})
-              </p>
-              <p className="text-xs text-text-secondary mt-1">
-                Configured on{' '}
-                {new Date(setupStatus.created_at!).toLocaleDateString()}
-              </p>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<PencilIcon className="size-4" />}
-                onClick={() => setIsEditing(true)}
-              />
-              <Button
-                size="sm"
-                variant="ghost"
-                color="error"
-                onClick={() => setIsDeleteDialogOpen(true)}
-                isLoading={deleteSetup.isPending}
-                icon={<Trash2Icon className="size-4" />}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-text-secondary">
-              No GitHub App configured.
-            </p>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                color="neutral"
-                label="Manual Edit"
-                onClick={() => setIsEditing(true)}
-              />
-              <Button
-                size="sm"
-                color="neutral"
-                label="Auto Setup"
-                onClick={handleBeginSetup}
-                isLoading={beginSetup.isPending}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
+  const dialogs = (
+    <>
       <Dialog open={isEditing} onOpenChange={setIsEditing}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -353,19 +309,92 @@ function GithubAppSetupManager() {
         confirmLabel="Delete"
         onConfirm={handleDelete}
       />
-    </VStack>
+    </>
+  );
+
+  if (!setupStatus.configured) {
+    return (
+      <div className="rounded-lg border border-border bg-surface p-8 text-center">
+        <Github className="size-8 text-text-tertiary mx-auto mb-3" />
+        <p className="text-sm font-medium text-text">
+          GitHub Integration Disabled
+        </p>
+        <p className="text-[13px] text-text-secondary mt-1 mb-6">
+          No GitHub App configured. Start the auto-setup or configure manually.
+        </p>
+        <div className="flex items-center justify-center gap-3">
+          <Button
+            variant="ghost"
+            label="Manual Edit"
+            onClick={() => setIsEditing(true)}
+            className="whitespace-nowrap"
+          />
+          <Button
+            color="neutral"
+            label="Auto Setup"
+            onClick={handleBeginSetup}
+            isLoading={beginSetup.isPending}
+            className="whitespace-nowrap"
+          />
+        </div>
+        {dialogs}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-surface overflow-hidden">
+      <div className="p-5 border-b border-border">
+        <h4 className="text-sm font-medium text-text">
+          GitHub App Configuration
+        </h4>
+        <p className="text-[13px] text-text-secondary mt-0.5">
+          Configure your GitHub App
+        </p>
+      </div>
+
+      <div className="p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-text">
+              App Configured (ID: {setupStatus.app_id})
+            </p>
+            <p className="text-[13px] text-text-secondary mt-1">
+              Configured on{' '}
+              {new Date(setupStatus.created_at!).toLocaleDateString()}
+            </p>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<PencilIcon className="size-4" />}
+              onClick={() => setIsEditing(true)}
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              color="error"
+              onClick={() => setIsDeleteDialogOpen(true)}
+              isLoading={deleteSetup.isPending}
+              icon={<Trash2Icon className="size-4" />}
+            />
+          </div>
+        </div>
+      </div>
+      {dialogs}
+    </div>
   );
 }
-
 export default function ConnectionsSettings() {
   const { data: status } = useSuspenseQuery(getGithubStatusOptions());
   const { data: authMe } = useSuspenseQuery(getAuthMeOptions());
 
   return (
-    <div className="space-y-6 max-w-xl">
+    <div className="space-y-6 max-w-2xl">
       <div>
         <h3 className="font-semibold text-text">Connected Accounts</h3>
-        <p className="mt-2 text-sm text-text-secondary">
+        <p className="mt-2 text-[13px] text-text-secondary">
           Manage integrations with external services like GitHub.
         </p>
       </div>
@@ -373,11 +402,17 @@ export default function ConnectionsSettings() {
       {status.enabled ? (
         <EnabledGithubConnections />
       ) : (
-        <div className="rounded-lg border border-border bg-surface p-6">
-          <p className="text-sm text-text-secondary">
-            GitHub integration is not enabled on this Slasha instance.
-          </p>
-        </div>
+        authMe.user.role !== 'Admin' && (
+          <div className="rounded-lg border border-border bg-surface p-6 text-center">
+            <Github className="size-8 text-text-tertiary mx-auto mb-3" />
+            <p className="text-sm font-medium text-text">
+              GitHub Integration Disabled
+            </p>
+            <p className="text-[13px] text-text-secondary mt-1">
+              GitHub integration is not enabled on this Slasha instance.
+            </p>
+          </div>
+        )
       )}
 
       {authMe.user.role === 'Admin' && <GithubAppSetupManager />}
