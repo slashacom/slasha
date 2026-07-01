@@ -260,9 +260,9 @@ if command -v railpack >/dev/null 2>&1 || [[ -x "/usr/local/bin/railpack" ]]; th
 else
     info "railpack is missing. installing railpack..."
     if command -v curl >/dev/null 2>&1; then
-        curl -sSL https://railpack.com/install.sh | $SUDO sh -s -- --bin-dir /usr/local/bin
+        curl -sSL https://railpack.com/install.sh | $SUDO bash -s -- --bin-dir /usr/local/bin
     else
-        wget -qO- https://railpack.com/install.sh | $SUDO sh -s -- --bin-dir /usr/local/bin
+        wget -qO- https://railpack.com/install.sh | $SUDO bash -s -- --bin-dir /usr/local/bin
     fi
     
     if ! command -v railpack >/dev/null 2>&1 && ! [[ -x "/usr/local/bin/railpack" ]]; then
@@ -401,6 +401,32 @@ success "firewall configured (22, 80, 443)"
 # fail2ban
 header "configuring fail2ban"
 
+if ! command -v fail2ban-server >/dev/null 2>&1; then
+    info "fail2ban is not installed. installing fail2ban..."
+    case "$OS_TYPE" in
+        arch) $SUDO pacman -Sy --noconfirm fail2ban ;;
+        alpine|postmarketos) $SUDO apk add fail2ban ;;
+        ubuntu|debian|raspbian)
+            $SUDO apt-get update -y && $SUDO apt-get install -y fail2ban
+            ;;
+        centos|fedora|rhel|ol|rocky|almalinux|amzn|tencentos)
+            if [[ "$OS_TYPE" = "fedora" ]]; then
+                $SUDO dnf install -y fail2ban
+            else
+                $SUDO dnf install -y epel-release || $SUDO yum install -y epel-release || true
+                if command -v dnf >/dev/null 2>&1; then
+                    $SUDO dnf install -y fail2ban
+                else
+                    $SUDO yum install -y fail2ban
+                fi
+            fi
+            ;;
+        sles|opensuse-leap|opensuse-tumbleweed)
+            $SUDO zypper install -y fail2ban
+            ;;
+    esac
+fi
+
 if command -v fail2ban-server >/dev/null 2>&1; then
     $SUDO mkdir -p /etc/fail2ban/jail.d
     $SUDO tee /etc/fail2ban/jail.d/sshd.conf >/dev/null <<'EOF'
@@ -416,7 +442,7 @@ EOF
     $SUDO systemctl restart fail2ban
     success "fail2ban configured"
 else
-    warn "fail2ban not found — skipping"
+    warn "fail2ban installation failed — skipping"
 fi
 
 # start service
