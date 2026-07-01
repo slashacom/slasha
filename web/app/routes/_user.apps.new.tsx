@@ -15,6 +15,7 @@ import {
   getGithubStatusOptions,
   useInstallGithub,
   useGetRemoteBranchesQuery,
+  useGetGithubBranchesQuery,
 } from '~/queries/connections';
 import { queryClient } from '~/utils/query-client';
 import { useDebounce } from '~/hooks/use-debounce';
@@ -38,6 +39,7 @@ export default function NewApp() {
   const [selectedRepository, setSelectedRepository] = useState<string>('');
   const [gitUrl, setGitUrl] = useState('');
   const [gitBranch, setGitBranch] = useState('');
+  const [githubBranch, setGithubBranch] = useState('');
 
   const debouncedName = useDebounce(name, 300);
   const debouncedGitUrl = useDebounce(gitUrl, 500);
@@ -62,6 +64,22 @@ export default function NewApp() {
     enabled: githubStatus?.enabled === true && source === 'github',
   });
 
+  const selectedRepoObj = reposData?.repositories?.find(
+    (r) => r.id.toString() === selectedRepository
+  );
+
+  const { data: githubBranches, isFetching: githubBranchesLoading } =
+    useGetGithubBranchesQuery(
+      selectedRepoObj?.installation_id,
+      selectedRepoObj?.id
+    );
+
+  useEffect(() => {
+    if (githubBranches?.default_branch && !githubBranch) {
+      setGithubBranch(githubBranches.default_branch);
+    }
+  }, [githubBranches, githubBranch]);
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -71,9 +89,7 @@ export default function NewApp() {
     }
 
     const repositories = reposData?.repositories || [];
-    const selectedRepoObj = repositories.find(
-      (r) => r.id.toString() === selectedRepository
-    );
+    // selectedRepoObj is defined above
 
     if (source === 'github' && !selectedRepoObj) {
       toast.error('The selected GitHub repository is no longer available');
@@ -87,6 +103,7 @@ export default function NewApp() {
             source,
             installation_id: selectedRepoObj!.installation_id,
             repository_id: selectedRepoObj!.id,
+            ...(githubBranch.trim() ? { branch: githubBranch.trim() } : {}),
           }
         : source === 'git'
           ? {
@@ -262,6 +279,35 @@ export default function NewApp() {
                       value={selectedRepository}
                       onChange={setSelectedRepository}
                     />
+                    {selectedRepository && (
+                      <div className="pt-2 space-y-1.5">
+                        <Label className="block text-[12px] font-medium text-text-tertiary">
+                          Branch
+                        </Label>
+                        <div className="relative">
+                          {githubBranches || githubBranchesLoading ? (
+                            <BranchSelect
+                              branches={githubBranches?.branches || []}
+                              value={githubBranch}
+                              onChange={setGithubBranch}
+                              isLoading={githubBranchesLoading}
+                            />
+                          ) : (
+                            <>
+                              <GitBranch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
+                              <Input
+                                value={githubBranch}
+                                onChange={(event) =>
+                                  setGithubBranch(event.target.value)
+                                }
+                                placeholder="Remote default branch"
+                                className="h-10 pl-9 font-mono text-[13px]"
+                              />
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

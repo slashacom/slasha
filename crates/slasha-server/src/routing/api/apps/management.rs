@@ -26,20 +26,25 @@ use slasha_db::{
         github_connection::GithubConnectionRepo,
         service::ServiceRepo,
     },
-    user::UserRole,
 };
 use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::{
-    connections::{GithubError, sync_selected_git_repository, sync_selected_github_repository},
+    connections::{
+        GithubError, sync_external_app, sync_selected_git_repository,
+        sync_selected_github_repository,
+    },
     docker::{
         deployment::{remove_app_volumes, remove_deployment_processes},
         network::{create_app_network, remove_app_network},
         service::remove_service_container,
     },
     error::{HttpError, HttpResult},
-    extractors::{app::ActiveApp, auth::AuthUser},
+    extractors::{
+        app::{ActiveApp, ActiveAppOwner},
+        auth::AuthUser,
+    },
     state::{AppState, Config, Runtime, Storage},
 };
 
@@ -57,6 +62,7 @@ pub fn router() -> Router<AppState> {
             "/{slug}/connection/github",
             put(reconnect_github).delete(disconnect_github),
         )
+        .route("/{slug}/connection/branch", put(update_connection_branch))
 }
 
 #[derive(Deserialize)]
@@ -73,6 +79,7 @@ enum CreateAppSource {
     Github {
         installation_id: i64,
         repository_id: i64,
+        branch: Option<String>,
     },
     Git {
         url: String,
@@ -162,11 +169,13 @@ async fn prepare_github_connection(
     repo_path: &str,
     installation_id: i64,
     repository_id: i64,
+    branch: Option<String>,
 ) -> HttpResult<(String, GithubConnection)> {
     let github = state
         .github_client()
         .await
         .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
+
     ensure_github_installation_access(state, user_id, installation_id).await?;
     let repository = sync_selected_github_repository(
         &github,
@@ -175,15 +184,18 @@ async fn prepare_github_connection(
         std::path::PathBuf::from(repo_path),
         installation_id,
         repository_id,
+        branch.clone(),
     )
     .await
     .map_err(|error| {
         HttpError::bad_request(format!("Failed to fetch GitHub repository: {}", error))
     })?;
 
+    let final_branch = branch.unwrap_or(repository.default_branch);
+
     let now = Utc::now().naive_utc();
     Ok((
-        repository.default_branch,
+        final_branch,
         GithubConnection {
             app_id: app_id.to_string(),
             installation_id,
@@ -211,6 +223,7 @@ async fn ensure_github_installation_access(
             "GitHub installation is not connected to this user",
         ));
     }
+
     Ok(())
 }
 
@@ -267,6 +280,7 @@ async fn create_app(
         CreateAppSource::Github {
             installation_id,
             repository_id,
+            branch,
         } => {
             let (branch, connection) = prepare_github_connection(
                 &state,
@@ -275,6 +289,7 @@ async fn create_app(
                 &repo_path,
                 installation_id,
                 repository_id,
+                branch,
             )
             .await?;
             (
@@ -424,6 +439,8 @@ async fn get_connection(
                         None
                     };
                     Some(serde_json::json!({
+                        "installation_id": connection.installation_id,
+                        "repository_id": connection.repository_id,
                         "repository": repository.map(|repository| serde_json::json!({
                             "full_name": repository.full_name,
                             "html_url": repository.html_url,
@@ -445,12 +462,8 @@ async fn delete_app(
     State(docker): State<Docker>,
     State(db_pool): State<DbPool>,
     State(runtime): State<Runtime>,
-    ActiveApp { app, user }: ActiveApp,
+    ActiveAppOwner { app, user: _ }: ActiveAppOwner,
 ) -> HttpResult<impl IntoResponse> {
-    if user.role != UserRole::Admin && !AppRepo::is_owner(&db_pool, &app.id, &user.id).await? {
-        return Err(HttpError::bad_request("Only app owners can delete apps"));
-    }
-
     let app_services = ServiceRepo::list_for_app(&db_pool, &app.id).await?;
     let deployments = AppRepo::delete(&db_pool, &app.id).await?;
 
@@ -637,18 +650,11 @@ struct ReconnectGithubReq {
 
 async fn reconnect_github(
     State(state): State<AppState>,
-    ActiveApp { app, user }: ActiveApp,
+    ActiveAppOwner { app, user }: ActiveAppOwner,
     Json(payload): Json<ReconnectGithubReq>,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Github {
         return Err(HttpError::bad_request("App does not use GitHub"));
-    }
-    if user.role != UserRole::Admin
-        && !AppRepo::is_owner(&state.storage.db_pool, &app.id, &user.id).await?
-    {
-        return Err(HttpError::forbidden(
-            "Only app owners can change the GitHub connection",
-        ));
     }
 
     let github = state
@@ -657,13 +663,14 @@ async fn reconnect_github(
         .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
     ensure_github_installation_access(&state, &user.id, payload.installation_id).await?;
 
-    let repository = sync_selected_github_repository(
+    sync_selected_github_repository(
         &github,
         &state.runtime,
         &app.id,
         std::path::PathBuf::from(&app.repo_path),
         payload.installation_id,
         payload.repository_id,
+        Some(app.default_branch.clone()),
     )
     .await
     .map_err(|error| {
@@ -675,7 +682,7 @@ async fn reconnect_github(
         &app.id,
         payload.installation_id,
         payload.repository_id,
-        &repository.default_branch,
+        &app.default_branch,
     )
     .await?;
 
@@ -684,24 +691,54 @@ async fn reconnect_github(
 
 async fn disconnect_github(
     State(state): State<AppState>,
-    ActiveApp { app, user }: ActiveApp,
+    ActiveAppOwner { app, user: _ }: ActiveAppOwner,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Github {
         return Err(HttpError::bad_request("App does not use GitHub"));
     }
-    if user.role != UserRole::Admin
-        && !AppRepo::is_owner(&state.storage.db_pool, &app.id, &user.id).await?
-    {
-        return Err(HttpError::forbidden(
-            "Only app owners can change the GitHub connection",
-        ));
-    }
+
     GithubConnectionRepo::update_status(
         &state.storage.db_pool,
         &app.id,
         ConnectionStatus::Disconnected,
     )
     .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct UpdateBranchReq {
+    branch: String,
+}
+
+async fn update_connection_branch(
+    State(state): State<AppState>,
+    ActiveAppOwner { mut app, user: _ }: ActiveAppOwner,
+    Json(payload): Json<UpdateBranchReq>,
+) -> HttpResult<impl IntoResponse> {
+    if !matches!(app.source, AppSource::Git | AppSource::Github) {
+        return Err(HttpError::bad_request(
+            "App does not use a remote connection",
+        ));
+    }
+
+    let branch = payload.branch.trim();
+    if branch.is_empty() {
+        return Err(HttpError::bad_request("Branch cannot be empty"));
+    }
+
+    AppRepo::update_default_branch(&state.storage.db_pool, &app.id, branch).await?;
+    app.default_branch = branch.to_string();
+
+    sync_external_app(
+        state.github_client().await.as_ref(),
+        &state.storage,
+        &state.runtime,
+        &mut app,
+    )
+    .await
+    .map_err(|e| HttpError::bad_request(format!("Failed to sync with new branch: {}", e)))?;
 
     Ok(StatusCode::NO_CONTENT)
 }

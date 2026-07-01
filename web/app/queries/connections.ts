@@ -1,5 +1,12 @@
 import { queryOptions, useMutation, useQuery } from '@tanstack/react-query';
-import { httpDelete, httpGet, httpPatch, httpPost } from '~/utils/http';
+import {
+  httpDelete,
+  httpGet,
+  httpPatch,
+  httpPost,
+  httpPut,
+} from '~/utils/http';
+import { queryClient } from '~/utils/query-client';
 
 export type GithubRepository = {
   id: number;
@@ -109,5 +116,35 @@ export function useGetRemoteBranchesQuery(url: string) {
       url.trim().length > 0 &&
       (url.startsWith('http://') || url.startsWith('https://')),
     retry: false,
+  });
+}
+
+export type GithubRemoteResponse = {
+  default_branch: string;
+  branches: string[];
+};
+
+export function useGetGithubBranchesQuery(
+  installationId: number | undefined,
+  repositoryId: number | undefined
+) {
+  return useQuery({
+    queryKey: ['github', 'branches', installationId, repositoryId],
+    queryFn: () =>
+      httpGet<GithubRemoteResponse>(
+        `connections/github/installations/${installationId}/repositories/${repositoryId}/branches`
+      ),
+    enabled: installationId !== undefined && repositoryId !== undefined,
+    retry: false,
+  });
+}
+
+export function useUpdateConnectionBranch(slug: string) {
+  return useMutation({
+    mutationFn: (branch: string) =>
+      httpPut<void>(`apps/${slug}/connection/branch`, { branch }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['apps', slug, 'connection'] });
+    },
   });
 }

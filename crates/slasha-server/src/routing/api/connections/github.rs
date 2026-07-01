@@ -34,6 +34,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/installations/{installation_id}",
             delete(remove_installation),
         )
+        .route(
+            "/installations/{installation_id}/repositories/{repository_id}/branches",
+            get(get_github_app_branches),
+        )
         .route("/webhook", post(handle_webhook));
 
     let setup_routes = Router::new()
@@ -85,7 +89,11 @@ async fn begin_setup(
     let platform_domain = &state.config.platform_domain;
     let base_url = format!("https://{}", platform_domain);
 
-    let state_token = create_state(&user.id, "/settings/connections", &state.config.jwt_secret)?;
+    let state_token = create_state(
+        &user.id,
+        "/settings/connections?setup=success",
+        &state.config.jwt_secret,
+    )?;
 
     let manifest = serde_json::json!({
         "name": format!("Slasha ({})", platform_domain),
@@ -178,7 +186,7 @@ async fn setup_callback(
 
     tracing::info!(user_id = %user_id, "github app configured via manifest flow");
 
-    Ok(Redirect::to(&format!("{}?setup=success", redirect_to)))
+    Ok(Redirect::to(&redirect_to))
 }
 
 #[derive(Deserialize)]
@@ -294,6 +302,7 @@ async fn app_callback(
     let github_client = get_github_client(&state).await?;
     let (user_id, redirect_to) = verify_state(&query.state, &state.config.jwt_secret)
         .map_err(|_| HttpError::bad_request("Invalid or expired GitHub state"))?;
+
     UserRepo::find_by_id(&state.storage.db_pool, &user_id)
         .await
         .map_err(|_| HttpError::unauthorized())?;
@@ -411,4 +420,42 @@ async fn remove_installation(
     GithubConnectionRepo::disconnect_installation(&state.storage.db_pool, installation_id).await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_github_app_branches(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path((installation_id, repository_id)): Path<(i64, i64)>,
+) -> HttpResult<impl IntoResponse> {
+    let github = state
+        .github_client()
+        .await
+        .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
+
+    if !GithubConnectionRepo::user_has_installation(
+        &state.storage.db_pool,
+        &user.id,
+        installation_id,
+    )
+    .await?
+    {
+        return Err(HttpError::forbidden(
+            "GitHub installation is not connected to this user",
+        ));
+    }
+
+    let repo = github
+        .get_repository(installation_id, repository_id)
+        .await
+        .map_err(|error| HttpError::bad_request(format!("Failed to fetch repo: {}", error)))?;
+
+    let branches = github
+        .get_branches(installation_id, repository_id)
+        .await
+        .map_err(|error| HttpError::bad_request(format!("Failed to fetch branches: {}", error)))?;
+
+    Ok(Json(serde_json::json!({
+        "default_branch": repo.default_branch,
+        "branches": branches,
+    })))
 }

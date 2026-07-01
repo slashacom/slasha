@@ -100,16 +100,20 @@ async fn verify_signature(state: &AppState, headers: &HeaderMap, body: &[u8]) ->
         .github_client()
         .await
         .ok_or_else(|| HttpError::not_found("GitHub integration is disabled"))?;
+
     let signature = headers
         .get("x-hub-signature-256")
         .and_then(|value| value.to_str().ok())
         .ok_or_else(HttpError::unauthorized)?;
+
     let Some(signature) = signature.strip_prefix("sha256=") else {
         return Err(HttpError::unauthorized());
     };
+
     let signature = hex::decode(signature).map_err(|_| HttpError::unauthorized())?;
     let mut mac =
         HmacSha256::new_from_slice(github.webhook_secret()).map_err(HttpError::internal)?;
+
     mac.update(body);
     mac.verify_slice(&signature)
         .map_err(|_| HttpError::unauthorized())
@@ -131,6 +135,7 @@ async fn disconnect_repository(
         repository_id,
     )
     .await?;
+
     for connection in connections {
         GithubConnectionRepo::update_status(
             &state.storage.db_pool,
@@ -139,6 +144,7 @@ async fn disconnect_repository(
         )
         .await?;
     }
+
     Ok(())
 }
 
@@ -146,6 +152,8 @@ async fn handle_push(state: AppState, payload: PushPayload) {
     let Some(github) = state.github_client().await else {
         return;
     };
+
+    // get all connections made to this repo
     let connections = match GithubConnectionRepo::list_for_repository(
         &state.storage.db_pool,
         payload.installation.id,
@@ -164,41 +172,25 @@ async fn handle_push(state: AppState, payload: PushPayload) {
         if connection.status != ConnectionStatus::Connected {
             continue;
         }
-        let mut app = match AppRepo::find_by_id(&state.storage.db_pool, &connection.app_id).await {
+
+        let app = match AppRepo::find_by_id(&state.storage.db_pool, &connection.app_id).await {
             Ok(app) if app.source == AppSource::Github => app,
             _ => continue,
         };
-        let repository = match sync_github_app(&github, &state.storage, &state.runtime, &app).await
-        {
-            Ok(repository) => repository,
-            Err(error) => {
-                tracing::warn!(app_id = %app.id, error = %error, "github repository sync failed");
-                continue;
-            }
+
+        if let Err(e) = sync_github_app(&github, &state.storage, &state.runtime, &app).await {
+            tracing::warn!(app_id = %app.id, error = %e, "github repository sync failed");
+            continue;
         };
-        if payload.r#ref != format!("refs/heads/{}", repository.default_branch) {
+
+        if payload.r#ref != format!("refs/heads/{}", app.default_branch) {
             continue;
         }
-        if app.default_branch != repository.default_branch {
-            if let Err(error) = AppRepo::update_default_branch(
-                &state.storage.db_pool,
-                &app.id,
-                &repository.default_branch,
-            )
-            .await
-            {
-                tracing::warn!(
-                    app_id = %app.id,
-                    error = %error,
-                    "failed to update github default branch"
-                );
-                continue;
-            }
-            app.default_branch = repository.default_branch;
-        }
+
         if !app.auto_deploy {
             continue;
         }
+
         if let Ok(deployments) = DeploymentRepo::list_for_app(&state.storage.db_pool, &app.id).await
             && deployments
                 .first()

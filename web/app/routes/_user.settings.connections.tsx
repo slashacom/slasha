@@ -1,7 +1,8 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Trash2Icon, PencilIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router';
 import { Github } from '~/components/icons/github';
 import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
@@ -389,6 +390,15 @@ function GithubAppSetupManager() {
 export default function ConnectionsSettings() {
   const { data: status } = useSuspenseQuery(getGithubStatusOptions());
   const { data: authMe } = useSuspenseQuery(getAuthMeOptions());
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get('setup') === 'success') {
+      toast.success('GitHub App successfully configured!');
+      searchParams.delete('setup');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   return (
     <div className="space-y-6 max-w-2xl">
