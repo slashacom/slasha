@@ -24,7 +24,7 @@ import {
   useBeginGithubSetup,
   useUpdateGithubCredentials,
   useDeleteGithubSetup,
-} from '~/queries/github-app';
+} from '~/queries/connections';
 import { getAuthMeOptions } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
 
