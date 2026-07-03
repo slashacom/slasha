@@ -22,6 +22,7 @@ pub enum HealthStatus {
 #[serde(rename_all = "snake_case")]
 pub enum DnsStatus {
     Ok,
+    Proxied,
     Mismatch,
     Unresolved,
     Unknown,
@@ -42,6 +43,7 @@ pub struct DnsHealth {
     pub status: DnsStatus,
     pub resolved_ips: Vec<String>,
     pub expected_ips: Vec<String>,
+    pub proxy: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -86,7 +88,7 @@ async fn check_one(domain: String, expected_ips: &[IpAddr]) -> DomainHealth {
 fn overall_status(dns: &DnsStatus, tls: &TlsStatus) -> HealthStatus {
     match dns {
         DnsStatus::Unresolved | DnsStatus::Mismatch => return HealthStatus::Error,
-        _ => {}
+        DnsStatus::Ok | DnsStatus::Proxied | DnsStatus::Unknown => {}
     }
 
     match tls {
@@ -101,12 +103,16 @@ async fn check_dns(domain: &str, expected_ips: &[IpAddr]) -> DnsHealth {
     let resolved = resolve_ips(domain).await;
     let expected_set: HashSet<&IpAddr> = expected_ips.iter().collect();
 
+    let proxy = detect_proxy(&resolved);
+
     let status = if resolved.is_empty() {
         DnsStatus::Unresolved
     } else if expected_ips.is_empty() {
         DnsStatus::Unknown
     } else if resolved.iter().any(|ip| expected_set.contains(ip)) {
         DnsStatus::Ok
+    } else if proxy.is_some() {
+        DnsStatus::Proxied
     } else {
         DnsStatus::Mismatch
     };
@@ -115,6 +121,79 @@ async fn check_dns(domain: &str, expected_ips: &[IpAddr]) -> DnsHealth {
         status,
         resolved_ips: resolved.iter().map(|ip| ip.to_string()).collect(),
         expected_ips: expected_ips.iter().map(|ip| ip.to_string()).collect(),
+        proxy,
+    }
+}
+
+// Published edge ranges of proxies that sit in front of the origin, so the
+// domain resolving to them is expected rather than a misconfiguration.
+// Cloudflare's are from https://www.cloudflare.com/ips
+const PROXY_RANGES: &[(&str, &str)] = &[
+    ("173.245.48.0/20", "Cloudflare"),
+    ("103.21.244.0/22", "Cloudflare"),
+    ("103.22.200.0/22", "Cloudflare"),
+    ("103.31.4.0/22", "Cloudflare"),
+    ("141.101.64.0/18", "Cloudflare"),
+    ("108.162.192.0/18", "Cloudflare"),
+    ("190.93.240.0/20", "Cloudflare"),
+    ("188.114.96.0/20", "Cloudflare"),
+    ("197.234.240.0/22", "Cloudflare"),
+    ("198.41.128.0/17", "Cloudflare"),
+    ("162.158.0.0/15", "Cloudflare"),
+    ("104.16.0.0/13", "Cloudflare"),
+    ("104.24.0.0/14", "Cloudflare"),
+    ("172.64.0.0/13", "Cloudflare"),
+    ("131.0.72.0/22", "Cloudflare"),
+    ("2400:cb00::/32", "Cloudflare"),
+    ("2606:4700::/32", "Cloudflare"),
+    ("2803:f800::/32", "Cloudflare"),
+    ("2405:b500::/32", "Cloudflare"),
+    ("2405:8100::/32", "Cloudflare"),
+    ("2a06:98c0::/29", "Cloudflare"),
+    ("2c0f:f248::/32", "Cloudflare"),
+];
+
+fn detect_proxy(resolved: &[IpAddr]) -> Option<&'static str> {
+    if resolved.is_empty() {
+        return None;
+    }
+
+    let mut proxy = None;
+    for ip in resolved {
+        let name = PROXY_RANGES
+            .iter()
+            .find(|(cidr, _)| ip_in_cidr(ip, cidr))
+            .map(|(_, name)| *name)?;
+
+        if *proxy.get_or_insert(name) != name {
+            return None;
+        }
+    }
+
+    proxy
+}
+
+fn ip_in_cidr(ip: &IpAddr, cidr: &str) -> bool {
+    let Some((network, prefix)) = cidr.split_once('/') else {
+        return false;
+    };
+    let Ok(prefix) = prefix.parse::<u32>() else {
+        return false;
+    };
+    let Ok(network) = network.parse::<IpAddr>() else {
+        return false;
+    };
+
+    match (ip, network) {
+        (IpAddr::V4(ip), IpAddr::V4(network)) if prefix <= 32 => {
+            let mask = u32::MAX.checked_shl(32 - prefix).unwrap_or(0);
+            u32::from(*ip) & mask == u32::from(network) & mask
+        }
+        (IpAddr::V6(ip), IpAddr::V6(network)) if prefix <= 128 => {
+            let mask = u128::MAX.checked_shl(128 - prefix).unwrap_or(0);
+            u128::from(*ip) & mask == u128::from(network) & mask
+        }
+        _ => false,
     }
 }
 
@@ -227,5 +306,48 @@ fn host_matches(pattern: &str, domain: &str) -> bool {
     match domain.split_once('.') {
         Some((_, rest)) => rest.eq_ignore_ascii_case(suffix),
         None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ips(addrs: &[&str]) -> Vec<IpAddr> {
+        addrs.iter().map(|addr| addr.parse().unwrap()).collect()
+    }
+
+    #[test]
+    fn detects_cloudflare_proxied_ips() {
+        let resolved = ips(&[
+            "104.21.47.69",
+            "172.67.170.163",
+            "2606:4700:3034::6815:2f45",
+            "2606:4700:3033::ac43:aaa3",
+        ]);
+
+        assert_eq!(detect_proxy(&resolved), Some("Cloudflare"));
+    }
+
+    #[test]
+    fn ignores_unproxied_ips() {
+        assert_eq!(detect_proxy(&ips(&["5.161.191.47"])), None);
+        assert_eq!(detect_proxy(&[]), None);
+    }
+
+    #[test]
+    fn mixed_proxy_and_origin_is_not_proxied() {
+        let resolved = ips(&["104.21.47.69", "5.161.191.47"]);
+
+        assert_eq!(detect_proxy(&resolved), None);
+    }
+
+    #[test]
+    fn cidr_boundaries() {
+        let inside: IpAddr = "104.23.255.255".parse().unwrap();
+        let outside: IpAddr = "104.24.0.0".parse().unwrap();
+
+        assert!(ip_in_cidr(&inside, "104.16.0.0/13"));
+        assert!(!ip_in_cidr(&outside, "104.16.0.0/13"));
     }
 }

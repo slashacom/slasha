@@ -1,6 +1,11 @@
 export type HealthStatus = 'healthy' | 'pending' | 'error' | 'unknown';
 
-export type DnsStatus = 'ok' | 'mismatch' | 'unresolved' | 'unknown';
+export type DnsStatus =
+  | 'ok'
+  | 'proxied'
+  | 'mismatch'
+  | 'unresolved'
+  | 'unknown';
 
 export type TlsStatus =
   | 'active'
@@ -13,6 +18,7 @@ export type DnsHealth = {
   status: DnsStatus;
   resolved_ips: string[];
   expected_ips: string[];
+  proxy: string | null;
 };
 
 export type TlsHealth = {

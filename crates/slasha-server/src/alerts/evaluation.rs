@@ -173,6 +173,8 @@ fn evaluate_domain_dns(snapshot: &AlertSnapshot, domain: &str) -> Option<Evaluat
 
     let detail_display = if triggered {
         format!("DNS misconfigured or unresolved. Resolves to {resolved}, but expected {expected}")
+    } else if let Some(proxy) = health.dns.proxy {
+        format!("DNS proxied through {proxy}. Resolves to {resolved}")
     } else {
         format!("DNS correctly configured. Resolves to expected IPs: {expected}")
     };
