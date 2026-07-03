@@ -462,18 +462,21 @@ async fn run_deployment_inner(
         }
     }
 
-    // mark this deployment running before stopping the previous one; routes
-    // only include running deployments, so the reverse order would leave a
-    // window with no routable upstream
+    let previous_deployments: Vec<Deployment> =
+        DeploymentRepo::list_active_for_app(db_pool, &app.id)
+            .await?
+            .into_iter()
+            .filter(|active_dep| active_dep.id != deployment.id)
+            .collect();
+
+    for previous in &previous_deployments {
+        DeploymentRepo::update_status(db_pool, &previous.id, DeploymentStatus::Stopped).await?;
+    }
+
     DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Running).await?;
     proxy_sync_trigger.notify_one();
 
-    let active_deployments = DeploymentRepo::list_active_for_app(db_pool, &app.id).await?;
-    for active_dep in active_deployments {
-        if active_dep.id == deployment.id {
-            continue;
-        }
-
+    for previous in &previous_deployments {
         if let Err(e) = stop_deployment_processes(
             docker_client,
             db_pool,
@@ -481,13 +484,13 @@ async fn run_deployment_inner(
             log_manager,
             deployment_tasks,
             app,
-            &active_dep,
+            previous,
         )
         .await
         {
             tracing::warn!(
                 app_slug = %app.slug,
-                deployment_id = %active_dep.id,
+                deployment_id = %previous.id,
                 error = ?e,
                 "Failed to stop previous deployment"
             );
