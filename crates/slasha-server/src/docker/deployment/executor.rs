@@ -27,12 +27,13 @@ use super::{
     dockerfile_parser::{BuildStrategy, detect_build_strategy, parse_expose, parse_volumes},
     litestream,
     procfile_parser::{Procfile, load_procfile},
+    readiness::{ReadinessConfig, ReadinessOutcome, wait_for_web_ready},
 };
 use crate::docker::{
     DeploymentError, DeploymentResult,
     deployment::{container::CreateContainerContext, stop_deployment_processes},
     env::{RefSource, resolve_env_value, topo_sort_vars},
-    logs::{LogKey, LogManager},
+    logs::{LogHandle, LogKey, LogManager},
     naming::{app_network_name, image_tag, process_container_name, service_container_name},
     rollback::Rollback,
 };
@@ -252,6 +253,10 @@ pub async fn run_deployment(
             "deployment finish"
         );
         log.send(format!("Deployment failed: {}", e)).await?;
+        log.send(
+            "Rolling back this release; the previous deployment (if any) stays active".to_string(),
+        )
+        .await?;
 
         rollback.execute().await;
         log_manager.remove(&log_key);
@@ -429,9 +434,19 @@ async fn run_deployment_inner(
         }
     }
 
-    for (pt, i) in created_containers {
-        start_process_container(docker_client, &log, app, deployment, pt, i).await?;
+    for (pt, i) in &created_containers {
+        start_process_container(docker_client, &log, app, deployment, *pt, *i).await?;
     }
+
+    enforce_web_readiness(
+        docker_client,
+        &log,
+        app,
+        deployment,
+        &deployment_context,
+        &created_containers,
+    )
+    .await?;
 
     // A pending restore is consumed by the new web container's boot; clear the
     // flag so subsequent deploys don't keep discarding the live database.
@@ -446,6 +461,12 @@ async fn run_deployment_inner(
             tracing::warn!(app_id = %app.id, error = ?e, "Failed to clear restore_pending");
         }
     }
+
+    // mark this deployment running before stopping the previous one; routes
+    // only include running deployments, so the reverse order would leave a
+    // window with no routable upstream
+    DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Running).await?;
+    proxy_sync_trigger.notify_one();
 
     let active_deployments = DeploymentRepo::list_active_for_app(db_pool, &app.id).await?;
     for active_dep in active_deployments {
@@ -473,8 +494,77 @@ async fn run_deployment_inner(
         }
     }
 
-    DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Running).await?;
-    proxy_sync_trigger.notify_one();
+    Ok(())
+}
+
+// Gate the release on the web process actually answering HTTP. Runs after the
+// new containers start but before the previous deployment is stopped, so a
+// booting-but-broken release fails (and rolls back) while the old release
+// keeps serving traffic.
+async fn enforce_web_readiness(
+    docker_client: &Docker,
+    log: &LogHandle,
+    app: &App,
+    deployment: &Deployment,
+    deployment_context: &DeploymentContext,
+    created_containers: &[(ProcessType, u32)],
+) -> DeploymentResult<()> {
+    let web_containers: Vec<String> = created_containers
+        .iter()
+        .filter(|(pt, _)| *pt == ProcessType::Web)
+        .map(|(pt, i)| {
+            process_container_name(&app.id, &deployment.id, &pt.to_string().to_lowercase(), *i)
+        })
+        .collect();
+
+    if web_containers.is_empty() {
+        return Ok(());
+    }
+
+    let config = ReadinessConfig::from_env_map(&deployment_context.env_map);
+
+    log.send(format!(
+        "Waiting for web process to respond on GET {} (timeout: {}s)",
+        config.path,
+        config.timeout.as_secs()
+    ))
+    .await?;
+
+    for container_name in &web_containers {
+        match wait_for_web_ready(
+            docker_client,
+            container_name,
+            deployment_context.container_port,
+            &config,
+        )
+        .await
+        {
+            ReadinessOutcome::Ready { elapsed } => {
+                log.send(format!(
+                    "{} became ready in {:.1}s",
+                    container_name,
+                    elapsed.as_secs_f64()
+                ))
+                .await?;
+            }
+            ReadinessOutcome::Unreachable => {
+                tracing::warn!(
+                    app_slug = %app.slug,
+                    container = %container_name,
+                    "Container network is unreachable from the host; skipping readiness check"
+                );
+                log.send(
+                    "Warning: container network is unreachable from the host; skipping readiness check"
+                        .to_string(),
+                )
+                .await?;
+                break;
+            }
+            ReadinessOutcome::NotReady { reason } => {
+                return Err(DeploymentError::AppNotReady(reason));
+            }
+        }
+    }
 
     Ok(())
 }

@@ -114,3 +114,58 @@ fn parse_volume_shell_form(s: &str) -> Vec<String> {
     // VOLUME /a /b  → split on whitespace.
     s.split_whitespace().map(str::to_string).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expose_returns_first_port() {
+        let dockerfile = "FROM node:20\nEXPOSE 3000\nEXPOSE 9229\n";
+        assert_eq!(parse_expose(dockerfile), Some(3000));
+    }
+
+    #[test]
+    fn expose_strips_protocol_suffix() {
+        assert_eq!(parse_expose("EXPOSE 8080/tcp"), Some(8080));
+    }
+
+    #[test]
+    fn expose_is_case_insensitive() {
+        assert_eq!(parse_expose("expose 5000"), Some(5000));
+    }
+
+    #[test]
+    fn expose_missing_returns_none() {
+        assert_eq!(parse_expose("FROM alpine\nCMD [\"app\"]"), None);
+    }
+
+    #[test]
+    fn expose_invalid_port_returns_none() {
+        assert_eq!(parse_expose("EXPOSE $PORT"), None);
+    }
+
+    #[test]
+    fn volumes_shell_form() {
+        let dockerfile = "FROM alpine\nVOLUME /data /cache\n";
+        assert_eq!(parse_volumes(dockerfile), vec!["/data", "/cache"]);
+    }
+
+    #[test]
+    fn volumes_exec_form() {
+        let dockerfile = "FROM alpine\nVOLUME [\"/data\", \"/logs\"]\n";
+        assert_eq!(parse_volumes(dockerfile), vec!["/data", "/logs"]);
+    }
+
+    #[test]
+    fn volumes_only_from_final_stage() {
+        let dockerfile = "FROM node AS build\nVOLUME /build-cache\nFROM alpine\nVOLUME /data\n";
+        assert_eq!(parse_volumes(dockerfile), vec!["/data"]);
+    }
+
+    #[test]
+    fn volumes_dedupes_and_skips_comments() {
+        let dockerfile = "FROM alpine\n# VOLUME /ignored\nVOLUME /data\nVOLUME /data\n";
+        assert_eq!(parse_volumes(dockerfile), vec!["/data"]);
+    }
+}

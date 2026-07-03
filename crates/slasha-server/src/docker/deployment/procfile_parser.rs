@@ -87,3 +87,56 @@ pub async fn load_procfile(
     .await
     .map_err(|_| DeploymentError::SpawnBlockingPanicked)?
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_known_process_types() {
+        let procfile = parse_procfile_content(
+            "web: bundle exec puma\nworker: sidekiq\nrelease: rake db:migrate\n",
+        );
+
+        assert_eq!(procfile.get(&ProcessType::Web), Some("bundle exec puma"));
+        assert_eq!(procfile.get(&ProcessType::Worker), Some("sidekiq"));
+        assert_eq!(procfile.get(&ProcessType::Release), Some("rake db:migrate"));
+    }
+
+    #[test]
+    fn ignores_comments_and_blank_lines() {
+        let procfile = parse_procfile_content("# comment\n\nweb: node server.js\n");
+
+        assert_eq!(procfile.commands.len(), 1);
+        assert_eq!(procfile.get(&ProcessType::Web), Some("node server.js"));
+    }
+
+    #[test]
+    fn ignores_unknown_process_types() {
+        let procfile = parse_procfile_content("web: app\nurgentworker: other\n");
+
+        assert_eq!(procfile.commands.len(), 1);
+        assert!(!procfile.contains(&ProcessType::Worker));
+    }
+
+    #[test]
+    fn ignores_empty_commands() {
+        let procfile = parse_procfile_content("web:\nworker:   \n");
+        assert!(procfile.is_empty());
+    }
+
+    #[test]
+    fn process_type_is_case_insensitive() {
+        let procfile = parse_procfile_content("WEB: app\n");
+        assert_eq!(procfile.get(&ProcessType::Web), Some("app"));
+    }
+
+    #[test]
+    fn command_preserves_colons() {
+        let procfile = parse_procfile_content("web: node server.js --bind 0.0.0.0:8080\n");
+        assert_eq!(
+            procfile.get(&ProcessType::Web),
+            Some("node server.js --bind 0.0.0.0:8080")
+        );
+    }
+}

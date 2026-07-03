@@ -4,6 +4,7 @@ pub mod dockerfile_parser;
 pub mod executor;
 pub mod litestream;
 pub mod procfile_parser;
+pub mod readiness;
 pub mod scale;
 
 pub use container::{

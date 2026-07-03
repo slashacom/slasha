@@ -127,6 +127,16 @@ slasha env list
 slasha scale web=3 worker=1
 ```
 
+Release health checks: after a deploy starts your web process, Slasha probes it over HTTP and only
+switches traffic once it responds. If it never becomes ready, the release is rolled back and the
+previous deployment keeps serving. By default any HTTP response below 500 on `/` counts as ready,
+within 60 seconds. Two env vars tune this per app:
+
+```bash
+slasha env set SLASHA_HEALTH_CHECK_PATH=/healthz   # probe this path; requires a 2xx/3xx response
+slasha env set SLASHA_HEALTH_CHECK_TIMEOUT=120     # seconds to wait before failing the release
+```
+
 Managed services:
 
 ```bash
