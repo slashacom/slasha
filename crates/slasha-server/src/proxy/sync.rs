@@ -1,7 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
 use bollard::query_parameters::ListContainersOptionsBuilder;
-use slasha_db::{DbPool, repos::app_domain::AppDomainRepo};
+use slasha_db::{
+    DbError, DbPool,
+    deployment::DeploymentStatus,
+    repos::{app_domain::AppDomainRepo, deployment::DeploymentRepo},
+};
 use tokio::{
     sync::Notify,
     time::{Duration, sleep},
@@ -51,6 +55,29 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
 
         if labels.get("slasha.process_type").map(|v| v.as_str()) != Some("web") {
             continue;
+        }
+
+        // only route to deployments marked running; a container that is up
+        // but still inside the readiness gate must not receive traffic yet
+        let Some(deployment_id) = labels.get("slasha.deployment_id") else {
+            continue;
+        };
+
+        match DeploymentRepo::find(db_pool, deployment_id, app_id).await {
+            Ok(deployment) => {
+                if deployment.status != DeploymentStatus::Running {
+                    continue;
+                }
+            }
+            Err(DbError::NotFound(_)) => {
+                tracing::warn!(
+                    app_slug = %app_slug,
+                    deployment_id = %deployment_id,
+                    "Container has no deployment record, skipping route"
+                );
+                continue;
+            }
+            Err(e) => return Err(e.into()),
         }
 
         let container_port = match labels

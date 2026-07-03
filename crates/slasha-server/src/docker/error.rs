@@ -72,6 +72,9 @@ pub enum DeploymentError {
 
     #[error("Service \"{0}\" reported unhealthy")]
     HealthcheckFailed(String),
+
+    #[error("App failed readiness check: {0}")]
+    AppNotReady(String),
 }
 
 pub type DeploymentResult<T> = std::result::Result<T, DeploymentError>;
