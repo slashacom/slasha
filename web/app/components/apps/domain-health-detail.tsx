@@ -22,13 +22,21 @@ const DOT_STYLES: Record<Tone, string> = {
 };
 
 function dnsLine(health: DomainHealth): Line {
-  const { status, resolved_ips, expected_ips } = health.dns;
+  const { status, resolved_ips, expected_ips, proxy } = health.dns;
 
   if (status === 'ok') {
     return {
       tone: 'ok',
       label: 'DNS configured',
       detail: `Resolves to ${resolved_ips.join(', ')}`,
+    };
+  }
+
+  if (status === 'proxied') {
+    return {
+      tone: 'ok',
+      label: 'DNS proxied',
+      detail: `Traffic is routed through ${proxy ?? 'a proxy'}'s network`,
     };
   }
 
