@@ -63,7 +63,7 @@ export function getAppsOptions() {
 
 export function getCheckSlugOptions(name: string) {
   return queryOptions({
-    queryKey: ['apps', 'check-slug', name],
+    queryKey: ['check-slug', name],
     queryFn: () =>
       httpGet<{ slug: string; available: boolean }>(
         `apps/check-slug?name=${encodeURIComponent(name)}`
