@@ -59,7 +59,7 @@ pub async fn resolve_deployment_context(
     let strategy = detect_build_strategy(Path::new(&app.repo_path), &deployment.commit_sha).await?;
     let app_vars = AppRepo::get_env_vars(db_pool, &app.id).await?;
     let app_services = ServiceRepo::list_for_app(db_pool, &app.id).await?;
-    let mut env_map = resolve_app_env(db_pool, app, deployment, app_vars, app_services).await?;
+    let mut env_map = resolve_app_env(db_pool, app, app_vars, app_services).await?;
 
     let container_port = resolve_container_port(&strategy, &mut env_map)?;
     let volume_paths = resolve_volume_paths(&strategy);
@@ -108,7 +108,6 @@ fn resolve_volume_paths(strategy: &BuildStrategy) -> Vec<String> {
 pub async fn resolve_app_env(
     db_pool: &DbPool,
     app: &App,
-    deployment: &Deployment,
     app_vars: Vec<AppEnvVar>,
     app_services: Vec<Service>,
 ) -> DeploymentResult<HashMap<String, String>> {
@@ -129,9 +128,6 @@ pub async fn resolve_app_env(
             RefSource::Own => Ok(resolved.get(key).unwrap().clone()),
 
             RefSource::System => match key {
-                "app_container_name" => {
-                    Ok(process_container_name(&app.id, &deployment.id, "web", 0))
-                }
                 "app_id" => Ok(app.id.clone()),
                 "app_name" => Ok(app.name.clone()),
                 "app_slug" => Ok(app.slug.clone()),

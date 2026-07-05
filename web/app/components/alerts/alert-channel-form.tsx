@@ -114,7 +114,7 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
             placeholder="https://hooks.slack.com/services/..."
           />
         </FormField>
-      ) : (
+      ) : draft.kind === 'telegram' ? (
         <>
           <FormField label="Bot token">
             <Input
@@ -138,6 +138,82 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
                 }))
               }
               placeholder="-1001234567890"
+            />
+          </FormField>
+        </>
+      ) : (
+        <>
+          <FormField label="SMTP Host">
+            <Input
+              value={draft.smtp_host}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  smtp_host: event.target.value,
+                }))
+              }
+              placeholder="smtp.example.com"
+            />
+          </FormField>
+          <FormField label="SMTP Port">
+            <Input
+              value={draft.smtp_port}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  smtp_port: event.target.value,
+                }))
+              }
+              placeholder="587"
+            />
+          </FormField>
+          <FormField label="SMTP Username">
+            <Input
+              value={draft.smtp_username}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  smtp_username: event.target.value,
+                }))
+              }
+              placeholder=""
+            />
+          </FormField>
+          <FormField label="SMTP Password">
+            <Input
+              value={draft.smtp_password}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  smtp_password: event.target.value,
+                }))
+              }
+              placeholder=""
+              type="password"
+            />
+          </FormField>
+          <FormField label="From address">
+            <Input
+              value={draft.from_address}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  from_address: event.target.value,
+                }))
+              }
+              placeholder="alerts@your-domain.com"
+            />
+          </FormField>
+          <FormField label="To address">
+            <Input
+              value={draft.to_address}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  to_address: event.target.value,
+                }))
+              }
+              placeholder="you@example.com"
             />
           </FormField>
         </>

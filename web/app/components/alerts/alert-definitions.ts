@@ -12,6 +12,12 @@ export type ChannelDraft = {
   webhook_url: string;
   bot_token: string;
   chat_id: string;
+  smtp_host: string;
+  smtp_port: string;
+  smtp_username: string;
+  smtp_password: string;
+  from_address: string;
+  to_address: string;
   enabled: boolean;
 };
 
@@ -47,7 +53,6 @@ type RuleKind = AlertRuleConfig['kind'];
 type ChannelDefinition<K extends ChannelKind> = {
   label: string;
   description: string;
-  defaults: Partial<ChannelDraft>;
   buildConfig: (
     draft: ChannelDraft
   ) => BuildResult<Extract<AlertChannelConfig, { kind: K }>>;
@@ -71,7 +76,6 @@ export const alertChannelRegistry = {
   slack: {
     label: 'Slack',
     description: 'Send the alert to a Slack webhook.',
-    defaults: { webhook_url: '' },
     buildConfig: (draft) => {
       const webhook_url = draft.webhook_url.trim();
       return webhook_url
@@ -83,7 +87,6 @@ export const alertChannelRegistry = {
   telegram: {
     label: 'Telegram',
     description: 'Send the alert to a Telegram chat.',
-    defaults: { bot_token: '', chat_id: '' },
     buildConfig: (draft) => {
       const bot_token = draft.bot_token.trim();
       const chat_id = draft.chat_id.trim();
@@ -96,6 +99,37 @@ export const alertChannelRegistry = {
       return { config: { kind: 'telegram', bot_token, chat_id } };
     },
     summary: (config) => `Telegram chat ${config.chat_id}`,
+  },
+  email: {
+    label: 'Email',
+    description: 'Send the alert to an email address using Resend.',
+    buildConfig: (draft) => {
+      const smtp_host = draft.smtp_host?.trim() || '';
+      const smtp_port = parseInt(draft.smtp_port?.trim() || '587', 10);
+      const smtp_username = draft.smtp_username?.trim() || '';
+      const smtp_password = draft.smtp_password?.trim() || '';
+      const from_address = draft.from_address?.trim() || '';
+      const to_address = draft.to_address?.trim() || '';
+
+      if (!smtp_host) return { error: 'SMTP host is required.' };
+      if (!smtp_username) return { error: 'SMTP username is required.' };
+      if (!smtp_password) return { error: 'SMTP password is required.' };
+      if (!from_address) return { error: 'From address is required.' };
+      if (!to_address) return { error: 'To address is required.' };
+
+      return {
+        config: {
+          kind: 'email',
+          smtp_host,
+          smtp_port: isNaN(smtp_port) ? 587 : smtp_port,
+          smtp_username,
+          smtp_password,
+          from_address,
+          to_address,
+        },
+      };
+    },
+    summary: (config) => `Email to ${config.to_address}`,
   },
 } satisfies { [K in ChannelKind]: ChannelDefinition<K> };
 
@@ -265,13 +299,20 @@ export function emptyChannelDraft(
     webhook_url: '',
     bot_token: '',
     chat_id: '',
+    smtp_host: '',
+    smtp_port: '587',
+    smtp_username: '',
+    smtp_password: '',
+    from_address: '',
+    to_address: '',
     enabled: true,
-    ...alertChannelRegistry[kind].defaults,
   };
 }
 
 export function channelDraftFromChannel(channel: AlertChannel): ChannelDraft {
   const isSlack = channel.config.kind === 'slack';
+  const isTelegram = channel.config.kind === 'telegram';
+  const isEmail = channel.config.kind === 'email';
   return {
     id: channel.id,
     name: channel.name,
@@ -280,13 +321,39 @@ export function channelDraftFromChannel(channel: AlertChannel): ChannelDraft {
       ? (channel.config as Extract<AlertChannelConfig, { kind: 'slack' }>)
           .webhook_url
       : '',
-    bot_token: !isSlack
+    bot_token: isTelegram
       ? (channel.config as Extract<AlertChannelConfig, { kind: 'telegram' }>)
           .bot_token
       : '',
-    chat_id: !isSlack
+    chat_id: isTelegram
       ? (channel.config as Extract<AlertChannelConfig, { kind: 'telegram' }>)
           .chat_id
+      : '',
+    smtp_host: isEmail
+      ? (channel.config as Extract<AlertChannelConfig, { kind: 'email' }>)
+          .smtp_host
+      : '',
+    smtp_port: isEmail
+      ? String(
+          (channel.config as Extract<AlertChannelConfig, { kind: 'email' }>)
+            .smtp_port
+        )
+      : '587',
+    smtp_username: isEmail
+      ? (channel.config as Extract<AlertChannelConfig, { kind: 'email' }>)
+          .smtp_username
+      : '',
+    smtp_password: isEmail
+      ? (channel.config as Extract<AlertChannelConfig, { kind: 'email' }>)
+          .smtp_password
+      : '',
+    from_address: isEmail
+      ? (channel.config as Extract<AlertChannelConfig, { kind: 'email' }>)
+          .from_address
+      : '',
+    to_address: isEmail
+      ? (channel.config as Extract<AlertChannelConfig, { kind: 'email' }>)
+          .to_address
       : '',
     enabled: channel.enabled,
   };

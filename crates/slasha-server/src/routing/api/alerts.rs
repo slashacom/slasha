@@ -262,6 +262,11 @@ fn validate_channel_input(payload: &ChannelInput) -> HttpResult<()> {
             if webhook_url.trim().is_empty() {
                 return Err(HttpError::bad_request("Slack webhook URL cannot be empty"));
             }
+            if !webhook_url.starts_with("http://") && !webhook_url.starts_with("https://") {
+                return Err(HttpError::bad_request(
+                    "Slack webhook URL must start with http:// or https://",
+                ));
+            }
         }
         AlertChannelConfig::Telegram { bot_token, chat_id } => {
             if bot_token.trim().is_empty() {
@@ -269,6 +274,32 @@ fn validate_channel_input(payload: &ChannelInput) -> HttpResult<()> {
             }
             if chat_id.trim().is_empty() {
                 return Err(HttpError::bad_request("Telegram chat id cannot be empty"));
+            }
+            if !bot_token.contains(':') {
+                return Err(HttpError::bad_request(
+                    "Telegram bot token must contain a colon (e.g. 123456:ABC-DEF1234)",
+                ));
+            }
+        }
+        AlertChannelConfig::Email {
+            smtp_host,
+            smtp_port,
+            smtp_username: _,
+            smtp_password: _,
+            from_address,
+            to_address,
+        } => {
+            if smtp_host.trim().is_empty() {
+                return Err(HttpError::bad_request("SMTP host cannot be empty"));
+            }
+            if *smtp_port == 0 {
+                return Err(HttpError::bad_request("SMTP port must be greater than 0"));
+            }
+            if !from_address.contains('@') {
+                return Err(HttpError::bad_request("From address must be a valid email"));
+            }
+            if !to_address.contains('@') {
+                return Err(HttpError::bad_request("To address must be a valid email"));
             }
         }
     }

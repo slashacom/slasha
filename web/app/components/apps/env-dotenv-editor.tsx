@@ -344,7 +344,6 @@ export function DotenvEditor(props: DotenvEditorProps) {
 }
 
 export const APP_SLASHA_REFS = [
-  'SLASHA.app_container_name',
   'SLASHA.app_id',
   'SLASHA.app_name',
   'SLASHA.app_slug',

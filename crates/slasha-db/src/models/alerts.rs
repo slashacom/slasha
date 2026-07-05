@@ -101,8 +101,21 @@ impl FromSql<Text, Sqlite> for AlertNotificationKind {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export, export_to = "./alerts.ts")]
 pub enum AlertChannelConfig {
-    Slack { webhook_url: String },
-    Telegram { bot_token: String, chat_id: String },
+    Slack {
+        webhook_url: String,
+    },
+    Telegram {
+        bot_token: String,
+        chat_id: String,
+    },
+    Email {
+        smtp_host: String,
+        smtp_port: u16,
+        smtp_username: String,
+        smtp_password: String,
+        from_address: String,
+        to_address: String,
+    },
 }
 
 impl AlertChannelConfig {
@@ -110,6 +123,7 @@ impl AlertChannelConfig {
         match self {
             AlertChannelConfig::Slack { .. } => "slack",
             AlertChannelConfig::Telegram { .. } => "telegram",
+            AlertChannelConfig::Email { .. } => "email",
         }
     }
 }
