@@ -152,14 +152,14 @@ async fn resolve_cron_env(
         .await
         .map_err(|e| e.to_string())?;
 
-    let Some(deployment) = deployment else {
+    let Some(_deployment) = deployment else {
         return Ok(app_vars.into_iter().map(|v| (v.key, v.value)).collect());
     };
 
     let services = ServiceRepo::list_for_app(db_pool, &app.id)
         .await
         .map_err(|e| e.to_string())?;
-    resolve_app_env(db_pool, app, deployment, app_vars, services)
+    resolve_app_env(db_pool, app, app_vars, services)
         .await
         .map_err(|e| e.to_string())
 }

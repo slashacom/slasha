@@ -1,5 +1,9 @@
 use std::{process::Stdio, sync::LazyLock};
 
+use lettre::{
+    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::header::ContentType,
+    transport::smtp::authentication::Credentials,
+};
 use regex::Regex;
 use reqwest::Client;
 use serde_json::json;
@@ -173,6 +177,47 @@ pub async fn deliver_channel(
                     response.status()
                 ));
             }
+            Ok(())
+        }
+        AlertChannelConfig::Email {
+            smtp_host,
+            smtp_port,
+            smtp_username,
+            smtp_password,
+            from_address,
+            to_address,
+        } => {
+            let mut html_output = String::new();
+            pulldown_cmark::html::push_html(&mut html_output, pulldown_cmark::Parser::new(message));
+
+            let email = Message::builder()
+                .from(
+                    from_address
+                        .parse()
+                        .map_err(|_| anyhow::anyhow!("invalid from address"))?,
+                )
+                .to(to_address
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("invalid to address"))?)
+                .subject("Slasha Alert")
+                .header(ContentType::TEXT_HTML)
+                .body(html_output)
+                .map_err(|e| anyhow::anyhow!("failed to build email: {}", e))?;
+
+            let creds = Credentials::new(smtp_username.clone(), smtp_password.clone());
+
+            let mailer: AsyncSmtpTransport<Tokio1Executor> =
+                AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)
+                    .map_err(|e| anyhow::anyhow!("invalid smtp host: {}", e))?
+                    .port(*smtp_port)
+                    .credentials(creds)
+                    .build();
+
+            mailer
+                .send(email)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to send smtp email: {}", e))?;
+
             Ok(())
         }
     }

@@ -11,7 +11,16 @@ export type AlertChannel = {
 
 export type AlertChannelConfig =
   | { kind: 'slack'; webhook_url: string }
-  | { kind: 'telegram'; bot_token: string; chat_id: string };
+  | { kind: 'telegram'; bot_token: string; chat_id: string }
+  | {
+      kind: 'email';
+      smtp_host: string;
+      smtp_port: number;
+      smtp_username: string;
+      smtp_password: string;
+      from_address: string;
+      to_address: string;
+    };
 
 export type AlertIncident = {
   id: string;
