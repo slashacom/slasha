@@ -205,6 +205,12 @@ pub enum DeploymentsCommand {
         deployment_id: Option<String>,
     },
 
+    #[command(name = "rollback", about = "Roll back to a deployment image")]
+    Rollback {
+        #[arg(long, value_name = "ID")]
+        deployment_id: Option<String>,
+    },
+
     #[command(name = "delete", about = "Delete a deployment")]
     Delete {
         #[arg(long, value_name = "ID")]

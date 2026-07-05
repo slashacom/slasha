@@ -27,9 +27,10 @@ use crate::{
     connections::sync_external_app,
     docker::{
         deployment::{
-            ScaleDeps, list_deployment_processes, remove_deployment_processes,
-            restart_deployment_processes, run_deployment, scale_deployment_process,
-            stop_deployment_processes, trigger_deployment,
+            ScaleDeps, list_deployment_processes, remove_deployment_image,
+            remove_deployment_processes, restart_deployment_processes, run_deployment,
+            scale_deployment_process, stop_deployment_processes, trigger_deployment,
+            trigger_rollback,
         },
         logs::{LogKey, LogManager},
     },
@@ -46,6 +47,7 @@ pub fn router() -> Router<AppState> {
         .route("/{deployment_id}/stop", post(stop_deployment))
         .route("/{deployment_id}/restart", post(restart_deployment))
         .route("/{deployment_id}/redeploy", post(redeploy_deployment))
+        .route("/{deployment_id}/rollback", post(rollback_deployment))
         .route("/{deployment_id}/scale", post(scale_deployment))
         .route("/{deployment_id}/processes", get(list_processes))
         .route("/{deployment_id}", delete(delete_deployment))
@@ -150,6 +152,16 @@ async fn redeploy_deployment(
     ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
+    let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
+    if active_deployments
+        .iter()
+        .any(|d| d.status == DeploymentStatus::Building)
+    {
+        return Err(HttpError::bad_request(
+            "A deployment is already building for this app",
+        ));
+    }
+
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     remove_deployment_processes(
@@ -173,6 +185,7 @@ async fn redeploy_deployment(
         runtime.deployment_tasks.clone(),
         app,
         updated_deployment.clone(),
+        None,
     ));
 
     runtime
@@ -192,6 +205,16 @@ async fn restart_deployment(
     ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
+    let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
+    if active_deployments
+        .iter()
+        .any(|d| d.status == DeploymentStatus::Building)
+    {
+        return Err(HttpError::bad_request(
+            "A deployment is already building for this app",
+        ));
+    }
+
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     restart_deployment_processes(
@@ -207,6 +230,31 @@ async fn restart_deployment(
         "restarted": true,
         "deployment_id": deployment_id
     })))
+}
+
+async fn rollback_deployment(
+    State(docker_client): State<Docker>,
+    State(db_pool): State<DbPool>,
+    State(runtime): State<Runtime>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, deployment_id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    let source_deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
+
+    let deployment = trigger_rollback(
+        docker_client,
+        db_pool,
+        runtime.log_manager,
+        runtime.proxy_sync_trigger,
+        runtime.deployment_tasks,
+        app,
+        source_deployment,
+    )
+    .await
+    .map_err(|error| HttpError::bad_request(format!("Failed to roll back: {}", error)))?
+    .ok_or_else(|| HttpError::bad_request("A deployment is already building for this app"))?;
+
+    Ok(Json(serde_json::json!({ "deployment": deployment })))
 }
 
 async fn stream_logs(
@@ -258,6 +306,15 @@ async fn delete_deployment(
 ) -> HttpResult<impl IntoResponse> {
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
+    if matches!(
+        deployment.status,
+        DeploymentStatus::Running | DeploymentStatus::Building
+    ) {
+        return Err(HttpError::bad_request(
+            "Active deployments must be stopped before deletion",
+        ));
+    }
+
     remove_deployment_processes(
         &docker_client,
         &proxy_sync_trigger,
@@ -267,6 +324,7 @@ async fn delete_deployment(
     )
     .await?;
 
+    remove_deployment_image(&docker_client, &app.slug, &deployment.id).await?;
     DeploymentRepo::delete(&db_pool, &deployment.id, &app.id).await?;
 
     Ok(Json(serde_json::json!({

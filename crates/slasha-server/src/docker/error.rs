@@ -75,6 +75,9 @@ pub enum DeploymentError {
 
     #[error("App failed readiness check: {0}")]
     AppNotReady(String),
+
+    #[error("Deployment \"{0}\" no longer has a retained image")]
+    ArtifactUnavailable(String),
 }
 
 pub type DeploymentResult<T> = std::result::Result<T, DeploymentError>;
@@ -91,6 +94,9 @@ impl From<DeploymentError> for HttpError {
             }
             DeploymentError::ReleaseFailed(code) => {
                 HttpError::bad_request(format!("Release command failed with exit code {}", code))
+            }
+            DeploymentError::ArtifactUnavailable(msg) => {
+                HttpError::bad_request(format!("Deployment {} no longer has a retained image", msg))
             }
             _ => HttpError::internal(anyhow::anyhow!(e)),
         }

@@ -25,13 +25,16 @@ use super::{
         MANAGED_DATA_PATH, create_process_container, run_release_container, start_process_container,
     },
     dockerfile_parser::{BuildStrategy, detect_build_strategy, parse_expose, parse_volumes},
+    image::{find_deployment_image, prune_app_images, tag_deployment_image},
     litestream,
     procfile_parser::{Procfile, load_procfile},
     readiness::{ReadinessConfig, ReadinessOutcome, wait_for_web_ready},
 };
 use crate::docker::{
     DeploymentError, DeploymentResult,
-    deployment::{container::CreateContainerContext, stop_deployment_processes},
+    deployment::{
+        container::CreateContainerContext, remove_deployment_processes, stop_deployment_processes,
+    },
     env::{RefSource, resolve_env_value, topo_sort_vars},
     logs::{LogHandle, LogKey, LogManager},
     naming::{app_network_name, image_tag, process_container_name, service_container_name},
@@ -218,6 +221,7 @@ pub async fn run_deployment(
     deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
     app: App,
     deployment: Deployment,
+    source_image: Option<String>,
 ) -> DeploymentResult<()> {
     tracing::info!(
         app_slug = %app.slug,
@@ -233,7 +237,7 @@ pub async fn run_deployment(
     let log = log_manager.get_logger(&log_key).await?;
     let mut rollback = Rollback::new();
 
-    if let Err(e) = run_deployment_inner(
+    if let Err(e) = execute_deployment(
         &docker_client,
         &db_pool,
         &proxy_sync_trigger,
@@ -241,6 +245,7 @@ pub async fn run_deployment(
         &deployment_tasks,
         &app,
         &deployment,
+        source_image.as_deref(),
         &mut rollback,
     )
     .await
@@ -282,7 +287,7 @@ pub async fn run_deployment(
     Ok(())
 }
 
-async fn run_deployment_inner(
+async fn execute_deployment(
     docker_client: &Docker,
     db_pool: &DbPool,
     proxy_sync_trigger: &Arc<Notify>,
@@ -290,6 +295,7 @@ async fn run_deployment_inner(
     deployment_tasks: &dashmap::DashMap<String, tokio::task::AbortHandle>,
     app: &App,
     deployment: &Deployment,
+    source_image: Option<&str>,
     rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
     let deployment_context = resolve_deployment_context(db_pool, app, deployment).await?;
@@ -308,22 +314,28 @@ async fn run_deployment_inner(
         BuildStrategy::Railpack => "Railpack",
     };
 
-    log.send(format!(
-        "Building image slasha/{}:{} ({})",
-        app.slug, deployment.commit_sha, build_label
-    ))
-    .await?;
+    if let Some(source_image) = source_image {
+        log.send(format!("Reusing retained image {}", source_image))
+            .await?;
+        tag_deployment_image(docker_client, source_image, &app.slug, &deployment.id).await?;
+    } else {
+        log.send(format!(
+            "Building image slasha/{}:{} ({})",
+            app.slug, deployment.id, build_label
+        ))
+        .await?;
 
-    match &deployment_context.strategy {
-        BuildStrategy::Dockerfile { .. } => {
-            build_docker(docker_client, &log, app, deployment).await?
+        match &deployment_context.strategy {
+            BuildStrategy::Dockerfile { .. } => {
+                build_docker(docker_client, &log, app, deployment).await?
+            }
+            BuildStrategy::Railpack => build_railpack(&log, app, deployment).await?,
         }
-        BuildStrategy::Railpack => build_railpack(docker_client, &log, app, deployment).await?,
-    };
+    }
 
     rollback.register({
         let docker_client = docker_client.clone();
-        let tag = image_tag(&app.slug, &deployment.commit_sha);
+        let tag = image_tag(&app.slug, &deployment.id);
 
         move || {
             Box::pin(async move {
@@ -423,7 +435,7 @@ async fn run_deployment_inner(
                             tracing::warn!(
                                 container = %container_name,
                                 error = ?e,
-                                "Failed to remove service container"
+                                "Failed to remove process container"
                             );
                         }
                     })
@@ -494,7 +506,33 @@ async fn run_deployment_inner(
                 error = ?e,
                 "Failed to stop previous deployment"
             );
+            continue;
         }
+
+        if let Err(e) = remove_deployment_processes(
+            docker_client,
+            proxy_sync_trigger,
+            log_manager,
+            app,
+            previous,
+        )
+        .await
+        {
+            tracing::warn!(
+                app_slug = %app.slug,
+                deployment_id = %previous.id,
+                error = ?e,
+                "Failed to remove previous deployment containers"
+            );
+        }
+    }
+
+    if let Err(e) = prune_app_images(docker_client, db_pool, app).await {
+        tracing::warn!(
+            app_slug = %app.slug,
+            error = ?e,
+            "Failed to prune old deployment images"
+        );
     }
 
     Ok(())
@@ -572,13 +610,13 @@ async fn enforce_web_readiness(
     Ok(())
 }
 
-fn resolve_commit_message(repo_path: &str, sha: &str) -> anyhow::Result<String> {
+fn resolve_commit_message(repo_path: &str, sha: &str) -> DeploymentResult<String> {
     let repo = git2::Repository::open(repo_path)?;
     let commit = repo.find_commit(git2::Oid::from_str(sha)?)?;
     Ok(commit.summary().unwrap_or("").to_string())
 }
 
-pub fn resolve_head_commit(repo_path: &str, branch: &str) -> anyhow::Result<(String, String)> {
+pub fn resolve_head_commit(repo_path: &str, branch: &str) -> DeploymentResult<(String, String)> {
     let repo = git2::Repository::open(repo_path)?;
     let branch = repo.find_branch(branch, git2::BranchType::Local)?;
     let commit = branch.get().peel_to_commit()?;
@@ -589,6 +627,8 @@ pub fn resolve_head_commit(repo_path: &str, branch: &str) -> anyhow::Result<(Str
     ))
 }
 
+// starts a deployment and spawns a build
+// returns none if another build is active
 pub async fn trigger_deployment(
     docker_client: Docker,
     db_pool: DbPool,
@@ -597,7 +637,7 @@ pub async fn trigger_deployment(
     deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
     app: App,
     commit_sha: Option<String>,
-) -> anyhow::Result<Option<Deployment>> {
+) -> DeploymentResult<Option<Deployment>> {
     let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
     let is_building = active_deployments
         .iter()
@@ -635,6 +675,57 @@ pub async fn trigger_deployment(
         deployment_tasks.clone(),
         app,
         deployment.clone(),
+        None,
+    ));
+
+    deployment_tasks.insert(deployment.id.clone(), handle.abort_handle());
+
+    Ok(Some(deployment))
+}
+
+// starts a rollback from a retained image
+// returns none if another build is active
+pub async fn trigger_rollback(
+    docker_client: Docker,
+    db_pool: DbPool,
+    log_manager: Arc<LogManager>,
+    proxy_sync_trigger: Arc<Notify>,
+    deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
+    app: App,
+    source_deployment: Deployment,
+) -> DeploymentResult<Option<Deployment>> {
+    let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
+    if active_deployments
+        .iter()
+        .any(|deployment| deployment.status == DeploymentStatus::Building)
+    {
+        return Ok(None);
+    }
+
+    let source_image = find_deployment_image(&docker_client, &app, &source_deployment).await?;
+
+    let now = Utc::now().naive_utc();
+    let deployment = Deployment {
+        id: Uuid::new_v4().to_string(),
+        app_id: app.id.clone(),
+        commit_sha: source_deployment.commit_sha,
+        commit_message: source_deployment.commit_message,
+        status: DeploymentStatus::Pending,
+        created_at: now,
+        updated_at: now,
+    };
+
+    let deployment = DeploymentRepo::create(&db_pool, deployment).await?;
+
+    let handle = tokio::spawn(run_deployment(
+        docker_client,
+        db_pool,
+        log_manager,
+        proxy_sync_trigger,
+        deployment_tasks.clone(),
+        app,
+        deployment.clone(),
+        Some(source_image),
     ));
 
     deployment_tasks.insert(deployment.id.clone(), handle.abort_handle());

@@ -2,7 +2,7 @@ use std::{path::Path, process::Stdio};
 
 use bollard::{
     Docker, body_stream,
-    query_parameters::{BuildImageOptionsBuilder, BuilderVersion, TagImageOptionsBuilder},
+    query_parameters::{BuildImageOptionsBuilder, BuilderVersion},
 };
 use bytes::Bytes;
 use futures_util::{StreamExt, stream};
@@ -13,11 +13,7 @@ use tokio::{
     process::Command as TokioCommand,
 };
 
-use crate::docker::{
-    DeploymentError, DeploymentResult,
-    logs::LogHandle,
-    naming::{image_name, image_tag},
-};
+use crate::docker::{DeploymentError, DeploymentResult, logs::LogHandle, naming::image_tag};
 
 async fn checkout_commit_to_dir(
     repo_path: &Path,
@@ -59,20 +55,6 @@ async fn build_tar_context(repo_path: &Path, commit_sha: &str) -> DeploymentResu
     }
 
     Ok(Bytes::from(out.stdout))
-}
-
-async fn tag_image_latest(
-    docker_client: &Docker,
-    image_tag: &str,
-    app_slug: &str,
-) -> DeploymentResult<()> {
-    let latest_tag = image_name(app_slug);
-    let tag_opts = TagImageOptionsBuilder::new()
-        .repo(latest_tag.as_str())
-        .tag("latest")
-        .build();
-    docker_client.tag_image(image_tag, Some(tag_opts)).await?;
-    Ok(())
 }
 
 async fn stream_command_output(
@@ -117,7 +99,7 @@ pub async fn build_docker(
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
     let repo_path = Path::new(&app.repo_path);
-    let image_tag = image_tag(&app.slug, &deployment.commit_sha);
+    let image_tag = image_tag(&app.slug, &deployment.id);
 
     let tar_bytes = build_tar_context(repo_path, &deployment.commit_sha).await?;
     let tar_body_stream = body_stream(stream::once(async move { tar_bytes }));
@@ -158,26 +140,20 @@ pub async fn build_docker(
         }
     }
 
-    tag_image_latest(docker_client, &image_tag, &app.slug).await?;
-
-    log.send(format!(
-        "Image built and tagged as {}:latest",
-        image_name(&app.slug)
-    ))
-    .await?;
+    log.send(format!("Image built and tagged as {}", image_tag))
+        .await?;
 
     Ok(())
 }
 
 pub async fn build_railpack(
-    docker_client: &Docker,
     log: &LogHandle,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
     let repo_path = Path::new(&app.repo_path);
     let commit_sha = &deployment.commit_sha;
-    let image_tag = image_tag(&app.slug, commit_sha);
+    let image_tag = image_tag(&app.slug, &deployment.id);
 
     let tmp = TempDir::new()?;
     let tmp_path = tmp.path();
@@ -226,13 +202,8 @@ pub async fn build_railpack(
 
     stream_command_output(buildx_child, log, "docker buildx build").await?;
 
-    tag_image_latest(docker_client, &image_tag, &app.slug).await?;
-
-    log.send(format!(
-        "Image built and tagged as {}:latest",
-        image_name(&app.slug)
-    ))
-    .await?;
+    log.send(format!("Image built and tagged as {}", image_tag))
+        .await?;
 
     Ok(())
 }

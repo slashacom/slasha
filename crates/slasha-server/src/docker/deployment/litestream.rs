@@ -55,7 +55,7 @@ fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-pub fn plan(backup: &AppBackup, original_cmd: &str, restore_pending: bool) -> LitestreamPlan {
+pub fn plan(backup: &AppBackup, original_cmd: &str) -> LitestreamPlan {
     let bin = CONTAINER_BINARY_PATH;
     let sqlite = CONTAINER_SQLITE_PATH;
     let cfg = CONFIG_PATH;
@@ -63,7 +63,7 @@ pub fn plan(backup: &AppBackup, original_cmd: &str, restore_pending: bool) -> Li
     let yaml = config_yaml(backup);
     let exec_cmd = shell_single_quote(original_cmd);
 
-    let restore = if restore_pending {
+    let restore = if backup.restore_pending {
         format!(
             "TMP={db}.slasha-restore\n\
              rm -f \"$TMP\" \"$TMP\"-wal \"$TMP\"-shm 2>/dev/null || true\n\

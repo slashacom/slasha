@@ -155,7 +155,7 @@ pub async fn create_process_container(
     {
         match (&cmd, &context.litestream_volume) {
             (Some(original_cmd), Some(_volume)) => {
-                let plan = litestream::plan(backup, original_cmd, backup.restore_pending);
+                let plan = litestream::plan(backup, original_cmd);
                 cmd = Some(plan.command);
                 env_map.extend(plan.env);
                 mounts.push(litestream::binary_mount());
@@ -239,7 +239,7 @@ pub async fn create_process_container(
                 ..Default::default()
             }),
             ContainerCreateBody {
-                image: Some(image_tag(&app.slug, &deployment.commit_sha)),
+                image: Some(image_tag(&app.slug, &deployment.id)),
                 labels: Some(labels),
                 env,
                 entrypoint,
@@ -278,30 +278,6 @@ pub async fn create_process_container(
         process_type = %context.process_type,
         "container created"
     );
-
-    Ok(())
-}
-
-pub async fn start_deployment_processes(
-    docker_client: &Docker,
-    db_pool: &DbPool,
-    proxy_sync_trigger: &Arc<Notify>,
-    log: &LogHandle,
-    deployment_id: &str,
-) -> DeploymentResult<()> {
-    let processes = list_deployment_processes(docker_client, deployment_id).await?;
-
-    for process in processes {
-        let prefix = format!(
-            "[{}.{}]",
-            process.process_type.to_string().to_lowercase(),
-            process.instance_index
-        );
-        start_and_stream(docker_client, log, process.name, Some(prefix)).await?;
-    }
-
-    DeploymentRepo::update_status(db_pool, deployment_id, DeploymentStatus::Running).await?;
-    proxy_sync_trigger.notify_one();
 
     Ok(())
 }

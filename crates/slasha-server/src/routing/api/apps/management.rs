@@ -36,7 +36,7 @@ use crate::{
         sync_selected_github_repository,
     },
     docker::{
-        deployment::{remove_app_volumes, remove_deployment_processes},
+        deployment::{remove_app_images, remove_app_volumes, remove_deployment_processes},
         network::{create_app_network, remove_app_network},
         service::remove_service_container,
     },
@@ -502,6 +502,14 @@ async fn delete_app(
                     "Failed to remove deployment processes"
                 );
             }
+        }
+
+        if let Err(e) = remove_app_images(&docker, &app_slug).await {
+            tracing::warn!(
+                app_slug = %app_slug,
+                error = ?e,
+                "Failed to remove app images"
+            );
         }
 
         if let Err(e) = remove_app_network(&docker, &app_id).await {

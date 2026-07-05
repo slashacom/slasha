@@ -23,6 +23,9 @@ pub async fn dispatch(state: &AppState, slug: &str, cmd: DeploymentsCommand) -> 
         DeploymentsCommand::Redeploy { deployment_id } => {
             handle_redeploy(state, slug, deployment_id).await
         }
+        DeploymentsCommand::Rollback { deployment_id } => {
+            handle_rollback(state, slug, deployment_id).await
+        }
         DeploymentsCommand::Delete { deployment_id, yes } => {
             handle_delete(state, slug, deployment_id, yes).await
         }
@@ -246,6 +249,59 @@ pub async fn handle_redeploy(
             "\nFollow logs: slasha logs --app {} --follow",
             slug
         ));
+    })?;
+
+    Ok(())
+}
+
+pub async fn handle_rollback(
+    state: &AppState,
+    slug: &str,
+    deployment_id: Option<String>,
+) -> Result<()> {
+    let deployments_data = state
+        .api_client
+        .get(&format!("/api/apps/{}/deployments", slug))
+        .await?;
+    let deployments: Vec<Deployment> =
+        serde_json::from_value(deployments_data["deployments"].clone())
+            .context("Failed to parse deployments")?;
+
+    let deployment_id = if let Some(id) = deployment_id {
+        if deployments
+            .iter()
+            .any(|deployment| deployment.id == id && deployment.status == DeploymentStatus::Running)
+        {
+            anyhow::bail!("Deployment {} is already running", id);
+        }
+        id
+    } else {
+        deployments
+            .into_iter()
+            .filter(|deployment| deployment.status == DeploymentStatus::Stopped)
+            .max_by_key(|deployment| deployment.created_at)
+            .map(|deployment| deployment.id)
+            .ok_or_else(|| anyhow::anyhow!("No previous deployment available for rollback"))?
+    };
+
+    let payload = state
+        .api_client
+        .post(
+            &format!("/api/apps/{}/deployments/{}/rollback", slug, deployment_id),
+            &json!({}),
+        )
+        .await?;
+
+    let deployment: Deployment = serde_json::from_value(payload["deployment"].clone())
+        .context("Failed to parse deployment")?;
+
+    output(state.output_mode, &deployment, || {
+        cli_success(format!(
+            "Rollback triggered to deployment {}.",
+            deployment_id
+        ));
+        cli_label("ID", &deployment.id);
+        cli_label("Commit", &deployment.commit_sha);
     })?;
 
     Ok(())
