@@ -105,7 +105,7 @@ async fn execute(
             let deployment = running
                 .as_ref()
                 .ok_or_else(|| "no running deployment to run the command against".to_string())?;
-            image_tag(&app.slug, &deployment.commit_sha)
+            image_tag(&app.slug, &deployment.id)
         }
         CronRuntime::Utility => {
             ensure_image(docker, UTILITY_IMAGE).await?;

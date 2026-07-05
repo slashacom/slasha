@@ -106,6 +106,17 @@ export function useRedeployDeployment() {
       ),
   });
 }
+
+export function useRollbackDeployment() {
+  return useMutation({
+    mutationFn: (data: DeploymentRef) =>
+      httpPost<{ deployment: Deployment }>(
+        `apps/${data.appSlug}/deployments/${data.deploymentId}/rollback`,
+        {}
+      ),
+  });
+}
+
 export function useScaleDeployment() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -1,13 +1,21 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { MoreHorizontal, Play, RotateCcw, Square, Trash2 } from 'lucide-react';
+import {
+  History,
+  MoreHorizontal,
+  Play,
+  RotateCcw,
+  Square,
+  Trash2,
+} from 'lucide-react';
 import type { Deployment } from '~/models/deployment';
 import {
   useStopDeployment,
   useDeleteDeployment,
   useRestartDeployment,
   useRedeployDeployment,
+  useRollbackDeployment,
 } from '~/queries/deployments';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import {
@@ -36,8 +44,10 @@ export function DeploymentRow(props: DeploymentRowProps) {
   const deleteDeployment = useDeleteDeployment();
   const restartDeployment = useRestartDeployment();
   const redeployDeployment = useRedeployDeployment();
+  const rollbackDeployment = useRollbackDeployment();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
 
   const invalidate = () => {
     queryClient.invalidateQueries({
@@ -95,6 +105,21 @@ export function DeploymentRow(props: DeploymentRowProps) {
     }
   };
 
+  const handleRollback = async () => {
+    try {
+      const result = await rollbackDeployment.mutateAsync({
+        appSlug,
+        deploymentId: deployment.id,
+      });
+      invalidate();
+      setShowRollbackConfirm(false);
+      toast.success('Rollback triggered');
+      navigate(`/apps/${appSlug}/deployments/${result.deployment.id}`);
+    } catch (e) {
+      toast.error('Failed to roll back: ' + e);
+    }
+  };
+
   const canStop =
     deployment.status === 'Running' || deployment.status === 'Building';
   const canRestart =
@@ -103,6 +128,7 @@ export function DeploymentRow(props: DeploymentRowProps) {
     deployment.status === 'Running' ||
     deployment.status === 'Stopped' ||
     deployment.status === 'Failed';
+  const canRollback = deployment.status === 'Stopped' && !isCurrent;
   const canDelete = deployment.status !== 'Building' && !isCurrent;
 
   return (
@@ -163,6 +189,12 @@ export function DeploymentRow(props: DeploymentRowProps) {
                   Redeploy
                 </DropdownMenuItem>
               ) : null}
+              {canRollback ? (
+                <DropdownMenuItem onClick={() => setShowRollbackConfirm(true)}>
+                  <History className="size-3.5" />
+                  Rollback
+                </DropdownMenuItem>
+              ) : null}
               {canDelete ? (
                 <>
                   <DropdownMenuSeparator />
@@ -179,6 +211,15 @@ export function DeploymentRow(props: DeploymentRowProps) {
           </DropdownMenu>
         </div>
       </div>
+
+      <ConfirmationDialog
+        open={showRollbackConfirm}
+        onOpenChange={setShowRollbackConfirm}
+        title="Rollback Deployment"
+        description={`Roll back to commit ${deployment.commit_sha.slice(0, 7)}? A new deployment will be created from its retained image.`}
+        confirmLabel="Rollback"
+        onConfirm={handleRollback}
+      />
 
       <ConfirmationDialog
         open={showDeleteConfirm}

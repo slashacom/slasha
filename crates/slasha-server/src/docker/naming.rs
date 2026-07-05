@@ -4,8 +4,8 @@ pub fn image_name(app_slug: &str) -> String {
     format!("slasha/{}", app_slug)
 }
 
-pub fn image_tag(app_slug: &str, commit_sha: &str) -> String {
-    format!("slasha/{}:{}", app_slug, commit_sha)
+pub fn image_tag(app_slug: &str, deployment_id: &str) -> String {
+    format!("slasha/{}:{}", app_slug, deployment_id)
 }
 
 pub fn process_container_name(
