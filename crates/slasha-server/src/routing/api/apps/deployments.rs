@@ -353,9 +353,7 @@ async fn scale_deployment(
     let db_pool = app_state.storage.db_pool;
     let app_runtime = app_state.runtime;
 
-    // Litestream requires a single writer to the SQLite database. Running more
-    // than one web container would let multiple processes write the same file on
-    // the shared volume and corrupt it, so block it while backups are enabled.
+    // litestream only allows one writer; multiple web instances would cause db corruption
     if payload.process_type == ProcessType::Web && payload.count > 1 {
         let backups_on = AppBackupRepo::get(&db_pool, &app.id)
             .await?

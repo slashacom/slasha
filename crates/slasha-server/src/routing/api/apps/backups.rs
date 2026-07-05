@@ -139,6 +139,20 @@ async fn save_backup(
         ));
     }
 
+    // litestream only allows one writer; multiple web instances would cause db corruption
+    if payload.enabled {
+        let scale_configs =
+            slasha_db::repos::app_scale::AppScaleRepo::list_for_app(&storage.db_pool, &app.id)
+                .await?;
+        if scale_configs.iter().any(|s| {
+            s.process_type == slasha_db::models::app_scale::ProcessType::Web && s.desired > 1
+        }) {
+            return Err(HttpError::bad_request(
+                "Cannot enable backups while the web process is scaled beyond 1 instance. Scale down to 1 first.",
+            ));
+        }
+    }
+
     let now = Utc::now().naive_utc();
     let mut backup = existing.unwrap_or_else(|| new_backup(&app.id, now));
     backup.enabled = payload.enabled;
