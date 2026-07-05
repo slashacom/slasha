@@ -213,6 +213,7 @@ fn resolve_process_targets(
     targets
 }
 
+// executed in a background tokio task
 pub async fn run_deployment(
     docker_client: Docker,
     db_pool: DbPool,
