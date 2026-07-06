@@ -5,7 +5,7 @@ use bollard::{Docker, query_parameters::DataUsageOptions};
 use serde::Serialize;
 
 use crate::{
-    AppState,
+    AppState, HttpResult,
     docker::{
         deployment::{
             BuildStrategy, container::MANAGED_DATA_PATH, detect_build_strategy, parse_volumes,
@@ -13,7 +13,6 @@ use crate::{
         },
         naming::app_volume_name,
     },
-    error::HttpResult,
     extractors::app::ActiveApp,
 };
 

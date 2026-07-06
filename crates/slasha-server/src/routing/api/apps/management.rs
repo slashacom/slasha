@@ -31,6 +31,7 @@ use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::{
+    HttpError, HttpResult,
     connections::{
         GithubError, sync_external_app, sync_selected_git_repository,
         sync_selected_github_repository,
@@ -40,7 +41,6 @@ use crate::{
         network::{create_app_network, remove_app_network},
         service::remove_service_container,
     },
-    error::{HttpError, HttpResult},
     extractors::{
         app::{ActiveApp, ActiveAppOwner},
         auth::AuthUser,

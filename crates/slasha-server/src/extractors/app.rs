@@ -10,11 +10,7 @@ use slasha_db::{
     user::{User, UserRole},
 };
 
-use crate::{
-    AppState,
-    error::{HttpError, HttpResult},
-    extractors::auth::AuthUser,
-};
+use crate::{AppState, HttpError, HttpResult, extractors::auth::AuthUser};
 
 pub struct ActiveApp {
     pub app: App,

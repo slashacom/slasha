@@ -43,6 +43,10 @@ impl HttpError {
         }
     }
 
+    pub fn validation(message: String) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, message)
+    }
+
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::new(StatusCode::NOT_FOUND, message)
     }
@@ -70,56 +74,81 @@ impl IntoResponse for HttpError {
         if self.status.is_server_error()
             && let Some(cause) = &self.cause
         {
-            tracing::error!(
-                error = ?cause,
-                "Internal server error"
-            );
+            tracing::error!(error = ?cause, "Internal server error");
         }
 
-        let mut res = (self.status, Json(json!({ "error": self.message }))).into_response();
+        let body = json!({ "error": self.message });
+        let mut response = (self.status, Json(body)).into_response();
 
         for (name, value) in self.extra_headers {
             if let Ok(value) = value.parse() {
-                res.headers_mut().insert(name, value);
+                response.headers_mut().insert(name, value);
             }
         }
 
-        res
+        response
+    }
+}
+
+impl From<garde::Report> for HttpError {
+    fn from(report: garde::Report) -> Self {
+        let mut first_error = None;
+        for (path, error) in report.into_inner() {
+            if first_error.is_none() {
+                let error_str = error.to_string();
+                let path_str = path.to_string();
+
+                let formatted_path = if path_str.is_empty() {
+                    String::new()
+                } else {
+                    let field = path_str.split('.').last().unwrap_or(&path_str);
+                    let mut human_readable = field.replace("_", " ");
+                    if let Some(r) = human_readable.get_mut(0..1) {
+                        r.make_ascii_uppercase();
+                    }
+                    format!("{human_readable} ")
+                };
+
+                first_error = Some(format!("{}{}", formatted_path, error_str));
+            }
+        }
+        let message = first_error.unwrap_or_else(|| "Validation failed".to_string());
+        Self::validation(message)
     }
 }
 
 impl From<slasha_db::DbError> for HttpError {
-    fn from(e: slasha_db::DbError) -> Self {
-        match e {
-            slasha_db::DbError::NotFound(msg) => HttpError::not_found(msg),
-            slasha_db::DbError::PreconditionFailed(msg)
-            | slasha_db::DbError::Conflict(msg)
-            | slasha_db::DbError::Data(msg) => HttpError::bad_request(msg),
-            _ => HttpError::internal(anyhow::anyhow!(e)),
+    fn from(error: slasha_db::DbError) -> Self {
+        match error {
+            slasha_db::DbError::NotFound(message) => HttpError::not_found(message),
+            slasha_db::DbError::PreconditionFailed(message)
+            | slasha_db::DbError::Conflict(message)
+            | slasha_db::DbError::Data(message) => HttpError::bad_request(message),
+            _ => HttpError::internal(anyhow::anyhow!(error)),
         }
     }
 }
 
 impl From<anyhow::Error> for HttpError {
-    fn from(e: anyhow::Error) -> Self {
-        HttpError::internal(e)
+    fn from(error: anyhow::Error) -> Self {
+        HttpError::internal(error)
     }
 }
 
 impl From<std::io::Error> for HttpError {
-    fn from(e: std::io::Error) -> Self {
-        HttpError::internal(e)
+    fn from(error: std::io::Error) -> Self {
+        HttpError::internal(error)
     }
 }
 
 impl From<ProxyError> for HttpError {
-    fn from(e: ProxyError) -> Self {
-        match e {
-            ProxyError::Caddy(msg) => HttpError::bad_request(msg),
-            ProxyError::Timeout(msg) => HttpError::new(StatusCode::GATEWAY_TIMEOUT, msg),
-            _ => HttpError::internal(anyhow::anyhow!(e)),
+    fn from(error: ProxyError) -> Self {
+        match error {
+            ProxyError::Caddy(message) => HttpError::bad_request(message),
+            ProxyError::Timeout(message) => HttpError::new(StatusCode::GATEWAY_TIMEOUT, message),
+            _ => HttpError::internal(anyhow::anyhow!(error)),
         }
     }
 }
 
-pub type HttpResult<T> = std::result::Result<T, HttpError>;
+pub type HttpResult<T> = Result<T, HttpError>;

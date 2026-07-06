@@ -15,7 +15,7 @@ use slasha_db::{
 use uuid::Uuid;
 
 use crate::{
-    error::HttpResult,
+    HttpResult,
     extractors::app::ActiveApp,
     state::{AppState, Storage},
 };

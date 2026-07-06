@@ -7,7 +7,7 @@ use axum::{
 use serde::Deserialize;
 use slasha_db::repos::server_metrics::ServerMetricsRepo;
 
-use crate::{AppState, error::HttpResult, extractors::auth::AuthUser, state::Storage};
+use crate::{AppState, HttpResult, extractors::auth::AuthUser, state::Storage};
 
 #[derive(Deserialize)]
 pub struct MetricsQuery {

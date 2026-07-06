@@ -162,7 +162,7 @@ pub enum AlertRuleConfig {
     },
     AppHealthCheck {
         app_id: String,
-        url: String,
+        health_check_url: String,
     },
     CronFailed {
         cron_job_id: String,
@@ -215,6 +215,18 @@ pub struct AlertChannel {
     pub enabled: bool,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+pub struct NewAlertChannel {
+    pub name: String,
+    pub config: AlertChannelConfig,
+    pub enabled: bool,
+}
+
+pub struct AlertChannelChangeset {
+    pub name: String,
+    pub config: AlertChannelConfig,
+    pub enabled: bool,
 }
 
 impl AlertChannel {
@@ -273,6 +285,28 @@ pub struct AlertRule {
     pub cooldown_secs: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+pub struct NewAlertRule {
+    pub name: String,
+    pub config: AlertRuleConfig,
+    pub channel_ids: Vec<String>,
+    pub direct_webhook_url: Option<String>,
+    pub message_template: Option<String>,
+    pub shell_command: Option<String>,
+    pub enabled: bool,
+    pub cooldown_secs: i32,
+}
+
+pub struct AlertRuleChangeset {
+    pub name: String,
+    pub config: AlertRuleConfig,
+    pub channel_ids: Vec<String>,
+    pub direct_webhook_url: Option<String>,
+    pub message_template: Option<String>,
+    pub shell_command: Option<String>,
+    pub enabled: bool,
+    pub cooldown_secs: i32,
 }
 
 impl AlertRule {

@@ -22,9 +22,9 @@ use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
 use crate::{
+    HttpError, HttpResult,
     cron::{runner, schedule},
     docker::logs::{LogKey, LogManager},
-    error::{HttpError, HttpResult},
     extractors::app::ActiveApp,
     state::AppState,
 };

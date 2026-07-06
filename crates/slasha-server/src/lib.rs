@@ -6,7 +6,6 @@ pub mod connections;
 pub mod cron;
 pub mod docker;
 pub mod domain_health;
-pub mod error;
 pub mod extractors;
 pub mod metrics;
 pub mod middleware;
@@ -23,7 +22,7 @@ use std::net::SocketAddr;
 
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenv::dotenv;
-pub use error::{HttpError, HttpResult};
+pub use routing::api::{HttpError, HttpResult};
 use slasha_db::repos::github_app_config::GithubAppConfigRepo;
 pub use state::AppState;
 use tokio::net::TcpListener;

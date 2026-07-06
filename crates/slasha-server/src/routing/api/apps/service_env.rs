@@ -12,7 +12,7 @@ use slasha_db::{repos::service::ServiceRepo, service::ServiceEnvVar};
 use uuid::Uuid;
 
 use crate::{
-    error::HttpResult,
+    HttpResult,
     extractors::app::ActiveApp,
     state::{AppState, Storage},
 };

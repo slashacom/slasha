@@ -16,8 +16,8 @@ use slasha_db::{
 use uuid::Uuid;
 
 use crate::{
+    HttpError, HttpResult,
     auth::{TokenPayload, create_jwt, hash_password, verify_password},
-    error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
     middleware::rate_limit::{RateLimit, RateLimiter, rate_limit_middleware},
     state::{AppState, Config, Storage},

@@ -3,11 +3,7 @@ use axum::{Json, Router, extract::Path, response::IntoResponse, routing::get};
 use git2::ObjectType;
 use serde::Serialize;
 
-use crate::{
-    error::{HttpError, HttpResult},
-    extractors::app::ActiveApp,
-    state::AppState,
-};
+use crate::{HttpError, HttpResult, extractors::app::ActiveApp, state::AppState};
 
 const MAX_FILE_SIZE: usize = 1024 * 1024;
 

@@ -14,10 +14,7 @@ use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
 use slasha_db::app::AppSource;
 
 use crate::{
-    AppState,
-    connections::sync_external_app,
-    error::{HttpError, HttpResult},
-    extractors::app::ActiveApp,
+    AppState, HttpError, HttpResult, connections::sync_external_app, extractors::app::ActiveApp,
 };
 
 #[derive(serde::Serialize)]

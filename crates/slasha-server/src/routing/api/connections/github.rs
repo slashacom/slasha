@@ -17,9 +17,8 @@ use slasha_db::{
 };
 
 use crate::{
-    AppState,
+    AppState, HttpError, HttpResult,
     connections::{GithubError, create_state, handle_webhook, verify_state},
-    error::{HttpError, HttpResult},
     extractors::auth::AuthUser,
     middleware::admin::admin_middleware,
 };

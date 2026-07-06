@@ -30,21 +30,17 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
   );
 
   const handleSave = async () => {
-    const name = draft.name.trim();
+    const name = draft.name;
     if (!name) {
       toast.error('Channel name is required.');
       return;
     }
 
-    const result = buildChannelConfig(draft);
-    if ('error' in result) {
-      toast.error(result.error);
-      return;
-    }
+    const config = buildChannelConfig(draft);
 
     const payload = {
       name,
-      config: result.config,
+      config,
       enabled: draft.enabled,
     };
     const promise = channel

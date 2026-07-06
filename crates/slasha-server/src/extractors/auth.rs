@@ -10,11 +10,7 @@ use jsonwebtoken::{DecodingKey, Validation, decode};
 use serde::Deserialize;
 use slasha_db::{repos::user::UserRepo, user::User};
 
-use crate::{
-    AppState,
-    auth::TokenPayload,
-    error::{HttpError, HttpResult},
-};
+use crate::{AppState, HttpError, HttpResult, auth::TokenPayload};
 
 #[derive(Deserialize)]
 struct AuthQuery {

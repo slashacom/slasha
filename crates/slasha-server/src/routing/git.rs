@@ -17,12 +17,11 @@ use tokio::{io::AsyncReadExt, process::Command, sync::Notify};
 use tokio_util::io::{ReaderStream, StreamReader};
 
 use crate::{
-    AppState,
+    AppState, HttpResult,
     docker::{
         deployment::{resolve_head_commit, trigger_deployment},
         logs::LogManager,
     },
-    error::HttpResult,
     extractors::git::{GitAuth, GitError},
     state::Config,
 };

@@ -94,8 +94,11 @@ async fn build_snapshot(
                 metric_app_ids.insert(app_id.clone());
             }
 
-            AlertRuleConfig::AppHealthCheck { app_id, url } => {
-                health_check_urls.insert(app_id.clone(), url.clone());
+            AlertRuleConfig::AppHealthCheck {
+                app_id,
+                health_check_url,
+            } => {
+                health_check_urls.insert(app_id.clone(), health_check_url.clone());
             }
 
             AlertRuleConfig::DomainTlsExpiry { domain, .. }

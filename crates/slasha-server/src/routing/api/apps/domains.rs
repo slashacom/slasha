@@ -7,9 +7,7 @@ use axum::{
 use serde::Deserialize;
 use slasha_db::repos::app_domain::AppDomainRepo;
 
-use crate::{
-    AppState, domain_health, error::HttpResult, extractors::app::ActiveApp, state::Storage,
-};
+use crate::{AppState, HttpResult, domain_health, extractors::app::ActiveApp, state::Storage};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -51,9 +49,7 @@ async fn add_domain(
 ) -> HttpResult<impl IntoResponse> {
     let raw_domain = payload.domain.trim();
     if raw_domain.is_empty() {
-        return Err(crate::error::HttpError::bad_request(
-            "Domain cannot be empty",
-        ));
+        return Err(crate::HttpError::bad_request("Domain cannot be empty"));
     }
 
     let url_str = if !raw_domain.starts_with("http://") && !raw_domain.starts_with("https://") {
