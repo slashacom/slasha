@@ -13,10 +13,8 @@ use slasha_db::{
 };
 
 use crate::{
-    AppState,
-    connections::sync_github_app,
+    AppState, HttpError, HttpResult, connections::sync_github_app,
     docker::deployment::trigger_deployment,
-    error::{HttpError, HttpResult},
 };
 
 type HmacSha256 = Hmac<Sha256>;

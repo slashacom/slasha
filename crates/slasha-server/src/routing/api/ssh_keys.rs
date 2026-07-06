@@ -9,7 +9,7 @@ use slasha_db::{repos::ssh_key::SshKeyRepo, ssh_keys::SshKey};
 use uuid::Uuid;
 
 use crate::{
-    error::HttpResult,
+    HttpResult,
     extractors::auth::AuthUser,
     ssh::regenerate_authorized_keys,
     state::{AppState, Storage},

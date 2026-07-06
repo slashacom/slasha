@@ -27,6 +27,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
 use crate::{
+    HttpError, HttpResult,
     docker::{
         logs::{LogKey, LogManager},
         naming::service_container_name,
@@ -35,7 +36,6 @@ use crate::{
             restart_service_container, stop_service_container,
         },
     },
-    error::{HttpError, HttpResult},
     extractors::app::ActiveApp,
     metrics,
     state::AppState,

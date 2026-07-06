@@ -2,7 +2,7 @@ use axum::{Json, Router, routing::get};
 use slasha_db::service::ServiceKind;
 use strum::IntoEnumIterator;
 
-use crate::{AppState, error::HttpResult};
+use crate::{AppState, HttpResult};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/kinds", get(get_service_kinds))

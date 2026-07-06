@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::error::HttpError;
+use crate::HttpError;
 
 #[derive(Debug, Error)]
 pub enum DeploymentError {

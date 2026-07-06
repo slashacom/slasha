@@ -6,7 +6,10 @@ use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
     models::{
-        alerts::{AlertChannel, AlertIncident, AlertIncidentStatus, AlertNotification, AlertRule},
+        alerts::{
+            AlertChannel, AlertChannelChangeset, AlertIncident, AlertIncidentStatus,
+            AlertNotification, AlertRule, AlertRuleChangeset, NewAlertChannel, NewAlertRule,
+        },
         schema::{alert_channels, alert_incidents, alert_notifications, alert_rules},
     },
 };
@@ -55,43 +58,49 @@ impl AlertChannelRepo {
         .await?
     }
 
-    pub async fn create(pool: &DbPool, channel: AlertChannel) -> DbResult<AlertChannel> {
+    pub async fn create(pool: &DbPool, channel: NewAlertChannel) -> DbResult<AlertChannel> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             let config_json = json_string(&channel.config)?;
+            let id = uuid::Uuid::new_v4().to_string();
 
             diesel::insert_into(alert_channels::table)
                 .values((
-                    alert_channels::id.eq(&channel.id),
-                    alert_channels::name.eq(&channel.name),
-                    alert_channels::kind.eq(channel.kind()),
+                    alert_channels::id.eq(&id),
+                    alert_channels::name.eq(channel.name),
+                    alert_channels::kind.eq(channel.config.kind()),
                     alert_channels::config_json.eq(config_json),
                     alert_channels::enabled.eq(channel.enabled),
-                    alert_channels::created_at.eq(channel.created_at),
-                    alert_channels::updated_at.eq(channel.updated_at),
                 ))
                 .execute(&mut conn)?;
 
-            Ok(channel)
+            alert_channels::table
+                .filter(alert_channels::id.eq(id))
+                .first::<AlertChannel>(&mut conn)
+                .map_err(Into::into)
         })
         .await?
     }
 
-    pub async fn update(pool: &DbPool, id: &str, channel: AlertChannel) -> DbResult<AlertChannel> {
+    pub async fn update(
+        pool: &DbPool,
+        id: &str,
+        changeset: AlertChannelChangeset,
+    ) -> DbResult<AlertChannel> {
         let pool = pool.clone();
         let id = id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             let updated_at = Utc::now().naive_utc();
-            let config_json = json_string(&channel.config)?;
+            let config_json = json_string(&changeset.config)?;
 
             diesel::update(alert_channels::table.filter(alert_channels::id.eq(&id)))
                 .set((
-                    alert_channels::name.eq(&channel.name),
-                    alert_channels::kind.eq(channel.kind()),
+                    alert_channels::name.eq(&changeset.name),
+                    alert_channels::kind.eq(changeset.config.kind()),
                     alert_channels::config_json.eq(config_json),
-                    alert_channels::enabled.eq(channel.enabled),
+                    alert_channels::enabled.eq(changeset.enabled),
                     alert_channels::updated_at.eq(updated_at),
                 ))
                 .execute(&mut conn)?;
@@ -159,55 +168,61 @@ impl AlertRuleRepo {
         .await?
     }
 
-    pub async fn create(pool: &DbPool, rule: AlertRule) -> DbResult<AlertRule> {
+    pub async fn create(pool: &DbPool, rule: NewAlertRule) -> DbResult<AlertRule> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             let config_json = json_string(&rule.config)?;
             let channel_ids_json = json_string(&rule.channel_ids)?;
+            let id = uuid::Uuid::new_v4().to_string();
 
             diesel::insert_into(alert_rules::table)
                 .values((
-                    alert_rules::id.eq(&rule.id),
-                    alert_rules::name.eq(&rule.name),
-                    alert_rules::kind.eq(rule.kind()),
+                    alert_rules::id.eq(&id),
+                    alert_rules::name.eq(rule.name),
+                    alert_rules::kind.eq(rule.config.kind()),
                     alert_rules::config_json.eq(config_json),
                     alert_rules::channel_ids_json.eq(channel_ids_json),
-                    alert_rules::message_template.eq(&rule.message_template),
-                    alert_rules::shell_command.eq(&rule.shell_command),
-                    alert_rules::direct_webhook_url.eq(&rule.direct_webhook_url),
+                    alert_rules::direct_webhook_url.eq(rule.direct_webhook_url),
+                    alert_rules::message_template.eq(rule.message_template),
+                    alert_rules::shell_command.eq(rule.shell_command),
                     alert_rules::enabled.eq(rule.enabled),
                     alert_rules::cooldown_secs.eq(rule.cooldown_secs),
-                    alert_rules::created_at.eq(rule.created_at),
-                    alert_rules::updated_at.eq(rule.updated_at),
                 ))
                 .execute(&mut conn)?;
 
-            Ok(rule)
+            alert_rules::table
+                .filter(alert_rules::id.eq(id))
+                .first::<AlertRule>(&mut conn)
+                .map_err(Into::into)
         })
         .await?
     }
 
-    pub async fn update(pool: &DbPool, id: &str, rule: AlertRule) -> DbResult<AlertRule> {
+    pub async fn update(
+        pool: &DbPool,
+        id: &str,
+        changeset: AlertRuleChangeset,
+    ) -> DbResult<AlertRule> {
         let pool = pool.clone();
         let id = id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             let updated_at = Utc::now().naive_utc();
-            let config_json = json_string(&rule.config)?;
-            let channel_ids_json = json_string(&rule.channel_ids)?;
+            let config_json = json_string(&changeset.config)?;
+            let channel_ids_json = json_string(&changeset.channel_ids)?;
 
             diesel::update(alert_rules::table.filter(alert_rules::id.eq(&id)))
                 .set((
-                    alert_rules::name.eq(&rule.name),
-                    alert_rules::kind.eq(rule.kind()),
+                    alert_rules::name.eq(&changeset.name),
+                    alert_rules::kind.eq(changeset.config.kind()),
                     alert_rules::config_json.eq(config_json),
                     alert_rules::channel_ids_json.eq(channel_ids_json),
-                    alert_rules::message_template.eq(&rule.message_template),
-                    alert_rules::shell_command.eq(&rule.shell_command),
-                    alert_rules::direct_webhook_url.eq(&rule.direct_webhook_url),
-                    alert_rules::enabled.eq(rule.enabled),
-                    alert_rules::cooldown_secs.eq(rule.cooldown_secs),
+                    alert_rules::message_template.eq(&changeset.message_template),
+                    alert_rules::shell_command.eq(&changeset.shell_command),
+                    alert_rules::direct_webhook_url.eq(&changeset.direct_webhook_url),
+                    alert_rules::enabled.eq(changeset.enabled),
+                    alert_rules::cooldown_secs.eq(changeset.cooldown_secs),
                     alert_rules::updated_at.eq(updated_at),
                 ))
                 .execute(&mut conn)?;

@@ -44,7 +44,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
   );
 
   const handleSave = async () => {
-    const name = draft.name.trim();
+    const name = draft.name;
     if (!name) {
       toast.error('Rule name is required.');
       return;
@@ -56,19 +56,15 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
       return;
     }
 
-    const result = buildRuleConfig(draft);
-    if ('error' in result) {
-      toast.error(result.error);
-      return;
-    }
+    const config = buildRuleConfig(draft);
 
     const payload = {
       name,
-      config: result.config,
+      config,
       channel_ids: draft.channel_ids,
-      direct_webhook_url: draft.direct_webhook_url.trim() || undefined,
-      message_template: draft.message_template.trim() || undefined,
-      shell_command: draft.shell_command.trim() || undefined,
+      direct_webhook_url: draft.direct_webhook_url || undefined,
+      message_template: draft.message_template || undefined,
+      shell_command: draft.shell_command || undefined,
       enabled: draft.enabled,
       cooldown_secs: cooldownSecs,
     };

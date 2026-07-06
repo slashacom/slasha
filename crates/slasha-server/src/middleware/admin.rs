@@ -1,10 +1,7 @@
 use axum::{extract::Request, middleware::Next, response::Response};
 use slasha_db::user::UserRole;
 
-use crate::{
-    error::{HttpError, HttpResult},
-    extractors::auth::AuthUser,
-};
+use crate::{HttpError, HttpResult, extractors::auth::AuthUser};
 
 pub async fn admin_middleware(
     auth: AuthUser,

@@ -4,19 +4,26 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use chrono::Utc;
+use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
-    models::alerts::{AlertChannel, AlertChannelConfig, AlertRule, AlertRuleConfig},
+    models::alerts::{
+        AlertChannelChangeset, AlertChannelConfig as DbAlertChannelConfig, AlertRuleChangeset,
+        AlertRuleConfig as DbAlertRuleConfig, NewAlertChannel, NewAlertRule,
+    },
     repos::{
         alerts::{AlertChannelRepo, AlertIncidentRepo, AlertNotificationRepo, AlertRuleRepo},
         cron::CronJobRepo,
     },
 };
-use uuid::Uuid;
 
 use crate::{
-    error::{HttpError, HttpResult},
+    HttpError, HttpResult,
+    extractors::ValidatedJson,
+    routing::api::{
+        deserialize::{trim_optional_string, trim_string, trim_string_vec},
+        validation::{http_url, optional_http_url, positive_float},
+    },
     state::{AppState, Storage},
 };
 
@@ -51,23 +58,139 @@ async fn list_all_crons(State(storage): State<Storage>) -> HttpResult<impl IntoR
     Ok(Json(serde_json::json!({ "crons": crons })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct ChannelInput {
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(length(min = 1))]
     name: String,
-    config: AlertChannelConfig,
+    #[garde(dive)]
+    config: ChannelConfigInput,
+    #[garde(skip)]
     enabled: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ChannelConfigInput {
+    Slack {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(custom(http_url))]
+        webhook_url: String,
+    },
+    Discord {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(custom(http_url))]
+        webhook_url: String,
+    },
+    Telegram {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(length(min = 1), contains(":"))]
+        bot_token: String,
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(length(min = 1))]
+        chat_id: String,
+    },
+    Email {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(length(min = 1))]
+        smtp_host: String,
+        #[garde(range(min = 1))]
+        smtp_port: u16,
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(length(min = 1))]
+        smtp_username: String,
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(length(min = 1))]
+        smtp_password: String,
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(email)]
+        from_address: String,
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(email)]
+        to_address: String,
+    },
+}
+
+#[derive(Deserialize, Validate)]
 struct RuleInput {
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(length(min = 1))]
     name: String,
-    config: AlertRuleConfig,
+    #[garde(dive)]
+    config: RuleConfigInput,
+    #[serde(deserialize_with = "trim_string_vec")]
+    #[garde(inner(length(min = 1)))]
     channel_ids: Vec<String>,
+    #[serde(default, deserialize_with = "trim_optional_string")]
+    #[garde(custom(optional_http_url))]
     direct_webhook_url: Option<String>,
+    #[serde(default, deserialize_with = "trim_optional_string")]
+    #[garde(skip)]
     message_template: Option<String>,
+    #[serde(default, deserialize_with = "trim_optional_string")]
+    #[garde(skip)]
     shell_command: Option<String>,
+    #[garde(skip)]
     enabled: bool,
-    cooldown_secs: Option<i32>,
+    #[serde(default = "default_alert_cooldown_secs")]
+    #[garde(range(min = 1))]
+    cooldown_secs: i32,
+}
+
+#[derive(Deserialize, Validate)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum RuleConfigInput {
+    ServerCpu {
+        #[garde(range(min = 0.0, max = 100.0))]
+        threshold_percent: f32,
+    },
+    ServerMemory {
+        #[garde(range(min = 0.0, max = 100.0))]
+        threshold_percent: f32,
+    },
+    ServerLoadAverage {
+        #[garde(custom(positive_float))]
+        threshold: f32,
+    },
+    AppCpu {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(length(min = 1))]
+        app_id: String,
+        #[garde(range(min = 0.0, max = 100.0))]
+        threshold_percent: f32,
+    },
+    AppMemory {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(length(min = 1))]
+        app_id: String,
+        #[garde(range(min = 0.0, max = 100.0))]
+        threshold_percent: f32,
+    },
+    DomainTlsExpiry {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(length(min = 1))]
+        domain: String,
+        #[garde(range(min = 0))]
+        days_before: i32,
+    },
+    DomainDnsMisconfigured {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(length(min = 1))]
+        domain: String,
+    },
+    AppHealthCheck {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(length(min = 1))]
+        app_id: String,
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(custom(http_url))]
+        health_check_url: String,
+    },
+    CronFailed {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(length(min = 1))]
+        cron_job_id: String,
+    },
 }
 
 async fn list_channels(State(storage): State<Storage>) -> HttpResult<impl IntoResponse> {
@@ -85,17 +208,12 @@ async fn get_channel(
 
 async fn create_channel(
     State(storage): State<Storage>,
-    Json(payload): Json<ChannelInput>,
+    ValidatedJson(payload): ValidatedJson<ChannelInput>,
 ) -> HttpResult<impl IntoResponse> {
-    validate_channel_input(&payload)?;
-    let now = Utc::now().naive_utc();
-    let channel = AlertChannel {
-        id: Uuid::new_v4().to_string(),
-        name: payload.name.trim().to_string(),
-        config: payload.config,
+    let channel = NewAlertChannel {
+        name: payload.name,
+        config: payload.config.into(),
         enabled: payload.enabled,
-        created_at: now,
-        updated_at: now,
     };
 
     let channel = AlertChannelRepo::create(&storage.db_pool, channel).await?;
@@ -105,21 +223,15 @@ async fn create_channel(
 async fn update_channel(
     State(storage): State<Storage>,
     Path(id): Path<String>,
-    Json(payload): Json<ChannelInput>,
+    ValidatedJson(payload): ValidatedJson<ChannelInput>,
 ) -> HttpResult<impl IntoResponse> {
-    validate_channel_input(&payload)?;
-    let now = Utc::now().naive_utc();
-    let channel_id = id;
-    let channel = AlertChannel {
-        id: channel_id.clone(),
-        name: payload.name.trim().to_string(),
-        config: payload.config,
+    let changeset = AlertChannelChangeset {
+        name: payload.name,
+        config: payload.config.into(),
         enabled: payload.enabled,
-        created_at: now,
-        updated_at: now,
     };
 
-    let channel = AlertChannelRepo::update(&storage.db_pool, &channel_id, channel).await?;
+    let channel = AlertChannelRepo::update(&storage.db_pool, &id, changeset).await?;
     Ok(Json(serde_json::json!({ "channel": channel })))
 }
 
@@ -161,22 +273,17 @@ async fn get_rule(
 
 async fn create_rule(
     State(storage): State<Storage>,
-    Json(payload): Json<RuleInput>,
+    ValidatedJson(payload): ValidatedJson<RuleInput>,
 ) -> HttpResult<impl IntoResponse> {
-    validate_rule_input(&payload)?;
-    let now = Utc::now().naive_utc();
-    let rule = AlertRule {
-        id: Uuid::new_v4().to_string(),
-        name: payload.name.trim().to_string(),
-        config: payload.config,
+    let rule = NewAlertRule {
+        name: payload.name,
+        config: payload.config.into(),
         channel_ids: payload.channel_ids,
         direct_webhook_url: payload.direct_webhook_url,
         message_template: payload.message_template,
         shell_command: payload.shell_command,
         enabled: payload.enabled,
-        cooldown_secs: payload.cooldown_secs.unwrap_or(DEFAULT_ALERT_COOLDOWN_SECS),
-        created_at: now,
-        updated_at: now,
+        cooldown_secs: payload.cooldown_secs,
     };
 
     let rule = AlertRuleRepo::create(&storage.db_pool, rule).await?;
@@ -186,26 +293,20 @@ async fn create_rule(
 async fn update_rule(
     State(storage): State<Storage>,
     Path(id): Path<String>,
-    Json(payload): Json<RuleInput>,
+    ValidatedJson(payload): ValidatedJson<RuleInput>,
 ) -> HttpResult<impl IntoResponse> {
-    validate_rule_input(&payload)?;
-    let now = Utc::now().naive_utc();
-    let rule_id = id;
-    let rule = AlertRule {
-        id: rule_id.clone(),
-        name: payload.name.trim().to_string(),
-        config: payload.config,
+    let changeset = AlertRuleChangeset {
+        name: payload.name,
+        config: payload.config.into(),
         channel_ids: payload.channel_ids,
         direct_webhook_url: payload.direct_webhook_url,
         message_template: payload.message_template,
         shell_command: payload.shell_command,
         enabled: payload.enabled,
-        cooldown_secs: payload.cooldown_secs.unwrap_or(DEFAULT_ALERT_COOLDOWN_SECS),
-        created_at: now,
-        updated_at: now,
+        cooldown_secs: payload.cooldown_secs,
     };
 
-    let rule = AlertRuleRepo::update(&storage.db_pool, &rule_id, rule).await?;
+    let rule = AlertRuleRepo::update(&storage.db_pool, &id, changeset).await?;
     Ok(Json(serde_json::json!({ "rule": rule })))
 }
 
@@ -252,173 +353,56 @@ async fn list_notifications(State(storage): State<Storage>) -> HttpResult<impl I
     Ok(Json(serde_json::json!({ "notifications": notifications })))
 }
 
-fn validate_channel_input(payload: &ChannelInput) -> HttpResult<()> {
-    if payload.name.trim().is_empty() {
-        return Err(HttpError::bad_request("Alert channel name cannot be empty"));
-    }
-
-    match &payload.config {
-        AlertChannelConfig::Slack { webhook_url } => {
-            validate_webhook_url(webhook_url, "Slack webhook")?;
-        }
-        AlertChannelConfig::Discord { webhook_url } => {
-            validate_webhook_url(webhook_url, "Discord webhook")?;
-        }
-        AlertChannelConfig::Telegram { bot_token, chat_id } => {
-            if bot_token.trim().is_empty() {
-                return Err(HttpError::bad_request("Telegram bot token cannot be empty"));
-            }
-            if chat_id.trim().is_empty() {
-                return Err(HttpError::bad_request("Telegram chat id cannot be empty"));
-            }
-            if !bot_token.contains(':') {
-                return Err(HttpError::bad_request(
-                    "Telegram bot token must contain a colon (e.g. 123456:ABC-DEF1234)",
-                ));
-            }
-        }
-        AlertChannelConfig::Email {
-            smtp_host,
-            smtp_port,
-            smtp_username: _,
-            smtp_password: _,
-            from_address,
-            to_address,
-        } => {
-            if smtp_host.trim().is_empty() {
-                return Err(HttpError::bad_request("SMTP host cannot be empty"));
-            }
-            if *smtp_port == 0 {
-                return Err(HttpError::bad_request("SMTP port must be greater than 0"));
-            }
-            if !from_address.contains('@') {
-                return Err(HttpError::bad_request("From address must be a valid email"));
-            }
-            if !to_address.contains('@') {
-                return Err(HttpError::bad_request("To address must be a valid email"));
-            }
-        }
-    }
-
-    Ok(())
+fn default_alert_cooldown_secs() -> i32 {
+    DEFAULT_ALERT_COOLDOWN_SECS
 }
 
-fn validate_rule_input(payload: &RuleInput) -> HttpResult<()> {
-    if payload.name.trim().is_empty() {
-        return Err(HttpError::bad_request("Alert rule name cannot be empty"));
-    }
-
-    for channel_id in &payload.channel_ids {
-        if channel_id.trim().is_empty() {
-            return Err(HttpError::bad_request("Alert channel id cannot be empty"));
-        }
-    }
-
-    if let Some(url) = payload.direct_webhook_url.as_deref() {
-        validate_webhook_url(url, "Webhook")?;
-    }
-
-    if let Some(command) = payload.shell_command.as_deref()
-        && command.trim().is_empty()
-    {
-        return Err(HttpError::bad_request("Shell command cannot be empty"));
-    }
-
-    if let Some(template) = payload.message_template.as_deref()
-        && template.trim().is_empty()
-    {
-        return Err(HttpError::bad_request("Message template cannot be empty"));
-    }
-
-    match &payload.config {
-        AlertRuleConfig::ServerCpu { threshold_percent }
-        | AlertRuleConfig::ServerMemory { threshold_percent } => {
-            validate_percent(*threshold_percent)?
-        }
-        AlertRuleConfig::ServerLoadAverage { threshold } => {
-            if *threshold <= 0.0 {
-                return Err(HttpError::bad_request(
-                    "Load average threshold must be greater than zero",
-                ));
+// helper macro to impl From for config types
+macro_rules! impl_config_conversion {
+    ($source:ident => $target:ident { $($variant:ident { $($field:ident),* }),* $(,)? }) => {
+        impl From<$source> for $target {
+            fn from(config: $source) -> Self {
+                match config {
+                    $($source::$variant { $($field),* } => {
+                        $target::$variant { $($field),* }
+                    }),*
+                }
             }
         }
-        AlertRuleConfig::AppCpu {
-            app_id,
-            threshold_percent,
-        }
-        | AlertRuleConfig::AppMemory {
-            app_id,
-            threshold_percent,
-        } => {
-            if app_id.trim().is_empty() {
-                return Err(HttpError::bad_request("App id cannot be empty"));
-            }
-            validate_percent(*threshold_percent)?;
-        }
-        AlertRuleConfig::DomainTlsExpiry {
-            domain,
-            days_before,
-        } => {
-            if domain.trim().is_empty() {
-                return Err(HttpError::bad_request("Domain cannot be empty"));
-            }
-            if *days_before < 0 {
-                return Err(HttpError::bad_request(
-                    "TLS expiry threshold cannot be negative",
-                ));
-            }
-        }
-        AlertRuleConfig::DomainDnsMisconfigured { domain } => {
-            if domain.trim().is_empty() {
-                return Err(HttpError::bad_request("Domain cannot be empty"));
-            }
-        }
-        AlertRuleConfig::AppHealthCheck { app_id, url } => {
-            if app_id.trim().is_empty() {
-                return Err(HttpError::bad_request("App id cannot be empty"));
-            }
-
-            if url.trim().is_empty() {
-                return Err(HttpError::bad_request("Health check URL cannot be empty"));
-            }
-        }
-        AlertRuleConfig::CronFailed { cron_job_id } => {
-            if cron_job_id.trim().is_empty() {
-                return Err(HttpError::bad_request("Cron job is required"));
-            }
-        }
-    }
-
-    if let Some(cooldown_secs) = payload.cooldown_secs
-        && cooldown_secs <= 0
-    {
-        return Err(HttpError::bad_request(
-            "Cooldown seconds must be greater than zero",
-        ));
-    }
-    Ok(())
+    };
 }
 
-fn validate_webhook_url(url: &str, name: &str) -> HttpResult<()> {
-    if url.trim().is_empty() {
-        return Err(HttpError::bad_request(format!(
-            "{name} URL cannot be empty"
-        )));
-    }
-    if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err(HttpError::bad_request(format!(
-            "{name} URL must start with http:// or https://"
-        )));
-    }
-    Ok(())
-}
+impl_config_conversion!(ChannelConfigInput => DbAlertChannelConfig {
+    Slack { webhook_url },
+    Discord { webhook_url },
+    Telegram { bot_token, chat_id },
+    Email {
+        smtp_host,
+        smtp_port,
+        smtp_username,
+        smtp_password,
+        from_address,
+        to_address
+    },
+});
 
-fn validate_percent(value: f32) -> HttpResult<()> {
-    if !(0.0..=100.0).contains(&value) {
-        return Err(HttpError::bad_request(
-            "Percentage threshold must be between 0 and 100",
-        ));
-    }
-
-    Ok(())
-}
+impl_config_conversion!(RuleConfigInput => DbAlertRuleConfig {
+    ServerCpu { threshold_percent },
+    ServerMemory { threshold_percent },
+    ServerLoadAverage { threshold },
+    AppCpu {
+        app_id,
+        threshold_percent
+    },
+    AppMemory {
+        app_id,
+        threshold_percent
+    },
+    DomainTlsExpiry {
+        domain,
+        days_before
+    },
+    DomainDnsMisconfigured { domain },
+    AppHealthCheck { app_id, health_check_url },
+    CronFailed { cron_job_id },
+});

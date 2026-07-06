@@ -38,9 +38,10 @@ pub fn evaluate_rule(rule: &AlertRule, snapshot: &AlertSnapshot) -> Option<Evalu
             days_before,
         } => evaluate_domain_tls_expiry(snapshot, domain, *days_before),
         AlertRuleConfig::DomainDnsMisconfigured { domain } => evaluate_domain_dns(snapshot, domain),
-        AlertRuleConfig::AppHealthCheck { app_id, url } => {
-            evaluate_app_health_check(snapshot.apps.get(app_id)?, url)
-        }
+        AlertRuleConfig::AppHealthCheck {
+            app_id,
+            health_check_url,
+        } => evaluate_app_health_check(snapshot.apps.get(app_id)?, health_check_url),
         AlertRuleConfig::CronFailed { cron_job_id } => evaluate_cron_failed(snapshot, cron_job_id),
     }?;
 

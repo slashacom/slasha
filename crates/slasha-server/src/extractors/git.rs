@@ -10,11 +10,7 @@ use slasha_db::{
 };
 use thiserror::Error;
 
-use crate::{
-    AppState,
-    auth::verify_password,
-    error::{HttpError, HttpResult},
-};
+use crate::{AppState, HttpError, HttpResult, auth::verify_password};
 
 #[derive(Error, Debug)]
 pub enum GitError {

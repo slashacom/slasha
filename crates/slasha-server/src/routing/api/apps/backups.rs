@@ -11,9 +11,8 @@ use slasha_db::{app_backup::AppBackup, repos::app_backup::AppBackupRepo};
 use uuid::Uuid;
 
 use crate::{
-    AppState,
+    AppState, HttpError, HttpResult,
     docker::deployment::{container::is_web_running, litestream},
-    error::{HttpError, HttpResult},
     extractors::app::ActiveApp,
     state::Storage,
 };

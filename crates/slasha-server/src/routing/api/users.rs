@@ -13,8 +13,8 @@ use slasha_db::{
 use uuid::Uuid;
 
 use crate::{
+    HttpError, HttpResult,
     auth::hash_password,
-    error::{HttpError, HttpResult},
     state::{AppState, Storage},
 };
 

@@ -24,6 +24,7 @@ use tokio::sync::Notify;
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
+    HttpError, HttpResult,
     connections::sync_external_app,
     docker::{
         deployment::{
@@ -34,7 +35,6 @@ use crate::{
         },
         logs::{LogKey, LogManager},
     },
-    error::{HttpError, HttpResult},
     extractors::app::ActiveApp,
     state::{AppState, Runtime},
 };

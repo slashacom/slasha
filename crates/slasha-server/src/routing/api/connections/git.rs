@@ -2,10 +2,7 @@ use axum::{Json, Router, extract::Query, routing::get};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
-use crate::{
-    AppState,
-    error::{HttpError, HttpResult},
-};
+use crate::{AppState, HttpError, HttpResult};
 
 #[derive(Deserialize)]
 pub struct GitRemoteQuery {
