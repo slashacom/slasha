@@ -107,7 +107,7 @@ pub async fn deliver_alert(
     http_client: &Client,
 ) {
     if let Some(url) = rule.direct_webhook_url.as_deref()
-        && let Err(err) = post_webhook(http_client, url, message).await
+        && let Err(err) = post_webhook(http_client, url, &json!({ "text": message })).await
     {
         warn!(
             target: "slasha::alerts",
@@ -162,7 +162,10 @@ pub async fn deliver_channel(
 ) -> anyhow::Result<()> {
     match &channel.config {
         AlertChannelConfig::Slack { webhook_url } => {
-            post_webhook(http_client, webhook_url, message).await
+            post_webhook(http_client, webhook_url, &json!({ "text": message })).await
+        }
+        AlertChannelConfig::Discord { webhook_url } => {
+            post_webhook(http_client, webhook_url, &json!({ "content": message })).await
         }
         AlertChannelConfig::Telegram { bot_token, chat_id } => {
             let url = format!("https://api.telegram.org/bot{bot_token}/sendMessage");
@@ -223,12 +226,8 @@ pub async fn deliver_channel(
     }
 }
 
-async fn post_webhook(client: &Client, url: &str, message: &str) -> anyhow::Result<()> {
-    let response = client
-        .post(url)
-        .json(&json!({ "text": message }))
-        .send()
-        .await?;
+async fn post_webhook(client: &Client, url: &str, body: &serde_json::Value) -> anyhow::Result<()> {
+    let response = client.post(url).json(body).send().await?;
     if !response.status().is_success() {
         return Err(anyhow::anyhow!(
             "webhook returned non-success status {}",

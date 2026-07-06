@@ -101,8 +101,10 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
         </p>
       </FormField>
 
-      {draft.kind === 'slack' ? (
-        <FormField label="Slack webhook URL">
+      {draft.kind === 'slack' || draft.kind === 'discord' ? (
+        <FormField
+          label={`${draft.kind === 'slack' ? 'Slack' : 'Discord'} webhook URL`}
+        >
           <Input
             value={draft.webhook_url}
             onChange={(event) =>
@@ -111,7 +113,11 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
                 webhook_url: event.target.value,
               }))
             }
-            placeholder="https://hooks.slack.com/services/..."
+            placeholder={
+              draft.kind === 'slack'
+                ? 'https://hooks.slack.com/services/...'
+                : 'https://discord.com/api/webhooks/...'
+            }
           />
         </FormField>
       ) : draft.kind === 'telegram' ? (
