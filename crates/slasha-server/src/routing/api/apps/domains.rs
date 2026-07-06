@@ -4,10 +4,16 @@ use axum::{
     response::IntoResponse,
     routing::{delete, get},
 };
+use garde::Validate;
+use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::repos::app_domain::AppDomainRepo;
 
-use crate::{AppState, HttpResult, domain_health, extractors::app::ActiveApp, state::Storage};
+use crate::{
+    AppState, HttpResult, domain_health,
+    extractors::{ValidatedJson, app::ActiveApp},
+    state::Storage,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -16,8 +22,10 @@ pub fn router() -> Router<AppState> {
         .route("/{domain_id}", delete(delete_domain))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct AddDomainRequest {
+    #[serde(deserialize_with = "crate::routing::api::deserialize::trim_string")]
+    #[garde(custom(not_empty))]
     domain: String,
 }
 
@@ -45,12 +53,9 @@ async fn list_domains_health(
 async fn add_domain(
     State(state): State<AppState>,
     ActiveApp { app, .. }: ActiveApp,
-    Json(payload): Json<AddDomainRequest>,
+    ValidatedJson(payload): ValidatedJson<AddDomainRequest>,
 ) -> HttpResult<impl IntoResponse> {
-    let raw_domain = payload.domain.trim();
-    if raw_domain.is_empty() {
-        return Err(crate::HttpError::bad_request("Domain cannot be empty"));
-    }
+    let raw_domain = payload.domain.as_str();
 
     let url_str = if !raw_domain.starts_with("http://") && !raw_domain.starts_with("https://") {
         format!("https://{}", raw_domain)
@@ -69,7 +74,14 @@ async fn add_domain(
         Err(_) => raw_domain.trim_end_matches('/').to_string(),
     };
 
-    let domain = AppDomainRepo::add(&state.storage.db_pool, &app.id, &cleaned).await?;
+    let domain = AppDomainRepo::add(
+        &state.storage.db_pool,
+        slasha_db::app::NewAppDomain {
+            app_id: app.id.clone(),
+            domain: cleaned,
+        },
+    )
+    .await?;
 
     state.runtime.proxy_sync_trigger.notify_one();
 

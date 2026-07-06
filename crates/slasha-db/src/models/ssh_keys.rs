@@ -11,3 +11,9 @@ pub struct SshKey {
     pub public_key: String,
     pub created_at: chrono::NaiveDateTime,
 }
+
+pub struct NewSshKey {
+    pub user_id: String,
+    pub title: Option<String>,
+    pub public_key: String,
+}

@@ -33,7 +33,7 @@ pub struct AppSnapshot {
 }
 
 pub struct AlertSnapshot {
-    pub server_metric: Option<slasha_db::models::server_metrics::ServerMetrics>,
+    pub server_metric: Option<ServerMetrics>,
     pub apps: HashMap<String, AppSnapshot>,
     pub domains: HashMap<String, domain_health::DomainHealth>,
     pub crons: HashMap<String, Option<CronRun>>,

@@ -6,14 +6,13 @@ use axum::{
     response::IntoResponse,
     routing::{get, put},
 };
-use chrono::Utc;
+use garde::Validate;
 use serde::Deserialize;
-use slasha_db::{repos::service::ServiceRepo, service::ServiceEnvVar};
-use uuid::Uuid;
+use slasha_db::{repos::service::ServiceRepo, service::NewServiceEnvVar};
 
 use crate::{
     HttpResult,
-    extractors::app::ActiveApp,
+    extractors::{ValidatedJson, app::ActiveApp},
     state::{AppState, Storage},
 };
 
@@ -23,8 +22,9 @@ pub fn router() -> Router<AppState> {
         .route("/", put(update_env_vars))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct UpdateEnvVarsReq {
+    #[garde(skip)]
     vars: std::collections::HashMap<String, String>,
 }
 
@@ -49,21 +49,17 @@ async fn update_env_vars(
     State(storage): State<Storage>,
     ActiveApp { app, .. }: ActiveApp,
     Path((_, service_id)): Path<(String, String)>,
-    Json(payload): Json<UpdateEnvVarsReq>,
+    ValidatedJson(payload): ValidatedJson<UpdateEnvVarsReq>,
 ) -> HttpResult<impl IntoResponse> {
     ServiceRepo::find(&storage.db_pool, &service_id, &app.id).await?;
 
-    let now = Utc::now().naive_utc();
-    let new_vars: Vec<ServiceEnvVar> = payload
+    let new_vars: Vec<NewServiceEnvVar> = payload
         .vars
         .into_iter()
-        .map(|(key, value)| ServiceEnvVar {
-            id: Uuid::new_v4().to_string(),
+        .map(|(key, value)| NewServiceEnvVar {
             service_id: service_id.clone(),
             key,
             value,
-            created_at: now,
-            updated_at: now,
         })
         .collect();
 

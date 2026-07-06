@@ -159,6 +159,31 @@ pub struct CronJob {
     pub runtime: CronRuntime,
 }
 
+pub struct NewCronJob {
+    pub app_id: String,
+    pub name: String,
+    pub schedule: String,
+    pub command: String,
+    pub timezone: String,
+    pub enabled: bool,
+    pub timeout_secs: i32,
+    pub runtime: CronRuntime,
+}
+
+#[derive(AsChangeset)]
+#[diesel(table_name = crate::models::schema::cron_jobs)]
+pub struct CronJobChangeset {
+    pub name: String,
+    pub schedule: String,
+    pub command: String,
+    pub timezone: String,
+    pub enabled: bool,
+    pub timeout_secs: i32,
+    pub runtime: CronRuntime,
+    pub next_run_at: Option<NaiveDateTime>,
+    pub updated_at: NaiveDateTime,
+}
+
 #[derive(
     Queryable, Selectable, Insertable, AsChangeset, Debug, Clone, Serialize, Deserialize, TS,
 )]
@@ -174,4 +199,10 @@ pub struct CronRun {
     pub started_at: Option<NaiveDateTime>,
     pub finished_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
+}
+
+pub struct NewCronRun {
+    pub cron_job_id: String,
+    pub status: CronRunStatus,
+    pub trigger_kind: CronRunTrigger,
 }

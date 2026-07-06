@@ -45,16 +45,6 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
 
   const handleSave = async () => {
     const name = draft.name;
-    if (!name) {
-      toast.error('Rule name is required.');
-      return;
-    }
-
-    const cooldownSecs = Number(draft.cooldown_secs);
-    if (!cooldownSecs || cooldownSecs <= 0) {
-      toast.error('Cooldown must be greater than zero.');
-      return;
-    }
 
     const config = buildRuleConfig(draft);
 
@@ -66,7 +56,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
       message_template: draft.message_template || undefined,
       shell_command: draft.shell_command || undefined,
       enabled: draft.enabled,
-      cooldown_secs: cooldownSecs,
+      cooldown_secs: Number(draft.cooldown_secs) || DEFAULT_ALERT_COOLDOWN_SECS,
     };
     const promise = rule
       ? updateRule.mutateAsync({ id: rule.id, data: payload })

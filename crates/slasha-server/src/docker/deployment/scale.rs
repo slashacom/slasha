@@ -9,7 +9,7 @@ use slasha_db::{
     DbPool,
     app::App,
     deployment::Deployment,
-    models::app_scale::{ProcessStatus, ProcessType},
+    models::app_scale::{NewAppScale, ProcessStatus, ProcessType},
     repos::app_scale::AppScaleRepo,
 };
 use tokio::sync::Notify;
@@ -59,7 +59,15 @@ pub async fn scale_deployment_process(
     }
 
     rollback.disarm();
-    AppScaleRepo::upsert(deps.db_pool, &app.id, process_type, target_count as i32).await?;
+    AppScaleRepo::upsert(
+        deps.db_pool,
+        NewAppScale {
+            app_id: app.id.clone(),
+            process_type,
+            desired: target_count as i32,
+        },
+    )
+    .await?;
 
     Ok(())
 }

@@ -74,3 +74,19 @@ pub struct GithubInstallation {
     pub installation_id: i64,
     pub created_at: chrono::NaiveDateTime,
 }
+
+#[derive(Insertable)]
+#[diesel(table_name = crate::models::schema::github_connections)]
+pub struct NewGithubConnection {
+    pub app_id: String,
+    pub installation_id: i64,
+    pub repository_id: i64,
+    pub status: ConnectionStatus,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = crate::models::schema::github_installations)]
+pub struct NewGithubInstallation {
+    pub user_id: String,
+    pub installation_id: i64,
+}

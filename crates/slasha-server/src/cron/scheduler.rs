@@ -4,8 +4,8 @@ use bollard::Docker;
 use chrono::Utc;
 use slasha_db::{
     DbPool,
-    cron::{CronJob, CronRunStatus, CronRunTrigger},
-    repos::cron::{CronJobRepo, CronRunRepo, new_run},
+    cron::{CronJob, CronRunStatus, CronRunTrigger, NewCronRun},
+    repos::cron::{CronJobRepo, CronRunRepo},
 };
 use tokio::time::sleep;
 use tracing::{error, info, warn};
@@ -80,7 +80,13 @@ async fn tick(
             continue;
         }
 
-        let run = CronRunRepo::create(db_pool, new_run(&job.id, CronRunTrigger::Scheduled)).await?;
+        let new_run_data = NewCronRun {
+            cron_job_id: job.id.clone(),
+            status: CronRunStatus::Pending,
+            trigger_kind: CronRunTrigger::Scheduled,
+        };
+
+        let run = CronRunRepo::create(db_pool, new_run_data).await?;
 
         let db_pool = db_pool.clone();
         let docker = docker.clone();
@@ -94,10 +100,20 @@ async fn tick(
 }
 
 async fn record_skipped(db_pool: &DbPool, job: &CronJob) {
-    let mut run = new_run(&job.id, CronRunTrigger::Scheduled);
-    run.status = CronRunStatus::Skipped;
-    run.finished_at = Some(Utc::now().naive_utc());
-    if let Err(err) = CronRunRepo::create(db_pool, run).await {
-        warn!(target: "slasha::cron", job = %job.id, error = ?err, "failed to record skipped run");
+    let new_run_data = NewCronRun {
+        cron_job_id: job.id.clone(),
+        status: CronRunStatus::Skipped,
+        trigger_kind: CronRunTrigger::Scheduled,
+    };
+
+    match CronRunRepo::create(db_pool, new_run_data).await {
+        Ok(run) => {
+            let _ =
+                CronRunRepo::mark_finished(db_pool, &run.id, CronRunStatus::Skipped, None, None)
+                    .await;
+        }
+        Err(err) => {
+            warn!(target: "slasha::cron", job = %job.id, error = ?err, "failed to record skipped run");
+        }
     }
 }

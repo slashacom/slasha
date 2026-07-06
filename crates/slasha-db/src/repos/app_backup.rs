@@ -3,7 +3,10 @@ use diesel::{prelude::*, upsert::excluded};
 use crate::{
     connection::DbPool,
     error::DbResult,
-    models::{app_backup::AppBackup, schema::app_backups},
+    models::{
+        app_backup::{AppBackup, NewAppBackup},
+        schema::app_backups,
+    },
 };
 
 pub struct AppBackupRepo;
@@ -22,13 +25,24 @@ impl AppBackupRepo {
         .await?
     }
 
-    pub async fn upsert(pool: &DbPool, backup: AppBackup) -> DbResult<AppBackup> {
+    pub async fn upsert(pool: &DbPool, backup: NewAppBackup) -> DbResult<AppBackup> {
         let pool = pool.clone();
         let app_id = backup.app_id.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
+            let id = uuid::Uuid::new_v4().to_string();
             diesel::insert_into(app_backups::table)
-                .values(&backup)
+                .values((
+                    app_backups::id.eq(&id),
+                    app_backups::app_id.eq(&backup.app_id),
+                    app_backups::enabled.eq(backup.enabled),
+                    app_backups::db_path.eq(&backup.db_path),
+                    app_backups::bucket.eq(&backup.bucket),
+                    app_backups::endpoint.eq(&backup.endpoint),
+                    app_backups::path_prefix.eq(&backup.path_prefix),
+                    app_backups::access_key_id.eq(&backup.access_key_id),
+                    app_backups::secret_access_key.eq(&backup.secret_access_key),
+                ))
                 .on_conflict(app_backups::app_id)
                 .do_update()
                 .set((
@@ -39,7 +53,7 @@ impl AppBackupRepo {
                     app_backups::path_prefix.eq(excluded(app_backups::path_prefix)),
                     app_backups::access_key_id.eq(excluded(app_backups::access_key_id)),
                     app_backups::secret_access_key.eq(excluded(app_backups::secret_access_key)),
-                    app_backups::updated_at.eq(excluded(app_backups::updated_at)),
+                    app_backups::updated_at.eq(chrono::Utc::now().naive_utc()),
                 ))
                 .execute(&mut conn)?;
 

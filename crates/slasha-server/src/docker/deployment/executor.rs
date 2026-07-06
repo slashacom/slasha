@@ -4,12 +4,11 @@ use bollard::{
     Docker,
     query_parameters::{RemoveContainerOptionsBuilder, RemoveImageOptions},
 };
-use chrono::Utc;
 use slasha_db::{
     DbPool,
     app::{App, AppEnvVar},
-    deployment::{Deployment, DeploymentStatus},
-    models::app_scale::ProcessType,
+    deployment::{Deployment, DeploymentStatus, NewDeployment},
+    models::app_scale::{AppScale, ProcessType},
     repos::{
         app::AppRepo, app_backup::AppBackupRepo, app_scale::AppScaleRepo,
         deployment::DeploymentRepo, service::ServiceRepo,
@@ -176,7 +175,7 @@ struct ProcessTarget {
 
 fn resolve_process_targets(
     procfile: &Option<Procfile>,
-    scale_configs: &[slasha_db::models::app_scale::AppScale],
+    scale_configs: &[AppScale],
 ) -> Vec<ProcessTarget> {
     let mut targets = Vec::new();
 
@@ -651,15 +650,12 @@ pub async fn trigger_deployment(
         None => resolve_head_commit(&app.repo_path, &app.default_branch)?,
     };
 
-    let now = Utc::now().naive_utc();
-    let deployment = Deployment {
+    let deployment = NewDeployment {
         id: Uuid::new_v4().to_string(),
         app_id: app.id.clone(),
         commit_sha,
         commit_message,
         status: DeploymentStatus::Pending,
-        created_at: now,
-        updated_at: now,
     };
 
     let deployment = DeploymentRepo::create(&db_pool, deployment).await?;
@@ -701,15 +697,12 @@ pub async fn trigger_rollback(
 
     let source_image = find_deployment_image(&docker_client, &app, &source_deployment).await?;
 
-    let now = Utc::now().naive_utc();
-    let deployment = Deployment {
+    let deployment = NewDeployment {
         id: Uuid::new_v4().to_string(),
         app_id: app.id.clone(),
         commit_sha: source_deployment.commit_sha,
         commit_message: source_deployment.commit_message,
         status: DeploymentStatus::Pending,
-        created_at: now,
-        updated_at: now,
     };
 
     let deployment = DeploymentRepo::create(&db_pool, deployment).await?;

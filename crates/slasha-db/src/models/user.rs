@@ -29,6 +29,21 @@ pub struct User {
     pub updated_at: chrono::NaiveDateTime,
 }
 
+pub struct NewUser {
+    pub email: String,
+    pub password_hash: String,
+    pub role: UserRole,
+}
+
+#[derive(AsChangeset)]
+#[diesel(table_name = crate::models::schema::users)]
+pub struct UserChangeset {
+    pub email: Option<String>,
+    pub password_hash: Option<String>,
+    pub role: Option<UserRole>,
+    pub updated_at: chrono::NaiveDateTime,
+}
+
 #[derive(
     Debug,
     PartialEq,

@@ -4,7 +4,9 @@ use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
     models::{
-        github_connection::{ConnectionStatus, GithubConnection, GithubInstallation},
+        github_connection::{
+            ConnectionStatus, GithubConnection, GithubInstallation, NewGithubInstallation,
+        },
         schema::{apps, github_connections, github_installations},
     },
 };
@@ -14,7 +16,7 @@ pub struct GithubConnectionRepo;
 impl GithubConnectionRepo {
     pub async fn save_installation(
         pool: &DbPool,
-        installation: GithubInstallation,
+        installation: NewGithubInstallation,
     ) -> DbResult<()> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {

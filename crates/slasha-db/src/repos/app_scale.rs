@@ -3,47 +3,41 @@ use diesel::prelude::*;
 use crate::{
     connection::DbPool,
     error::DbResult,
-    models::app_scale::{AppScale, ProcessType},
+    models::app_scale::{AppScale, NewAppScale},
     schema::app_scale,
 };
 
 pub struct AppScaleRepo;
 
 impl AppScaleRepo {
-    pub async fn upsert(
-        pool: &DbPool,
-        app_id: &str,
-        process_type: ProcessType,
-        desired: i32,
-    ) -> DbResult<AppScale> {
+    pub async fn upsert(pool: &DbPool, scale: NewAppScale) -> DbResult<AppScale> {
         let pool = pool.clone();
-        let app_id = app_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
 
             let existing = app_scale::table
-                .filter(app_scale::app_id.eq(&app_id))
-                .filter(app_scale::process_type.eq(process_type))
+                .filter(app_scale::app_id.eq(&scale.app_id))
+                .filter(app_scale::process_type.eq(scale.process_type))
                 .first::<AppScale>(&mut conn)
                 .optional()?;
 
-            if let Some(mut scale) = existing {
-                scale.desired = desired;
-                diesel::update(app_scale::table.filter(app_scale::id.eq(&scale.id)))
-                    .set(app_scale::desired.eq(desired))
+            if let Some(mut existing_scale) = existing {
+                existing_scale.desired = scale.desired;
+                diesel::update(app_scale::table.filter(app_scale::id.eq(&existing_scale.id)))
+                    .set(app_scale::desired.eq(scale.desired))
                     .execute(&mut conn)?;
-                Ok(scale)
+                Ok(existing_scale)
             } else {
-                let scale = AppScale {
+                let new_scale = AppScale {
                     id: uuid::Uuid::new_v4().to_string(),
-                    app_id,
-                    process_type,
-                    desired,
+                    app_id: scale.app_id,
+                    process_type: scale.process_type,
+                    desired: scale.desired,
                 };
                 diesel::insert_into(app_scale::table)
-                    .values(&scale)
+                    .values(&new_scale)
                     .execute(&mut conn)?;
-                Ok(scale)
+                Ok(new_scale)
             }
         })
         .await?

@@ -5,16 +5,17 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use chrono::Utc;
+use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
     repos::{app::AppRepo, user::UserRepo},
-    user::{User, UserRole},
+    user::{NewUser, UserChangeset, UserRole},
 };
-use uuid::Uuid;
 
 use crate::{
     HttpError, HttpResult,
     auth::hash_password,
+    extractors::ValidatedJson,
     state::{AppState, Storage},
 };
 
@@ -49,26 +50,28 @@ async fn list_users(State(storage): State<Storage>) -> HttpResult<impl IntoRespo
     })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct CreateUserReq {
+    #[serde(deserialize_with = "crate::routing::api::deserialize::trim_string")]
+    #[garde(email)]
     email: String,
+    #[garde(length(min = 8))]
     password: String,
+    #[garde(skip)]
     role: UserRole,
+    #[garde(skip)]
     app_ids: Option<Vec<String>>,
 }
 
 async fn create_user(
     State(storage): State<Storage>,
-    Json(payload): Json<CreateUserReq>,
+    ValidatedJson(payload): ValidatedJson<CreateUserReq>,
 ) -> HttpResult<impl IntoResponse> {
     let hashed = hash_password(&payload.password)?;
-    let new_user = User {
-        id: Uuid::new_v4().to_string(),
+    let new_user = NewUser {
         email: payload.email,
         password_hash: hashed,
         role: payload.role,
-        created_at: Utc::now().naive_utc(),
-        updated_at: Utc::now().naive_utc(),
     };
 
     let new_user = UserRepo::create(&storage.db_pool, new_user).await?;
@@ -82,18 +85,26 @@ async fn create_user(
     })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct UpdateUserReq {
+    #[serde(
+        default,
+        deserialize_with = "crate::routing::api::deserialize::trim_optional_string"
+    )]
+    #[garde(inner(email))]
     email: Option<String>,
+    #[garde(skip)]
     role: Option<UserRole>,
+    #[garde(inner(length(min = 8)))]
     password: Option<String>,
+    #[garde(skip)]
     app_ids: Option<Vec<String>>,
 }
 
 async fn update_user(
     State(storage): State<Storage>,
     Path(id): Path<String>,
-    Json(payload): Json<UpdateUserReq>,
+    ValidatedJson(payload): ValidatedJson<UpdateUserReq>,
 ) -> HttpResult<impl IntoResponse> {
     let user = UserRepo::find_by_id(&storage.db_pool, &id).await?;
 
@@ -114,9 +125,12 @@ async fn update_user(
     let updated_user = UserRepo::update(
         &storage.db_pool,
         &id,
-        payload.email,
-        payload.role,
-        password_hash,
+        UserChangeset {
+            email: payload.email,
+            role: payload.role,
+            password_hash,
+            updated_at: Utc::now().naive_utc(),
+        },
     )
     .await?;
 

@@ -5,11 +5,12 @@ use axum::{
     response::{IntoResponse, Redirect},
     routing::{delete, get, patch, post},
 };
-use chrono::Utc;
+use garde::Validate;
+use crate::routing::api::validation::not_empty;
 use serde::{Deserialize, Serialize};
 use slasha_db::{
-    github_app_config::GithubAppConfig,
-    github_connection::GithubInstallation,
+    github_app_config::NewGithubAppConfig,
+    github_connection::NewGithubInstallation,
     repos::{
         github_app_config::GithubAppConfigRepo, github_connection::GithubConnectionRepo,
         user::UserRepo,
@@ -19,7 +20,7 @@ use slasha_db::{
 use crate::{
     AppState, HttpError, HttpResult,
     connections::{GithubError, create_state, handle_webhook, verify_state},
-    extractors::auth::AuthUser,
+    extractors::{ValidatedJson, auth::AuthUser},
     middleware::admin::admin_middleware,
 };
 
@@ -164,16 +165,12 @@ async fn setup_callback(
         .await
         .map_err(|e| HttpError::internal(anyhow::anyhow!(e)))?;
 
-    let now = Utc::now().naive_utc();
-    let config = GithubAppConfig {
-        id: "default".to_string(),
+    let config = NewGithubAppConfig {
         app_id: conversion.id.to_string(),
         client_id: conversion.client_id,
         client_secret: conversion.client_secret,
         private_key: conversion.pem,
         webhook_secret: conversion.webhook_secret,
-        created_at: now,
-        updated_at: now,
     };
 
     GithubAppConfigRepo::upsert(&state.storage.db_pool, config).await?;
@@ -188,33 +185,34 @@ async fn setup_callback(
     Ok(Redirect::to(&redirect_to))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct UpdateCredentialsReq {
+    #[garde(custom(not_empty))]
     app_id: String,
+    #[garde(custom(not_empty))]
     client_id: String,
+    #[garde(custom(not_empty))]
     client_secret: String,
+    #[garde(custom(not_empty))]
     private_key: String,
+    #[garde(custom(not_empty))]
     webhook_secret: String,
 }
 
 async fn update_credentials(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-    Json(payload): Json<UpdateCredentialsReq>,
+    ValidatedJson(payload): ValidatedJson<UpdateCredentialsReq>,
 ) -> HttpResult<impl IntoResponse> {
     jsonwebtoken::EncodingKey::from_rsa_pem(payload.private_key.replace("\\n", "\n").as_bytes())
         .map_err(|_| HttpError::bad_request("Invalid RSA private key PEM"))?;
 
-    let now = Utc::now().naive_utc();
-    let config = GithubAppConfig {
-        id: "default".to_string(),
+    let config = NewGithubAppConfig {
         app_id: payload.app_id,
         client_id: payload.client_id,
         client_secret: payload.client_secret,
         private_key: payload.private_key,
         webhook_secret: payload.webhook_secret,
-        created_at: now,
-        updated_at: now,
     };
 
     let saved = GithubAppConfigRepo::upsert(&state.storage.db_pool, config).await?;
@@ -258,15 +256,16 @@ async fn get_app_status(State(state): State<AppState>) -> Json<serde_json::Value
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct InstallReq {
+    #[garde(custom(not_empty))]
     redirect_to: String,
 }
 
 async fn install_app(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-    Json(payload): Json<InstallReq>,
+    ValidatedJson(payload): ValidatedJson<InstallReq>,
 ) -> HttpResult<impl IntoResponse> {
     let github_client = get_github_client(&state).await?;
     let redirect_to = validate_redirect_target(&payload.redirect_to)?;
@@ -323,10 +322,9 @@ async fn app_callback(
 
     GithubConnectionRepo::save_installation(
         &state.storage.db_pool,
-        GithubInstallation {
+        NewGithubInstallation {
             user_id: user_id.clone(),
             installation_id: query.installation_id,
-            created_at: Utc::now().naive_utc(),
         },
     )
     .await?;

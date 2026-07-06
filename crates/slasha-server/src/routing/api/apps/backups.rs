@@ -6,14 +6,20 @@ use axum::{
 };
 use bollard::Docker;
 use chrono::Utc;
+use garde::Validate;
+use crate::routing::api::validation::not_empty;
 use serde::{Deserialize, Serialize};
-use slasha_db::{app_backup::AppBackup, repos::app_backup::AppBackupRepo};
-use uuid::Uuid;
+use slasha_db::{
+    app_backup::{AppBackup, NewAppBackup},
+    models::app_scale::ProcessType,
+    repos::app_backup::AppBackupRepo,
+};
 
 use crate::{
     AppState, HttpError, HttpResult,
     docker::deployment::{container::is_web_running, litestream},
-    extractors::app::ActiveApp,
+    extractors::{ValidatedJson, app::ActiveApp},
+    routing::api::deserialize::{trim_optional_string, trim_string},
     state::Storage,
 };
 
@@ -66,42 +72,34 @@ async fn get_backup(
     })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct SaveBackupRequest {
+    #[garde(skip)]
     enabled: bool,
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(custom(not_empty))]
     db_path: String,
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(skip)]
     bucket: String,
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(custom(not_empty))]
     endpoint: String,
+    #[serde(default, deserialize_with = "trim_optional_string")]
+    #[garde(skip)]
     path_prefix: Option<String>,
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(skip)]
     access_key_id: String,
+    #[serde(default, deserialize_with = "trim_optional_string")]
+    #[garde(skip)]
     secret_access_key: Option<String>,
-}
-
-fn new_backup(app_id: &str, now: chrono::NaiveDateTime) -> AppBackup {
-    AppBackup {
-        id: Uuid::new_v4().to_string(),
-        app_id: app_id.to_string(),
-        enabled: false,
-        db_path: String::new(),
-        bucket: String::new(),
-        endpoint: String::new(),
-        path_prefix: None,
-        access_key_id: String::new(),
-        secret_access_key: String::new(),
-        restore_pending: false,
-        last_synced_at: None,
-        last_checked_at: None,
-        last_check_ok: None,
-        last_check_error: None,
-        created_at: now,
-        updated_at: now,
-    }
 }
 
 async fn save_backup(
     State(storage): State<Storage>,
     ActiveApp { app, .. }: ActiveApp,
-    Json(payload): Json<SaveBackupRequest>,
+    ValidatedJson(payload): ValidatedJson<SaveBackupRequest>,
 ) -> HttpResult<impl IntoResponse> {
     let existing = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
@@ -143,25 +141,26 @@ async fn save_backup(
         let scale_configs =
             slasha_db::repos::app_scale::AppScaleRepo::list_for_app(&storage.db_pool, &app.id)
                 .await?;
-        if scale_configs.iter().any(|s| {
-            s.process_type == slasha_db::models::app_scale::ProcessType::Web && s.desired > 1
-        }) {
+        if scale_configs
+            .iter()
+            .any(|s| s.process_type == ProcessType::Web && s.desired > 1)
+        {
             return Err(HttpError::bad_request(
                 "Cannot enable backups while the web process is scaled beyond 1 instance. Scale down to 1 first.",
             ));
         }
     }
 
-    let now = Utc::now().naive_utc();
-    let mut backup = existing.unwrap_or_else(|| new_backup(&app.id, now));
-    backup.enabled = payload.enabled;
-    backup.db_path = payload.db_path;
-    backup.bucket = payload.bucket;
-    backup.endpoint = payload.endpoint;
-    backup.path_prefix = payload.path_prefix.filter(|p| !p.is_empty());
-    backup.access_key_id = payload.access_key_id;
-    backup.secret_access_key = secret_access_key;
-    backup.updated_at = now;
+    let backup = NewAppBackup {
+        app_id: app.id.clone(),
+        enabled: payload.enabled,
+        db_path: payload.db_path,
+        bucket: payload.bucket,
+        endpoint: payload.endpoint,
+        path_prefix: payload.path_prefix.filter(|p| !p.is_empty()),
+        access_key_id: payload.access_key_id,
+        secret_access_key,
+    };
 
     let saved = AppBackupRepo::upsert(&storage.db_pool, backup).await?;
 

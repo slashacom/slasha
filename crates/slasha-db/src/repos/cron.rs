@@ -5,7 +5,7 @@ use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
     models::{
-        cron::{CronJob, CronRun, CronRunStatus, CronRunTrigger},
+        cron::{CronJob, CronJobChangeset, CronRun, CronRunStatus, NewCronJob, NewCronRun},
         schema::{cron_jobs, cron_runs},
     },
 };
@@ -79,27 +79,16 @@ impl CronJobRepo {
         .await?
     }
 
-    pub async fn create(pool: &DbPool, job: CronJob) -> DbResult<CronJob> {
+    pub async fn create(pool: &DbPool, job: NewCronJob) -> DbResult<CronJob> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
+            let id = uuid::Uuid::new_v4().to_string();
+
             diesel::insert_into(cron_jobs::table)
-                .values(&job)
-                .execute(&mut conn)?;
-            Ok(job)
-        })
-        .await?
-    }
-
-    pub async fn update(pool: &DbPool, id: &str, job: CronJob) -> DbResult<CronJob> {
-        let pool = pool.clone();
-        let id = id.to_string();
-        tokio::task::spawn_blocking(move || {
-            let mut conn = pool.get()?;
-            let updated_at = Utc::now().naive_utc();
-
-            diesel::update(cron_jobs::table.filter(cron_jobs::id.eq(&id)))
-                .set((
+                .values((
+                    cron_jobs::id.eq(&id),
+                    cron_jobs::app_id.eq(&job.app_id),
                     cron_jobs::name.eq(&job.name),
                     cron_jobs::schedule.eq(&job.schedule),
                     cron_jobs::command.eq(&job.command),
@@ -107,9 +96,29 @@ impl CronJobRepo {
                     cron_jobs::enabled.eq(job.enabled),
                     cron_jobs::timeout_secs.eq(job.timeout_secs),
                     cron_jobs::runtime.eq(job.runtime),
-                    cron_jobs::next_run_at.eq(job.next_run_at),
-                    cron_jobs::updated_at.eq(updated_at),
                 ))
+                .execute(&mut conn)?;
+
+            Ok(cron_jobs::table
+                .filter(cron_jobs::id.eq(&id))
+                .first::<CronJob>(&mut conn)?)
+        })
+        .await?
+    }
+
+    pub async fn update(
+        pool: &DbPool,
+        id: &str,
+        mut changeset: CronJobChangeset,
+    ) -> DbResult<CronJob> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            changeset.updated_at = Utc::now().naive_utc();
+
+            diesel::update(cron_jobs::table.filter(cron_jobs::id.eq(&id)))
+                .set(&changeset)
                 .execute(&mut conn)?;
 
             cron_jobs::table
@@ -290,14 +299,24 @@ impl CronRunRepo {
         .await?
     }
 
-    pub async fn create(pool: &DbPool, run: CronRun) -> DbResult<CronRun> {
+    pub async fn create(pool: &DbPool, run: NewCronRun) -> DbResult<CronRun> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
+            let id = uuid::Uuid::new_v4().to_string();
+
             diesel::insert_into(cron_runs::table)
-                .values(&run)
+                .values((
+                    cron_runs::id.eq(&id),
+                    cron_runs::cron_job_id.eq(&run.cron_job_id),
+                    cron_runs::status.eq(run.status),
+                    cron_runs::trigger_kind.eq(run.trigger_kind),
+                ))
                 .execute(&mut conn)?;
-            Ok(run)
+
+            Ok(cron_runs::table
+                .filter(cron_runs::id.eq(&id))
+                .first::<CronRun>(&mut conn)?)
         })
         .await?
     }
@@ -344,16 +363,4 @@ impl CronRunRepo {
     }
 }
 
-pub fn new_run(cron_job_id: &str, trigger_kind: CronRunTrigger) -> CronRun {
-    CronRun {
-        id: uuid::Uuid::new_v4().to_string(),
-        cron_job_id: cron_job_id.to_string(),
-        status: CronRunStatus::Pending,
-        trigger_kind,
-        exit_code: None,
-        error: None,
-        started_at: None,
-        finished_at: None,
-        created_at: Utc::now().naive_utc(),
-    }
-}
+// new_run helper removed as logic is natively in CronRunRepo::create

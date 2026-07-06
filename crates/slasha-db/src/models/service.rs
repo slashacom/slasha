@@ -41,6 +41,18 @@ pub struct Service {
     pub updated_at: chrono::NaiveDateTime,
 }
 
+#[derive(Insertable)]
+#[diesel(table_name = crate::models::schema::services)]
+pub struct NewService {
+    pub id: String,
+    pub app_id: String,
+    pub kind: ServiceKind,
+    pub name: String,
+    pub version: String,
+    pub status: ServiceStatus,
+    pub resources: Option<ServiceResources>,
+}
+
 #[derive(
     Debug, Clone, Default, PartialEq, FromSqlRow, AsExpression, Serialize, Deserialize, TS,
 )]
@@ -276,6 +288,12 @@ pub struct ServiceEnvVar {
     pub value: String,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
+}
+
+pub struct NewServiceEnvVar {
+    pub service_id: String,
+    pub key: String,
+    pub value: String,
 }
 
 impl ToSql<Text, Sqlite> for ServiceKind

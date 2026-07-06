@@ -101,7 +101,7 @@ impl From<garde::Report> for HttpError {
                 let formatted_path = if path_str.is_empty() {
                     String::new()
                 } else {
-                    let field = path_str.split('.').last().unwrap_or(&path_str);
+                    let field = path_str.split('.').next_back().unwrap_or(&path_str);
                     let mut human_readable = field.replace("_", " ");
                     if let Some(r) = human_readable.get_mut(0..1) {
                         r.make_ascii_uppercase();

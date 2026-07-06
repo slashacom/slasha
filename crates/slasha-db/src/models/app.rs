@@ -29,6 +29,18 @@ pub struct App {
     pub source: AppSource,
 }
 
+#[derive(Insertable)]
+#[diesel(table_name = crate::models::schema::apps)]
+pub struct NewApp {
+    pub id: String,
+    pub slug: String,
+    pub name: String,
+    pub repo_path: String,
+    pub default_branch: String,
+    pub auto_deploy: bool,
+    pub source: AppSource,
+}
+
 #[derive(
     Debug,
     PartialEq,
@@ -77,7 +89,9 @@ impl FromSql<Text, Sqlite> for AppSource {
     }
 }
 
-#[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(
+    Queryable, Selectable, Insertable, AsChangeset, Debug, Clone, Serialize, Deserialize, TS,
+)]
 #[diesel(table_name = crate::models::schema::app_env_vars)]
 #[ts(export, export_to = "./app.ts")]
 pub struct AppEnvVar {
@@ -89,6 +103,12 @@ pub struct AppEnvVar {
     pub updated_at: chrono::NaiveDateTime,
 }
 
+pub struct NewAppEnvVar {
+    pub app_id: String,
+    pub key: String,
+    pub value: String,
+}
+
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
 #[diesel(table_name = crate::models::schema::app_domains)]
 #[ts(export, export_to = "./app.ts")]
@@ -97,6 +117,11 @@ pub struct AppDomain {
     pub app_id: String,
     pub domain: String,
     pub created_at: chrono::NaiveDateTime,
+}
+
+pub struct NewAppDomain {
+    pub app_id: String,
+    pub domain: String,
 }
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]

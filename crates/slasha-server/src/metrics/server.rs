@@ -4,7 +4,7 @@ use std::{
 };
 
 use slasha_db::{
-    DbPool, models::server_metrics::ServerMetrics, repos::server_metrics::ServerMetricsRepo,
+    DbPool, models::server_metrics::NewServerMetrics, repos::server_metrics::ServerMetricsRepo,
 };
 use sysinfo::{Disks, Networks, System};
 use tokio::time::sleep;
@@ -34,7 +34,7 @@ impl ServerMetricsCollector {
         }
     }
 
-    fn sample(&mut self) -> ServerMetrics {
+    fn sample(&mut self) -> NewServerMetrics {
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
         self.networks.refresh(true);
@@ -50,8 +50,7 @@ impl ServerMetricsCollector {
         let (disk_used, disk_total) = root_disk_usage(&self.disks);
         let load = System::load_average();
 
-        ServerMetrics {
-            id: uuid::Uuid::new_v4().to_string(),
+        NewServerMetrics {
             cpu_usage: self.system.global_cpu_usage(),
             memory_used: bytes_to_mib(self.system.used_memory()),
             memory_total: bytes_to_mib(self.system.total_memory()),
@@ -62,7 +61,6 @@ impl ServerMetricsCollector {
             network_rx_bps: (rx_bytes as f64 / dt) as f32,
             network_tx_bps: (tx_bytes as f64 / dt) as f32,
             load_average: load.one as f32,
-            created_at: chrono::Utc::now().naive_utc(),
         }
     }
     pub fn spawn(mut self) {

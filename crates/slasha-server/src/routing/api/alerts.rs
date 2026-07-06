@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
 };
 use garde::Validate;
+use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::{
     models::alerts::{
@@ -20,10 +21,7 @@ use slasha_db::{
 use crate::{
     HttpError, HttpResult,
     extractors::ValidatedJson,
-    routing::api::{
-        deserialize::{trim_optional_string, trim_string, trim_string_vec},
-        validation::{http_url, optional_http_url, positive_float},
-    },
+    routing::api::deserialize::{trim_optional_string, trim_string, trim_string_vec},
     state::{AppState, Storage},
 };
 
@@ -61,7 +59,7 @@ async fn list_all_crons(State(storage): State<Storage>) -> HttpResult<impl IntoR
 #[derive(Deserialize, Validate)]
 struct ChannelInput {
     #[serde(deserialize_with = "trim_string")]
-    #[garde(length(min = 1))]
+    #[garde(custom(not_empty))]
     name: String,
     #[garde(dive)]
     config: ChannelConfigInput,
@@ -74,33 +72,33 @@ struct ChannelInput {
 enum ChannelConfigInput {
     Slack {
         #[serde(deserialize_with = "trim_string")]
-        #[garde(custom(http_url))]
+        #[garde(url, prefix("http"))]
         webhook_url: String,
     },
     Discord {
         #[serde(deserialize_with = "trim_string")]
-        #[garde(custom(http_url))]
+        #[garde(url, prefix("http"))]
         webhook_url: String,
     },
     Telegram {
         #[serde(deserialize_with = "trim_string")]
-        #[garde(length(min = 1), contains(":"))]
+        #[garde(custom(not_empty), contains(":"))]
         bot_token: String,
         #[serde(deserialize_with = "trim_string")]
-        #[garde(length(min = 1))]
+        #[garde(custom(not_empty))]
         chat_id: String,
     },
     Email {
         #[serde(deserialize_with = "trim_string")]
-        #[garde(length(min = 1))]
+        #[garde(custom(not_empty))]
         smtp_host: String,
         #[garde(range(min = 1))]
         smtp_port: u16,
         #[serde(deserialize_with = "trim_string")]
-        #[garde(length(min = 1))]
+        #[garde(custom(not_empty))]
         smtp_username: String,
         #[serde(deserialize_with = "trim_string")]
-        #[garde(length(min = 1))]
+        #[garde(custom(not_empty))]
         smtp_password: String,
         #[serde(deserialize_with = "trim_string")]
         #[garde(email)]
@@ -114,15 +112,15 @@ enum ChannelConfigInput {
 #[derive(Deserialize, Validate)]
 struct RuleInput {
     #[serde(deserialize_with = "trim_string")]
-    #[garde(length(min = 1))]
+    #[garde(custom(not_empty))]
     name: String,
     #[garde(dive)]
     config: RuleConfigInput,
     #[serde(deserialize_with = "trim_string_vec")]
-    #[garde(inner(length(min = 1)))]
+    #[garde(inner(custom(not_empty)))]
     channel_ids: Vec<String>,
     #[serde(default, deserialize_with = "trim_optional_string")]
-    #[garde(custom(optional_http_url))]
+    #[garde(inner(url, prefix("http")))]
     direct_webhook_url: Option<String>,
     #[serde(default, deserialize_with = "trim_optional_string")]
     #[garde(skip)]
@@ -149,46 +147,46 @@ enum RuleConfigInput {
         threshold_percent: f32,
     },
     ServerLoadAverage {
-        #[garde(custom(positive_float))]
+        #[garde(range(min = 0.0))]
         threshold: f32,
     },
     AppCpu {
         #[serde(deserialize_with = "trim_string")]
-        #[garde(length(min = 1))]
+        #[garde(custom(not_empty))]
         app_id: String,
         #[garde(range(min = 0.0, max = 100.0))]
         threshold_percent: f32,
     },
     AppMemory {
         #[serde(deserialize_with = "trim_string")]
-        #[garde(length(min = 1))]
+        #[garde(custom(not_empty))]
         app_id: String,
         #[garde(range(min = 0.0, max = 100.0))]
         threshold_percent: f32,
     },
     DomainTlsExpiry {
         #[serde(deserialize_with = "trim_string")]
-        #[garde(length(min = 1))]
+        #[garde(custom(not_empty))]
         domain: String,
         #[garde(range(min = 0))]
         days_before: i32,
     },
     DomainDnsMisconfigured {
         #[serde(deserialize_with = "trim_string")]
-        #[garde(length(min = 1))]
+        #[garde(custom(not_empty))]
         domain: String,
     },
     AppHealthCheck {
         #[serde(deserialize_with = "trim_string")]
-        #[garde(length(min = 1))]
+        #[garde(custom(not_empty))]
         app_id: String,
         #[serde(deserialize_with = "trim_string")]
-        #[garde(custom(http_url))]
+        #[garde(url, prefix("http"))]
         health_check_url: String,
     },
     CronFailed {
         #[serde(deserialize_with = "trim_string")]
-        #[garde(length(min = 1))]
+        #[garde(custom(not_empty))]
         cron_job_id: String,
     },
 }

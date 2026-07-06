@@ -8,18 +8,20 @@ use axum::{
     routing::{get, post},
 };
 use chrono::Utc;
+use garde::Validate;
+use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::{
     repos::user::UserRepo,
-    user::{User, UserRole},
+    user::{NewUser, UserChangeset, UserRole},
 };
-use uuid::Uuid;
 
 use crate::{
     HttpError, HttpResult,
     auth::{TokenPayload, create_jwt, hash_password, verify_password},
-    extractors::auth::AuthUser,
+    extractors::{ValidatedJson, auth::AuthUser},
     middleware::rate_limit::{RateLimit, RateLimiter, rate_limit_middleware},
+    routing::api::deserialize::trim_string,
     state::{AppState, Config, Storage},
 };
 
@@ -66,17 +68,21 @@ async fn status(State(storage): State<Storage>) -> HttpResult<impl IntoResponse>
     })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 pub struct SignupReq {
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(email)]
     pub email: String,
+    #[garde(length(min = 8))]
     pub password: String,
+    #[garde(skip)]
     pub confirm_password: String,
 }
 
 async fn signup(
     State(storage): State<Storage>,
     State(config): State<Config>,
-    Json(payload): Json<SignupReq>,
+    ValidatedJson(payload): ValidatedJson<SignupReq>,
 ) -> HttpResult<impl IntoResponse> {
     let admin_count = UserRepo::admin_count(&storage.db_pool).await?;
 
@@ -89,21 +95,18 @@ async fn signup(
     }
 
     let hashed = hash_password(&payload.password)?;
-    let new_user = User {
-        id: Uuid::new_v4().to_string(),
+    let new_user = NewUser {
         email: payload.email.clone(),
         password_hash: hashed,
         role: UserRole::Admin,
-        created_at: Utc::now().naive_utc(),
-        updated_at: Utc::now().naive_utc(),
     };
 
-    UserRepo::create(&storage.db_pool, new_user.clone()).await?;
+    let created_user = UserRepo::create(&storage.db_pool, new_user).await?;
 
     let exp = Utc::now().timestamp() as usize + EXP_TIME;
     let token_payload = TokenPayload {
-        id: new_user.id.clone(),
-        email: new_user.email.clone(),
+        id: created_user.id.clone(),
+        email: created_user.email.clone(),
         exp,
     };
 
@@ -111,20 +114,23 @@ async fn signup(
 
     Ok(Json(serde_json::json!({
         "token": token,
-        "user": new_user,
+        "user": created_user,
     })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 pub struct LoginReq {
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(email)]
     pub email: String,
+    #[garde(custom(not_empty))]
     pub password: String,
 }
 
 async fn login(
     State(storage): State<Storage>,
     State(config): State<Config>,
-    Json(payload): Json<LoginReq>,
+    ValidatedJson(payload): ValidatedJson<LoginReq>,
 ) -> HttpResult<impl IntoResponse> {
     let user = UserRepo::find_by_email(&storage.db_pool, &payload.email).await?;
 
@@ -159,11 +165,19 @@ async fn me(AuthUser(user): AuthUser) -> HttpResult<impl IntoResponse> {
     })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 pub struct UpdateProfileReq {
+    #[serde(
+        default,
+        deserialize_with = "crate::routing::api::deserialize::trim_optional_string"
+    )]
+    #[garde(inner(email))]
     pub email: Option<String>,
+    #[garde(skip)]
     pub current_password: Option<String>,
+    #[garde(inner(length(min = 8)))]
     pub new_password: Option<String>,
+    #[garde(skip)]
     pub confirm_new_password: Option<String>,
 }
 
@@ -171,7 +185,7 @@ async fn update_profile(
     AuthUser(user): AuthUser,
     State(storage): State<Storage>,
     State(config): State<Config>,
-    Json(payload): Json<UpdateProfileReq>,
+    ValidatedJson(payload): ValidatedJson<UpdateProfileReq>,
 ) -> HttpResult<impl IntoResponse> {
     if payload.email.is_some() || payload.new_password.is_some() {
         let current_pwd = payload.current_password.as_deref().ok_or_else(|| {
@@ -216,8 +230,17 @@ async fn update_profile(
         new_pwd_hash = Some(hashed);
     }
 
-    let updated_user =
-        UserRepo::update(&storage.db_pool, &user.id, new_email, None, new_pwd_hash).await?;
+    let updated_user = UserRepo::update(
+        &storage.db_pool,
+        &user.id,
+        UserChangeset {
+            email: new_email,
+            role: None,
+            password_hash: new_pwd_hash,
+            updated_at: Utc::now().naive_utc(),
+        },
+    )
+    .await?;
 
     let exp = Utc::now().timestamp() as usize + EXP_TIME;
     let token_payload = TokenPayload {
