@@ -84,6 +84,17 @@ export const alertChannelRegistry = {
     },
     summary: () => 'Slack webhook',
   },
+  discord: {
+    label: 'Discord',
+    description: 'Send the alert to a Discord webhook.',
+    buildConfig: (draft) => {
+      const webhook_url = draft.webhook_url.trim();
+      return webhook_url
+        ? { config: { kind: 'discord', webhook_url } }
+        : { error: 'Discord webhook URL is required.' };
+    },
+    summary: () => 'Discord webhook',
+  },
   telegram: {
     label: 'Telegram',
     description: 'Send the alert to a Telegram chat.',
@@ -311,6 +322,7 @@ export function emptyChannelDraft(
 
 export function channelDraftFromChannel(channel: AlertChannel): ChannelDraft {
   const isSlack = channel.config.kind === 'slack';
+  const isDiscord = channel.config.kind === 'discord';
   const isTelegram = channel.config.kind === 'telegram';
   const isEmail = channel.config.kind === 'email';
   return {
@@ -320,7 +332,10 @@ export function channelDraftFromChannel(channel: AlertChannel): ChannelDraft {
     webhook_url: isSlack
       ? (channel.config as Extract<AlertChannelConfig, { kind: 'slack' }>)
           .webhook_url
-      : '',
+      : isDiscord
+        ? (channel.config as Extract<AlertChannelConfig, { kind: 'discord' }>)
+            .webhook_url
+        : '',
     bot_token: isTelegram
       ? (channel.config as Extract<AlertChannelConfig, { kind: 'telegram' }>)
           .bot_token

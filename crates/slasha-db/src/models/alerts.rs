@@ -104,6 +104,9 @@ pub enum AlertChannelConfig {
     Slack {
         webhook_url: String,
     },
+    Discord {
+        webhook_url: String,
+    },
     Telegram {
         bot_token: String,
         chat_id: String,
@@ -122,6 +125,7 @@ impl AlertChannelConfig {
     pub fn kind(&self) -> &'static str {
         match self {
             AlertChannelConfig::Slack { .. } => "slack",
+            AlertChannelConfig::Discord { .. } => "discord",
             AlertChannelConfig::Telegram { .. } => "telegram",
             AlertChannelConfig::Email { .. } => "email",
         }

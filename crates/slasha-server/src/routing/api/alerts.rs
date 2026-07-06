@@ -259,14 +259,10 @@ fn validate_channel_input(payload: &ChannelInput) -> HttpResult<()> {
 
     match &payload.config {
         AlertChannelConfig::Slack { webhook_url } => {
-            if webhook_url.trim().is_empty() {
-                return Err(HttpError::bad_request("Slack webhook URL cannot be empty"));
-            }
-            if !webhook_url.starts_with("http://") && !webhook_url.starts_with("https://") {
-                return Err(HttpError::bad_request(
-                    "Slack webhook URL must start with http:// or https://",
-                ));
-            }
+            validate_webhook_url(webhook_url, "Slack webhook")?;
+        }
+        AlertChannelConfig::Discord { webhook_url } => {
+            validate_webhook_url(webhook_url, "Discord webhook")?;
         }
         AlertChannelConfig::Telegram { bot_token, chat_id } => {
             if bot_token.trim().is_empty() {
@@ -318,10 +314,8 @@ fn validate_rule_input(payload: &RuleInput) -> HttpResult<()> {
         }
     }
 
-    if let Some(url) = payload.direct_webhook_url.as_deref()
-        && url.trim().is_empty()
-    {
-        return Err(HttpError::bad_request("Webhook URL cannot be empty"));
+    if let Some(url) = payload.direct_webhook_url.as_deref() {
+        validate_webhook_url(url, "Webhook")?;
     }
 
     if let Some(command) = payload.shell_command.as_deref()
@@ -401,6 +395,20 @@ fn validate_rule_input(payload: &RuleInput) -> HttpResult<()> {
         return Err(HttpError::bad_request(
             "Cooldown seconds must be greater than zero",
         ));
+    }
+    Ok(())
+}
+
+fn validate_webhook_url(url: &str, name: &str) -> HttpResult<()> {
+    if url.trim().is_empty() {
+        return Err(HttpError::bad_request(format!(
+            "{name} URL cannot be empty"
+        )));
+    }
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err(HttpError::bad_request(format!(
+            "{name} URL must start with http:// or https://"
+        )));
     }
     Ok(())
 }

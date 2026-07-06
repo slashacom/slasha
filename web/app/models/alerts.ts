@@ -11,6 +11,7 @@ export type AlertChannel = {
 
 export type AlertChannelConfig =
   | { kind: 'slack'; webhook_url: string }
+  | { kind: 'discord'; webhook_url: string }
   | { kind: 'telegram'; bot_token: string; chat_id: string }
   | {
       kind: 'email';
