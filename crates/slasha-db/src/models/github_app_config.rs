@@ -14,3 +14,22 @@ pub struct GithubAppConfig {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
+
+pub struct NewGithubAppConfig {
+    pub app_id: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub private_key: String,
+    pub webhook_secret: String,
+}
+
+#[derive(AsChangeset)]
+#[diesel(table_name = crate::models::schema::github_app_config)]
+pub struct GithubAppConfigChangeset {
+    pub app_id: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub private_key: String,
+    pub webhook_secret: String,
+    pub updated_at: NaiveDateTime,
+}

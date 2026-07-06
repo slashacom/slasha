@@ -12,20 +12,22 @@ use axum::{
 use bollard::Docker;
 use chrono::{NaiveDateTime, Utc};
 use futures_util::{StreamExt, stream};
+use garde::Validate;
+use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::{
     DbPool,
-    cron::{CronJob, CronRunTrigger, CronRuntime},
-    repos::cron::{CronJobRepo, CronRunRepo, new_run},
+    cron::{CronJobChangeset, CronRunStatus, CronRunTrigger, CronRuntime, NewCronJob, NewCronRun},
+    repos::cron::{CronJobRepo, CronRunRepo},
 };
 use tokio_stream::wrappers::BroadcastStream;
-use uuid::Uuid;
 
 use crate::{
     HttpError, HttpResult,
     cron::{runner, schedule},
     docker::logs::{LogKey, LogManager},
-    extractors::app::ActiveApp,
+    extractors::{ValidatedJson, app::ActiveApp},
+    routing::api::deserialize::{trim_optional_string, trim_string},
     state::AppState,
 };
 
@@ -46,20 +48,36 @@ pub fn router() -> Router<AppState> {
         .route("/{cron_id}/runs/{run_id}/logs", get(stream_run_logs))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct CronInput {
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(custom(not_empty))]
     name: String,
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(custom(not_empty))]
     schedule: String,
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(custom(not_empty))]
     command: String,
+    #[serde(default, deserialize_with = "trim_optional_string")]
+    #[garde(skip)]
     timezone: Option<String>,
+    #[garde(skip)]
     enabled: bool,
+    #[garde(inner(range(min = 1)))]
     timeout_secs: Option<i32>,
+    #[serde(default, deserialize_with = "trim_optional_string")]
+    #[garde(skip)]
     runtime: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct PreviewInput {
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(custom(not_empty))]
     schedule: String,
+    #[serde(default, deserialize_with = "trim_optional_string")]
+    #[garde(skip)]
     timezone: Option<String>,
 }
 
@@ -75,18 +93,7 @@ struct ValidatedCron {
 }
 
 fn validate(input: CronInput) -> HttpResult<ValidatedCron> {
-    let name = input.name.trim().to_string();
-    if name.is_empty() {
-        return Err(HttpError::bad_request("Name is required."));
-    }
-
-    let command = input.command.trim().to_string();
-    if command.is_empty() {
-        return Err(HttpError::bad_request("Command is required."));
-    }
-
-    let schedule_expr = input.schedule.trim().to_string();
-    let parsed = schedule::parse(&schedule_expr).map_err(HttpError::bad_request)?;
+    let parsed = schedule::parse(&input.schedule).map_err(HttpError::bad_request)?;
 
     let timezone = input
         .timezone
@@ -96,12 +103,9 @@ fn validate(input: CronInput) -> HttpResult<ValidatedCron> {
     let tz = schedule::parse_timezone(&timezone).map_err(HttpError::bad_request)?;
 
     let timeout_secs = input.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS);
-    if timeout_secs <= 0 {
-        return Err(HttpError::bad_request("Timeout must be greater than zero."));
-    }
 
     let runtime = match input.runtime {
-        Some(runtime) if !runtime.trim().is_empty() => CronRuntime::from_str(runtime.trim())
+        Some(runtime) if !runtime.is_empty() => CronRuntime::from_str(&runtime)
             .map_err(|_| HttpError::bad_request("Invalid runtime."))?,
         _ => CronRuntime::App,
     };
@@ -113,9 +117,9 @@ fn validate(input: CronInput) -> HttpResult<ValidatedCron> {
     };
 
     Ok(ValidatedCron {
-        name,
-        schedule: schedule_expr,
-        command,
+        name: input.name,
+        schedule: input.schedule,
+        command: input.command,
         timezone,
         enabled: input.enabled,
         timeout_secs,
@@ -158,13 +162,11 @@ async fn get_cron(
 async fn create_cron(
     State(db_pool): State<DbPool>,
     ActiveApp { app, .. }: ActiveApp,
-    Json(input): Json<CronInput>,
+    ValidatedJson(input): ValidatedJson<CronInput>,
 ) -> HttpResult<impl IntoResponse> {
     let valid = validate(input)?;
-    let now = Utc::now().naive_utc();
 
-    let cron = CronJob {
-        id: Uuid::new_v4().to_string(),
+    let cron = NewCronJob {
         app_id: app.id.clone(),
         name: valid.name,
         schedule: valid.schedule,
@@ -173,10 +175,6 @@ async fn create_cron(
         enabled: valid.enabled,
         timeout_secs: valid.timeout_secs,
         runtime: valid.runtime,
-        last_run_at: None,
-        next_run_at: valid.next_run_at,
-        created_at: now,
-        updated_at: now,
     };
 
     let cron = CronJobRepo::create(&db_pool, cron).await?;
@@ -187,15 +185,13 @@ async fn update_cron(
     State(db_pool): State<DbPool>,
     ActiveApp { app, .. }: ActiveApp,
     Path((_, cron_id)): Path<(String, String)>,
-    Json(input): Json<CronInput>,
+    ValidatedJson(input): ValidatedJson<CronInput>,
 ) -> HttpResult<impl IntoResponse> {
-    let existing = CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
+    let _existing = CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
     let valid = validate(input)?;
     let now = Utc::now().naive_utc();
 
-    let cron = CronJob {
-        id: existing.id,
-        app_id: app.id.clone(),
+    let cron = CronJobChangeset {
         name: valid.name,
         schedule: valid.schedule,
         command: valid.command,
@@ -203,9 +199,7 @@ async fn update_cron(
         enabled: valid.enabled,
         timeout_secs: valid.timeout_secs,
         runtime: valid.runtime,
-        last_run_at: existing.last_run_at,
         next_run_at: valid.next_run_at,
-        created_at: existing.created_at,
         updated_at: now,
     };
 
@@ -250,7 +244,12 @@ async fn run_now(
         ));
     }
 
-    let run = CronRunRepo::create(&db_pool, new_run(&job.id, CronRunTrigger::Manual)).await?;
+    let new_run_data = NewCronRun {
+        cron_job_id: job.id.clone(),
+        status: CronRunStatus::Pending,
+        trigger_kind: CronRunTrigger::Manual,
+    };
+    let run = CronRunRepo::create(&db_pool, new_run_data).await?;
 
     let dispatched = run.clone();
     tokio::spawn(async move {
@@ -272,12 +271,11 @@ async fn list_runs(
 
 async fn preview_schedule(
     ActiveApp { .. }: ActiveApp,
-    Json(input): Json<PreviewInput>,
+    ValidatedJson(input): ValidatedJson<PreviewInput>,
 ) -> HttpResult<impl IntoResponse> {
-    let parsed = schedule::parse(input.schedule.trim()).map_err(HttpError::bad_request)?;
+    let parsed = schedule::parse(&input.schedule).map_err(HttpError::bad_request)?;
     let timezone = input
         .timezone
-        .map(|tz| tz.trim().to_string())
         .filter(|tz| !tz.is_empty())
         .unwrap_or_else(|| "UTC".to_string());
     let tz = schedule::parse_timezone(&timezone).map_err(HttpError::bad_request)?;

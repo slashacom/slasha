@@ -4,7 +4,10 @@ use diesel::prelude::*;
 use crate::{
     connection::DbPool,
     error::DbResult,
-    models::{github_app_config::GithubAppConfig, schema::github_app_config},
+    models::{
+        github_app_config::{GithubAppConfig, GithubAppConfigChangeset, NewGithubAppConfig},
+        schema::github_app_config,
+    },
 };
 
 pub struct GithubAppConfigRepo;
@@ -22,23 +25,34 @@ impl GithubAppConfigRepo {
         .await?
     }
 
-    pub async fn upsert(pool: &DbPool, config: GithubAppConfig) -> DbResult<GithubAppConfig> {
+    pub async fn upsert(pool: &DbPool, config: NewGithubAppConfig) -> DbResult<GithubAppConfig> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
+
+            let changeset = GithubAppConfigChangeset {
+                app_id: config.app_id.clone(),
+                client_id: config.client_id.clone(),
+                client_secret: config.client_secret.clone(),
+                private_key: config.private_key.clone(),
+                webhook_secret: config.webhook_secret.clone(),
+                updated_at: Utc::now().naive_utc(),
+            };
+
             diesel::insert_into(github_app_config::table)
-                .values(&config)
-                .on_conflict(github_app_config::id)
-                .do_update()
-                .set((
+                .values((
+                    github_app_config::id.eq("default"),
                     github_app_config::app_id.eq(&config.app_id),
                     github_app_config::client_id.eq(&config.client_id),
                     github_app_config::client_secret.eq(&config.client_secret),
                     github_app_config::private_key.eq(&config.private_key),
                     github_app_config::webhook_secret.eq(&config.webhook_secret),
-                    github_app_config::updated_at.eq(Utc::now().naive_utc()),
                 ))
+                .on_conflict(github_app_config::id)
+                .do_update()
+                .set(&changeset)
                 .execute(&mut conn)?;
+
             Ok(github_app_config::table
                 .filter(github_app_config::id.eq("default"))
                 .first::<GithubAppConfig>(&mut conn)?)

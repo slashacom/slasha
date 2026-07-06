@@ -6,17 +6,16 @@ use axum::{
     response::IntoResponse,
     routing::{get, put},
 };
-use chrono::Utc;
+use garde::Validate;
 use serde::{Deserialize, Serialize};
 use slasha_db::{
-    app::AppEnvVar,
+    app::NewAppEnvVar,
     repos::{app::AppRepo, service::ServiceRepo},
 };
-use uuid::Uuid;
 
 use crate::{
     HttpResult,
-    extractors::app::ActiveApp,
+    extractors::{ValidatedJson, app::ActiveApp},
     state::{AppState, Storage},
 };
 
@@ -27,8 +26,9 @@ pub fn router() -> Router<AppState> {
         .route("/suggestions", get(get_env_suggestions))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct UpdateEnvVarsReq {
+    #[garde(skip)]
     vars: HashMap<String, String>,
 }
 
@@ -77,19 +77,15 @@ async fn get_env_suggestions(
 async fn update_env_vars(
     State(storage): State<Storage>,
     ActiveApp { app, .. }: ActiveApp,
-    Json(payload): Json<UpdateEnvVarsReq>,
+    ValidatedJson(payload): ValidatedJson<UpdateEnvVarsReq>,
 ) -> HttpResult<impl IntoResponse> {
-    let now = Utc::now().naive_utc();
-    let new_vars: Vec<AppEnvVar> = payload
+    let new_vars: Vec<NewAppEnvVar> = payload
         .vars
         .into_iter()
-        .map(|(key, value)| AppEnvVar {
-            id: Uuid::new_v4().to_string(),
+        .map(|(key, value)| NewAppEnvVar {
             app_id: app.id.clone(),
             key,
             value,
-            created_at: now,
-            updated_at: now,
         })
         .collect();
 

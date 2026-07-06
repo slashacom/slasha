@@ -19,3 +19,16 @@ pub struct ServerMetrics {
     pub load_average: f32,
     pub created_at: chrono::NaiveDateTime,
 }
+
+pub struct NewServerMetrics {
+    pub cpu_usage: f32,
+    pub memory_used: i32,
+    pub memory_total: i32,
+    pub swap_used: i32,
+    pub swap_total: i32,
+    pub disk_used: i32,
+    pub disk_total: i32,
+    pub network_rx_bps: f32,
+    pub network_tx_bps: f32,
+    pub load_average: f32,
+}

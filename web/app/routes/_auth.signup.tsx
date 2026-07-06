@@ -33,11 +33,6 @@ export default function Signup() {
     const password = formData.get('password') as string;
     const confirmPassword = formData.get('confirmPassword') as string;
 
-    if (password !== confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-
     const promise = signup.mutateAsync({
       email,
       password,

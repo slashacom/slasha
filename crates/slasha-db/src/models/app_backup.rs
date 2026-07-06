@@ -23,3 +23,14 @@ pub struct AppBackup {
     pub last_check_ok: Option<bool>,
     pub last_check_error: Option<String>,
 }
+
+pub struct NewAppBackup {
+    pub app_id: String,
+    pub enabled: bool,
+    pub db_path: String,
+    pub bucket: String,
+    pub endpoint: String,
+    pub path_prefix: Option<String>,
+    pub access_key_id: String,
+    pub secret_access_key: String,
+}

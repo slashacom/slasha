@@ -16,13 +16,12 @@ use bollard::{
         StartContainerOptionsBuilder,
     },
 };
-use chrono::Utc;
 use futures_util::StreamExt;
 use slasha_db::{
     DbPool,
     app::App,
     repos::service::ServiceRepo,
-    service::{Service, ServiceEnvVar, ServiceStatus},
+    service::{NewServiceEnvVar, Service, ServiceEnvVar, ServiceStatus},
 };
 use tokio::time::sleep;
 
@@ -179,21 +178,16 @@ async fn provision_inner(
     });
 
     let env_vars = if let Some(env) = initial_env {
-        let now = Utc::now().naive_utc();
-        let vars: Vec<ServiceEnvVar> = env
+        let vars: Vec<NewServiceEnvVar> = env
             .into_iter()
-            .map(|(key, value)| ServiceEnvVar {
-                id: uuid::Uuid::new_v4().to_string(),
+            .map(|(key, value)| NewServiceEnvVar {
                 service_id: service.id.clone(),
                 key,
                 value,
-                created_at: now,
-                updated_at: now,
             })
             .collect();
 
-        ServiceRepo::set_env_vars(db_pool, &service.id, vars.clone()).await?;
-        vars
+        ServiceRepo::set_env_vars(db_pool, &service.id, vars).await?
     } else {
         ServiceRepo::get_env_vars(db_pool, &service.id).await?
     };

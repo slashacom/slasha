@@ -12,6 +12,7 @@ use axum::{
 use bollard::Docker;
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
+use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
     DbPool,
@@ -35,7 +36,7 @@ use crate::{
         },
         logs::{LogKey, LogManager},
     },
-    extractors::app::ActiveApp,
+    extractors::{ValidatedJson, app::ActiveApp},
     state::{AppState, Runtime},
 };
 
@@ -53,15 +54,16 @@ pub fn router() -> Router<AppState> {
         .route("/{deployment_id}", delete(delete_deployment))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct TriggerDeployReq {
+    #[garde(skip)]
     commit_sha: Option<String>,
 }
 
 async fn trigger_deploy(
     State(state): State<AppState>,
     ActiveApp { mut app, .. }: ActiveApp,
-    Json(payload): Json<TriggerDeployReq>,
+    ValidatedJson(payload): ValidatedJson<TriggerDeployReq>,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Local {
         let github = state.github_client().await;
@@ -333,9 +335,11 @@ async fn delete_deployment(
     })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct ScaleDeploymentReq {
+    #[garde(skip)]
     process_type: ProcessType,
+    #[garde(range(min = 1))]
     count: i32,
 }
 
@@ -343,7 +347,7 @@ async fn scale_deployment(
     State(app_state): State<AppState>,
     ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
-    Json(payload): Json<ScaleDeploymentReq>,
+    ValidatedJson(payload): ValidatedJson<ScaleDeploymentReq>,
 ) -> HttpResult<impl IntoResponse> {
     if payload.count <= 0 {
         return Err(HttpError::bad_request("Count must be greater than 0"));

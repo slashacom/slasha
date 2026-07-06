@@ -5,7 +5,7 @@ use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
     models::{
-        deployment::{Deployment, DeploymentStatus},
+        deployment::{Deployment, DeploymentStatus, NewDeployment},
         schema::deployments,
     },
 };
@@ -91,7 +91,7 @@ impl DeploymentRepo {
         .await?
     }
 
-    pub async fn create(pool: &DbPool, deployment: Deployment) -> DbResult<Deployment> {
+    pub async fn create(pool: &DbPool, deployment: NewDeployment) -> DbResult<Deployment> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
@@ -99,9 +99,10 @@ impl DeploymentRepo {
                 diesel::insert_into(deployments::table)
                     .values(&deployment)
                     .execute(tx)?;
-                Ok(())
-            })?;
-            Ok(deployment)
+                Ok(deployments::table
+                    .filter(deployments::id.eq(&deployment.id))
+                    .first::<Deployment>(tx)?)
+            })
         })
         .await?
     }

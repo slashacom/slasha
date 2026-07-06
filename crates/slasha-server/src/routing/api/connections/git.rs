@@ -6,6 +6,7 @@ use crate::{AppState, HttpError, HttpResult};
 
 #[derive(Deserialize)]
 pub struct GitRemoteQuery {
+    #[serde(deserialize_with = "crate::routing::api::deserialize::trim_string")]
     pub url: String,
 }
 
@@ -22,7 +23,7 @@ pub fn router() -> Router<AppState> {
 async fn get_remote_branches(
     Query(query): Query<GitRemoteQuery>,
 ) -> HttpResult<Json<GitRemoteResponse>> {
-    let url = query.url.trim();
+    let url = &query.url;
     if url.is_empty() {
         return Err(HttpError::bad_request("URL is required"));
     }

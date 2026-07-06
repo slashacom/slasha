@@ -3,7 +3,10 @@ use diesel::prelude::*;
 use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
-    models::{schema::ssh_keys, ssh_keys::SshKey},
+    models::{
+        schema::ssh_keys,
+        ssh_keys::{NewSshKey, SshKey},
+    },
 };
 
 pub struct SshKeyRepo;
@@ -30,14 +33,24 @@ impl SshKeyRepo {
         .await?
     }
 
-    pub async fn create(pool: &DbPool, key: SshKey) -> DbResult<SshKey> {
+    pub async fn create(pool: &DbPool, key: NewSshKey) -> DbResult<SshKey> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
+            let id = uuid::Uuid::new_v4().to_string();
+
             diesel::insert_into(ssh_keys::table)
-                .values(&key)
+                .values((
+                    ssh_keys::id.eq(&id),
+                    ssh_keys::user_id.eq(&key.user_id),
+                    ssh_keys::title.eq(&key.title),
+                    ssh_keys::public_key.eq(&key.public_key),
+                ))
                 .execute(&mut conn)?;
-            Ok(key)
+
+            Ok(ssh_keys::table
+                .filter(ssh_keys::id.eq(&id))
+                .first::<SshKey>(&mut conn)?)
         })
         .await?
     }

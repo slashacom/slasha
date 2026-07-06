@@ -9,14 +9,15 @@ use axum::{
     routing::{delete, get, post, put},
 };
 use bollard::Docker;
-use chrono::Utc;
+use garde::Validate;
+use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::{
     DbPool, DbResult,
-    app::{App, AppMember, AppMemberRole, AppSource},
+    app::{AppSource, NewApp},
     deployment::{Deployment, DeploymentStatus},
-    git_connection::GitConnection,
-    github_connection::{ConnectionStatus, GithubConnection},
+    git_connection::NewGitConnection,
+    github_connection::{ConnectionStatus, NewGithubConnection},
     repos::{
         app::{AppRepo, NewAppConnection},
         app_domain::AppDomainRepo,
@@ -42,9 +43,11 @@ use crate::{
         service::remove_service_container,
     },
     extractors::{
+        ValidatedJson,
         app::{ActiveApp, ActiveAppOwner},
         auth::AuthUser,
     },
+    routing::api::deserialize::trim_string,
     state::{AppState, Config, Runtime, Storage},
 };
 
@@ -66,9 +69,12 @@ pub fn router() -> Router<AppState> {
         .route("/{slug}/sync", post(sync_app))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct CreateAppReq {
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(custom(not_empty))]
     name: String,
+    #[garde(skip)]
     #[serde(flatten)]
     source: CreateAppSource,
 }
@@ -148,7 +154,6 @@ async fn init_local_repository(repo_path: &str) -> HttpResult<()> {
 }
 
 fn validate_public_git_url(value: &str) -> HttpResult<String> {
-    let value = value.trim();
     let url = reqwest::Url::parse(value)
         .map_err(|_| HttpError::bad_request("Git URL must be a valid HTTP(S) URL"))?;
     if !matches!(url.scheme(), "http" | "https")
@@ -171,7 +176,7 @@ async fn prepare_github_connection(
     installation_id: i64,
     repository_id: i64,
     branch: Option<String>,
-) -> HttpResult<(String, GithubConnection)> {
+) -> HttpResult<(String, NewGithubConnection)> {
     let github = state
         .github_client()
         .await
@@ -194,16 +199,13 @@ async fn prepare_github_connection(
 
     let final_branch = branch.unwrap_or(repository.default_branch);
 
-    let now = Utc::now().naive_utc();
     Ok((
         final_branch,
-        GithubConnection {
+        NewGithubConnection {
             app_id: app_id.to_string(),
             installation_id,
             repository_id,
             status: ConnectionStatus::Connected,
-            created_at: now,
-            updated_at: now,
         },
     ))
 }
@@ -245,13 +247,9 @@ async fn check_slug(
 async fn create_app(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-    Json(payload): Json<CreateAppReq>,
+    ValidatedJson(payload): ValidatedJson<CreateAppReq>,
 ) -> HttpResult<impl IntoResponse> {
-    let name = payload.name.trim().to_string();
-
-    if name.is_empty() {
-        return Err(HttpError::bad_request("App name cannot be empty"));
-    }
+    let name = payload.name;
 
     let (slug, _) = generate_unique_slug(&state.storage.db_pool, &name)
         .await
@@ -271,7 +269,6 @@ async fn create_app(
         .ok_or_else(|| HttpError::internal(anyhow::anyhow!("Invalid repo path")))?
         .to_string();
 
-    let now = Utc::now().naive_utc();
     let app_id = Uuid::new_v4().to_string();
     let (source, default_branch, connection) = match payload.source {
         CreateAppSource::Local => {
@@ -301,9 +298,7 @@ async fn create_app(
         }
         CreateAppSource::Git { url, branch } => {
             let clone_url = validate_public_git_url(&url)?;
-            let requested_branch = branch
-                .map(|branch| branch.trim().to_string())
-                .filter(|branch| !branch.is_empty());
+            let requested_branch = branch.filter(|branch| !branch.is_empty());
             let branch = sync_selected_git_repository(
                 clone_url.clone(),
                 requested_branch,
@@ -313,10 +308,9 @@ async fn create_app(
             .map_err(|error| {
                 HttpError::bad_request(format!("Failed to fetch Git repository: {error}"))
             })?;
-            let connection = GitConnection {
+            let connection = NewGitConnection {
                 app_id: app_id.clone(),
                 clone_url,
-                created_at: now,
             };
             (
                 AppSource::Git,
@@ -326,30 +320,22 @@ async fn create_app(
         }
     };
 
-    let new_app = App {
+    let new_app = NewApp {
         id: app_id.clone(),
         slug: slug.clone(),
         name: name.clone(),
         repo_path,
         default_branch,
-        created_at: now,
         auto_deploy: true,
         source,
     };
 
-    let new_member = AppMember {
-        app_id: app_id.clone(),
-        user_id: user.id.clone(),
-        role: AppMemberRole::Owner,
-        added_at: now,
-    };
-
     let new_app = match connection {
         Some(connection) => {
-            AppRepo::create_with_connection(&state.storage.db_pool, new_app, new_member, connection)
+            AppRepo::create_with_connection(&state.storage.db_pool, new_app, &user.id, connection)
                 .await?
         }
-        None => AppRepo::create(&state.storage.db_pool, new_app, new_member).await?,
+        None => AppRepo::create(&state.storage.db_pool, new_app, &user.id).await?,
     };
 
     create_app_network(&state.clients.docker, &app_id).await?;
@@ -623,27 +609,29 @@ async fn list_scales(
     Ok(Json(serde_json::json!({ "scales": scales })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct UpdateSettingsReq {
+    #[serde(
+        default,
+        deserialize_with = "crate::routing::api::deserialize::trim_optional_string"
+    )]
+    #[garde(inner(custom(not_empty)))]
     name: Option<String>,
+    #[garde(skip)]
     auto_deploy: Option<bool>,
 }
 
 async fn update_settings(
     State(storage): State<Storage>,
     ActiveApp { app, .. }: ActiveApp,
-    Json(payload): Json<UpdateSettingsReq>,
+    ValidatedJson(payload): ValidatedJson<UpdateSettingsReq>,
 ) -> HttpResult<impl IntoResponse> {
     if let Some(auto_deploy) = payload.auto_deploy {
         AppRepo::update_auto_deploy(&storage.db_pool, &app.id, auto_deploy).await?;
     }
 
     if let Some(name) = payload.name {
-        let name = name.trim();
-        if name.is_empty() {
-            return Err(HttpError::bad_request("App name cannot be empty"));
-        }
-        AppRepo::update_name(&storage.db_pool, &app.id, name).await?;
+        AppRepo::update_name(&storage.db_pool, &app.id, &name).await?;
     }
 
     Ok(Json(serde_json::json!({
@@ -651,16 +639,18 @@ async fn update_settings(
     })))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct ReconnectGithubReq {
+    #[garde(skip)]
     installation_id: i64,
+    #[garde(skip)]
     repository_id: i64,
 }
 
 async fn reconnect_github(
     State(state): State<AppState>,
     ActiveAppOwner { app, user }: ActiveAppOwner,
-    Json(payload): Json<ReconnectGithubReq>,
+    ValidatedJson(payload): ValidatedJson<ReconnectGithubReq>,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Github {
         return Err(HttpError::bad_request("App does not use GitHub"));
@@ -716,15 +706,17 @@ async fn disconnect_github(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct UpdateBranchReq {
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(custom(not_empty))]
     branch: String,
 }
 
 async fn update_connection_branch(
     State(state): State<AppState>,
     ActiveAppOwner { mut app, user: _ }: ActiveAppOwner,
-    Json(payload): Json<UpdateBranchReq>,
+    ValidatedJson(payload): ValidatedJson<UpdateBranchReq>,
 ) -> HttpResult<impl IntoResponse> {
     if !matches!(app.source, AppSource::Git | AppSource::Github) {
         return Err(HttpError::bad_request(
@@ -732,13 +724,10 @@ async fn update_connection_branch(
         ));
     }
 
-    let branch = payload.branch.trim();
-    if branch.is_empty() {
-        return Err(HttpError::bad_request("Branch cannot be empty"));
-    }
+    let branch = payload.branch;
 
-    AppRepo::update_default_branch(&state.storage.db_pool, &app.id, branch).await?;
-    app.default_branch = branch.to_string();
+    AppRepo::update_default_branch(&state.storage.db_pool, &app.id, &branch).await?;
+    app.default_branch = branch.clone();
 
     sync_external_app(
         state.github_client().await.as_ref(),

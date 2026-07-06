@@ -28,6 +28,16 @@ pub struct Deployment {
     pub updated_at: chrono::NaiveDateTime,
 }
 
+#[derive(Insertable)]
+#[diesel(table_name = crate::models::schema::deployments)]
+pub struct NewDeployment {
+    pub id: String,
+    pub app_id: String,
+    pub commit_sha: String,
+    pub commit_message: String,
+    pub status: DeploymentStatus,
+}
+
 #[derive(
     Debug,
     PartialEq,

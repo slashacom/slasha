@@ -27,6 +27,12 @@ pub struct AppScale {
     pub desired: i32,
 }
 
+pub struct NewAppScale {
+    pub app_id: String,
+    pub process_type: ProcessType,
+    pub desired: i32,
+}
+
 #[derive(
     Debug,
     PartialEq,

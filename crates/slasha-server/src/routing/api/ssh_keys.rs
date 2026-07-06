@@ -3,14 +3,18 @@ use axum::{
     extract::{Path, State},
     routing::{delete, get, post},
 };
+use garde::Validate;
+use crate::routing::api::validation::not_empty;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use slasha_db::{repos::ssh_key::SshKeyRepo, ssh_keys::SshKey};
-use uuid::Uuid;
+use slasha_db::{
+    repos::ssh_key::SshKeyRepo,
+    ssh_keys::{NewSshKey, SshKey},
+};
 
 use crate::{
     HttpResult,
-    extractors::auth::AuthUser,
+    extractors::{ValidatedJson, auth::AuthUser},
     ssh::regenerate_authorized_keys,
     state::{AppState, Storage},
 };
@@ -36,24 +40,23 @@ async fn list_ssh_keys(
     Ok(Json(ListSshKeysResponse { keys }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 pub struct CreateSshKeyRequest {
+    #[garde(skip)]
     pub title: Option<String>,
+    #[garde(custom(not_empty))]
     pub public_key: String,
 }
 
 async fn create_ssh_key(
     State(storage): State<Storage>,
     AuthUser(user): AuthUser,
-    Json(payload): Json<CreateSshKeyRequest>,
+    ValidatedJson(payload): ValidatedJson<CreateSshKeyRequest>,
 ) -> HttpResult<Json<SshKey>> {
-    let now = chrono::Utc::now().naive_utc();
-    let new_key = SshKey {
-        id: Uuid::new_v4().to_string(),
+    let new_key = NewSshKey {
         user_id: user.id.clone(),
         title: payload.title,
         public_key: payload.public_key,
-        created_at: now,
     };
 
     let new_key = SshKeyRepo::create(&storage.db_pool, new_key).await?;

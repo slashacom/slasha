@@ -6,7 +6,7 @@ use bollard::{
     query_parameters::{ListContainersOptionsBuilder, StatsOptionsBuilder},
 };
 use futures_util::StreamExt;
-use slasha_db::{DbPool, models::app_metrics::AppMetrics, repos::app_metrics::AppMetricsRepo};
+use slasha_db::{DbPool, models::app_metrics::NewAppMetrics, repos::app_metrics::AppMetricsRepo};
 
 use crate::metrics::{COLLECT_INTERVAL, utils::bytes_to_mib};
 
@@ -181,8 +181,7 @@ impl AppMetricsCollector {
         let now = chrono::Utc::now().naive_utc();
 
         for (app_id, agg) in app_aggregates {
-            let metric = AppMetrics {
-                id: uuid::Uuid::new_v4().to_string(),
+            let metric = NewAppMetrics {
                 app_id: app_id.clone(),
                 cpu_usage: agg.cpu_percent as f32,
                 memory_used: bytes_to_mib(agg.memory_used_bytes),
@@ -191,7 +190,6 @@ impl AppMetricsCollector {
                 network_tx_bps: agg.net_tx_bps as f32,
                 disk_read_bps: agg.disk_read_bps as f32,
                 disk_write_bps: agg.disk_write_bps as f32,
-                created_at: now,
             };
 
             if let Err(err) = AppMetricsRepo::insert(&self.db_pool, metric).await {

@@ -39,25 +39,12 @@ export default function AccountSettings() {
     }
 
     if (newPassword) {
-      if (newPassword.length < 8) {
-        toast.error('New password must be at least 8 characters');
-        return;
-      }
-      if (newPassword !== confirmNewPassword) {
-        toast.error('New passwords do not match');
-        return;
-      }
       payload.new_password = newPassword;
       payload.confirm_new_password = confirmNewPassword;
     }
 
     if (Object.keys(payload).length === 0) {
       toast.info('No changes to save');
-      return;
-    }
-
-    if (!currentPassword) {
-      toast.error('Current password is required to save changes');
       return;
     }
 

@@ -10,3 +10,10 @@ pub struct GitConnection {
     pub clone_url: String,
     pub created_at: chrono::NaiveDateTime,
 }
+
+#[derive(Insertable)]
+#[diesel(table_name = crate::models::schema::git_connections)]
+pub struct NewGitConnection {
+    pub app_id: String,
+    pub clone_url: String,
+}

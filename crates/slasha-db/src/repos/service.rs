@@ -5,7 +5,7 @@ use crate::{
     error::{DbError, DbResult},
     models::{
         schema::{apps, service_env_vars, services},
-        service::{Service, ServiceEnvVar, ServiceStatus},
+        service::{NewService, NewServiceEnvVar, Service, ServiceEnvVar, ServiceStatus},
     },
 };
 
@@ -58,14 +58,17 @@ impl ServiceRepo {
         .await?
     }
 
-    pub async fn create(pool: &DbPool, service: Service) -> DbResult<Service> {
+    pub async fn create(pool: &DbPool, service: NewService) -> DbResult<Service> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             diesel::insert_into(services::table)
                 .values(&service)
                 .execute(&mut conn)?;
-            Ok(service)
+
+            Ok(services::table
+                .filter(services::id.eq(&service.id))
+                .first::<Service>(&mut conn)?)
         })
         .await?
     }
@@ -119,25 +122,40 @@ impl ServiceRepo {
     pub async fn set_env_vars(
         pool: &DbPool,
         service_id: &str,
-        vars: Vec<ServiceEnvVar>,
+        vars: Vec<NewServiceEnvVar>,
     ) -> DbResult<Vec<ServiceEnvVar>> {
         let pool = pool.clone();
-        let service_id = service_id.to_string();
+        let service_id_str = service_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             conn.transaction::<_, DbError, _>(|tx| {
                 diesel::delete(
-                    service_env_vars::table.filter(service_env_vars::service_id.eq(&service_id)),
+                    service_env_vars::table
+                        .filter(service_env_vars::service_id.eq(&service_id_str)),
                 )
                 .execute(tx)?;
                 if !vars.is_empty() {
+                    let inserts: Vec<_> = vars
+                        .into_iter()
+                        .map(|v| {
+                            (
+                                service_env_vars::id.eq(uuid::Uuid::new_v4().to_string()),
+                                service_env_vars::service_id.eq(v.service_id),
+                                service_env_vars::key.eq(v.key),
+                                service_env_vars::value.eq(v.value),
+                            )
+                        })
+                        .collect();
                     diesel::insert_into(service_env_vars::table)
-                        .values(&vars)
+                        .values(&inserts)
                         .execute(tx)?;
                 }
-                Ok(())
-            })?;
-            Ok(vars)
+
+                Ok(service_env_vars::table
+                    .filter(service_env_vars::service_id.eq(&service_id_str))
+                    .order(service_env_vars::key.asc())
+                    .load::<ServiceEnvVar>(tx)?)
+            })
         })
         .await?
     }

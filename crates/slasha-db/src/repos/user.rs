@@ -6,7 +6,7 @@ use crate::{
     error::{DbError, DbResult},
     models::{
         schema::users,
-        user::{User, UserRole},
+        user::{NewUser, User, UserChangeset, UserRole},
     },
 };
 
@@ -64,48 +64,37 @@ impl UserRepo {
         .await?
     }
 
-    pub async fn create(pool: &DbPool, user: User) -> DbResult<User> {
+    pub async fn create(pool: &DbPool, user: NewUser) -> DbResult<User> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
+            let id = uuid::Uuid::new_v4().to_string();
             diesel::insert_into(users::table)
-                .values(&user)
+                .values((
+                    users::id.eq(&id),
+                    users::email.eq(&user.email),
+                    users::password_hash.eq(&user.password_hash),
+                    users::role.eq(user.role),
+                ))
                 .execute(&mut conn)?;
-            Ok(user)
+
+            Ok(users::table
+                .filter(users::id.eq(&id))
+                .first::<User>(&mut conn)?)
         })
         .await?
     }
 
-    pub async fn update(
-        pool: &DbPool,
-        id: &str,
-        email: Option<String>,
-        role: Option<UserRole>,
-        password_hash: Option<String>,
-    ) -> DbResult<User> {
+    pub async fn update(pool: &DbPool, id: &str, mut changeset: UserChangeset) -> DbResult<User> {
         let pool = pool.clone();
         let id = id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            let updated_at = Utc::now().naive_utc();
+            changeset.updated_at = Utc::now().naive_utc();
 
-            if let Some(e) = email {
-                diesel::update(users::table.filter(users::id.eq(&id)))
-                    .set((users::email.eq(e), users::updated_at.eq(updated_at)))
-                    .execute(&mut conn)?;
-            }
-
-            if let Some(r) = role {
-                diesel::update(users::table.filter(users::id.eq(&id)))
-                    .set((users::role.eq(r), users::updated_at.eq(updated_at)))
-                    .execute(&mut conn)?;
-            }
-
-            if let Some(p) = password_hash {
-                diesel::update(users::table.filter(users::id.eq(&id)))
-                    .set((users::password_hash.eq(p), users::updated_at.eq(updated_at)))
-                    .execute(&mut conn)?;
-            }
+            diesel::update(users::table.filter(users::id.eq(&id)))
+                .set(&changeset)
+                .execute(&mut conn)?;
 
             Ok(users::table
                 .filter(users::id.eq(&id))

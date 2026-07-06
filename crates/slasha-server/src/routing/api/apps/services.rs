@@ -17,11 +17,13 @@ use bollard::{
 };
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
+use garde::Validate;
+use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::{
     DbPool,
     repos::service::ServiceRepo,
-    service::{Service, ServiceKind, ServiceResources, ServiceStatus},
+    service::{ServiceKind, ServiceResources, ServiceStatus},
 };
 use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
@@ -36,7 +38,7 @@ use crate::{
             restart_service_container, stop_service_container,
         },
     },
-    extractors::app::ActiveApp,
+    extractors::{ValidatedJson, app::ActiveApp},
     metrics,
     state::AppState,
     tunnel,
@@ -56,13 +58,19 @@ pub fn router() -> Router<AppState> {
         .route("/{id}", get(get_service).delete(delete_service_handler))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 struct CreateServiceReq {
+    #[garde(skip)]
     kind: ServiceKind,
+    #[serde(deserialize_with = "crate::routing::api::deserialize::trim_string")]
+    #[garde(custom(not_empty))]
     name: String,
+    #[garde(custom(not_empty))]
     version: String,
+    #[garde(skip)]
     env_vars: HashMap<String, String>,
     #[serde(default)]
+    #[garde(skip)]
     resources: Option<ServiceResources>,
 }
 
@@ -188,7 +196,7 @@ async fn create_service(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     ActiveApp { app, .. }: ActiveApp,
-    Json(payload): Json<CreateServiceReq>,
+    ValidatedJson(payload): ValidatedJson<CreateServiceReq>,
 ) -> HttpResult<impl IntoResponse> {
     if !payload
         .kind
@@ -221,18 +229,15 @@ async fn create_service(
         validate_resources(&docker_client, resources).await?;
     }
 
-    let now = Utc::now().naive_utc();
     let service_id = Uuid::new_v4().to_string();
 
-    let new_service = Service {
+    let new_service = slasha_db::service::NewService {
         id: service_id.clone(),
         app_id: app.id.clone(),
         kind: payload.kind,
-        name: payload.name.trim().to_string(),
+        name: payload.name,
         version: payload.version,
         status: ServiceStatus::Provisioning,
-        created_at: now,
-        updated_at: now,
         resources: payload.resources,
     };
 

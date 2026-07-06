@@ -82,32 +82,13 @@ export function CronForm(props: CronFormProps) {
   };
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      toast.error('Name is required.');
-      return;
-    }
-    if (!schedule.trim()) {
-      toast.error('Schedule is required.');
-      return;
-    }
-    if (!command.trim()) {
-      toast.error('Command is required.');
-      return;
-    }
-
-    const timeout = Number(timeoutSecs);
-    if (!timeout || timeout <= 0) {
-      toast.error('Timeout must be greater than zero.');
-      return;
-    }
-
     const payload = {
-      name: name.trim(),
-      schedule: schedule.trim(),
-      command: command.trim(),
+      name,
+      schedule,
+      command,
       timezone: timezone.trim() || 'UTC',
       enabled,
-      timeout_secs: timeout,
+      timeout_secs: Number(timeoutSecs) || 0,
       runtime,
     };
     const promise = cron

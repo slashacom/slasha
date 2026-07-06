@@ -74,11 +74,6 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
   }, [kinds, kindName]);
 
   const handleProvision = async () => {
-    if (!name.trim() || !kindName || !version) {
-      toast.error('Please fill in all fields.');
-      return;
-    }
-
     const { payload, error } = buildResourcesPayload(
       memoryMb,
       cpuCores,
@@ -93,7 +88,7 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
     try {
       await provisionService.mutateAsync({
         appSlug,
-        kind: kindName,
+        kind: kindName as ServiceKind,
         name: name.trim(),
         version,
         envVars,

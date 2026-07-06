@@ -4,10 +4,10 @@ use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
     models::{
-        app::{App, AppEnvVar, AppMember, AppMemberRole, AppSource},
+        app::{App, AppEnvVar, AppMember, AppMemberRole, AppSource, NewApp, NewAppEnvVar},
         deployment::Deployment,
-        git_connection::GitConnection,
-        github_connection::GithubConnection,
+        git_connection::NewGitConnection,
+        github_connection::NewGithubConnection,
         schema::{
             app_env_vars, app_members, apps, deployments, git_connections, github_connections,
             users,
@@ -19,8 +19,8 @@ use crate::{
 pub struct AppRepo;
 
 pub enum NewAppConnection {
-    Git(GitConnection),
-    Github(GithubConnection),
+    Git(NewGitConnection),
+    Github(NewGithubConnection),
 }
 
 impl AppRepo {
@@ -115,29 +115,38 @@ impl AppRepo {
         .await?
     }
 
-    pub async fn create(pool: &DbPool, app: App, member: AppMember) -> DbResult<App> {
+    pub async fn create(pool: &DbPool, app: NewApp, owner_id: &str) -> DbResult<App> {
         let pool = pool.clone();
+        let owner_id = owner_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             conn.transaction::<_, DbError, _>(|tx| {
                 diesel::insert_into(apps::table).values(&app).execute(tx)?;
+
+                let member = AppMember {
+                    app_id: app.id.clone(),
+                    user_id: owner_id,
+                    role: AppMemberRole::Owner,
+                    added_at: chrono::Utc::now().naive_utc(),
+                };
                 diesel::insert_into(app_members::table)
                     .values(&member)
                     .execute(tx)?;
-                Ok(())
-            })?;
-            Ok(app)
+
+                Ok(apps::table.filter(apps::id.eq(&app.id)).first::<App>(tx)?)
+            })
         })
         .await?
     }
 
     pub async fn create_with_connection(
         pool: &DbPool,
-        app: App,
-        member: AppMember,
+        app: NewApp,
+        owner_id: &str,
         connection: NewAppConnection,
     ) -> DbResult<App> {
         let pool = pool.clone();
+        let owner_id = owner_id.to_string();
         tokio::task::spawn_blocking(move || {
             let (connection_app_id, expected_source) = match &connection {
                 NewAppConnection::Git(connection) => (&connection.app_id, AppSource::Git),
@@ -156,9 +165,17 @@ impl AppRepo {
             let mut conn = pool.get()?;
             conn.transaction::<_, DbError, _>(|tx| {
                 diesel::insert_into(apps::table).values(&app).execute(tx)?;
+
+                let member = AppMember {
+                    app_id: app.id.clone(),
+                    user_id: owner_id,
+                    role: AppMemberRole::Owner,
+                    added_at: chrono::Utc::now().naive_utc(),
+                };
                 diesel::insert_into(app_members::table)
                     .values(&member)
                     .execute(tx)?;
+
                 match &connection {
                     NewAppConnection::Git(connection) => {
                         diesel::insert_into(git_connections::table)
@@ -171,9 +188,8 @@ impl AppRepo {
                             .execute(tx)?;
                     }
                 }
-                Ok(())
-            })?;
-            Ok(app)
+                Ok(apps::table.filter(apps::id.eq(&app.id)).first::<App>(tx)?)
+            })
         })
         .await?
     }
@@ -232,23 +248,37 @@ impl AppRepo {
     pub async fn set_env_vars(
         pool: &DbPool,
         app_id: &str,
-        vars: Vec<AppEnvVar>,
+        vars: Vec<NewAppEnvVar>,
     ) -> DbResult<Vec<AppEnvVar>> {
         let pool = pool.clone();
-        let app_id = app_id.to_string();
+        let app_id_str = app_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             conn.transaction::<_, DbError, _>(|tx| {
-                diesel::delete(app_env_vars::table.filter(app_env_vars::app_id.eq(&app_id)))
+                diesel::delete(app_env_vars::table.filter(app_env_vars::app_id.eq(&app_id_str)))
                     .execute(tx)?;
                 if !vars.is_empty() {
+                    let inserts: Vec<_> = vars
+                        .into_iter()
+                        .map(|v| {
+                            (
+                                app_env_vars::id.eq(uuid::Uuid::new_v4().to_string()),
+                                app_env_vars::app_id.eq(v.app_id),
+                                app_env_vars::key.eq(v.key),
+                                app_env_vars::value.eq(v.value),
+                            )
+                        })
+                        .collect();
                     diesel::insert_into(app_env_vars::table)
-                        .values(&vars)
+                        .values(&inserts)
                         .execute(tx)?;
                 }
-                Ok(())
-            })?;
-            Ok(vars)
+
+                Ok(app_env_vars::table
+                    .filter(app_env_vars::app_id.eq(&app_id_str))
+                    .order(app_env_vars::key.asc())
+                    .load::<AppEnvVar>(tx)?)
+            })
         })
         .await?
     }
@@ -343,13 +373,15 @@ impl AppRepo {
 
                 if !app_ids.is_empty() {
                     let now = chrono::Utc::now().naive_utc();
-                    let new_members: Vec<AppMember> = app_ids
+                    let new_members: Vec<_> = app_ids
                         .into_iter()
-                        .map(|app_id| AppMember {
-                            app_id,
-                            user_id: user_id.clone(),
-                            role: AppMemberRole::Member,
-                            added_at: now,
+                        .map(|app_id| {
+                            (
+                                app_members::app_id.eq(app_id),
+                                app_members::user_id.eq(user_id.clone()),
+                                app_members::role.eq(AppMemberRole::Member),
+                                app_members::added_at.eq(now),
+                            )
                         })
                         .collect();
                     diesel::insert_into(app_members::table)
