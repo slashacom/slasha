@@ -38,21 +38,23 @@ fn setup_tracing() {
 }
 
 fn setup_dirs() -> (
-    std::path::PathBuf, // data dir
-    std::path::PathBuf, // sqlite
+    std::path::PathBuf, // sqlite db
     std::path::PathBuf, // duckdb
+    std::path::PathBuf, // repos
     std::path::PathBuf, // logs
 ) {
-    let data_dir = dirs::home_dir()
-        .expect("Failed to get home directory")
-        .join(".slasha");
+    let data_dir = utils::ensure_dir(
+        dirs::home_dir()
+            .expect("Failed to get home directory")
+            .join(".slasha"),
+    );
 
-    let db_path = utils::ensure_dir(&data_dir).join("slasha.db");
-    let duckdb_path = data_dir.join("slasha.duckdb");
-    let repos_dir = utils::ensure_dir(data_dir.join("repos"));
-    let logs_dir = utils::ensure_dir(data_dir.join("logs"));
-
-    (db_path, duckdb_path, repos_dir, logs_dir)
+    (
+        data_dir.join("slasha.db"),
+        data_dir.join("slasha.duckdb"),
+        data_dir.join("repos"),
+        data_dir.join("logs"),
+    )
 }
 
 async fn run_server(address: SocketAddr, state: AppState) -> anyhow::Result<()> {
