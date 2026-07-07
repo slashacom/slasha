@@ -1,44 +1,49 @@
-.PHONY: setup gen-models dev dev-cli dev-bundle docker-up docker-logs clean format lint
+.PHONY: dev dev-cli dev-bundle format lint test gen-models docker-up docker-logs clean
 
 .DEFAULT_GOAL := dev
 
-setup:
-	cd web && bun install
-	cargo build
-
-gen-models:
-	cd crates/models && cargo test
-
-dev: setup
+dev:
+	@cd web && bun install
 	@test -f .env || cp .env.example .env
 	@trap 'kill $$(jobs -p)' EXIT; \
-	cargo run -p slasha-cli --no-default-features --features serve -- serve & \
+	cargo run -p slasha-cli --no-default-features --features serve,vendored -- serve & \
 	cd web && bun run dev & \
 	wait
 
 dev-cli:
-	cargo run -p slasha-cli -- $(ARGS)
+	cargo run -p slasha-cli --no-default-features --features serve,vendored -- $(ARGS)
 
 dev-bundle:
-	cd web && bun run build
+	@cd web && bun install
+	@echo "Building frontend..."
+	@cd web && bun run build
+	@echo "Running bundled server..."
 	cargo run -p slasha-cli -- serve
 
+format:
+	@cargo +nightly fmt --all
+	@cd web && bun run format
+
+lint:
+	@cargo clippy --workspace --all-targets
+	@cd web && bun run lint
+
+test:
+	@cargo test --workspace
+
+gen-models:
+	@echo "Generating TS models..."
+	@cargo test -p slasha-db
+	@echo "Done."
+
 docker-up:
-	docker compose -f docker/docker-compose.yml up --build
+	docker compose -f docker/docker-compose.yml up --build -d
 
 docker-logs:
 	docker compose -f docker/docker-compose.yml logs -f
 
 clean:
+	@echo "Cleaning workspace..."
 	@cargo clean
-	@rm -rf web/build
-	@rm -rf db/
-	@rm -rf repos/
-
-format:
-	@cargo +nightly fmt
-	@cd web && bun run format
-
-lint:
-	@cargo clippy
-	@cd web && bun run lint
+	@rm -rf web/build web/node_modules
+	@echo "Done."
