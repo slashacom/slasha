@@ -6,7 +6,6 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use garde::Validate;
-use crate::routing::api::validation::not_empty;
 use serde::{Deserialize, Serialize};
 use slasha_db::{
     github_app_config::NewGithubAppConfig,
@@ -22,6 +21,7 @@ use crate::{
     connections::{GithubError, create_state, handle_webhook, verify_state},
     extractors::{ValidatedJson, auth::AuthUser},
     middleware::admin::admin_middleware,
+    routing::api::validation::not_empty,
 };
 
 pub fn router(state: AppState) -> Router<AppState> {

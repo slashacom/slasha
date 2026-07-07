@@ -18,7 +18,6 @@ use bollard::{
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
 use garde::Validate;
-use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::{
     DbPool,
@@ -40,6 +39,7 @@ use crate::{
     },
     extractors::{ValidatedJson, app::ActiveApp},
     metrics,
+    routing::api::validation::not_empty,
     state::AppState,
     tunnel,
 };

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   Area,
   AreaChart,
@@ -32,10 +32,19 @@ type AppMetricsViewProps = {
 export function AppMetricsView(props: AppMetricsViewProps) {
   const { appSlug } = props;
   const [selectedRange, setSelectedRange] = useState<TimeRange>(TIME_RANGES[0]);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const end = now;
+  const start = new Date(now.getTime() - selectedRange.hours * 3600 * 1000);
 
   const { data, isLoading } = useQuery({
-    ...getAppMetricsOptions(appSlug, selectedRange.hours),
-    refetchInterval: 10000,
+    ...getAppMetricsOptions(appSlug, start, end),
+    placeholderData: keepPreviousData,
   });
 
   const rawMetrics = data?.metrics ?? [];

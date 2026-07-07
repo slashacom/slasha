@@ -4,7 +4,6 @@ use axum::{
     routing::{delete, get, post},
 };
 use garde::Validate;
-use crate::routing::api::validation::not_empty;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use slasha_db::{
@@ -15,6 +14,7 @@ use slasha_db::{
 use crate::{
     HttpResult,
     extractors::{ValidatedJson, auth::AuthUser},
+    routing::api::validation::not_empty,
     ssh::regenerate_authorized_keys,
     state::{AppState, Storage},
 };

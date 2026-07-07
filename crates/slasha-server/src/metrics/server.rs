@@ -4,7 +4,7 @@ use std::{
 };
 
 use slasha_db::{
-    DbPool, models::server_metrics::NewServerMetrics, repos::server_metrics::ServerMetricsRepo,
+    DuckdbPool, models::server_metrics::NewServerMetrics, repos::server_metrics::ServerMetricsRepo,
 };
 use sysinfo::{Disks, Networks, System};
 use tokio::time::sleep;
@@ -12,7 +12,7 @@ use tokio::time::sleep;
 const COLLECT_INTERVAL: Duration = Duration::from_secs(15);
 
 pub struct ServerMetricsCollector {
-    db_pool: DbPool,
+    duckdb_pool: DuckdbPool,
     system: System,
     networks: Networks,
     disks: Disks,
@@ -20,13 +20,13 @@ pub struct ServerMetricsCollector {
 }
 
 impl ServerMetricsCollector {
-    pub fn new(db_pool: DbPool) -> Self {
+    pub fn new(duckdb_pool: DuckdbPool) -> Self {
         let mut system = System::new();
         system.refresh_cpu_usage();
         system.refresh_memory();
 
         Self {
-            db_pool,
+            duckdb_pool,
             system,
             networks: Networks::new_with_refreshed_list(),
             disks: Disks::new_with_refreshed_list(),
@@ -51,16 +51,16 @@ impl ServerMetricsCollector {
         let load = System::load_average();
 
         NewServerMetrics {
-            cpu_usage: self.system.global_cpu_usage(),
+            cpu_usage: self.system.global_cpu_usage() as f64,
             memory_used: bytes_to_mib(self.system.used_memory()),
             memory_total: bytes_to_mib(self.system.total_memory()),
             swap_used: bytes_to_mib(self.system.used_swap()),
             swap_total: bytes_to_mib(self.system.total_swap()),
             disk_used: bytes_to_mib(disk_used),
             disk_total: bytes_to_mib(disk_total),
-            network_rx_bps: (rx_bytes as f64 / dt) as f32,
-            network_tx_bps: (tx_bytes as f64 / dt) as f32,
-            load_average: load.one as f32,
+            network_rx_bps: (rx_bytes as f64 / dt),
+            network_tx_bps: (tx_bytes as f64 / dt),
+            load_average: load.one,
         }
     }
     pub fn spawn(mut self) {
@@ -71,12 +71,14 @@ impl ServerMetricsCollector {
                 sleep(COLLECT_INTERVAL).await;
 
                 let metric = self.sample();
-                if let Err(err) = ServerMetricsRepo::insert(&self.db_pool, metric).await {
+                if let Err(err) = ServerMetricsRepo::insert(&self.duckdb_pool, metric).await {
                     tracing::error!(target: "slasha::metrics", error = ?err, "failed to persist server metrics");
                 }
 
-                let cutoff = chrono::Utc::now().naive_utc() - chrono::Duration::days(7);
-                if let Err(err) = ServerMetricsRepo::prune_older_than(&self.db_pool, cutoff).await {
+                let cutoff = chrono::Utc::now().naive_utc() - chrono::Duration::days(30);
+                if let Err(err) =
+                    ServerMetricsRepo::prune_older_than(&self.duckdb_pool, cutoff).await
+                {
                     tracing::error!(target: "slasha::metrics", error = ?err, "failed to prune server metrics");
                 }
             }
@@ -101,6 +103,6 @@ fn root_disk_usage(disks: &Disks) -> (u64, u64) {
     }
 }
 
-fn bytes_to_mib(bytes: u64) -> i32 {
-    (bytes / (1024 * 1024)) as i32
+fn bytes_to_mib(bytes: u64) -> i64 {
+    (bytes / (1024 * 1024)) as i64
 }

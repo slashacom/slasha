@@ -177,12 +177,21 @@ export function useDeleteAppDomain() {
   });
 }
 
-export function getAppMetricsOptions(appSlug: string, hours?: number) {
+export function getAppMetricsOptions(
+  appSlug: string,
+  start?: Date,
+  end?: Date
+) {
+  let queryParams = new URLSearchParams();
+  if (start) queryParams.append('start', start.toISOString());
+  if (end) queryParams.append('end', end.toISOString());
+  const qs = queryParams.toString();
+
   return queryOptions({
-    queryKey: ['apps', appSlug, 'metrics', { hours }],
+    queryKey: ['apps', appSlug, 'metrics', { start, end }],
     queryFn: () =>
       httpGet<{ metrics: AppMetrics[] }>(
-        `apps/${appSlug}/metrics${hours ? `?hours=${hours}` : ''}`
+        `apps/${appSlug}/metrics${qs ? `?${qs}` : ''}`
       ),
   });
 }

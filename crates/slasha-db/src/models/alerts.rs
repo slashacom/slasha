@@ -137,21 +137,21 @@ impl AlertChannelConfig {
 #[ts(export, export_to = "./alerts.ts")]
 pub enum AlertRuleConfig {
     ServerCpu {
-        threshold_percent: f32,
+        threshold_percent: f64,
     },
     ServerMemory {
-        threshold_percent: f32,
+        threshold_percent: f64,
     },
     ServerLoadAverage {
-        threshold: f32,
+        threshold: f64,
     },
     AppCpu {
         app_id: String,
-        threshold_percent: f32,
+        threshold_percent: f64,
     },
     AppMemory {
         app_id: String,
-        threshold_percent: f32,
+        threshold_percent: f64,
     },
     DomainTlsExpiry {
         domain: String,
@@ -404,10 +404,10 @@ pub struct AlertIncident {
     pub rule_id: String,
     pub target_key: String,
     pub status: AlertIncidentStatus,
-    pub trigger_value: Option<f32>,
-    pub current_value: Option<f32>,
-    pub recovery_value: Option<f32>,
-    pub threshold_value: Option<f32>,
+    pub trigger_value: Option<f64>,
+    pub current_value: Option<f64>,
+    pub recovery_value: Option<f64>,
+    pub threshold_value: Option<f64>,
     pub opened_at: NaiveDateTime,
     pub last_notified_at: Option<NaiveDateTime>,
     pub resolved_at: Option<NaiveDateTime>,

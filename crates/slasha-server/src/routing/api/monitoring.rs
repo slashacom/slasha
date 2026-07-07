@@ -11,7 +11,8 @@ use crate::{AppState, HttpResult, extractors::auth::AuthUser, state::Storage};
 
 #[derive(Deserialize)]
 pub struct MetricsQuery {
-    pub hours: Option<i64>,
+    pub start: Option<chrono::DateTime<chrono::Utc>>,
+    pub end: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -23,8 +24,14 @@ async fn get_metrics(
     AuthUser(_user): AuthUser,
     Query(query): Query<MetricsQuery>,
 ) -> HttpResult<impl IntoResponse> {
-    let hours = query.hours.unwrap_or(168); // 7 days
-    let metrics = ServerMetricsRepo::get_history(&storage.db_pool, hours).await?;
+    let end = query.end.unwrap_or_else(chrono::Utc::now);
+    let start = query
+        .start
+        .unwrap_or_else(|| end - chrono::Duration::hours(24));
+
+    let metrics =
+        ServerMetricsRepo::get_history(&storage.duckdb_pool, start.naive_utc(), end.naive_utc())
+            .await?;
 
     Ok(Json(serde_json::json!({ "metrics": metrics })))
 }

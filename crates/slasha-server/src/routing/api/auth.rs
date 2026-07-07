@@ -9,7 +9,6 @@ use axum::{
 };
 use chrono::Utc;
 use garde::Validate;
-use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::{
     repos::user::UserRepo,
@@ -21,7 +20,7 @@ use crate::{
     auth::{TokenPayload, create_jwt, hash_password, verify_password},
     extractors::{ValidatedJson, auth::AuthUser},
     middleware::rate_limit::{RateLimit, RateLimiter, rate_limit_middleware},
-    routing::api::deserialize::trim_string,
+    routing::api::{deserialize::trim_string, validation::not_empty},
     state::{AppState, Config, Storage},
 };
 

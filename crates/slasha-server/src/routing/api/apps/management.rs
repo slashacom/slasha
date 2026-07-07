@@ -10,7 +10,6 @@ use axum::{
 };
 use bollard::Docker;
 use garde::Validate;
-use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::{
     DbPool, DbResult,
@@ -47,7 +46,7 @@ use crate::{
         app::{ActiveApp, ActiveAppOwner},
         auth::AuthUser,
     },
-    routing::api::deserialize::trim_string,
+    routing::api::{deserialize::trim_string, validation::not_empty},
     state::{AppState, Config, Runtime, Storage},
 };
 

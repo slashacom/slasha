@@ -5,4 +5,4 @@ file = "./src/models/schema.rs"
 custom_type_derives = ["diesel::query_builder::QueryId", "Clone"]
 
 [migrations_directory]
-dir = "migrations"
+dir = "migrations/sqlite"

@@ -57,4 +57,4 @@ garde = { version = "0.23.0", features = ["full"] }
 
 [features]
 bundle = ["rust-embed", "mime_guess"]
-vendored = ["git2/vendored-openssl", "slasha-db/bundled-sqlite"]
+vendored = ["git2/vendored-openssl", "slasha-db/bundled-sqlite", "slasha-db/bundled-duckdb"]

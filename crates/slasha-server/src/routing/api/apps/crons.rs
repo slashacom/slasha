@@ -13,7 +13,6 @@ use bollard::Docker;
 use chrono::{NaiveDateTime, Utc};
 use futures_util::{StreamExt, stream};
 use garde::Validate;
-use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::{
     DbPool,
@@ -27,7 +26,10 @@ use crate::{
     cron::{runner, schedule},
     docker::logs::{LogKey, LogManager},
     extractors::{ValidatedJson, app::ActiveApp},
-    routing::api::deserialize::{trim_optional_string, trim_string},
+    routing::api::{
+        deserialize::{trim_optional_string, trim_string},
+        validation::not_empty,
+    },
     state::AppState,
 };
 

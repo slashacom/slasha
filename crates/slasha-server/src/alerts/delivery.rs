@@ -90,7 +90,7 @@ fn format_duration(opened_at: chrono::NaiveDateTime, now: chrono::NaiveDateTime)
     }
 }
 
-fn format_value(value: Option<f32>) -> String {
+fn format_value(value: Option<f64>) -> String {
     match value {
         Some(v) if v.fract() == 0.0 => format!("{v:.0}"),
         Some(v) => format!("{v:.1}"),

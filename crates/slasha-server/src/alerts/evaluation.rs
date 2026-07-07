@@ -5,10 +5,10 @@ use super::worker::{AlertSnapshot, AppSnapshot};
 #[derive(Clone)]
 pub struct EvaluationResult {
     pub target_key: String,
-    pub trigger_value: Option<f32>,
-    pub current_value: Option<f32>,
-    pub recovery_value: Option<f32>,
-    pub threshold_value: Option<f32>,
+    pub trigger_value: Option<f64>,
+    pub current_value: Option<f64>,
+    pub recovery_value: Option<f64>,
+    pub threshold_value: Option<f64>,
     pub detail_display: String,
     pub triggered: bool,
 }
@@ -49,7 +49,7 @@ pub fn evaluate_rule(rule: &AlertRule, snapshot: &AlertSnapshot) -> Option<Evalu
     Some(result)
 }
 
-fn evaluate_server_cpu(snapshot: &AlertSnapshot, threshold: f32) -> Option<EvaluationResult> {
+fn evaluate_server_cpu(snapshot: &AlertSnapshot, threshold: f64) -> Option<EvaluationResult> {
     let metric = snapshot.server_metric.as_ref()?;
     let current = metric.cpu_usage;
     Some(EvaluationResult {
@@ -63,7 +63,7 @@ fn evaluate_server_cpu(snapshot: &AlertSnapshot, threshold: f32) -> Option<Evalu
     })
 }
 
-fn evaluate_server_memory(snapshot: &AlertSnapshot, threshold: f32) -> Option<EvaluationResult> {
+fn evaluate_server_memory(snapshot: &AlertSnapshot, threshold: f64) -> Option<EvaluationResult> {
     let metric = snapshot.server_metric.as_ref()?;
     let current = percent(metric.memory_used, metric.memory_total);
     Some(EvaluationResult {
@@ -79,7 +79,7 @@ fn evaluate_server_memory(snapshot: &AlertSnapshot, threshold: f32) -> Option<Ev
 
 fn evaluate_server_load_average(
     snapshot: &AlertSnapshot,
-    threshold: f32,
+    threshold: f64,
 ) -> Option<EvaluationResult> {
     let metric = snapshot.server_metric.as_ref()?;
     let current = metric.load_average;
@@ -94,7 +94,7 @@ fn evaluate_server_load_average(
     })
 }
 
-fn evaluate_app_cpu(snapshot: &AppSnapshot, threshold: f32) -> Option<EvaluationResult> {
+fn evaluate_app_cpu(snapshot: &AppSnapshot, threshold: f64) -> Option<EvaluationResult> {
     let current = snapshot.metric.as_ref()?.cpu_usage;
     Some(EvaluationResult {
         target_key: String::new(),
@@ -107,7 +107,7 @@ fn evaluate_app_cpu(snapshot: &AppSnapshot, threshold: f32) -> Option<Evaluation
     })
 }
 
-fn evaluate_app_memory(snapshot: &AppSnapshot, threshold: f32) -> Option<EvaluationResult> {
+fn evaluate_app_memory(snapshot: &AppSnapshot, threshold: f64) -> Option<EvaluationResult> {
     let metric = snapshot.metric.as_ref()?;
     let current = percent(metric.memory_used, metric.memory_limit);
     Some(EvaluationResult {
@@ -145,10 +145,10 @@ fn evaluate_domain_tls_expiry(
 
     Some(EvaluationResult {
         target_key: String::new(),
-        trigger_value: Some(days_until as f32),
-        current_value: Some(days_until as f32),
-        recovery_value: Some(days_until as f32),
-        threshold_value: Some(days_before as f32),
+        trigger_value: Some(days_until as f64),
+        current_value: Some(days_until as f64),
+        recovery_value: Some(days_until as f64),
+        threshold_value: Some(days_before as f64),
         detail_display,
         triggered,
     })
@@ -234,10 +234,10 @@ fn evaluate_cron_failed(snapshot: &AlertSnapshot, cron_job_id: &str) -> Option<E
     })
 }
 
-fn percent(used: i32, total: i32) -> f32 {
+fn percent(used: i64, total: i64) -> f64 {
     if total == 0 {
         0.0
     } else {
-        used as f32 / total as f32 * 100.0
+        used as f64 / total as f64 * 100.0
     }
 }

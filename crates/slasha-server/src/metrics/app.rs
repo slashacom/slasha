@@ -6,7 +6,9 @@ use bollard::{
     query_parameters::{ListContainersOptionsBuilder, StatsOptionsBuilder},
 };
 use futures_util::StreamExt;
-use slasha_db::{DbPool, models::app_metrics::NewAppMetrics, repos::app_metrics::AppMetricsRepo};
+use slasha_db::{
+    DuckdbPool, models::app_metrics::NewAppMetrics, repos::app_metrics::AppMetricsRepo,
+};
 
 use crate::metrics::{COLLECT_INTERVAL, utils::bytes_to_mib};
 
@@ -30,15 +32,15 @@ struct AppAggregate {
 }
 
 pub struct AppMetricsCollector {
-    db_pool: DbPool,
+    duckdb_pool: DuckdbPool,
     docker_client: Docker,
     prev: HashMap<String, PrevCounters>,
 }
 
 impl AppMetricsCollector {
-    pub fn new(db_pool: DbPool, docker_client: Docker) -> Self {
+    pub fn new(duckdb_pool: DuckdbPool, docker_client: Docker) -> Self {
         Self {
-            db_pool,
+            duckdb_pool,
             docker_client,
             prev: HashMap::new(),
         }
@@ -183,16 +185,16 @@ impl AppMetricsCollector {
         for (app_id, agg) in app_aggregates {
             let metric = NewAppMetrics {
                 app_id: app_id.clone(),
-                cpu_usage: agg.cpu_percent as f32,
+                cpu_usage: agg.cpu_percent,
                 memory_used: bytes_to_mib(agg.memory_used_bytes),
                 memory_limit: bytes_to_mib(agg.memory_limit_bytes),
-                network_rx_bps: agg.net_rx_bps as f32,
-                network_tx_bps: agg.net_tx_bps as f32,
-                disk_read_bps: agg.disk_read_bps as f32,
-                disk_write_bps: agg.disk_write_bps as f32,
+                network_rx_bps: agg.net_rx_bps,
+                network_tx_bps: agg.net_tx_bps,
+                disk_read_bps: agg.disk_read_bps,
+                disk_write_bps: agg.disk_write_bps,
             };
 
-            if let Err(err) = AppMetricsRepo::insert(&self.db_pool, metric).await {
+            if let Err(err) = AppMetricsRepo::insert(&self.duckdb_pool, metric).await {
                 tracing::error!(
                     target: "slasha::metrics",
                     app_id = %app_id,
@@ -202,8 +204,8 @@ impl AppMetricsCollector {
             }
         }
 
-        let cutoff = now - chrono::Duration::days(7);
-        if let Err(err) = AppMetricsRepo::prune_older_than(&self.db_pool, cutoff).await {
+        let cutoff = now - chrono::Duration::days(30);
+        if let Err(err) = AppMetricsRepo::prune_older_than(&self.duckdb_pool, cutoff).await {
             tracing::error!(target: "slasha::metrics", error = ?err, "failed to prune old metrics");
         }
 

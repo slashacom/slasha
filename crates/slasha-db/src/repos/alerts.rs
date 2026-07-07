@@ -325,7 +325,7 @@ impl AlertIncidentRepo {
     pub async fn touch_open(
         pool: &DbPool,
         id: &str,
-        current_value: Option<f32>,
+        current_value: Option<f64>,
         last_notified_at: Option<chrono::NaiveDateTime>,
     ) -> DbResult<AlertIncident> {
         let pool = pool.clone();
@@ -355,7 +355,7 @@ impl AlertIncidentRepo {
     pub async fn resolve(
         pool: &DbPool,
         id: &str,
-        recovery_value: Option<f32>,
+        recovery_value: Option<f64>,
     ) -> DbResult<AlertIncident> {
         let pool = pool.clone();
         let id = id.to_string();

@@ -4,8 +4,8 @@ export type AppMetrics = {
   id: string;
   app_id: string;
   cpu_usage: number;
-  memory_used: number;
-  memory_limit: number;
+  memory_used: bigint;
+  memory_limit: bigint;
   network_rx_bps: number;
   network_tx_bps: number;
   disk_read_bps: number;

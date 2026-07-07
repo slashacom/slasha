@@ -5,7 +5,7 @@ use std::{
 
 use axum::extract::FromRef;
 use bollard::Docker;
-use slasha_db::{DbPool, repos::github_app_config::GithubAppConfigRepo};
+use slasha_db::{DbPool, DuckdbPool, repos::github_app_config::GithubAppConfigRepo};
 use tokio::sync::{Notify, RwLock};
 
 use crate::{connections::GithubClient, docker::logs::LogManager, proxy::CaddyClient, utils};
@@ -30,16 +30,31 @@ impl Clients {
 #[derive(Clone)]
 pub struct Storage {
     pub db_pool: DbPool,
+    pub duckdb_pool: DuckdbPool,
     pub repos_dir: PathBuf,
 }
 
 impl Storage {
-    pub fn new(db_path: &std::path::Path, repos_dir: PathBuf) -> anyhow::Result<Self> {
+    pub fn new(
+        db_path: &std::path::Path,
+        duckdb_path: &std::path::Path,
+        repos_dir: PathBuf,
+    ) -> anyhow::Result<Self> {
         let db_str = db_path
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid DB path"))?;
-        let db_pool = slasha_db::create_pool(db_str)?;
-        Ok(Self { db_pool, repos_dir })
+        let duckdb_str = duckdb_path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid DuckDB path"))?;
+
+        let db_pool = slasha_db::create_pool_with_max_size(db_str, 10)?;
+        let duckdb_pool = slasha_db::create_duckdb_pool_with_max_size(duckdb_str, 10)?;
+
+        Ok(Self {
+            db_pool,
+            duckdb_pool,
+            repos_dir,
+        })
     }
 }
 
@@ -185,6 +200,12 @@ impl FromRef<AppState> for Storage {
 impl FromRef<AppState> for DbPool {
     fn from_ref(state: &AppState) -> Self {
         state.storage.db_pool.clone()
+    }
+}
+
+impl FromRef<AppState> for DuckdbPool {
+    fn from_ref(state: &AppState) -> Self {
+        state.storage.duckdb_pool.clone()
     }
 }
 

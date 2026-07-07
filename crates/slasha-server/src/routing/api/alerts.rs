@@ -5,7 +5,6 @@ use axum::{
     routing::{get, post},
 };
 use garde::Validate;
-use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::{
     models::alerts::{
@@ -21,7 +20,10 @@ use slasha_db::{
 use crate::{
     HttpError, HttpResult,
     extractors::ValidatedJson,
-    routing::api::deserialize::{trim_optional_string, trim_string, trim_string_vec},
+    routing::api::{
+        deserialize::{trim_optional_string, trim_string, trim_string_vec},
+        validation::not_empty,
+    },
     state::{AppState, Storage},
 };
 
@@ -140,29 +142,29 @@ struct RuleInput {
 enum RuleConfigInput {
     ServerCpu {
         #[garde(range(min = 0.0, max = 100.0))]
-        threshold_percent: f32,
+        threshold_percent: f64,
     },
     ServerMemory {
         #[garde(range(min = 0.0, max = 100.0))]
-        threshold_percent: f32,
+        threshold_percent: f64,
     },
     ServerLoadAverage {
         #[garde(range(min = 0.0))]
-        threshold: f32,
+        threshold: f64,
     },
     AppCpu {
         #[serde(deserialize_with = "trim_string")]
         #[garde(custom(not_empty))]
         app_id: String,
         #[garde(range(min = 0.0, max = 100.0))]
-        threshold_percent: f32,
+        threshold_percent: f64,
     },
     AppMemory {
         #[serde(deserialize_with = "trim_string")]
         #[garde(custom(not_empty))]
         app_id: String,
         #[garde(range(min = 0.0, max = 100.0))]
-        threshold_percent: f32,
+        threshold_percent: f64,
     },
     DomainTlsExpiry {
         #[serde(deserialize_with = "trim_string")]

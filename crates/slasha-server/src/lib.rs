@@ -20,7 +20,6 @@ pub mod utils;
 
 use std::net::SocketAddr;
 
-use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dotenv::dotenv;
 pub use routing::api::{HttpError, HttpResult};
 use slasha_db::repos::github_app_config::GithubAppConfigRepo;
@@ -30,8 +29,6 @@ use tracing::info;
 
 use crate::state::{Clients, Config, Env, Runtime, Storage};
 
-pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../slasha-db/migrations");
-
 fn setup_tracing() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -40,31 +37,25 @@ fn setup_tracing() {
         .init();
 }
 
-fn setup_dirs() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+fn setup_dirs() -> (
+    std::path::PathBuf, // data dir
+    std::path::PathBuf, // sqlite
+    std::path::PathBuf, // duckdb
+    std::path::PathBuf, // logs
+) {
     let data_dir = dirs::home_dir()
         .expect("Failed to get home directory")
         .join(".slasha");
 
     let db_path = utils::ensure_dir(&data_dir).join("slasha.db");
+    let duckdb_path = data_dir.join("slasha.duckdb");
     let repos_dir = utils::ensure_dir(data_dir.join("repos"));
     let logs_dir = utils::ensure_dir(data_dir.join("logs"));
 
-    (db_path, repos_dir, logs_dir)
+    (db_path, duckdb_path, repos_dir, logs_dir)
 }
 
-fn run_migrations(db_path: &str) {
-    use diesel::{Connection, sqlite::SqliteConnection};
-
-    // Migrations run on a dedicated connection that leaves foreign keys at SQLite's
-    // default (off). The runtime pool enforces them, but a table-rebuild migration
-    // under enforcement would cascade-delete rows, so migrations must not enforce.
-    let mut conn = SqliteConnection::establish(db_path).expect("Failed to connect for migrations");
-
-    conn.run_pending_migrations(MIGRATIONS)
-        .expect("Failed to run migrations");
-}
-
-pub async fn run_server(address: SocketAddr, state: AppState) -> anyhow::Result<()> {
+async fn run_server(address: SocketAddr, state: AppState) -> anyhow::Result<()> {
     info!("server starting on http://{}", address);
 
     let app = routing::router(state.clone()).with_state(state);
@@ -78,7 +69,7 @@ pub async fn serve() -> anyhow::Result<()> {
     dotenv().ok();
     setup_tracing();
 
-    let (db_path, repos_dir, logs_dir) = setup_dirs();
+    let (db_path, duckdb_path, repos_dir, logs_dir) = setup_dirs();
 
     let slasha_env = Env::from_str_or_default(
         &std::env::var("SLASHA_ENV").unwrap_or_else(|_| "development".to_string()),
@@ -105,9 +96,12 @@ pub async fn serve() -> anyhow::Result<()> {
 
     proxy::container::ensure_caddy_ready(&docker_client).await?;
 
-    let storage = Storage::new(&db_path, repos_dir)?;
+    slasha_db::migrations::run_migrations(
+        db_path.to_str().expect("Invalid DB path"),
+        duckdb_path.to_str().expect("Invalid DuckDB path"),
+    );
 
-    run_migrations(db_path.to_str().expect("Invalid DB path"));
+    let storage = Storage::new(&db_path, &duckdb_path, repos_dir)?;
 
     let github_config = GithubAppConfigRepo::get(&storage.db_pool).await?;
     let github_client = github_config
@@ -116,9 +110,14 @@ pub async fn serve() -> anyhow::Result<()> {
         .transpose()?;
 
     let clients = Clients::new(docker_client.clone(), github_client);
-    metrics::app::AppMetricsCollector::new(storage.db_pool.clone(), docker_client.clone()).spawn();
-    metrics::server::ServerMetricsCollector::new(storage.db_pool.clone()).spawn();
-    alerts::spawn_alert_worker(storage.db_pool.clone(), config.clone());
+    metrics::app::AppMetricsCollector::new(storage.duckdb_pool.clone(), docker_client.clone())
+        .spawn();
+    metrics::server::ServerMetricsCollector::new(storage.duckdb_pool.clone()).spawn();
+    alerts::spawn_alert_worker(
+        storage.db_pool.clone(),
+        storage.duckdb_pool.clone(),
+        config.clone(),
+    );
 
     let proxy_sync_trigger =
         proxy::spawn_route_syncer(clients.clone(), storage.db_pool.clone(), config.clone());

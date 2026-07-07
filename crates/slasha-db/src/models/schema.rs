@@ -18,10 +18,10 @@ diesel::table! {
         rule_id -> Text,
         target_key -> Text,
         status -> Text,
-        trigger_value -> Nullable<Float>,
-        current_value -> Nullable<Float>,
-        recovery_value -> Nullable<Float>,
-        threshold_value -> Nullable<Float>,
+        trigger_value -> Nullable<Double>,
+        current_value -> Nullable<Double>,
+        recovery_value -> Nullable<Double>,
+        threshold_value -> Nullable<Double>,
         opened_at -> Timestamp,
         last_notified_at -> Nullable<Timestamp>,
         resolved_at -> Nullable<Timestamp>,
@@ -102,21 +102,6 @@ diesel::table! {
         user_id -> Text,
         role -> Text,
         added_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    app_metrics (id) {
-        id -> Text,
-        app_id -> Text,
-        cpu_usage -> Float,
-        memory_used -> Integer,
-        memory_limit -> Integer,
-        network_rx_bps -> Float,
-        network_tx_bps -> Float,
-        disk_read_bps -> Float,
-        disk_write_bps -> Float,
-        created_at -> Timestamp,
     }
 }
 
@@ -227,23 +212,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    server_metrics (id) {
-        id -> Text,
-        cpu_usage -> Float,
-        memory_used -> Integer,
-        memory_total -> Integer,
-        swap_used -> Integer,
-        swap_total -> Integer,
-        disk_used -> Integer,
-        disk_total -> Integer,
-        network_rx_bps -> Float,
-        network_tx_bps -> Float,
-        load_average -> Float,
-        created_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     service_env_vars (id) {
         id -> Text,
         service_id -> Text,
@@ -296,7 +264,6 @@ diesel::joinable!(app_domains -> apps (app_id));
 diesel::joinable!(app_env_vars -> apps (app_id));
 diesel::joinable!(app_members -> apps (app_id));
 diesel::joinable!(app_members -> users (user_id));
-diesel::joinable!(app_metrics -> apps (app_id));
 diesel::joinable!(app_scale -> apps (app_id));
 diesel::joinable!(cron_jobs -> apps (app_id));
 diesel::joinable!(cron_runs -> cron_jobs (cron_job_id));
@@ -317,7 +284,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     app_domains,
     app_env_vars,
     app_members,
-    app_metrics,
     app_scale,
     apps,
     cron_jobs,
@@ -327,7 +293,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     github_app_config,
     github_connections,
     github_installations,
-    server_metrics,
     service_env_vars,
     services,
     ssh_keys,
