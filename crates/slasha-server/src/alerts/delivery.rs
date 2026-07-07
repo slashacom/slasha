@@ -47,30 +47,27 @@ fn render_default_message(
     kind: AlertNotificationKind,
     opened_at: Option<chrono::NaiveDateTime>,
 ) -> String {
-    let emoji = match kind {
-        AlertNotificationKind::Triggered | AlertNotificationKind::Renotified => ":rotating_light:",
-        AlertNotificationKind::Resolved => ":white_check_mark:",
+    let (icon, status_text) = match kind {
+        AlertNotificationKind::Triggered => (":rotating_light:", "Triggered"),
+        AlertNotificationKind::Renotified => (":rotating_light:", "Still Failing"),
+        AlertNotificationKind::Resolved => (":white_check_mark:", "Resolved"),
     };
 
     let mut body_lines = Vec::new();
-    if let Some(v) = observation.current_value {
-        body_lines.push(format!("Current: {}", format_value(Some(v))));
-    }
-    if let Some(v) = observation.threshold_value {
-        body_lines.push(format!("Limit: {}", format_value(Some(v))));
-    }
-    body_lines.push(format!("Detail: {}", observation.detail_display));
+    body_lines.push(format!("*Status*: {}", status_text));
+    body_lines.push(format!("*Detail*: {}", observation.detail_display));
 
     if let Some(oa) = opened_at {
         let now = chrono::Utc::now().naive_utc();
-        body_lines.push(format!("Duration: {}", format_duration(oa, now)));
+        let duration_label = if kind == AlertNotificationKind::Resolved {
+            "*Total duration*"
+        } else {
+            "*Ongoing for*"
+        };
+        body_lines.push(format!("{}: {}", duration_label, format_duration(oa, now)));
     }
 
-    format!(
-        "{emoji} *{name}*\n> {body}",
-        name = rule.name,
-        body = body_lines.join("\n> ")
-    )
+    format!("{} *{}*\n> {}", icon, rule.name, body_lines.join("\n>"))
 }
 
 fn format_duration(opened_at: chrono::NaiveDateTime, now: chrono::NaiveDateTime) -> String {

@@ -19,6 +19,7 @@ use slasha_db::{
 
 use crate::{
     HttpError, HttpResult,
+    alerts::delivery,
     extractors::ValidatedJson,
     routing::api::{
         deserialize::{trim_optional_string, trim_string, trim_string_vec},
@@ -249,11 +250,14 @@ async fn test_channel(
 ) -> HttpResult<impl IntoResponse> {
     let channel = AlertChannelRepo::find_by_id(&storage.db_pool, &id).await?;
     let http_client = reqwest::Client::new();
-    let message = "This is a test message from Slasha. Your alert channel is configured correctly!";
 
-    crate::alerts::delivery::deliver_channel(&channel, message, &http_client)
-        .await
-        .map_err(|e| HttpError::bad_request(format!("Failed to send test message: {e}")))?;
+    delivery::deliver_channel(
+        &channel,
+        "This is a test message from Slasha. Your alert channel is configured correctly!",
+        &http_client,
+    )
+    .await
+    .map_err(|e| HttpError::bad_request(format!("Failed to send test message: {e}")))?;
 
     Ok(Json(serde_json::json!({ "success": true })))
 }
