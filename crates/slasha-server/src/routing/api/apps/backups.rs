@@ -7,7 +7,6 @@ use axum::{
 use bollard::Docker;
 use chrono::Utc;
 use garde::Validate;
-use crate::routing::api::validation::not_empty;
 use serde::{Deserialize, Serialize};
 use slasha_db::{
     app_backup::{AppBackup, NewAppBackup},
@@ -19,7 +18,10 @@ use crate::{
     AppState, HttpError, HttpResult,
     docker::deployment::{container::is_web_running, litestream},
     extractors::{ValidatedJson, app::ActiveApp},
-    routing::api::deserialize::{trim_optional_string, trim_string},
+    routing::api::{
+        deserialize::{trim_optional_string, trim_string},
+        validation::not_empty,
+    },
     state::Storage,
 };
 

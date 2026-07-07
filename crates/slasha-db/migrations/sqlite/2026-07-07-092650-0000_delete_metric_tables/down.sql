@@ -1,0 +1,1 @@
+-- we've moved these tables to duckdb

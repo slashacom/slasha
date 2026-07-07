@@ -5,13 +5,13 @@ use axum::{
     routing::{delete, get},
 };
 use garde::Validate;
-use crate::routing::api::validation::not_empty;
 use serde::Deserialize;
 use slasha_db::repos::app_domain::AppDomainRepo;
 
 use crate::{
     AppState, HttpResult, domain_health,
     extractors::{ValidatedJson, app::ActiveApp},
+    routing::api::validation::not_empty,
     state::Storage,
 };
 

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   Area,
   AreaChart,
@@ -24,19 +24,29 @@ import {
   formatMiB,
 } from '~/components/apps/metrics-utils';
 
-const percent = (used: number, total: number) => {
-  if (!total) {
+const percent = (used: number | bigint, total: number | bigint) => {
+  const numTotal = Number(total);
+  if (!numTotal) {
     return 0;
   }
-  return Math.round((used / total) * 100);
+  return Math.round((Number(used) / numTotal) * 100);
 };
 
 export function ServerMetricsView() {
   const [selectedRange, setSelectedRange] = useState<TimeRange>(TIME_RANGES[0]);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const end = now;
+  const start = new Date(now.getTime() - selectedRange.hours * 3600 * 1000);
 
   const { data, isLoading } = useQuery({
-    ...getServerMetricsOptions(selectedRange.hours),
-    refetchInterval: 15000,
+    ...getServerMetricsOptions(start, end),
+    placeholderData: keepPreviousData,
   });
 
   const rawMetrics = data?.metrics ?? [];

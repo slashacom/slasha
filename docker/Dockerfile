@@ -35,8 +35,12 @@ RUN apt-get update && \
     apt-get install -y docker-ce-cli docker-buildx-plugin && \
     rm -rf /var/lib/apt/lists/*
 
-ARG RAILPACK_VERSION=0.23.0
-RUN curl -fsSL https://railpack.com/install.sh | RAILPACK_VERSION="${RAILPACK_VERSION}" bash \
+ARG RAILPACK_VERSION=""
+RUN if [ -n "$RAILPACK_VERSION" ]; then \
+      curl -fsSL https://railpack.com/install.sh | RAILPACK_VERSION="$RAILPACK_VERSION" bash; \
+    else \
+      curl -fsSL https://railpack.com/install.sh | bash; \
+    fi \
  && railpack --version
 
 RUN mkdir /var/run/sshd \

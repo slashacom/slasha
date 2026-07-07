@@ -11,19 +11,27 @@ path = "src/main.rs"
 [features]
 default = ["bundle", "vendored"]
 
-# backend only, frontend must be served separately (useful for development)
+# Build only the backend server. The frontend must be served separately
+# (useful during frontend development).
 serve = ["slasha-server"]
 
-# backend + embedded frontend
+# Embed the frontend assets into the backend binary, producing a single
+# self-contained executable.
 bundle = ["serve", "slasha-server/bundle"]
 
-vendored = ["slasha-db/bundled-sqlite", "slasha-server?/vendored"]
+# Statically link native dependencies instead of relying on host-installed
+# libraries.
+vendored = [
+    "slasha-db/bundled-sqlite",
+    "slasha-db/bundled-duckdb",
+    "slasha-server?/vendored",
+]
 
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.6.0", features = ["derive"] }
 colored = "3.1.1"
-comfy-table = { version = "7.2.2", features = ["tty", "custom_styling"] }
+comfy-table = { version = "7.1.4", features = ["tty", "custom_styling"] }
 dirs = "6.0.0"
 futures-util = "0.3.32"
 indicatif = "0.18.4"

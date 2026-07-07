@@ -15,10 +15,13 @@ pub enum DbError {
     Data(String),
 
     #[error("pool error: {0}")]
-    Pool(#[from] diesel::r2d2::PoolError),
+    Pool(#[from] r2d2::Error),
 
     #[error("query error: {0}")]
     Query(#[from] diesel::result::Error),
+
+    #[error("duckdb error: {0}")]
+    Duckdb(#[from] duckdb::Error),
 
     #[error("task panicked")]
     Join(#[from] tokio::task::JoinError),

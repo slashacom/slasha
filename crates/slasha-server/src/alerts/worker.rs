@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::Utc;
 use reqwest::Client;
 use slasha_db::{
-    DbPool,
+    DbPool, DuckdbPool,
     app_metrics::AppMetrics,
     cron::CronRun,
     models::alerts::{
@@ -39,14 +39,14 @@ pub struct AlertSnapshot {
     pub crons: HashMap<String, Option<CronRun>>,
 }
 
-pub fn spawn_alert_worker(db_pool: DbPool, config: Config) {
+pub fn spawn_alert_worker(db_pool: DbPool, duckdb_pool: DuckdbPool, config: Config) {
     tokio::spawn(async move {
         let http_client = Client::new();
 
         info!("alert worker started");
 
         loop {
-            if let Err(err) = run_tick(&db_pool, &config, &http_client).await {
+            if let Err(err) = run_tick(&db_pool, &duckdb_pool, &config, &http_client).await {
                 error!(target: "slasha::alerts", error = ?err, "alert worker tick failed");
             }
 
@@ -55,13 +55,18 @@ pub fn spawn_alert_worker(db_pool: DbPool, config: Config) {
     });
 }
 
-async fn run_tick(db_pool: &DbPool, config: &Config, http_client: &Client) -> anyhow::Result<()> {
+async fn run_tick(
+    db_pool: &DbPool,
+    duckdb_pool: &DuckdbPool,
+    config: &Config,
+    http_client: &Client,
+) -> anyhow::Result<()> {
     let rules = AlertRuleRepo::list_enabled(db_pool).await?;
     if rules.is_empty() {
         return Ok(());
     }
 
-    let snapshot = build_snapshot(db_pool, config, &rules, http_client).await;
+    let snapshot = build_snapshot(db_pool, duckdb_pool, config, &rules, http_client).await;
     for rule in &rules {
         if let Err(err) = process_rule(db_pool, http_client, rule, &snapshot).await {
             error!(
@@ -79,6 +84,7 @@ async fn run_tick(db_pool: &DbPool, config: &Config, http_client: &Client) -> an
 
 async fn build_snapshot(
     db_pool: &DbPool,
+    duckdb_pool: &DuckdbPool,
     config: &Config,
     rules: &[AlertRule],
     http_client: &Client,
@@ -114,7 +120,7 @@ async fn build_snapshot(
         }
     }
 
-    let server_metric = load_server_metric(db_pool).await;
+    let server_metric = get_server_metric(duckdb_pool).await;
 
     let mut app_ids = metric_app_ids.clone();
     app_ids.extend(health_check_urls.keys().cloned());
@@ -123,7 +129,7 @@ async fn build_snapshot(
 
     for app_id in app_ids {
         let metric = if metric_app_ids.contains(&app_id) {
-            load_app_metric(db_pool, &app_id).await
+            get_app_metric(duckdb_pool, &app_id).await
         } else {
             None
         };
@@ -151,7 +157,7 @@ async fn build_snapshot(
 
     let mut crons = HashMap::new();
     for cron_job_id in cron_job_ids {
-        let latest = load_cron_outcome(db_pool, &cron_job_id).await;
+        let latest = get_cron_outcome(db_pool, &cron_job_id).await;
         crons.insert(cron_job_id, latest);
     }
 
@@ -163,8 +169,8 @@ async fn build_snapshot(
     }
 }
 
-async fn load_server_metric(db_pool: &DbPool) -> Option<ServerMetrics> {
-    ServerMetricsRepo::find_latest(db_pool)
+async fn get_server_metric(duckdb_pool: &DuckdbPool) -> Option<ServerMetrics> {
+    ServerMetricsRepo::get_latest(duckdb_pool)
         .await
         .unwrap_or_else(|err| {
             warn!(target: "slasha::alerts", error = ?err, "failed to load server metrics");
@@ -172,8 +178,8 @@ async fn load_server_metric(db_pool: &DbPool) -> Option<ServerMetrics> {
         })
 }
 
-async fn load_app_metric(db_pool: &DbPool, app_id: &str) -> Option<AppMetrics> {
-    AppMetricsRepo::find_latest(db_pool, app_id)
+async fn get_app_metric(duckdb_pool: &DuckdbPool, app_id: &str) -> Option<AppMetrics> {
+    AppMetricsRepo::get_latest(duckdb_pool, app_id)
         .await
         .unwrap_or_else(|err| {
             warn!(target: "slasha::alerts", app_id = %app_id, error = ?err, "failed to load app metrics for alert rule");
@@ -181,7 +187,7 @@ async fn load_app_metric(db_pool: &DbPool, app_id: &str) -> Option<AppMetrics> {
         })
 }
 
-async fn load_cron_outcome(db_pool: &DbPool, cron_job_id: &str) -> Option<CronRun> {
+async fn get_cron_outcome(db_pool: &DbPool, cron_job_id: &str) -> Option<CronRun> {
     CronRunRepo::latest_outcome_for_job(db_pool, cron_job_id)
         .await
         .unwrap_or_else(|err| {

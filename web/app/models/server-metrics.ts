@@ -3,12 +3,12 @@
 export type ServerMetrics = {
   id: string;
   cpu_usage: number;
-  memory_used: number;
-  memory_total: number;
-  swap_used: number;
-  swap_total: number;
-  disk_used: number;
-  disk_total: number;
+  memory_used: bigint;
+  memory_total: bigint;
+  swap_used: bigint;
+  swap_total: bigint;
+  disk_used: bigint;
+  disk_total: bigint;
   network_rx_bps: number;
   network_tx_bps: number;
   load_average: number;
