@@ -14,6 +14,14 @@ struct SqliteConnectionCustomizer;
 
 impl CustomizeConnection<SqliteConnection, Error> for SqliteConnectionCustomizer {
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), Error> {
+        // Wait for a competing writer to release the lock instead of failing
+        // immediately with "database is locked". SQLite serialises writers even
+        // in WAL mode, so concurrent writers (e.g. the metrics collectors at
+        // startup) need this to ride out contention.
+        diesel::sql_query("PRAGMA busy_timeout=5000;")
+            .execute(conn)
+            .map_err(Error::QueryError)?;
+
         diesel::sql_query("PRAGMA journal_mode=WAL;")
             .execute(conn)
             .map_err(Error::QueryError)?;
