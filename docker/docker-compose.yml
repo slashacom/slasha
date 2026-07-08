@@ -1,9 +1,13 @@
 services:
   slasha:
+    # Prod pulls this prebuilt image from GHCR (built + pushed by the
+    # "Deploy to production" workflow). :nightly tracks the tip of main;
+    # deploys pin an immutable :<sha>. The build: block below is only for
+    # local use (`make docker-up`); prod never builds.
+    image: ghcr.io/slashacom/slasha:${SLASHA_IMAGE_TAG:-nightly}
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: slasha:latest
     container_name: slasha
     network_mode: host
     volumes:
