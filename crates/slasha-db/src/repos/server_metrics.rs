@@ -86,15 +86,40 @@ impl ServerMetricsRepo {
         .await?
     }
 
+    /// Returns the history between `start` and `end`, downsampled into fixed
+    /// time buckets so the number of points stays bounded regardless of the
+    /// span. `bucket_seconds` is the width of each bucket; passing the raw
+    /// collection interval (15s) returns effectively un-aggregated data.
     pub async fn get_history(
         pool: &DuckdbPool,
         start: chrono::NaiveDateTime,
         end: chrono::NaiveDateTime,
+        bucket_seconds: i64,
     ) -> DbResult<Vec<ServerMetrics>> {
         let pool = pool.clone();
+        let bucket = bucket_seconds.max(1);
         tokio::task::spawn_blocking(move || {
             let conn = pool.get()?;
-            let mut stmt = conn.prepare("SELECT id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average, created_at FROM server_metrics WHERE created_at >= ? AND created_at <= ? ORDER BY created_at ASC")?;
+            let sql = format!(
+                "SELECT \
+                    CAST(time_bucket(to_seconds({bucket}), created_at) AS VARCHAR) AS id, \
+                    avg(cpu_usage) AS cpu_usage, \
+                    CAST(avg(memory_used) AS BIGINT) AS memory_used, \
+                    CAST(max(memory_total) AS BIGINT) AS memory_total, \
+                    CAST(avg(swap_used) AS BIGINT) AS swap_used, \
+                    CAST(max(swap_total) AS BIGINT) AS swap_total, \
+                    CAST(avg(disk_used) AS BIGINT) AS disk_used, \
+                    CAST(max(disk_total) AS BIGINT) AS disk_total, \
+                    avg(network_rx_bps) AS network_rx_bps, \
+                    avg(network_tx_bps) AS network_tx_bps, \
+                    avg(load_average) AS load_average, \
+                    time_bucket(to_seconds({bucket}), created_at) AS created_at \
+                 FROM server_metrics \
+                 WHERE created_at >= ? AND created_at <= ? \
+                 GROUP BY ALL \
+                 ORDER BY created_at ASC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
             let iter = stmt.query_map(params![start, end], |row| {
                 Ok(ServerMetrics {
                     id: row.get(0)?,
