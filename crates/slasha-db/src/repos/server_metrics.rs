@@ -86,10 +86,6 @@ impl ServerMetricsRepo {
         .await?
     }
 
-    /// Returns the history between `start` and `end`, downsampled into fixed
-    /// time buckets so the number of points stays bounded regardless of the
-    /// span. `bucket_seconds` is the width of each bucket; passing the raw
-    /// collection interval (15s) returns effectively un-aggregated data.
     pub async fn get_history(
         pool: &DuckdbPool,
         start: chrono::NaiveDateTime,
