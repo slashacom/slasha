@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   Area,
@@ -12,7 +12,10 @@ import {
   YAxis,
 } from 'recharts';
 import { Activity, Cpu, Database, Gauge, HardDrive } from 'lucide-react';
-import { getServerMetricsOptions } from '~/queries/monitoring';
+import {
+  getServerMetricsOptions,
+  getLatestServerMetricOptions,
+} from '~/queries/monitoring';
 import { SectionHeader } from '~/components/interface/section-header';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
@@ -34,59 +37,50 @@ const percent = (used: number | bigint, total: number | bigint) => {
 
 export function ServerMetricsView() {
   const [selectedRange, setSelectedRange] = useState<TimeRange>(TIME_RANGES[0]);
-  const [now, setNow] = useState(() => new Date());
-
-  useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 15000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const end = now;
-  const start = new Date(now.getTime() - selectedRange.hours * 3600 * 1000);
 
   const { data, isLoading } = useQuery({
-    ...getServerMetricsOptions(start, end),
+    ...getServerMetricsOptions(selectedRange.hours),
     placeholderData: keepPreviousData,
   });
 
-  const rawMetrics = data?.metrics ?? [];
+  const { data: latestData } = useQuery(getLatestServerMetricOptions());
 
-  const metrics = [...rawMetrics].sort(
-    (a, b) =>
-      parseUTC(a.created_at).getTime() - parseUTC(b.created_at).getTime()
-  );
+  const metrics = useMemo(() => data?.metrics ?? [], [data]);
 
-  const formatTime = (isoString: any) => {
-    if (!isoString) {
-      return '';
-    }
-    try {
-      const d =
-        typeof isoString === 'string'
-          ? parseUTC(isoString)
-          : new Date(isoString);
-      if (isNaN(d.getTime())) {
+  const formatTime = useCallback(
+    (isoString: any) => {
+      if (!isoString) {
         return '';
       }
-      if (selectedRange.hours > 24) {
-        return d.toLocaleDateString(undefined, {
-          month: 'short',
-          day: 'numeric',
+      try {
+        const d =
+          typeof isoString === 'string'
+            ? parseUTC(isoString)
+            : new Date(isoString);
+        if (isNaN(d.getTime())) {
+          return '';
+        }
+        if (selectedRange.hours > 24) {
+          return d.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+        }
+        return d.toLocaleTimeString(undefined, {
           hour: '2-digit',
           minute: '2-digit',
+          hour12: false,
         });
+      } catch {
+        return '';
       }
-      return d.toLocaleTimeString(undefined, {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      });
-    } catch {
-      return '';
-    }
-  };
+    },
+    [selectedRange.hours]
+  );
 
-  const latest = metrics[metrics.length - 1];
+  const latest = latestData?.metric ?? metrics[metrics.length - 1];
 
   if (isLoading && metrics.length === 0) {
     return (
@@ -313,6 +307,7 @@ export function ServerMetricsView() {
                         strokeWidth={1.5}
                         fillOpacity={1}
                         fill="url(#srvCpuGrad)"
+                        isAnimationActive={false}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -393,6 +388,7 @@ export function ServerMetricsView() {
                         strokeWidth={1.5}
                         fillOpacity={1}
                         fill="url(#srvMemGrad)"
+                        isAnimationActive={false}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -456,6 +452,7 @@ export function ServerMetricsView() {
                         strokeWidth={1.5}
                         dot={false}
                         activeDot={{ r: 4 }}
+                        isAnimationActive={false}
                       />
                       <Line
                         type="monotone"
@@ -465,6 +462,7 @@ export function ServerMetricsView() {
                         strokeWidth={1.5}
                         dot={false}
                         activeDot={{ r: 4 }}
+                        isAnimationActive={false}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -545,6 +543,7 @@ export function ServerMetricsView() {
                         strokeWidth={1.5}
                         fillOpacity={1}
                         fill="url(#srvLoadGrad)"
+                        isAnimationActive={false}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
