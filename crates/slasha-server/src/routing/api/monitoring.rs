@@ -15,10 +15,7 @@ pub struct MetricsQuery {
     pub end: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-/// Collection cadence of the metrics sampler, in seconds. Buckets never go
-/// finer than this since there is no more data to resolve.
 const RAW_INTERVAL_SECONDS: i64 = 15;
-/// Roughly how many points to return for any span, so charts stay smooth.
 const TARGET_POINTS: i64 = 240;
 
 pub fn router() -> Router<AppState> {
@@ -27,8 +24,6 @@ pub fn router() -> Router<AppState> {
         .route("/metrics/latest", get(get_latest_metrics))
 }
 
-/// Picks a bucket width that keeps the point count near `TARGET_POINTS`,
-/// aligned to the raw collection interval.
 fn bucket_seconds(start: chrono::DateTime<chrono::Utc>, end: chrono::DateTime<chrono::Utc>) -> i64 {
     let span = (end - start).num_seconds().max(RAW_INTERVAL_SECONDS);
     let intervals = (span / TARGET_POINTS / RAW_INTERVAL_SECONDS).max(1);
