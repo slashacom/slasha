@@ -9,7 +9,10 @@ use sha2::Sha256;
 use slasha_db::{
     app::AppSource,
     github_connection::ConnectionStatus,
-    repos::{app::AppRepo, deployment::DeploymentRepo, github_connection::GithubConnectionRepo},
+    repos::{
+        app::AppRepo, deployment::DeploymentRepo, github_connection::GithubConnectionRepo,
+        node::NodeRepo,
+    },
 };
 
 use crate::{
@@ -198,8 +201,24 @@ async fn handle_push(state: AppState, payload: PushPayload) {
             continue;
         }
 
+        let node = match NodeRepo::get(&state.storage.db_pool, &app.node_id).await {
+            Ok(node) => node,
+            Err(error) => {
+                tracing::warn!(error = %error, app_id = %app.id, "github auto-deploy failed: failed to load node");
+                continue;
+            }
+        };
+
+        let docker_client = match state.clients.docker_registry.get_client(&node) {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(error = %error, app_id = %app.id, "github auto-deploy failed: failed to get docker client");
+                continue;
+            }
+        };
+
         match trigger_deployment(
-            state.clients.docker.clone(),
+            docker_client,
             state.storage.db_pool.clone(),
             state.runtime.log_manager.clone(),
             state.runtime.proxy_sync_trigger.clone(),

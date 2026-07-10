@@ -24,7 +24,7 @@ pub const LITESTREAM_VOLUME: &str = "slasha-litestream";
 const LITESTREAM_VERSION: &str = "v0.3.13";
 const SQLITE_AMALGAMATION_URL: &str = "https://sqlite.org/2024/sqlite-amalgamation-3460100.zip";
 const SQLITE_AMALGAMATION_DIR: &str = "sqlite-amalgamation-3460100";
-const HELPER_IMAGE: &str = "alpine:3.20";
+const HELPER_IMAGE: &str = "alpine:latest";
 
 const ACCESS_KEY_ENV: &str = "LITESTREAM_ACCESS_KEY_ID";
 const SECRET_KEY_ENV: &str = "LITESTREAM_SECRET_ACCESS_KEY";

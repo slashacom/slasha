@@ -4,9 +4,10 @@ use axum::{
     extract::{FromRequestParts, Path},
     http::request::Parts,
 };
+use bollard::Docker;
 use slasha_db::{
     app::App,
-    repos::app::AppRepo,
+    repos::{app::AppRepo, node::NodeRepo},
     user::{User, UserRole},
 };
 
@@ -15,6 +16,7 @@ use crate::{AppState, HttpError, HttpResult, extractors::auth::AuthUser};
 pub struct ActiveApp {
     pub app: App,
     pub user: User,
+    pub docker_client: Docker,
 }
 
 impl FromRequestParts<AppState> for ActiveApp
@@ -35,13 +37,21 @@ where
 
         let app = AppRepo::find_by_slug_for_user(&state.storage.db_pool, slug, &user.id).await?;
 
-        Ok(ActiveApp { app, user })
+        let node = NodeRepo::get(&state.storage.db_pool, &app.node_id).await?;
+        let docker_client = state.clients.docker_registry.get_client(&node)?;
+
+        Ok(ActiveApp {
+            app,
+            user,
+            docker_client,
+        })
     }
 }
 
 pub struct ActiveAppOwner {
     pub app: App,
     pub user: User,
+    pub docker_client: Docker,
 }
 
 impl FromRequestParts<AppState> for ActiveAppOwner
@@ -51,7 +61,11 @@ where
     type Rejection = HttpError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> HttpResult<Self> {
-        let ActiveApp { app, user } = ActiveApp::from_request_parts(parts, state).await?;
+        let ActiveApp {
+            app,
+            user,
+            docker_client,
+        } = ActiveApp::from_request_parts(parts, state).await?;
 
         if user.role != UserRole::Admin
             && !AppRepo::is_owner(&state.storage.db_pool, &app.id, &user.id).await?
@@ -61,6 +75,10 @@ where
             ));
         }
 
-        Ok(ActiveAppOwner { app, user })
+        Ok(ActiveAppOwner {
+            app,
+            user,
+            docker_client,
+        })
     }
 }

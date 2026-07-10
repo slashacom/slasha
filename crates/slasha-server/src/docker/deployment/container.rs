@@ -20,22 +20,24 @@ use slasha_db::{
     app_backup::AppBackup,
     deployment::{Deployment, DeploymentStatus},
     models::app_scale::{ProcessContainer, ProcessStatus, ProcessType},
-    repos::deployment::DeploymentRepo,
+    repos::{deployment::DeploymentRepo, service::ServiceRepo},
 };
 use tokio::sync::Notify;
 
 use crate::{
     docker::{
         DeploymentError, DeploymentResult,
-        deployment::litestream,
+        deployment::{litestream, remove_app_images},
         image_tag,
         log_driver::default_log_config,
-        logs::{LogHandle, LogKey, LogManager, stream_container_logs},
         naming::{
             app_network_name, app_volume_name, app_volume_prefix, process_container_name,
             release_container_name,
         },
+        network::remove_app_network,
+        service_volume_name,
     },
+    logs::{LogHandle, LogKey, LogManager, stream_container_logs},
     proxy::container::PROXY_NETWORK_NAME,
 };
 
@@ -310,12 +312,12 @@ pub async fn stop_deployment_processes(
     db_pool: &DbPool,
     proxy_sync_trigger: &Arc<Notify>,
     log_manager: &LogManager,
-    deployment_tasks: &dashmap::DashMap<String, tokio::task::AbortHandle>,
+    deployment_tasks: &dashmap::DashMap<String, tokio_util::sync::CancellationToken>,
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<()> {
     if let Some((_, handle)) = deployment_tasks.remove(&deployment.id) {
-        handle.abort();
+        handle.cancel();
     }
 
     let processes = list_deployment_processes(docker_client, &deployment.id).await?;
@@ -611,6 +613,69 @@ pub async fn run_release_container(
     }
 
     log.send("Release command completed successfully").await?;
+
+    Ok(())
+}
+
+pub async fn cleanup_all_app_containers(
+    docker_client: &Docker,
+    proxy_sync: &tokio::sync::Notify,
+    app_id: &str,
+) -> DeploymentResult<()> {
+    let mut filters = std::collections::HashMap::new();
+    filters.insert(
+        "label".to_string(),
+        vec![format!("slasha.app_id={}", app_id)],
+    );
+
+    let containers = docker_client
+        .list_containers(Some(ListContainersOptions {
+            all: true,
+            filters: Some(filters),
+            ..Default::default()
+        }))
+        .await?;
+
+    for container in containers {
+        if let Some(id) = container.id {
+            let remove_options = Some(RemoveContainerOptionsBuilder::new().force(true).build());
+            let _ = docker_client.remove_container(&id, remove_options).await;
+        }
+    }
+
+    proxy_sync.notify_one();
+
+    Ok(())
+}
+
+pub async fn purge_app_from_node(
+    docker: &Docker,
+    db_pool: &slasha_db::DbPool,
+    log_manager: &LogManager,
+    proxy_sync: &tokio::sync::Notify,
+    app: &App,
+) -> DeploymentResult<()> {
+    log_manager.close_app_handles(&app.slug);
+
+    cleanup_all_app_containers(docker, proxy_sync, &app.id).await?;
+
+    remove_app_network(docker, &app.id).await?;
+    remove_app_volumes(docker, &app.id).await?;
+    remove_app_images(docker, &app.slug).await?;
+
+    if let Ok(services) = ServiceRepo::list_for_app(db_pool, &app.id).await {
+        for service in services {
+            let volume_name = service_volume_name(&service.id);
+            docker
+                .remove_volume(
+                    &volume_name,
+                    None::<bollard::query_parameters::RemoveVolumeOptions>,
+                )
+                .await?;
+        }
+    }
+
+    proxy_sync.notify_one();
 
     Ok(())
 }

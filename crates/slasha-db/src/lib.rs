@@ -10,5 +10,5 @@ pub use connection::{
 pub use error::{DbError, DbResult};
 pub use models::{
     alerts, app, app_backup, app_metrics, cron, deployment, git_connection, github_app_config,
-    github_connection, schema, server_metrics, service, ssh_keys, user,
+    github_connection, node, schema, server_metrics, service, ssh_keys, user,
 };

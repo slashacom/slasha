@@ -12,5 +12,6 @@ export type ServerMetrics = {
   network_rx_bps: number;
   network_tx_bps: number;
   load_average: number;
+  node_id: string;
   created_at: string;
 };

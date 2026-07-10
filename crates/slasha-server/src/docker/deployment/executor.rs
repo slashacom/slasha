@@ -29,15 +29,18 @@ use super::{
     procfile_parser::{Procfile, load_procfile},
     readiness::{ReadinessConfig, ReadinessOutcome, wait_for_web_ready},
 };
-use crate::docker::{
-    DeploymentError, DeploymentResult,
-    deployment::{
-        container::CreateContainerContext, remove_deployment_processes, stop_deployment_processes,
+use crate::{
+    docker::{
+        DeploymentError, DeploymentResult,
+        deployment::{
+            container::CreateContainerContext, remove_deployment_processes,
+            stop_deployment_processes,
+        },
+        env::{RefSource, resolve_env_value, topo_sort_vars},
+        naming::{app_network_name, image_tag, process_container_name, service_container_name},
+        rollback::Rollback,
     },
-    env::{RefSource, resolve_env_value, topo_sort_vars},
     logs::{LogHandle, LogKey, LogManager},
-    naming::{app_network_name, image_tag, process_container_name, service_container_name},
-    rollback::Rollback,
 };
 
 pub const DEFAULT_CONTAINER_PORT: u16 = 8080;
@@ -214,10 +217,11 @@ pub async fn run_deployment(
     db_pool: DbPool,
     log_manager: Arc<LogManager>,
     proxy_sync_trigger: Arc<Notify>,
-    deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
+    deployment_tasks: Arc<dashmap::DashMap<String, tokio_util::sync::CancellationToken>>,
     app: App,
     deployment: Deployment,
     source_image: Option<String>,
+    cancel_token: tokio_util::sync::CancellationToken,
 ) -> DeploymentResult<()> {
     tracing::info!(
         app_slug = %app.slug,
@@ -233,19 +237,24 @@ pub async fn run_deployment(
     let log = log_manager.get_logger(&log_key).await?;
     let mut rollback = Rollback::new();
 
-    if let Err(e) = execute_deployment(
-        &docker_client,
-        &db_pool,
-        &proxy_sync_trigger,
-        &log_manager,
-        &deployment_tasks,
-        &app,
-        &deployment,
-        source_image.as_deref(),
-        &mut rollback,
-    )
-    .await
-    {
+    let result = tokio::select! {
+        res = run_deployment_inner(
+            &docker_client,
+            &db_pool,
+            &proxy_sync_trigger,
+            &log_manager,
+            &deployment_tasks,
+            &app,
+            &deployment,
+            source_image.as_deref(),
+            &mut rollback,
+        ) => res,
+        _ = cancel_token.cancelled() => {
+            Err(DeploymentError::BuildFailed("Deployment was cancelled by user".to_string()))
+        }
+    };
+
+    if let Err(e) = result {
         tracing::info!(
             app_slug = %app.slug,
             deployment_id = %deployment.id,
@@ -283,12 +292,12 @@ pub async fn run_deployment(
     Ok(())
 }
 
-async fn execute_deployment(
+async fn run_deployment_inner(
     docker_client: &Docker,
     db_pool: &DbPool,
     proxy_sync_trigger: &Arc<Notify>,
     log_manager: &Arc<LogManager>,
-    deployment_tasks: &dashmap::DashMap<String, tokio::task::AbortHandle>,
+    deployment_tasks: &dashmap::DashMap<String, tokio_util::sync::CancellationToken>,
     app: &App,
     deployment: &Deployment,
     source_image: Option<&str>,
@@ -325,7 +334,7 @@ async fn execute_deployment(
             BuildStrategy::Dockerfile { .. } => {
                 build_docker(docker_client, &log, app, deployment).await?
             }
-            BuildStrategy::Railpack => build_railpack(&log, app, deployment).await?,
+            BuildStrategy::Railpack => build_railpack(docker_client, &log, app, deployment).await?,
         }
     }
 
@@ -558,6 +567,8 @@ async fn enforce_web_readiness(
         return Ok(());
     }
 
+    let is_local = app.node_id == slasha_db::models::node::LOCAL_NODE_ID;
+
     let config = ReadinessConfig::from_env_map(&deployment_context.env_map);
 
     log.send(format!(
@@ -573,6 +584,7 @@ async fn enforce_web_readiness(
             container_name,
             deployment_context.container_port,
             &config,
+            is_local,
         )
         .await
         {
@@ -630,7 +642,7 @@ pub async fn trigger_deployment(
     db_pool: DbPool,
     log_manager: Arc<LogManager>,
     proxy_sync_trigger: Arc<Notify>,
-    deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
+    deployment_tasks: Arc<dashmap::DashMap<String, tokio_util::sync::CancellationToken>>,
     app: App,
     commit_sha: Option<String>,
 ) -> DeploymentResult<Option<Deployment>> {
@@ -656,11 +668,14 @@ pub async fn trigger_deployment(
         commit_sha,
         commit_message,
         status: DeploymentStatus::Pending,
+        node_id: app.node_id.clone(),
     };
 
     let deployment = DeploymentRepo::create(&db_pool, deployment).await?;
 
-    let handle = tokio::spawn(run_deployment(
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+
+    let _handle = tokio::spawn(run_deployment(
         docker_client,
         db_pool,
         log_manager,
@@ -669,9 +684,10 @@ pub async fn trigger_deployment(
         app,
         deployment.clone(),
         None,
+        cancel_token.clone(),
     ));
 
-    deployment_tasks.insert(deployment.id.clone(), handle.abort_handle());
+    deployment_tasks.insert(deployment.id.clone(), cancel_token);
 
     Ok(Some(deployment))
 }
@@ -683,7 +699,7 @@ pub async fn trigger_rollback(
     db_pool: DbPool,
     log_manager: Arc<LogManager>,
     proxy_sync_trigger: Arc<Notify>,
-    deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
+    deployment_tasks: Arc<dashmap::DashMap<String, tokio_util::sync::CancellationToken>>,
     app: App,
     source_deployment: Deployment,
 ) -> DeploymentResult<Option<Deployment>> {
@@ -703,11 +719,14 @@ pub async fn trigger_rollback(
         commit_sha: source_deployment.commit_sha,
         commit_message: source_deployment.commit_message,
         status: DeploymentStatus::Pending,
+        node_id: source_deployment.node_id,
     };
 
     let deployment = DeploymentRepo::create(&db_pool, deployment).await?;
 
-    let handle = tokio::spawn(run_deployment(
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+
+    let _handle = tokio::spawn(run_deployment(
         docker_client,
         db_pool,
         log_manager,
@@ -716,9 +735,10 @@ pub async fn trigger_rollback(
         app,
         deployment.clone(),
         Some(source_image),
+        cancel_token.clone(),
     ));
 
-    deployment_tasks.insert(deployment.id.clone(), handle.abort_handle());
+    deployment_tasks.insert(deployment.id.clone(), cancel_token);
 
     Ok(Some(deployment))
 }

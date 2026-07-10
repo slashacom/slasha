@@ -8,6 +8,7 @@ pub mod deployment;
 pub mod git_connection;
 pub mod github_app_config;
 pub mod github_connection;
+pub mod node;
 pub mod schema;
 pub mod server_metrics;
 pub mod service;

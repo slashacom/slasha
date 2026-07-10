@@ -15,6 +15,7 @@ pub struct ServerMetrics {
     pub network_rx_bps: f64,
     pub network_tx_bps: f64,
     pub load_average: f64,
+    pub node_id: String,
     pub created_at: chrono::NaiveDateTime,
 }
 
@@ -29,4 +30,5 @@ pub struct NewServerMetrics {
     pub network_rx_bps: f64,
     pub network_tx_bps: f64,
     pub load_average: f64,
+    pub node_id: String,
 }

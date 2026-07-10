@@ -25,13 +25,15 @@ use slasha_db::{
 };
 use tokio::time::sleep;
 
-use crate::docker::{
-    DeploymentError, DeploymentResult,
-    env::{RefSource, resolve_env_value, topo_sort_vars},
-    log_driver::default_log_config,
+use crate::{
+    docker::{
+        DeploymentError, DeploymentResult,
+        env::{RefSource, resolve_env_value, topo_sort_vars},
+        log_driver::default_log_config,
+        naming::{app_network_name, service_container_name, service_volume_name},
+        rollback::Rollback,
+    },
     logs::{LogHandle, LogKey, LogManager, stream_container_logs},
-    naming::{app_network_name, service_container_name, service_volume_name},
-    rollback::Rollback,
 };
 
 pub fn resolve_env_vars(

@@ -85,7 +85,7 @@ impl CronJobRepo {
             let mut conn = pool.get()?;
             let id = uuid::Uuid::new_v4().to_string();
 
-            diesel::insert_into(cron_jobs::table)
+            let job: CronJob = diesel::insert_into(cron_jobs::table)
                 .values((
                     cron_jobs::id.eq(&id),
                     cron_jobs::app_id.eq(&job.app_id),
@@ -97,11 +97,10 @@ impl CronJobRepo {
                     cron_jobs::timeout_secs.eq(job.timeout_secs),
                     cron_jobs::runtime.eq(job.runtime),
                 ))
-                .execute(&mut conn)?;
+                .returning(CronJob::as_returning())
+                .get_result(&mut conn)?;
 
-            Ok(cron_jobs::table
-                .filter(cron_jobs::id.eq(&id))
-                .first::<CronJob>(&mut conn)?)
+            Ok(job)
         })
         .await?
     }
@@ -117,15 +116,12 @@ impl CronJobRepo {
             let mut conn = pool.get()?;
             changeset.updated_at = Utc::now().naive_utc();
 
-            diesel::update(cron_jobs::table.filter(cron_jobs::id.eq(&id)))
+            let job: CronJob = diesel::update(cron_jobs::table.filter(cron_jobs::id.eq(&id)))
                 .set(&changeset)
-                .execute(&mut conn)?;
+                .returning(CronJob::as_returning())
+                .get_result(&mut conn)?;
 
-            cron_jobs::table
-                .filter(cron_jobs::id.eq(&id))
-                .first::<CronJob>(&mut conn)
-                .optional()?
-                .ok_or_else(|| DbError::NotFound(format!("cron job '{}' not found", id)))
+            Ok(job)
         })
         .await?
     }
@@ -305,18 +301,17 @@ impl CronRunRepo {
             let mut conn = pool.get()?;
             let id = uuid::Uuid::new_v4().to_string();
 
-            diesel::insert_into(cron_runs::table)
+            let run: CronRun = diesel::insert_into(cron_runs::table)
                 .values((
                     cron_runs::id.eq(&id),
                     cron_runs::cron_job_id.eq(&run.cron_job_id),
                     cron_runs::status.eq(run.status),
                     cron_runs::trigger_kind.eq(run.trigger_kind),
                 ))
-                .execute(&mut conn)?;
+                .returning(CronRun::as_returning())
+                .get_result(&mut conn)?;
 
-            Ok(cron_runs::table
-                .filter(cron_runs::id.eq(&id))
-                .first::<CronRun>(&mut conn)?)
+            Ok(run)
         })
         .await?
     }

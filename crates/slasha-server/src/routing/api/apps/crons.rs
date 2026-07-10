@@ -9,7 +9,6 @@ use axum::{
     },
     routing::{get, post},
 };
-use bollard::Docker;
 use chrono::{NaiveDateTime, Utc};
 use futures_util::{StreamExt, stream};
 use garde::Validate;
@@ -24,8 +23,8 @@ use tokio_stream::wrappers::BroadcastStream;
 use crate::{
     HttpError, HttpResult,
     cron::{runner, schedule},
-    docker::logs::{LogKey, LogManager},
     extractors::{ValidatedJson, app::ActiveApp},
+    logs::{LogKey, LogManager},
     routing::api::{
         deserialize::{trim_optional_string, trim_string},
         validation::not_empty,
@@ -232,12 +231,14 @@ async fn delete_cron(
 }
 
 async fn run_now(
-    State(docker): State<Docker>,
-    State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
+    State(app_state): State<AppState>,
     ActiveApp { app, .. }: ActiveApp,
     Path((_, cron_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
+    let db_pool = app_state.storage.db_pool;
+    let log_manager = app_state.runtime.log_manager;
+    let docker_registry = app_state.clients.docker_registry;
+
     let job = CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
 
     if CronRunRepo::has_active(&db_pool, &job.id).await? {
@@ -255,7 +256,7 @@ async fn run_now(
 
     let dispatched = run.clone();
     tokio::spawn(async move {
-        runner::run_cron_job(db_pool, docker, log_manager, job, dispatched).await;
+        runner::run_cron_job(db_pool, docker_registry, log_manager, job, dispatched).await;
     });
 
     Ok(Json(serde_json::json!({ "run": run })))

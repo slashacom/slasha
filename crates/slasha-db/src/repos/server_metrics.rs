@@ -15,9 +15,10 @@ impl ServerMetricsRepo {
             let conn = pool.get()?;
             let id = uuid::Uuid::new_v4().to_string();
             conn.execute(
-                "INSERT INTO server_metrics (id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO server_metrics (id, node_id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 params![
                     id,
+                    { metrics.node_id },
                     { metrics.cpu_usage },
                     { metrics.memory_used },
                     { metrics.memory_total },
@@ -27,25 +28,26 @@ impl ServerMetricsRepo {
                     { metrics.disk_total },
                     { metrics.network_rx_bps },
                     { metrics.network_tx_bps },
-                    { metrics.load_average },
+                    { metrics.load_average }
                 ],
             )?;
 
-            let mut stmt = conn.prepare("SELECT id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average, created_at FROM server_metrics WHERE id = ?")?;
+            let mut stmt = conn.prepare("SELECT id, node_id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average, created_at FROM server_metrics WHERE id = ?")?;
             let mut iter = stmt.query_map(params![id], |row| {
                 Ok(ServerMetrics {
                     id: row.get(0)?,
-                    cpu_usage: row.get(1)?,
-                    memory_used: row.get(2)?,
-                    memory_total: row.get(3)?,
-                    swap_used: row.get(4)?,
-                    swap_total: row.get(5)?,
-                    disk_used: row.get(6)?,
-                    disk_total: row.get(7)?,
-                    network_rx_bps: row.get(8)?,
-                    network_tx_bps: row.get(9)?,
-                    load_average: row.get(10)?,
-                    created_at: row.get(11)?,
+                    node_id: row.get(1)?,
+                    cpu_usage: row.get(2)?,
+                    memory_used: row.get(3)?,
+                    memory_total: row.get(4)?,
+                    swap_used: row.get(5)?,
+                    swap_total: row.get(6)?,
+                    disk_used: row.get(7)?,
+                    disk_total: row.get(8)?,
+                    network_rx_bps: row.get(9)?,
+                    network_tx_bps: row.get(10)?,
+                    load_average: row.get(11)?,
+                    created_at: row.get(12)?,
                 })
             })?;
 
@@ -59,21 +61,22 @@ impl ServerMetricsRepo {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = pool.get()?;
-            let mut stmt = conn.prepare("SELECT id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average, created_at FROM server_metrics ORDER BY created_at DESC LIMIT 1")?;
+            let mut stmt = conn.prepare("SELECT id, node_id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average, created_at FROM server_metrics ORDER BY created_at DESC LIMIT 1")?;
             let mut iter = stmt.query_map([], |row| {
                 Ok(ServerMetrics {
                     id: row.get(0)?,
-                    cpu_usage: row.get(1)?,
-                    memory_used: row.get(2)?,
-                    memory_total: row.get(3)?,
-                    swap_used: row.get(4)?,
-                    swap_total: row.get(5)?,
-                    disk_used: row.get(6)?,
-                    disk_total: row.get(7)?,
-                    network_rx_bps: row.get(8)?,
-                    network_tx_bps: row.get(9)?,
-                    load_average: row.get(10)?,
-                    created_at: row.get(11)?,
+                    node_id: row.get(1)?,
+                    cpu_usage: row.get(2)?,
+                    memory_used: row.get(3)?,
+                    memory_total: row.get(4)?,
+                    swap_used: row.get(5)?,
+                    swap_total: row.get(6)?,
+                    disk_used: row.get(7)?,
+                    disk_total: row.get(8)?,
+                    network_rx_bps: row.get(9)?,
+                    network_tx_bps: row.get(10)?,
+                    load_average: row.get(11)?,
+                    created_at: row.get(12)?,
                 })
             })?;
 
@@ -88,27 +91,30 @@ impl ServerMetricsRepo {
 
     pub async fn get_history(
         pool: &DuckdbPool,
+        node_id: &str,
         start: chrono::NaiveDateTime,
         end: chrono::NaiveDateTime,
     ) -> DbResult<Vec<ServerMetrics>> {
         let pool = pool.clone();
+        let node_id = node_id.to_string();
         tokio::task::spawn_blocking(move || {
             let conn = pool.get()?;
-            let mut stmt = conn.prepare("SELECT id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average, created_at FROM server_metrics WHERE created_at >= ? AND created_at <= ? ORDER BY created_at ASC")?;
-            let iter = stmt.query_map(params![start, end], |row| {
+            let mut stmt = conn.prepare("SELECT id, node_id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average, created_at FROM server_metrics WHERE node_id = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC")?;
+            let iter = stmt.query_map(params![node_id, start, end], |row| {
                 Ok(ServerMetrics {
                     id: row.get(0)?,
-                    cpu_usage: row.get(1)?,
-                    memory_used: row.get(2)?,
-                    memory_total: row.get(3)?,
-                    swap_used: row.get(4)?,
-                    swap_total: row.get(5)?,
-                    disk_used: row.get(6)?,
-                    disk_total: row.get(7)?,
-                    network_rx_bps: row.get(8)?,
-                    network_tx_bps: row.get(9)?,
-                    load_average: row.get(10)?,
-                    created_at: row.get(11)?,
+                    node_id: row.get(1)?,
+                    cpu_usage: row.get(2)?,
+                    memory_used: row.get(3)?,
+                    memory_total: row.get(4)?,
+                    swap_used: row.get(5)?,
+                    swap_total: row.get(6)?,
+                    disk_used: row.get(7)?,
+                    disk_total: row.get(8)?,
+                    network_rx_bps: row.get(9)?,
+                    network_tx_bps: row.get(10)?,
+                    load_average: row.get(11)?,
+                    created_at: row.get(12)?,
                 })
             })?;
 

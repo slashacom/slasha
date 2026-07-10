@@ -65,6 +65,20 @@ impl AppRepo {
         .await?
     }
 
+    pub async fn find_by_slug(pool: &DbPool, slug: &str) -> DbResult<App> {
+        let pool = pool.clone();
+        let slug = slug.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            apps::table
+                .filter(apps::slug.eq(&slug))
+                .first::<App>(&mut conn)
+                .optional()?
+                .ok_or_else(|| DbError::NotFound(format!("app '{}' not found", slug)))
+        })
+        .await?
+    }
+
     pub async fn find_by_slug_for_user(pool: &DbPool, slug: &str, user_id: &str) -> DbResult<App> {
         let pool = pool.clone();
         let slug = slug.to_string();
@@ -121,10 +135,13 @@ impl AppRepo {
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             conn.transaction::<_, DbError, _>(|tx| {
-                diesel::insert_into(apps::table).values(&app).execute(tx)?;
+                let inserted_app: App = diesel::insert_into(apps::table)
+                    .values(&app)
+                    .returning(App::as_returning())
+                    .get_result(tx)?;
 
                 let member = AppMember {
-                    app_id: app.id.clone(),
+                    app_id: inserted_app.id.clone(),
                     user_id: owner_id,
                     role: AppMemberRole::Owner,
                     added_at: chrono::Utc::now().naive_utc(),
@@ -133,7 +150,7 @@ impl AppRepo {
                     .values(&member)
                     .execute(tx)?;
 
-                Ok(apps::table.filter(apps::id.eq(&app.id)).first::<App>(tx)?)
+                Ok(inserted_app)
             })
         })
         .await?
@@ -164,10 +181,13 @@ impl AppRepo {
             }
             let mut conn = pool.get()?;
             conn.transaction::<_, DbError, _>(|tx| {
-                diesel::insert_into(apps::table).values(&app).execute(tx)?;
+                let inserted_app: App = diesel::insert_into(apps::table)
+                    .values(&app)
+                    .returning(App::as_returning())
+                    .get_result(tx)?;
 
                 let member = AppMember {
-                    app_id: app.id.clone(),
+                    app_id: inserted_app.id.clone(),
                     user_id: owner_id,
                     role: AppMemberRole::Owner,
                     added_at: chrono::Utc::now().naive_utc(),
@@ -188,7 +208,7 @@ impl AppRepo {
                             .execute(tx)?;
                     }
                 }
-                Ok(apps::table.filter(apps::id.eq(&app.id)).first::<App>(tx)?)
+                Ok(inserted_app)
             })
         })
         .await?
@@ -307,8 +327,22 @@ impl AppRepo {
         let name = name.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            diesel::update(apps::table.filter(apps::id.eq(&id)))
+            diesel::update(apps::table.filter(apps::id.eq(id)))
                 .set(apps::name.eq(name))
+                .execute(&mut conn)?;
+            Ok(())
+        })
+        .await?
+    }
+
+    pub async fn update_node(pool: &DbPool, id: &str, node_id: &str) -> DbResult<()> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        let node_id = node_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            diesel::update(apps::table.filter(apps::id.eq(id)))
+                .set(apps::node_id.eq(node_id))
                 .execute(&mut conn)?;
             Ok(())
         })
