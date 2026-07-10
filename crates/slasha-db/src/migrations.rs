@@ -74,7 +74,7 @@ pub fn run_migrations(sqlite_db_path: &str, duckdb_path: &str) {
 
             duckdb_conn
                 .execute_batch(sql)
-                .unwrap_or_else(|_| panic!("Failed to execute migration {}", migration_id));
+                .unwrap_or_else(|e| panic!("Failed to execute migration {}: {:?}", migration_id, e));
 
             duckdb_conn
                 .execute(
