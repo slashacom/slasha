@@ -78,5 +78,6 @@ pub fn router() -> Router<AppState> {
         .nest("/{slug}/volumes", volumes::router())
         .nest("/{slug}/services", services::router())
         .route("/{slug}/metrics", get(metrics::get_metrics))
+        .route("/{slug}/metrics/latest", get(metrics::get_latest_metric))
         .nest("/{slug}/services/{service_id}/env", service_env::router())
 }
