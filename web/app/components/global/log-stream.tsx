@@ -6,10 +6,11 @@ import { cn } from '~/utils/classname';
 type LogStreamProps = {
   url: string;
   className?: string;
+  emptyMessage?: string;
 };
 
 export function LogStream(props: LogStreamProps) {
-  const { url, className } = props;
+  const { url, className, emptyMessage } = props;
   const [logs, setLogs] = useState<string[]>([]);
   const [done, setDone] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -18,7 +19,8 @@ export function LogStream(props: LogStreamProps) {
     setLogs([]);
     setDone(false);
     const token = getAuthToken();
-    const es = new EventSource(`${url}?token=${token}`);
+    const separator = url.includes('?') ? '&' : '?';
+    const es = new EventSource(`${url}${separator}token=${token}`);
 
     es.onmessage = (event) => {
       const data = event.data;
@@ -59,7 +61,7 @@ export function LogStream(props: LogStreamProps) {
       {logs.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
           {done ? (
-            <p>No logs for this deployment.</p>
+            <p>{emptyMessage || 'No logs for this deployment.'}</p>
           ) : (
             <>
               <CircleDashed className="size-5 animate-spin" />

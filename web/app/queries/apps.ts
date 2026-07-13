@@ -17,6 +17,7 @@ export type AppListItem = {
 type CreateAppPayload<Source extends AppSource = AppSource> = {
   name: string;
   source: Source;
+  node_id?: string;
 } & (Source extends 'github'
   ? { installation_id: number; repository_id: number }
   : Source extends 'git'
@@ -230,5 +231,14 @@ export function useDisconnectGithub() {
 export function useSyncApp() {
   return useMutation({
     mutationFn: (appSlug: string) => httpPost<void>(`apps/${appSlug}/sync`, {}),
+  });
+}
+
+export function useMoveAppNode() {
+  return useMutation({
+    mutationFn: (data: { appSlug: string; node_id: string }) =>
+      httpPut<{ app: App }>(`apps/${data.appSlug}/node`, {
+        node_id: data.node_id,
+      }),
   });
 }

@@ -47,6 +47,9 @@ function usePageTitle() {
   if (path.startsWith('/settings/')) {
     return 'Settings';
   }
+  if (path === '/nodes' || path === '/nodes/' || path.startsWith('/nodes/')) {
+    return 'Nodes';
+  }
   return '';
 }
 
@@ -57,7 +60,8 @@ export default function UserLayout() {
   const isFullWidth =
     (!!params.slug && location.pathname.startsWith('/apps/')) ||
     location.pathname.startsWith('/monitoring') ||
-    location.pathname.startsWith('/alerts');
+    location.pathname.startsWith('/alerts') ||
+    (location.pathname.startsWith('/nodes/') && !!params.id);
 
   return (
     <div className="flex h-screen bg-bg">

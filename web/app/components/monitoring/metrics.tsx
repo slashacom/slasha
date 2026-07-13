@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import {
+  useQuery,
+  useSuspenseQuery,
+  keepPreviousData,
+} from '@tanstack/react-query';
 import {
   Area,
   AreaChart,
@@ -13,6 +17,8 @@ import {
 } from 'recharts';
 import { Activity, Cpu, Database, Gauge, HardDrive } from 'lucide-react';
 import { getServerMetricsOptions } from '~/queries/monitoring';
+import { getNodesOptions } from '~/queries/nodes';
+import { Select } from '~/components/interface/select';
 import { SectionHeader } from '~/components/interface/section-header';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
@@ -44,8 +50,15 @@ export function ServerMetricsView() {
   const end = now;
   const start = new Date(now.getTime() - selectedRange.hours * 3600 * 1000);
 
+  const { data: nodesData } = useSuspenseQuery(getNodesOptions());
+  const defaultNode =
+    nodesData?.nodes?.find((n) => n.id === 'local') || nodesData?.nodes?.[0];
+  const [selectedNodeId, setSelectedNodeId] = useState(
+    defaultNode?.id || 'local'
+  );
+
   const { data, isLoading } = useQuery({
-    ...getServerMetricsOptions(start, end),
+    ...getServerMetricsOptions(start, end, selectedNodeId),
     placeholderData: keepPreviousData,
   });
 
@@ -129,6 +142,19 @@ export function ServerMetricsView() {
                 Live
               </span>
             </HStack>
+            <div className="w-48">
+              <Select
+                value={selectedNodeId}
+                onChange={(e) => setSelectedNodeId(e.target.value)}
+                className="h-8 py-1 text-xs"
+              >
+                {nodesData.nodes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name} {n.id === 'local' ? '(Local)' : ''}
+                  </option>
+                ))}
+              </Select>
+            </div>
             <HStack
               space={1}
               className="rounded border border-border bg-surface p-0.5"
