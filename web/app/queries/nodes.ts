@@ -51,13 +51,13 @@ export function useCreateNode() {
   });
 }
 
-export function useUpdateNode(id: string) {
+export function useUpdateNode() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: UpdateNodePayload) =>
+    mutationFn: ({ id, payload }: { id: string; payload: UpdateNodePayload }) =>
       httpPut<{ node: Node }>(`nodes/${id}`, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nodes', id] });
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['nodes', variables.id] });
       queryClient.invalidateQueries({ queryKey: ['nodes'] });
     },
   });

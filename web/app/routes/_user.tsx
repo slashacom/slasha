@@ -61,7 +61,9 @@ export default function UserLayout() {
     (!!params.slug && location.pathname.startsWith('/apps/')) ||
     location.pathname.startsWith('/monitoring') ||
     location.pathname.startsWith('/alerts') ||
-    (location.pathname.startsWith('/nodes/') && !!params.id);
+    (location.pathname.startsWith('/nodes/') &&
+      !!params.id &&
+      !location.pathname.endsWith('/edit'));
 
   return (
     <div className="flex h-screen bg-bg">

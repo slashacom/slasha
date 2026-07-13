@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Link, useNavigate, redirect } from 'react-router';
 import { toast } from 'sonner';
-import { PlusIcon, Server, Terminal, Trash2 } from 'lucide-react';
+import { Pencil, PlusIcon, Server, Terminal, Trash2 } from 'lucide-react';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
@@ -78,17 +78,29 @@ export default function NodesPage() {
         <div className="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4 border-b border-border/50">
           <div className="flex items-center gap-3">
             <div>
-              <h4 className="font-medium text-text">{localNode.name}</h4>
+              <div className="flex items-center gap-2">
+                <h4 className="font-medium text-text">{localNode.name}</h4>
+                <span className="inline-flex items-center rounded border border-border/60 bg-white/[0.02] px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary uppercase tracking-wider">
+                  Local
+                </span>
+              </div>
               <p className="text-xs text-text-tertiary mt-0.5">
                 The primary node running directly on this host machine
               </p>
             </div>
           </div>
-          <div>
+          <div className="flex items-center gap-3">
             <NodeStatusBadge
               status={localNode.status as any}
               liveStatus={localNode.live_status}
             />
+            <button
+              onClick={() => navigate(`/nodes/${localNode.id}/edit`)}
+              className="inline-flex items-center p-1.5 text-text-secondary hover:text-text hover:bg-white/5 rounded-md transition-colors"
+              title="Edit Node"
+            >
+              <Pencil className="size-4" />
+            </button>
           </div>
         </div>
       )}
@@ -133,25 +145,32 @@ export default function NodesPage() {
                       />
                     </td>
                     <td className="py-3 text-right">
-                      <div className="flex items-center justify-end gap-3">
+                      <div className="flex items-center justify-end gap-2">
                         <Link
                           to={`/nodes/${node.id}?type=${node.status === 'Deleting' ? 'teardown' : 'setup'}`}
-                          className="inline-flex items-center gap-1 text-xs !text-text-secondary hover:!text-text !no-underline"
+                          className="inline-flex items-center p-1.5 text-text-secondary hover:text-text hover:bg-white/5 rounded-md transition-colors !no-underline"
                           title="View Logs"
                         >
-                          <Terminal className="size-3" />
-                          Logs
+                          <Terminal className="size-4" />
                         </Link>
                         {node.status !== 'Deleting' && (
-                          <button
-                            onClick={() => setPendingDelete(nodeWithStatus)}
-                            disabled={deleteNode.isPending}
-                            className="inline-flex items-center gap-1 text-xs text-red-500 hover:text-red-400 disabled:opacity-50"
-                            title="Delete Node"
-                          >
-                            <Trash2 className="size-3" />
-                            Delete
-                          </button>
+                          <>
+                            <button
+                              onClick={() => navigate(`/nodes/${node.id}/edit`)}
+                              className="inline-flex items-center p-1.5 text-text-secondary hover:text-text hover:bg-white/5 rounded-md transition-colors"
+                              title="Edit Node"
+                            >
+                              <Pencil className="size-4" />
+                            </button>
+                            <button
+                              onClick={() => setPendingDelete(nodeWithStatus)}
+                              disabled={deleteNode.isPending}
+                              className="inline-flex items-center p-1.5 text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors disabled:opacity-50"
+                              title="Delete Node"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>

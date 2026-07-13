@@ -243,10 +243,18 @@ async fn update_node(
         || payload.port.is_some()
         || payload.ssh_private_key.is_some();
 
-    if node.is_local() && connection_changed {
-        return Err(HttpError::bad_request(
-            "can only update 'name' for the local node",
-        ));
+    if connection_changed {
+        if node.is_local() {
+            return Err(HttpError::bad_request(
+                "can only update 'name' for the local node",
+            ));
+        }
+
+        if NodeRepo::has_apps(&state.storage.db_pool, &id).await? {
+            return Err(HttpError::bad_request(
+                "cannot update node while it has apps assigned",
+            ));
+        }
     }
 
     let changeset = NodeChangeset {
