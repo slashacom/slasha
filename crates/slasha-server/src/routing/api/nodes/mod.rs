@@ -48,9 +48,19 @@ struct NodeWithStatus {
 
 async fn resolve_status(registry: &DockerRegistry, node: &Node) -> String {
     if let NodeStatus::Ready = node.status {
-        if let Ok(docker) = registry.get_client(node)
-            && docker.ping().await.is_ok()
-        {
+        let docker_client = match registry.get_client(node) {
+            Ok(client) => client,
+            Err(e) => {
+                tracing::error!(
+                    node_id = %node.id,
+                    error = %e,
+                    "failed to get docker client for node"
+                );
+                return "offline".to_string();
+            }
+        };
+
+        if docker_client.ping().await.is_ok() {
             "online".to_string()
         } else {
             "offline".to_string()

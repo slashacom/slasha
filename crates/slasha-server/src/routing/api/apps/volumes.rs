@@ -47,10 +47,7 @@ async fn volume_sizes(docker: &Docker) -> HashMap<String, i64> {
     let Ok(usage) = docker.df(None::<DataUsageOptions>).await else {
         return sizes;
     };
-    let items = usage
-        .volume_usage
-        .and_then(|v| v.items)
-        .unwrap_or_default();
+    let items = usage.volume_usage.and_then(|v| v.items).unwrap_or_default();
     for item in items {
         let Some(name) = item.get("Name").and_then(|v| v.as_str()) else {
             continue;

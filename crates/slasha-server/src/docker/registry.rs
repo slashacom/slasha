@@ -101,12 +101,7 @@ impl DockerRegistry {
                 known_hosts_check: Some(bollard::KnownHosts::Add),
             };
 
-            Docker::connect_with_ssh_options(
-                &address,
-                120,
-                bollard::API_DEFAULT_VERSION,
-                options,
-            )?
+            Docker::connect_with_ssh_options(&address, 120, bollard::API_DEFAULT_VERSION, options)?
         };
 
         self.clients.insert(

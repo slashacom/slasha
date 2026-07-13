@@ -3,9 +3,8 @@ use std::{collections::HashMap, time::Duration};
 use bollard::{
     Docker,
     models::{
-        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountType,
-        NetworkCreateRequest, NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum,
-        VolumeCreateRequest,
+        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountType, NetworkCreateRequest,
+        NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
     },
     query_parameters::{CreateContainerOptions, CreateImageOptions, StartContainerOptionsBuilder},
 };
