@@ -109,10 +109,6 @@ export default function NodesPage() {
             <p className="text-sm font-medium text-text-secondary">
               No remote nodes connected
             </p>
-            <p className="text-xs text-text-tertiary mt-1 max-w-sm">
-              Add external servers to deploy and scale your applications across
-              multiple host machines.
-            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
