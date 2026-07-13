@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use bollard::{
     Docker,
     models::{
-        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountTypeEnum, NetworkingConfig,
+        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountType, NetworkingConfig,
         RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
     },
     query_parameters::{
@@ -220,7 +220,7 @@ async fn run_cron_container(
                 })
                 .await?;
             Some(vec![Mount {
-                typ: Some(MountTypeEnum::VOLUME),
+                typ: Some(MountType::VOLUME),
                 source: Some(volume_name),
                 target: Some(MANAGED_DATA_PATH.to_string()),
                 ..Default::default()

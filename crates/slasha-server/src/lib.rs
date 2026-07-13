@@ -44,7 +44,7 @@ fn setup_dirs() -> (
     std::path::PathBuf, // duckdb
     std::path::PathBuf, // repos
     std::path::PathBuf, // logs
-    std::path::PathBuf, // node-ssh-keys
+    std::path::PathBuf, // nodes
 ) {
     let data_dir = utils::ensure_dir(
         dirs::home_dir()
@@ -57,7 +57,7 @@ fn setup_dirs() -> (
         data_dir.join("slasha.duckdb"),
         data_dir.join("repos"),
         data_dir.join("logs"),
-        utils::ensure_dir(data_dir.join("node-ssh-keys")),
+        utils::ensure_dir(data_dir.join("nodes")),
     )
 }
 
@@ -75,7 +75,7 @@ pub async fn serve() -> anyhow::Result<()> {
     dotenv().ok();
     setup_tracing();
 
-    let (db_path, duckdb_path, repos_dir, logs_dir, node_ssh_keys_dir) = setup_dirs();
+    let (db_path, duckdb_path, repos_dir, logs_dir, nodes_dir) = setup_dirs();
 
     let slasha_env = Env::from_str_or_default(
         &std::env::var("SLASHA_ENV").unwrap_or_else(|_| "development".to_string()),
@@ -110,7 +110,7 @@ pub async fn serve() -> anyhow::Result<()> {
         .map(connections::GithubClient::from_config)
         .transpose()?;
 
-    let clients = Clients::new(github_client, node_ssh_keys_dir);
+    let clients = Clients::new(github_client, nodes_dir);
 
     let docker_client = clients
         .docker_registry

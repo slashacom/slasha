@@ -83,6 +83,8 @@ impl DockerRegistry {
             Docker::connect_with_local_defaults()?
         } else {
             let key_path = self.node_connection_manager.get_key_path(node)?;
+            let known_hosts_file = self.node_connection_manager.known_hosts_path();
+            let config_file = self.node_connection_manager.ssh_config_path()?;
 
             let address = format!(
                 "ssh://{}@{}:{}",
@@ -91,11 +93,19 @@ impl DockerRegistry {
                 node.port.unwrap_or(22)
             );
 
-            Docker::connect_with_ssh(
+            let options = bollard::SshOptions {
+                keypair_path: Some(key_path.to_string_lossy().to_string()),
+                user_known_hosts_file: Some(known_hosts_file.to_string_lossy().to_string()),
+                config_file: Some(config_file.to_string_lossy().to_string()),
+                connect_timeout: Some(std::time::Duration::from_secs(10)),
+                known_hosts_check: Some(bollard::KnownHosts::Add),
+            };
+
+            Docker::connect_with_ssh_options(
                 &address,
                 120,
                 bollard::API_DEFAULT_VERSION,
-                Some(key_path.to_string_lossy().to_string()),
+                options,
             )?
         };
 

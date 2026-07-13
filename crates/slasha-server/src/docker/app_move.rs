@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bollard::{
     Docker, body_try_stream,
-    models::{ContainerCreateBody, HostConfig, Mount, MountTypeEnum, VolumeCreateRequest},
+    models::{ContainerCreateBody, HostConfig, Mount, MountType, VolumeCreateRequest},
     query_parameters::{
         CreateContainerOptions, CreateImageOptions, DownloadFromContainerOptions,
         ListVolumesOptions, RemoveContainerOptionsBuilder, RemoveVolumeOptions,
@@ -61,7 +61,7 @@ async fn create_helper_container(
         image: Some(HELPER_IMAGE.to_string()),
         host_config: Some(HostConfig {
             mounts: Some(vec![Mount {
-                typ: Some(MountTypeEnum::VOLUME),
+                typ: Some(MountType::VOLUME),
                 source: Some(volume_name.to_string()),
                 target: Some("/volume_data".to_string()),
                 ..Default::default()

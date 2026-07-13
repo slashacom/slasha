@@ -217,7 +217,7 @@ docker run -d \
     -l slasha.managed=true \
     -l slasha.role=proxy \
     caddy:latest \
-    /bin/sh -c "printf '{\n  admin 0.0.0.0:2019\n}\n' > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"
+    /bin/sh -c "printf '{\n  admin 0.0.0.0:2019\n}\nlocalhost {\n  tls internal\n  respond \"ok\"\n}\n' > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"
 
 
 for i in $(seq 1 20); do

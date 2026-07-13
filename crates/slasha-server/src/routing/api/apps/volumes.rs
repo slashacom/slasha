@@ -48,7 +48,7 @@ async fn volume_sizes(docker: &Docker) -> HashMap<String, i64> {
         return sizes;
     };
     let items = usage
-        .volumes_disk_usage
+        .volume_usage
         .and_then(|v| v.items)
         .unwrap_or_default();
     for item in items {

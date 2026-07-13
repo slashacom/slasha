@@ -32,7 +32,8 @@ diesel_migrations = "2.3.1"
 flate2 = "1.1.9"
 tokio-util = { version = "0.7.18", features = ["io"] }
 git2 = "0.20.4"
-bollard = { version = "0.20.2", features = ["buildkit", "chrono", "ssh"] }
+# bollard = { version = "0.20.2", features = ["buildkit", "chrono", "ssh"] }
+bollard = { git = "https://github.com/humblepenguinn/bollard", branch = "master", features = ["buildkit", "chrono", "ssh"]  }
 futures-util = { version = "0.3.32", features = ["sink"] }
 dashmap = "6.1.0"
 bytes = "1"

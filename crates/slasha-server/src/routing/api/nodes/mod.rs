@@ -175,11 +175,13 @@ async fn create_node(
                     if let Some(start) = stdout_str.find("---BEGIN ROOT CA---\n")
                         && let Some(end) = stdout_str[start..].find("\n---END ROOT CA---")
                     {
-                        let cert = stdout_str[start + "---BEGIN ROOT CA---\n".len()..start + end]
-                            .trim()
-                            .to_string();
-                        if !cert.is_empty() {
-                            internal_root_ca = Some(cert);
+                        let cert_start = start + "---BEGIN ROOT CA---\n".len();
+                        let cert_end = start + end;
+                        if cert_start <= cert_end {
+                            let cert = stdout_str[cert_start..cert_end].trim().to_string();
+                            if !cert.is_empty() {
+                                internal_root_ca = Some(cert);
+                            }
                         }
                     }
                     tracing::info!(node_id = %node.id, node_name = %node.name, "node setup completed");

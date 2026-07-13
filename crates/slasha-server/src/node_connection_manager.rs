@@ -10,12 +10,32 @@ use crate::logs::LogHandle;
 
 #[derive(Clone)]
 pub struct NodeConnectionManager {
+    nodes_dir: PathBuf,
     keys_dir: PathBuf,
 }
 
 impl NodeConnectionManager {
-    pub fn new(keys_dir: PathBuf) -> Self {
-        Self { keys_dir }
+    pub fn new(nodes_dir: PathBuf) -> Self {
+        let keys_dir = nodes_dir.join("keys");
+        let _ = std::fs::create_dir_all(&keys_dir);
+
+        Self {
+            nodes_dir,
+            keys_dir,
+        }
+    }
+
+    pub fn known_hosts_path(&self) -> PathBuf {
+        self.nodes_dir.join("known_hosts")
+    }
+
+    pub fn ssh_config_path(&self) -> anyhow::Result<PathBuf> {
+        let path = self.nodes_dir.join("config");
+        if !path.exists() {
+            std::fs::File::create(&path)?;
+        }
+
+        Ok(path)
     }
 
     pub fn get_key_path(&self, node: &Node) -> anyhow::Result<PathBuf> {
@@ -26,12 +46,18 @@ impl NodeConnectionManager {
         let key_path = self.keys_dir.join(&node.id);
 
         if !key_path.exists() {
-            let key_content = node
+            let raw_key = node
                 .ssh_private_key
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("node {} has no ssh_private_key", node.id))?;
 
-            std::fs::write(&key_path, key_content)?;
+            // normalize line endings to Unix (LF) and ensure a trailing newline is present
+            let mut normalized = raw_key.replace("\r\n", "\n");
+            if !normalized.ends_with('\n') {
+                normalized.push('\n');
+            }
+
+            std::fs::write(&key_path, normalized)?;
             std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600))?;
         }
 
@@ -40,6 +66,7 @@ impl NodeConnectionManager {
 
     pub async fn probe_ssh(&self, node: &Node) -> anyhow::Result<()> {
         let output = self.run_ssh_script(node, "echo ok").await?;
+
         if output.status.success() {
             Ok(())
         } else {
@@ -61,12 +88,19 @@ impl NodeConnectionManager {
         let user = node.user.as_deref().unwrap_or("root");
         let port = node.port.unwrap_or(22);
 
+        let known_hosts_file = self.known_hosts_path();
+        let config_file = self.ssh_config_path()?;
+
         let mut child = Command::new("ssh")
             .args([
                 "-i",
                 key_path.to_str().unwrap_or_default(),
                 "-p",
                 &port.to_string(),
+                "-F",
+                config_file.to_str().unwrap_or_default(),
+                "-o",
+                &format!("UserKnownHostsFile={}", known_hosts_file.to_string_lossy()),
                 "-o",
                 "StrictHostKeyChecking=accept-new",
                 "-o",
@@ -101,12 +135,19 @@ impl NodeConnectionManager {
         let user = node.user.as_deref().unwrap_or("root");
         let port = node.port.unwrap_or(22);
 
+        let known_hosts_file = self.known_hosts_path();
+        let config_file = self.ssh_config_path()?;
+
         let mut child = Command::new("ssh")
             .args([
                 "-i",
                 key_path.to_str().unwrap_or_default(),
                 "-p",
                 &port.to_string(),
+                "-F",
+                config_file.to_str().unwrap_or_default(),
+                "-o",
+                &format!("UserKnownHostsFile={}", known_hosts_file.to_string_lossy()),
                 "-o",
                 "StrictHostKeyChecking=accept-new",
                 "-o",

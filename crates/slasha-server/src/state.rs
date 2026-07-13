@@ -25,8 +25,8 @@ pub struct Clients {
 }
 
 impl Clients {
-    pub fn new(github: Option<GithubClient>, node_ssh_keys_dir: PathBuf) -> Self {
-        let node_connection_manager = Arc::new(NodeConnectionManager::new(node_ssh_keys_dir));
+    pub fn new(github: Option<GithubClient>, nodes_dir: PathBuf) -> Self {
+        let node_connection_manager = Arc::new(NodeConnectionManager::new(nodes_dir));
 
         Self {
             docker_registry: DockerRegistry::new(node_connection_manager.clone()),

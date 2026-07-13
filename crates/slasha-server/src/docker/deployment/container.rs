@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use bollard::{
     Docker,
     models::{
-        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountTypeEnum, NetworkingConfig,
+        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountType, NetworkingConfig,
         RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
     },
     plugin::ContainerSummaryStateEnum,
@@ -517,7 +517,7 @@ async fn build_mounts(
             .await?;
 
         mounts.push(Mount {
-            typ: Some(MountTypeEnum::VOLUME),
+            typ: Some(MountType::VOLUME),
             source: Some(volume_name),
             target: Some(path.clone()),
             ..Default::default()

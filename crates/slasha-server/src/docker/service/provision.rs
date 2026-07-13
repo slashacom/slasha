@@ -7,7 +7,7 @@ use std::{
 use bollard::{
     Docker,
     models::{
-        EndpointSettings, HealthConfig, HealthStatusEnum, HostConfig, Mount, MountTypeEnum,
+        EndpointSettings, HealthConfig, HealthStatusEnum, HostConfig, Mount, MountType,
         NetworkingConfig, ProgressDetail, RestartPolicy, RestartPolicyNameEnum,
         VolumeCreateRequest,
     },
@@ -267,7 +267,7 @@ async fn create_service_container(
                         maximum_retry_count: None,
                     }),
                     mounts: Some(vec![Mount {
-                        typ: Some(MountTypeEnum::VOLUME),
+                        typ: Some(MountType::VOLUME),
                         source: Some(volume_name),
                         target: Some(service.kind.volume_mount_path().to_string()),
                         ..Default::default()
