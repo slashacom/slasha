@@ -10,4 +10,4 @@ build/
 
 .diesel/
 data/
-.claude/
+.dev-node-keys/
