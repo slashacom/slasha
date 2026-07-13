@@ -64,7 +64,7 @@ export default function NodesPage() {
         <div>
           <h3 className="font-semibold text-text">Nodes</h3>
           <p className="mt-2 text-sm text-text-secondary">
-            Manage the server nodes running Slasha apps and view cluster health.
+            Manage the server nodes running Slasha apps.
           </p>
         </div>
         <Button
@@ -75,26 +75,20 @@ export default function NodesPage() {
       </div>
 
       {localNode && (
-        <div className="mt-6 rounded-lg border border-border bg-surface/20 p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4 border-b border-border/50">
+          <div className="flex items-center gap-3">
             <div>
-              <div className="flex items-center gap-2">
-                <h4 className="font-semibold text-text">{localNode.name}</h4>
-                <span className="rounded bg-white/[0.04] border border-white/[0.02] px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">
-                  Local
-                </span>
-              </div>
-              <p className="text-[12px] text-text-secondary mt-1">
-                Deploys applications directly on the host machine running
-                Slasha.
+              <h4 className="font-medium text-text">{localNode.name}</h4>
+              <p className="text-xs text-text-tertiary mt-0.5">
+                The primary node running directly on this host machine
               </p>
             </div>
-            <div className="flex items-center">
-              <NodeStatusBadge
-                status={localNode.status as any}
-                liveStatus={localNode.live_status}
-              />
-            </div>
+          </div>
+          <div>
+            <NodeStatusBadge
+              status={localNode.status as any}
+              liveStatus={localNode.live_status}
+            />
           </div>
         </div>
       )}
