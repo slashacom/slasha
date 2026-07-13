@@ -33,6 +33,11 @@ const TONE_STYLES: Record<
     icon: CircleDashed,
     className: 'border-border bg-white/5 text-text-tertiary',
   },
+  migrating: {
+    icon: Loader2,
+    className: 'border-amber-500/20 bg-amber-500/10 text-amber-400',
+    spin: true,
+  },
 };
 
 export function AppRuntimeBadge(props: AppRuntimeBadgeProps) {

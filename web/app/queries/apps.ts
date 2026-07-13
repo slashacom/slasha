@@ -11,7 +11,7 @@ import type { GitConnection } from '~/models/connection';
 export type AppListItem = {
   app: App;
   url: string;
-  runtime_status: 'idle' | 'deploying' | 'running' | 'failed';
+  runtime_status: 'idle' | 'deploying' | 'running' | 'failed' | 'migrating';
 };
 
 type CreateAppPayload<Source extends AppSource = AppSource> = {
