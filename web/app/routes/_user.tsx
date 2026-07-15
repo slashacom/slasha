@@ -29,9 +29,7 @@ function usePageTitle() {
   if (path.startsWith('/apps/') && params.slug) {
     return 'Apps';
   }
-  if (path.startsWith('/monitoring')) {
-    return 'Monitoring';
-  }
+
   if (path === '/alerts' || path.startsWith('/alerts/')) {
     return 'Alerts';
   }
@@ -59,11 +57,8 @@ export default function UserLayout() {
   const params = useParams();
   const isFullWidth =
     (!!params.slug && location.pathname.startsWith('/apps/')) ||
-    location.pathname.startsWith('/monitoring') ||
     location.pathname.startsWith('/alerts') ||
-    (location.pathname.startsWith('/nodes/') &&
-      !!params.id &&
-      !location.pathname.endsWith('/edit'));
+    (location.pathname.startsWith('/nodes/') && !!params.id);
 
   return (
     <div className="flex h-screen bg-bg">

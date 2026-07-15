@@ -93,13 +93,12 @@ impl DockerRegistry {
                 node.port.unwrap_or(22)
             );
 
-            let options = bollard::SshOptions {
-                keypair_path: Some(key_path.to_string_lossy().to_string()),
-                user_known_hosts_file: Some(known_hosts_file.to_string_lossy().to_string()),
-                config_file: Some(config_file.to_string_lossy().to_string()),
-                connect_timeout: Some(std::time::Duration::from_secs(10)),
-                known_hosts_check: Some(bollard::KnownHosts::Add),
-            };
+            let options = bollard::SshOptions::new()
+                .with_keypair_path(key_path.to_string_lossy().to_string())
+                .with_user_known_hosts_file(known_hosts_file.to_string_lossy().to_string())
+                .with_config_file(config_file.to_string_lossy().to_string())
+                .with_connect_timeout(std::time::Duration::from_secs(10))
+                .with_known_hosts_check(bollard::KnownHosts::Add);
 
             Docker::connect_with_ssh_options(&address, 120, bollard::API_DEFAULT_VERSION, options)?
         };

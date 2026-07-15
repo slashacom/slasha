@@ -1,9 +1,5 @@
-import { useState, useEffect } from 'react';
-import {
-  useQuery,
-  useSuspenseQuery,
-  keepPreviousData,
-} from '@tanstack/react-query';
+import { useState, useEffect, useTransition } from 'react';
+import { useSuspenseQuery } from '@tanstack/react-query';
 import {
   Area,
   AreaChart,
@@ -16,9 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 import { Activity, Cpu, Database, Gauge, HardDrive } from 'lucide-react';
-import { getServerMetricsOptions } from '~/queries/monitoring';
-import { getNodesOptions } from '~/queries/nodes';
-import { Select } from '~/components/interface/select';
+import { getNodeMetricsOptions } from '~/queries/nodes';
 import { SectionHeader } from '~/components/interface/section-header';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
@@ -38,29 +32,27 @@ const percent = (used: number | bigint, total: number | bigint) => {
   return Math.round((Number(used) / numTotal) * 100);
 };
 
-export function ServerMetricsView() {
+export const getRoundedNow = () => {
+  const d = new Date();
+  d.setMilliseconds(0);
+  d.setSeconds(Math.floor(d.getSeconds() / 15) * 15);
+  return d;
+};
+
+export function ServerMetricsView({ nodeId }: { nodeId: string }) {
   const [selectedRange, setSelectedRange] = useState<TimeRange>(TIME_RANGES[0]);
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(() => getRoundedNow());
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 15000);
+    const interval = setInterval(() => setNow(getRoundedNow()), 15000);
     return () => clearInterval(interval);
   }, []);
 
   const end = now;
   const start = new Date(now.getTime() - selectedRange.hours * 3600 * 1000);
 
-  const { data: nodesData } = useSuspenseQuery(getNodesOptions());
-  const defaultNode =
-    nodesData?.nodes?.find((n) => n.id === 'local') || nodesData?.nodes?.[0];
-  const [selectedNodeId, setSelectedNodeId] = useState(
-    defaultNode?.id || 'local'
-  );
-
-  const { data, isLoading } = useQuery({
-    ...getServerMetricsOptions(start, end, selectedNodeId),
-    placeholderData: keepPreviousData,
-  });
+  const { data } = useSuspenseQuery(getNodeMetricsOptions(nodeId, start, end));
 
   const rawMetrics = data?.metrics ?? [];
 
@@ -101,30 +93,6 @@ export function ServerMetricsView() {
 
   const latest = metrics[metrics.length - 1];
 
-  if (isLoading && metrics.length === 0) {
-    return (
-      <VStack className="p-8" space={4}>
-        <div className="h-4 w-32 animate-pulse rounded bg-white/[0.06]" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="h-24 animate-pulse rounded-lg border border-border bg-surface"
-            />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="h-72 animate-pulse rounded-lg border border-border bg-surface"
-            />
-          ))}
-        </div>
-      </VStack>
-    );
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <SectionHeader
@@ -142,19 +110,6 @@ export function ServerMetricsView() {
                 Live
               </span>
             </HStack>
-            <div className="w-48">
-              <Select
-                value={selectedNodeId}
-                onChange={(e) => setSelectedNodeId(e.target.value)}
-                className="h-8 py-1 text-xs"
-              >
-                {nodesData.nodes.map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.name} {n.id === 'local' ? '(Local)' : ''}
-                  </option>
-                ))}
-              </Select>
-            </div>
             <HStack
               space={1}
               className="rounded border border-border bg-surface p-0.5"
@@ -162,12 +117,13 @@ export function ServerMetricsView() {
               {TIME_RANGES.map((range) => (
                 <button
                   key={range.hours}
-                  onClick={() => setSelectedRange(range)}
+                  onClick={() => startTransition(() => setSelectedRange(range))}
                   className={cn(
                     'h-7 px-3 rounded text-[11px] font-medium transition-colors',
                     selectedRange.hours === range.hours
                       ? 'bg-white/[0.08] text-text'
-                      : 'text-text-tertiary hover:text-text'
+                      : 'text-text-tertiary hover:text-text',
+                    isPending && 'opacity-70'
                   )}
                 >
                   {range.label}

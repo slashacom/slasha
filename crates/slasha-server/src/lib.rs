@@ -124,7 +124,7 @@ pub async fn serve() -> anyhow::Result<()> {
         clients.docker_registry.clone(),
     )
     .spawn();
-    metrics::server::ServerMetricsCollector::new(
+    metrics::node::NodeMetricsCollector::new(
         storage.duckdb_pool.clone(),
         storage.db_pool.clone(),
         clients.node_connection_manager.clone(),

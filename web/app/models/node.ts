@@ -6,8 +6,6 @@ export type Node = {
   host: string | null;
   user: string | null;
   port: number | null;
-  ssh_private_key: string | null;
-  internal_root_ca: string | null;
   status: NodeStatus;
   created_at: string;
   updated_at: string;

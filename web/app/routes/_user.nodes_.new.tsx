@@ -29,7 +29,7 @@ export default function NewNodePage() {
     try {
       const data = await promise;
       void queryClient.invalidateQueries({ queryKey: ['nodes'] });
-      navigate(`/nodes/${data.node.id}?type=setup`);
+      navigate(`/nodes/${data.node.id}/logs?type=setup`);
     } catch {}
   };
 

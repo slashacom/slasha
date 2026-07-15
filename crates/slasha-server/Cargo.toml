@@ -32,8 +32,14 @@ diesel_migrations = "2.3.1"
 flate2 = "1.1.9"
 tokio-util = { version = "0.7.18", features = ["io"] }
 git2 = "0.20.4"
-# bollard = { version = "0.20.2", features = ["buildkit", "chrono", "ssh"] }
-bollard = { git = "https://github.com/humblepenguinn/bollard", branch = "master", features = ["buildkit", "chrono", "ssh"]  }
+# pinned to a specific commit until the next official release
+# includes our merged pull request with a bug fix and custom ssh
+# options required for multi-node support.
+bollard = { 
+    git = "https://github.com/fussybeaver/bollard",
+    rev = "4aa4db1c2b1762076a15cfda1cb6b4785d151f98",
+    features = ["buildkit", "chrono", "ssh"],
+}
 futures-util = { version = "0.3.32", features = ["sink"] }
 dashmap = "6.1.0"
 bytes = "1"

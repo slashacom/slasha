@@ -5,9 +5,11 @@ import {
 } from '@tanstack/react-query';
 import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
 import type { Node } from '~/models/node';
+import type { ServerMetrics } from '~/models/server-metrics';
 
-export type NodeWithStatus = Node & {
+export type NodeWithInfo = Node & {
   live_status: string;
+  os?: string;
 };
 
 export type CreateNodePayload = {
@@ -29,14 +31,14 @@ export type UpdateNodePayload = {
 export function getNodesOptions() {
   return queryOptions({
     queryKey: ['nodes'],
-    queryFn: () => httpGet<{ nodes: NodeWithStatus[] }>('nodes'),
+    queryFn: () => httpGet<{ nodes: NodeWithInfo[] }>('nodes'),
   });
 }
 
 export function getNodeOptions(id: string) {
   return queryOptions({
     queryKey: ['nodes', id],
-    queryFn: () => httpGet<{ node: NodeWithStatus }>(`nodes/${id}`),
+    queryFn: () => httpGet<{ node: NodeWithInfo }>(`nodes/${id}`),
   });
 }
 
@@ -71,5 +73,25 @@ export function useDeleteNode() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nodes'] });
     },
+  });
+}
+
+export function getNodeMetricsOptions(
+  nodeId: string,
+  start?: Date,
+  end?: Date
+) {
+  let queryParams = new URLSearchParams();
+  if (start) queryParams.append('start', start.toISOString());
+  if (end) queryParams.append('end', end.toISOString());
+
+  const qs = queryParams.toString();
+
+  return queryOptions({
+    queryKey: ['nodes', nodeId, 'metrics', { start, end }],
+    queryFn: () =>
+      httpGet<{ metrics: ServerMetrics[] }>(
+        `nodes/${nodeId}/metrics${qs ? `?${qs}` : ''}`
+      ),
   });
 }

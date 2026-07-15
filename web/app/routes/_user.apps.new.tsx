@@ -91,7 +91,7 @@ export default function NewApp() {
     }
   }, [githubBranches, githubBranch]);
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (source === 'github' && !selectedRepository) {

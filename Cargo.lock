@@ -761,7 +761,7 @@ dependencies = [
 [[package]]
 name = "bollard"
 version = "0.21.0"
-source = "git+https://github.com/humblepenguinn/bollard?branch=master#db0ab6653749cf88ecdffec2997bac4258a9fc1c"
+source = "git+https://github.com/fussybeaver/bollard?rev=4aa4db1c2b1762076a15cfda1cb6b4785d151f98#4aa4db1c2b1762076a15cfda1cb6b4785d151f98"
 dependencies = [
  "async-stream",
  "base64",

@@ -22,7 +22,11 @@ pub struct Node {
     pub host: Option<String>,
     pub user: Option<String>,
     pub port: Option<i32>,
+    #[serde(skip_serializing)]
+    #[ts(skip)]
     pub ssh_private_key: Option<String>,
+    #[serde(skip_serializing)]
+    #[ts(skip)]
     pub internal_root_ca: Option<String>,
     pub status: NodeStatus,
     pub created_at: chrono::NaiveDateTime,

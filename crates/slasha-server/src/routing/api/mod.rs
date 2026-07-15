@@ -9,7 +9,6 @@ pub mod auth;
 pub mod connections;
 pub mod deserialize;
 pub mod error;
-pub mod monitoring;
 pub mod nodes;
 pub mod service_kinds;
 pub mod ssh_keys;
@@ -33,7 +32,6 @@ pub fn router(state: AppState) -> Router<AppState> {
                 admin_middleware,
             )),
         )
-        .nest("/monitoring", monitoring::router())
         .nest("/services", service_kinds::router())
         .nest("/ssh-keys", ssh_keys::router())
         .nest(

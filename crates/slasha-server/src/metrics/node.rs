@@ -36,7 +36,7 @@ struct PrevCounters {
     timestamp: Instant,
 }
 
-pub struct ServerMetricsCollector {
+pub struct NodeMetricsCollector {
     duckdb_pool: DuckdbPool,
     db_pool: DbPool,
     prev: HashMap<String, PrevCounters>,
@@ -47,7 +47,7 @@ pub struct ServerMetricsCollector {
     last_refresh: Instant,
 }
 
-impl ServerMetricsCollector {
+impl NodeMetricsCollector {
     pub fn new(
         duckdb_pool: DuckdbPool,
         db_pool: DbPool,

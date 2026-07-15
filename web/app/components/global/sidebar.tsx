@@ -59,7 +59,6 @@ export function Sidebar() {
 
       <nav className="flex-1 px-6 pt-5">
         <SidebarItem to="/apps" icon={LayoutGrid} label="Apps" />
-        <SidebarItem to="/monitoring" icon={Activity} label="Monitoring" />
         {isAdmin && <SidebarItem to="/nodes" icon={Server} label="Nodes" />}
         {isAdmin && <SidebarItem to="/alerts" icon={Bell} label="Alerts" />}
         {isAdmin && <SidebarItem to="/users" icon={Users} label="Users" />}

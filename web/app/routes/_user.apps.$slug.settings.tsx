@@ -119,7 +119,7 @@ export default function AppSettingsPage() {
           </p>
 
           <div className="mt-6 rounded-lg border border-red-500/20 bg-red-500/5 p-6">
-            <div className="flex items-start justify-between gap-6">
+            <div className="flex items-center justify-between gap-6">
               <div>
                 <h4 className="text-[13px] font-medium text-red-500">
                   Delete this application

@@ -39,7 +39,7 @@ export function NodeForm({
   const [port, setPort] = useState(initialData?.port?.toString() ?? '22');
   const [sshPrivateKey, setSshPrivateKey] = useState('');
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     const trimmedName = name.trim();

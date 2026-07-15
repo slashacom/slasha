@@ -6,6 +6,7 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
+import type { NodeStatus } from '~/models/node';
 import { cn } from '~/utils/classname';
 
 export type StatusKind =
@@ -69,10 +70,8 @@ export function StatusBadge(props: StatusBadgeProps) {
   );
 }
 
-export type NodeStatusKind = 'SettingUp' | 'Ready' | 'Error' | 'Deleting';
-
 type NodeStatusBadgeProps = {
-  status: NodeStatusKind;
+  status: NodeStatus;
   liveStatus: string;
 };
 
