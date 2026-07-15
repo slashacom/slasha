@@ -86,12 +86,31 @@ impl AppMetricsRepo {
         app_id: &str,
         start: chrono::NaiveDateTime,
         end: chrono::NaiveDateTime,
+        bucket_seconds: i64,
     ) -> DbResult<Vec<AppMetrics>> {
         let pool = pool.clone();
         let app_id = app_id.to_string();
+        let bucket = bucket_seconds.max(1);
         tokio::task::spawn_blocking(move || {
             let conn = pool.get()?;
-            let mut stmt = conn.prepare("SELECT id, app_id, cpu_usage, memory_used, memory_limit, network_rx_bps, network_tx_bps, disk_read_bps, disk_write_bps, created_at FROM app_metrics WHERE app_id = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC")?;
+            let sql = format!(
+                "SELECT \
+                    CAST(time_bucket(to_seconds({bucket}), created_at) AS VARCHAR) AS id, \
+                    app_id, \
+                    avg(cpu_usage) AS cpu_usage, \
+                    CAST(avg(memory_used) AS BIGINT) AS memory_used, \
+                    CAST(max(memory_limit) AS BIGINT) AS memory_limit, \
+                    avg(network_rx_bps) AS network_rx_bps, \
+                    avg(network_tx_bps) AS network_tx_bps, \
+                    avg(disk_read_bps) AS disk_read_bps, \
+                    avg(disk_write_bps) AS disk_write_bps, \
+                    time_bucket(to_seconds({bucket}), created_at) AS created_at \
+                 FROM app_metrics \
+                 WHERE app_id = ? AND created_at >= ? AND created_at <= ? \
+                 GROUP BY ALL \
+                 ORDER BY created_at ASC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
             let iter = stmt.query_map(params![app_id, start, end], |row| {
                 Ok(AppMetrics {
                     id: row.get(0)?,

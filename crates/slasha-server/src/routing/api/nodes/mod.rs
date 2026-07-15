@@ -1,4 +1,4 @@
-use axum::{Router, routing::get};
+use axum::Router;
 
 use crate::state::AppState;
 
@@ -8,5 +8,5 @@ pub mod metrics;
 pub fn router() -> Router<AppState> {
     Router::new()
         .merge(management::router())
-        .route("/{id}/metrics", get(metrics::get_node_metrics))
+        .merge(metrics::router())
 }

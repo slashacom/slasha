@@ -170,7 +170,7 @@ async fn build_snapshot(
 }
 
 async fn get_server_metric(duckdb_pool: &DuckdbPool) -> Option<ServerMetrics> {
-    ServerMetricsRepo::get_latest(duckdb_pool)
+    ServerMetricsRepo::get_latest(duckdb_pool, "local")
         .await
         .unwrap_or_else(|err| {
             warn!(target: "slasha::alerts", error = ?err, "failed to load server metrics");

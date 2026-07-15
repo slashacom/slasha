@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use diesel::{Connection, sqlite::SqliteConnection};
+use diesel::{Connection, RunQueryDsl, sqlite::SqliteConnection};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use rust_embed::RustEmbed;
 use tracing::info;
@@ -18,6 +18,12 @@ pub fn run_migrations(sqlite_db_path: &str, duckdb_path: &str) {
     // under enforcement would cascade-delete rows, so migrations must not enforce.
     let mut conn = SqliteConnection::establish(sqlite_db_path)
         .expect("Failed to connect to SQLite for migrations");
+
+    // Wait out a competing writer rather than panicking the whole boot with
+    // "database is locked" if the runtime pool is already touching the file.
+    diesel::sql_query("PRAGMA busy_timeout=5000;")
+        .execute(&mut conn)
+        .expect("Failed to set SQLite busy_timeout for migrations");
 
     let sqlite_pending = conn
         .pending_migrations(SQLITE_MIGRATIONS)

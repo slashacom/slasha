@@ -178,22 +178,34 @@ export function useDeleteAppDomain() {
   });
 }
 
-export function getAppMetricsOptions(
-  appSlug: string,
-  start?: Date,
-  end?: Date
-) {
-  let queryParams = new URLSearchParams();
-  if (start) queryParams.append('start', start.toISOString());
-  if (end) queryParams.append('end', end.toISOString());
-  const qs = queryParams.toString();
+const METRICS_REFRESH_INTERVAL = 10000;
 
+export function getAppMetricsOptions(appSlug: string, hours: number) {
   return queryOptions({
-    queryKey: ['apps', appSlug, 'metrics', { start, end }],
+    queryKey: ['apps', appSlug, 'metrics', hours],
+    queryFn: () => {
+      const end = new Date();
+      const start = new Date(end.getTime() - hours * 3600 * 1000);
+      const queryParams = new URLSearchParams({
+        start: start.toISOString(),
+        end: end.toISOString(),
+      });
+      return httpGet<{ metrics: AppMetrics[] }>(
+        `apps/${appSlug}/metrics?${queryParams.toString()}`
+      );
+    },
+    staleTime: METRICS_REFRESH_INTERVAL,
+    refetchInterval: METRICS_REFRESH_INTERVAL,
+  });
+}
+
+export function getLatestAppMetricOptions(appSlug: string) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'metrics', 'latest'],
     queryFn: () =>
-      httpGet<{ metrics: AppMetrics[] }>(
-        `apps/${appSlug}/metrics${qs ? `?${qs}` : ''}`
-      ),
+      httpGet<{ metric: AppMetrics | null }>(`apps/${appSlug}/metrics/latest`),
+    staleTime: METRICS_REFRESH_INTERVAL,
+    refetchInterval: METRICS_REFRESH_INTERVAL,
   });
 }
 

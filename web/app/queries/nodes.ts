@@ -76,22 +76,35 @@ export function useDeleteNode() {
   });
 }
 
-export function getNodeMetricsOptions(
-  nodeId: string,
-  start?: Date,
-  end?: Date
-) {
-  let queryParams = new URLSearchParams();
-  if (start) queryParams.append('start', start.toISOString());
-  if (end) queryParams.append('end', end.toISOString());
+const REFRESH_INTERVAL = 15000;
 
-  const qs = queryParams.toString();
-
+export function getNodeMetricsOptions(nodeId: string, hours: number) {
   return queryOptions({
-    queryKey: ['nodes', nodeId, 'metrics', { start, end }],
+    queryKey: ['nodes', nodeId, 'metrics', hours],
+    queryFn: () => {
+      const end = new Date();
+      const start = new Date(end.getTime() - hours * 3600 * 1000);
+      const queryParams = new URLSearchParams({
+        start: start.toISOString(),
+        end: end.toISOString(),
+      });
+      return httpGet<{ metrics: ServerMetrics[] }>(
+        `nodes/${nodeId}/metrics?${queryParams.toString()}`
+      );
+    },
+    staleTime: REFRESH_INTERVAL,
+    refetchInterval: REFRESH_INTERVAL,
+  });
+}
+
+export function getLatestNodeMetricOptions(nodeId: string) {
+  return queryOptions({
+    queryKey: ['nodes', nodeId, 'metrics', 'latest'],
     queryFn: () =>
-      httpGet<{ metrics: ServerMetrics[] }>(
-        `nodes/${nodeId}/metrics${qs ? `?${qs}` : ''}`
+      httpGet<{ metric: ServerMetrics | null }>(
+        `nodes/${nodeId}/metrics/latest`
       ),
+    staleTime: REFRESH_INTERVAL,
+    refetchInterval: REFRESH_INTERVAL,
   });
 }

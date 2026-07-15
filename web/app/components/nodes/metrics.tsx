@@ -1,5 +1,5 @@
-import { useState, useEffect, useTransition } from 'react';
-import { useSuspenseQuery } from '@tanstack/react-query';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   Area,
   AreaChart,
@@ -12,7 +12,10 @@ import {
   YAxis,
 } from 'recharts';
 import { Activity, Cpu, Database, Gauge, HardDrive } from 'lucide-react';
-import { getNodeMetricsOptions } from '~/queries/nodes';
+import {
+  getNodeMetricsOptions,
+  getLatestNodeMetricOptions,
+} from '~/queries/nodes';
 import { SectionHeader } from '~/components/interface/section-header';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
@@ -22,7 +25,7 @@ import {
   TIME_RANGES,
   formatBps,
   formatMiB,
-} from '~/components/apps/metrics-utils';
+} from '~/utils/metrics-utils';
 
 const percent = (used: number | bigint, total: number | bigint) => {
   const numTotal = Number(total);
@@ -32,73 +35,59 @@ const percent = (used: number | bigint, total: number | bigint) => {
   return Math.round((Number(used) / numTotal) * 100);
 };
 
-export const getRoundedNow = () => {
-  const d = new Date();
-  d.setMilliseconds(0);
-  d.setSeconds(Math.floor(d.getSeconds() / 15) * 15);
-  return d;
-};
-
-export function ServerMetricsView({ nodeId }: { nodeId: string }) {
+export function NodeMetricsView({ nodeId }: { nodeId: string }) {
   const [selectedRange, setSelectedRange] = useState<TimeRange>(TIME_RANGES[0]);
-  const [now, setNow] = useState(() => getRoundedNow());
-  const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    const interval = setInterval(() => setNow(getRoundedNow()), 15000);
-    return () => clearInterval(interval);
-  }, []);
+  const { data, isLoading } = useQuery({
+    ...getNodeMetricsOptions(nodeId, selectedRange.hours),
+    placeholderData: keepPreviousData,
+  });
 
-  const end = now;
-  const start = new Date(now.getTime() - selectedRange.hours * 3600 * 1000);
+  const { data: latestData } = useQuery(getLatestNodeMetricOptions(nodeId));
 
-  const { data } = useSuspenseQuery(getNodeMetricsOptions(nodeId, start, end));
+  const metrics = useMemo(() => data?.metrics ?? [], [data]);
 
-  const rawMetrics = data?.metrics ?? [];
-
-  const metrics = [...rawMetrics].sort(
-    (a, b) =>
-      parseUTC(a.created_at).getTime() - parseUTC(b.created_at).getTime()
-  );
-
-  const formatTime = (isoString: any) => {
-    if (!isoString) {
-      return '';
-    }
-    try {
-      const d =
-        typeof isoString === 'string'
-          ? parseUTC(isoString)
-          : new Date(isoString);
-      if (isNaN(d.getTime())) {
+  const formatTime = useCallback(
+    (isoString: any) => {
+      if (!isoString) {
         return '';
       }
-      if (selectedRange.hours > 24) {
-        return d.toLocaleDateString(undefined, {
-          month: 'short',
-          day: 'numeric',
+      try {
+        const d =
+          typeof isoString === 'string'
+            ? parseUTC(isoString)
+            : new Date(isoString);
+        if (isNaN(d.getTime())) {
+          return '';
+        }
+        if (selectedRange.hours > 24) {
+          return d.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+        }
+        return d.toLocaleTimeString(undefined, {
           hour: '2-digit',
           minute: '2-digit',
+          hour12: false,
         });
+      } catch {
+        return '';
       }
-      return d.toLocaleTimeString(undefined, {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      });
-    } catch {
-      return '';
-    }
-  };
+    },
+    [selectedRange.hours]
+  );
 
-  const latest = metrics[metrics.length - 1];
+  const latest = latestData?.metric ?? metrics[metrics.length - 1];
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <SectionHeader
         className="shrink-0"
         icon={Activity}
-        title="Server Metrics"
+        title="Node Metrics"
         actions={
           <>
             <HStack space={1.5} alignItems="center">
@@ -117,13 +106,13 @@ export function ServerMetricsView({ nodeId }: { nodeId: string }) {
               {TIME_RANGES.map((range) => (
                 <button
                   key={range.hours}
-                  onClick={() => startTransition(() => setSelectedRange(range))}
+                  onClick={() => setSelectedRange(range)}
                   className={cn(
                     'h-7 px-3 rounded text-[11px] font-medium transition-colors',
                     selectedRange.hours === range.hours
                       ? 'bg-white/[0.08] text-text'
                       : 'text-text-tertiary hover:text-text',
-                    isPending && 'opacity-70'
+                    isLoading && 'opacity-70'
                   )}
                 >
                   {range.label}
@@ -145,7 +134,7 @@ export function ServerMetricsView({ nodeId }: { nodeId: string }) {
                 No metrics collected yet
               </p>
               <p className="text-xs text-text-tertiary text-center max-w-[320px]">
-                Server metrics are collected every 15 seconds. Graphs will begin
+                Node metrics are collected every 15 seconds. Graphs will begin
                 appearing shortly.
               </p>
             </VStack>
@@ -295,6 +284,7 @@ export function ServerMetricsView({ nodeId }: { nodeId: string }) {
                         strokeWidth={1.5}
                         fillOpacity={1}
                         fill="url(#srvCpuGrad)"
+                        isAnimationActive={false}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -375,6 +365,7 @@ export function ServerMetricsView({ nodeId }: { nodeId: string }) {
                         strokeWidth={1.5}
                         fillOpacity={1}
                         fill="url(#srvMemGrad)"
+                        isAnimationActive={false}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -438,6 +429,7 @@ export function ServerMetricsView({ nodeId }: { nodeId: string }) {
                         strokeWidth={1.5}
                         dot={false}
                         activeDot={{ r: 4 }}
+                        isAnimationActive={false}
                       />
                       <Line
                         type="monotone"
@@ -447,6 +439,7 @@ export function ServerMetricsView({ nodeId }: { nodeId: string }) {
                         strokeWidth={1.5}
                         dot={false}
                         activeDot={{ r: 4 }}
+                        isAnimationActive={false}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -527,6 +520,7 @@ export function ServerMetricsView({ nodeId }: { nodeId: string }) {
                         strokeWidth={1.5}
                         fillOpacity={1}
                         fill="url(#srvLoadGrad)"
+                        isAnimationActive={false}
                       />
                     </AreaChart>
                   </ResponsiveContainer>

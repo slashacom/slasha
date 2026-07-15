@@ -57,12 +57,32 @@ impl ServerMetricsRepo {
         .await?
     }
 
-    pub async fn get_latest(pool: &DuckdbPool) -> DbResult<Option<ServerMetrics>> {
+    pub async fn get_latest(pool: &DuckdbPool, node_id: &str) -> DbResult<Option<ServerMetrics>> {
         let pool = pool.clone();
+        let node_id = node_id.to_string();
         tokio::task::spawn_blocking(move || {
             let conn = pool.get()?;
-            let mut stmt = conn.prepare("SELECT id, node_id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average, created_at FROM server_metrics ORDER BY created_at DESC LIMIT 1")?;
-            let mut iter = stmt.query_map([], |row| {
+            let mut stmt = conn.prepare(
+                "SELECT \
+                    id, \
+                    node_id, \
+                    cpu_usage, \
+                    memory_used, \
+                    memory_total, \
+                    swap_used, \
+                    swap_total, \
+                    disk_used, \
+                    disk_total, \
+                    network_rx_bps, \
+                    network_tx_bps, \
+                    load_average, \
+                    created_at \
+                 FROM server_metrics \
+                 WHERE node_id = ? \
+                 ORDER BY created_at DESC \
+                 LIMIT 1",
+            )?;
+            let mut iter = stmt.query_map(params![node_id], |row| {
                 Ok(ServerMetrics {
                     id: row.get(0)?,
                     node_id: row.get(1)?,
@@ -94,12 +114,36 @@ impl ServerMetricsRepo {
         node_id: &str,
         start: chrono::NaiveDateTime,
         end: chrono::NaiveDateTime,
+        bucket_seconds: i64,
     ) -> DbResult<Vec<ServerMetrics>> {
         let pool = pool.clone();
+        let bucket = bucket_seconds.max(1);
         let node_id = node_id.to_string();
         tokio::task::spawn_blocking(move || {
             let conn = pool.get()?;
-            let mut stmt = conn.prepare("SELECT id, node_id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average, created_at FROM server_metrics WHERE node_id = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC")?;
+            let sql = format!(
+                "SELECT \
+                    CAST(time_bucket(to_seconds({bucket}), created_at) AS VARCHAR) AS id, \
+                    node_id, \
+                    avg(cpu_usage) AS cpu_usage, \
+                    CAST(avg(memory_used) AS BIGINT) AS memory_used, \
+                    CAST(max(memory_total) AS BIGINT) AS memory_total, \
+                    CAST(avg(swap_used) AS BIGINT) AS swap_used, \
+                    CAST(max(swap_total) AS BIGINT) AS swap_total, \
+                    CAST(avg(disk_used) AS BIGINT) AS disk_used, \
+                    CAST(max(disk_total) AS BIGINT) AS disk_total, \
+                    avg(network_rx_bps) AS network_rx_bps, \
+                    avg(network_tx_bps) AS network_tx_bps, \
+                    avg(load_average) AS load_average, \
+                    time_bucket(to_seconds({bucket}), created_at) AS created_at \
+                 FROM server_metrics \
+                 WHERE node_id = ? AND created_at >= ? AND created_at <= ? \
+                 GROUP BY ALL \
+                 ORDER BY created_at ASC"
+            );
+
+            let mut stmt = conn.prepare(&sql)?;
+
             let iter = stmt.query_map(params![node_id, start, end], |row| {
                 Ok(ServerMetrics {
                     id: row.get(0)?,
