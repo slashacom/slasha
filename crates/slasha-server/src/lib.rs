@@ -7,8 +7,10 @@ pub mod cron;
 pub mod docker;
 pub mod domain_health;
 pub mod extractors;
+pub mod logs;
 pub mod metrics;
 pub mod middleware;
+pub mod node_connection_manager;
 pub mod proxy;
 
 pub mod routing;
@@ -42,6 +44,7 @@ fn setup_dirs() -> (
     std::path::PathBuf, // duckdb
     std::path::PathBuf, // repos
     std::path::PathBuf, // logs
+    std::path::PathBuf, // nodes
 ) {
     let data_dir = utils::ensure_dir(
         dirs::home_dir()
@@ -54,6 +57,7 @@ fn setup_dirs() -> (
         data_dir.join("slasha.duckdb"),
         data_dir.join("repos"),
         data_dir.join("logs"),
+        utils::ensure_dir(data_dir.join("nodes")),
     )
 }
 
@@ -71,7 +75,7 @@ pub async fn serve() -> anyhow::Result<()> {
     dotenv().ok();
     setup_tracing();
 
-    let (db_path, duckdb_path, repos_dir, logs_dir) = setup_dirs();
+    let (db_path, duckdb_path, repos_dir, logs_dir, nodes_dir) = setup_dirs();
 
     let slasha_env = Env::from_str_or_default(
         &std::env::var("SLASHA_ENV").unwrap_or_else(|_| "development".to_string()),
@@ -93,11 +97,6 @@ pub async fn serve() -> anyhow::Result<()> {
         port,
     );
 
-    let docker_client =
-        bollard::Docker::connect_with_local_defaults().expect("Failed to connect to Docker daemon");
-
-    proxy::container::ensure_caddy_ready(&docker_client).await?;
-
     slasha_db::migrations::run_migrations(
         db_path.to_str().expect("Invalid DB path"),
         duckdb_path.to_str().expect("Invalid DuckDB path"),
@@ -111,10 +110,26 @@ pub async fn serve() -> anyhow::Result<()> {
         .map(connections::GithubClient::from_config)
         .transpose()?;
 
-    let clients = Clients::new(docker_client.clone(), github_client);
-    metrics::app::AppMetricsCollector::new(storage.duckdb_pool.clone(), docker_client.clone())
-        .spawn();
-    metrics::server::ServerMetricsCollector::new(storage.duckdb_pool.clone()).spawn();
+    let clients = Clients::new(github_client, nodes_dir);
+
+    let docker_client = clients
+        .docker_registry
+        .get_local_client()
+        .expect("Failed to connect to local Docker daemon");
+
+    proxy::container::ensure_caddy_ready(&docker_client).await?;
+    metrics::app::AppMetricsCollector::new(
+        storage.duckdb_pool.clone(),
+        storage.db_pool.clone(),
+        clients.docker_registry.clone(),
+    )
+    .spawn();
+    metrics::node::NodeMetricsCollector::new(
+        storage.duckdb_pool.clone(),
+        storage.db_pool.clone(),
+        clients.node_connection_manager.clone(),
+    )
+    .spawn();
     alerts::spawn_alert_worker(
         storage.db_pool.clone(),
         storage.duckdb_pool.clone(),
@@ -127,14 +142,14 @@ pub async fn serve() -> anyhow::Result<()> {
 
     cron::spawn_cron_scheduler(
         storage.db_pool.clone(),
-        clients.docker.clone(),
+        clients.docker_registry.clone(),
         runtime.log_manager.clone(),
     );
 
     let state = AppState::new(config, clients, storage, runtime);
 
     docker::sync::startup_container_sync(
-        &state.clients.docker,
+        &state.clients.docker_registry,
         &state.storage.db_pool,
         &state.runtime,
     )

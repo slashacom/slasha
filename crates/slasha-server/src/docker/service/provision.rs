@@ -7,7 +7,7 @@ use std::{
 use bollard::{
     Docker,
     models::{
-        EndpointSettings, HealthConfig, HealthStatusEnum, HostConfig, Mount, MountTypeEnum,
+        EndpointSettings, HealthConfig, HealthStatusEnum, HostConfig, Mount, MountType,
         NetworkingConfig, ProgressDetail, RestartPolicy, RestartPolicyNameEnum,
         VolumeCreateRequest,
     },
@@ -25,13 +25,15 @@ use slasha_db::{
 };
 use tokio::time::sleep;
 
-use crate::docker::{
-    DeploymentError, DeploymentResult,
-    env::{RefSource, resolve_env_value, topo_sort_vars},
-    log_driver::default_log_config,
+use crate::{
+    docker::{
+        DeploymentError, DeploymentResult,
+        env::{RefSource, resolve_env_value, topo_sort_vars},
+        log_driver::default_log_config,
+        naming::{app_network_name, service_container_name, service_volume_name},
+        rollback::Rollback,
+    },
     logs::{LogHandle, LogKey, LogManager, stream_container_logs},
-    naming::{app_network_name, service_container_name, service_volume_name},
-    rollback::Rollback,
 };
 
 pub fn resolve_env_vars(
@@ -265,7 +267,7 @@ async fn create_service_container(
                         maximum_retry_count: None,
                     }),
                     mounts: Some(vec![Mount {
-                        typ: Some(MountTypeEnum::VOLUME),
+                        typ: Some(MountType::VOLUME),
                         source: Some(volume_name),
                         target: Some(service.kind.volume_mount_path().to_string()),
                         ..Default::default()

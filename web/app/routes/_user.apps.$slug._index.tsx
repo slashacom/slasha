@@ -8,6 +8,7 @@ import { FileTree } from '~/components/apps/file-tree';
 import { CodeViewer } from '~/components/apps/code-viewer';
 import { FolderViewer } from '~/components/apps/folder-viewer';
 import { EmptyPage } from '~/components/global/empty-page';
+import { SectionHeader } from '~/components/interface/section-header';
 import { queryClient } from '~/utils/query-client';
 import { getAppOptions } from '~/queries/apps';
 
@@ -71,6 +72,7 @@ export default function AppFilesPage() {
   if (!hasCommits) {
     return (
       <div className="flex h-full min-h-0 flex-1 flex-col">
+        <SectionHeader icon={FileText} title="Files" />
         <EmptyPage
           className="flex-1"
           icon={GitBranch}
@@ -87,6 +89,7 @@ export default function AppFilesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
+      <SectionHeader icon={FileText} title="Files" />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <FileTree
           tree={tree}

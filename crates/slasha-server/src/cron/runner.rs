@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use bollard::{
     Docker,
     models::{
-        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountTypeEnum, NetworkingConfig,
+        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountType, NetworkingConfig,
         RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
     },
     query_parameters::{
@@ -23,12 +23,13 @@ use slasha_db::{
 
 use crate::{
     docker::{
+        DockerRegistry,
         deployment::{container::MANAGED_DATA_PATH, executor::resolve_app_env},
         image_tag,
         log_driver::default_log_config,
-        logs::{LogHandle, LogKey, LogManager, stream_container_logs},
         naming::{app_network_name, app_volume_name},
     },
+    logs::{LogHandle, LogKey, LogManager, stream_container_logs},
     proxy::container::PROXY_NETWORK_NAME,
 };
 
@@ -47,7 +48,7 @@ fn cron_container_name(run_id: &str) -> String {
 
 pub async fn run_cron_job(
     db_pool: DbPool,
-    docker: Docker,
+    docker_registry: DockerRegistry,
     log_manager: Arc<LogManager>,
     job: CronJob,
     run: CronRun,
@@ -60,7 +61,7 @@ pub async fn run_cron_job(
     }
 
     let (status, exit_code, error) =
-        match execute(&db_pool, &docker, &log_manager, &job, &run_id).await {
+        match execute(&db_pool, &docker_registry, &log_manager, &job, &run_id).await {
             Ok(CronOutcome::Completed { exit_code }) => {
                 let status = if exit_code == 0 {
                     CronRunStatus::Succeeded
@@ -85,7 +86,7 @@ pub async fn run_cron_job(
 
 async fn execute(
     db_pool: &DbPool,
-    docker: &Docker,
+    docker_registry: &DockerRegistry,
     log_manager: &Arc<LogManager>,
     job: &CronJob,
     run_id: &str,
@@ -93,6 +94,14 @@ async fn execute(
     let app = AppRepo::find_by_id(db_pool, &job.app_id)
         .await
         .map_err(|e| e.to_string())?;
+
+    let node = slasha_db::repos::node::NodeRepo::get(db_pool, &app.node_id)
+        .await
+        .map_err(|e| format!("failed to find node for app: {}", e))?;
+
+    let docker = docker_registry
+        .get_client(&node)
+        .map_err(|e| format!("failed to get docker client for node: {}", e))?;
 
     let running = DeploymentRepo::list_active_for_app(db_pool, &job.app_id)
         .await
@@ -108,7 +117,7 @@ async fn execute(
             image_tag(&app.slug, &deployment.id)
         }
         CronRuntime::Utility => {
-            ensure_image(docker, UTILITY_IMAGE).await?;
+            ensure_image(&docker, UTILITY_IMAGE).await?;
             UTILITY_IMAGE.to_string()
         }
     };
@@ -124,7 +133,7 @@ async fn execute(
         .map_err(|e| e.to_string())?;
 
     run_cron_container(
-        docker,
+        &docker,
         &log,
         &app,
         &image,
@@ -211,7 +220,7 @@ async fn run_cron_container(
                 })
                 .await?;
             Some(vec![Mount {
-                typ: Some(MountTypeEnum::VOLUME),
+                typ: Some(MountType::VOLUME),
                 source: Some(volume_name),
                 target: Some(MANAGED_DATA_PATH.to_string()),
                 ..Default::default()

@@ -9,7 +9,7 @@ pub mod auth;
 pub mod connections;
 pub mod deserialize;
 pub mod error;
-pub mod monitoring;
+pub mod nodes;
 pub mod service_kinds;
 pub mod ssh_keys;
 pub mod users;
@@ -32,12 +32,18 @@ pub fn router(state: AppState) -> Router<AppState> {
                 admin_middleware,
             )),
         )
-        .nest("/monitoring", monitoring::router())
         .nest("/services", service_kinds::router())
         .nest("/ssh-keys", ssh_keys::router())
         .nest(
             "/users",
             users::router().route_layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                admin_middleware,
+            )),
+        )
+        .nest(
+            "/nodes",
+            nodes::router().route_layer(axum::middleware::from_fn_with_state(
                 state,
                 admin_middleware,
             )),
@@ -57,7 +63,19 @@ async fn health_check(
         status = "error";
     }
 
-    if let Err(e) = state.clients.docker.ping().await {
+    let docker_client = match state.clients.docker_registry.get_local_client() {
+        Ok(client) => Some(client),
+        Err(e) => {
+            tracing::error!("Failed to get local docker client: {}", e);
+            docker_status = "error";
+            status = "error";
+            None
+        }
+    };
+
+    if let Some(client) = docker_client
+        && let Err(e) = client.ping().await
+    {
         tracing::error!("Docker health check failed: {}", e);
         docker_status = "error";
         status = "error";

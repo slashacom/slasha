@@ -1,7 +1,7 @@
 const ENV_VARS = [
   ['SLASHA_ALERT_DETAIL', 'System-generated alert description'],
   ['SLASHA_ALERT_VALUE', 'Current value'],
-  ['SLASHA_ALERT_KIND', 'Alert kind (server_cpu, app_memory, etc.)'],
+  ['SLASHA_ALERT_KIND', 'Alert kind (node_cpu, app_memory, etc.)'],
   ['SLASHA_ALERT_RULE_NAME', 'Rule name'],
   ['SLASHA_ALERT_STATUS', 'triggered | renotified | resolved'],
 ];

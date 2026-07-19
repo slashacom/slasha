@@ -42,7 +42,6 @@ diesel::table! {
     alert_rules (id) {
         id -> Text,
         name -> Text,
-        kind -> Text,
         config_json -> Text,
         channel_ids_json -> Text,
         direct_webhook_url -> Nullable<Text>,
@@ -124,6 +123,7 @@ diesel::table! {
         created_at -> Timestamp,
         auto_deploy -> Bool,
         source -> Text,
+        node_id -> Text,
     }
 }
 
@@ -168,6 +168,7 @@ diesel::table! {
         status -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        node_id -> Text,
     }
 }
 
@@ -208,6 +209,22 @@ diesel::table! {
         user_id -> Text,
         installation_id -> BigInt,
         created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    nodes (id) {
+        id -> Text,
+        name -> Text,
+        host -> Nullable<Text>,
+        user -> Nullable<Text>,
+        port -> Nullable<Integer>,
+        ssh_private_key -> Nullable<Text>,
+        internal_root_ca -> Nullable<Text>,
+        status -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        deleted_at -> Nullable<Timestamp>,
     }
 }
 
@@ -265,9 +282,11 @@ diesel::joinable!(app_env_vars -> apps (app_id));
 diesel::joinable!(app_members -> apps (app_id));
 diesel::joinable!(app_members -> users (user_id));
 diesel::joinable!(app_scale -> apps (app_id));
+diesel::joinable!(apps -> nodes (node_id));
 diesel::joinable!(cron_jobs -> apps (app_id));
 diesel::joinable!(cron_runs -> cron_jobs (cron_job_id));
 diesel::joinable!(deployments -> apps (app_id));
+diesel::joinable!(deployments -> nodes (node_id));
 diesel::joinable!(git_connections -> apps (app_id));
 diesel::joinable!(github_connections -> apps (app_id));
 diesel::joinable!(github_installations -> users (user_id));
@@ -293,6 +312,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     github_app_config,
     github_connections,
     github_installations,
+    nodes,
     service_env_vars,
     services,
     ssh_keys,

@@ -8,8 +8,10 @@ import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
 import { getCheckSlugOptions, useCreateApp } from '~/queries/apps';
+import { getNodesOptions } from '~/queries/nodes';
 import { RepositorySelect } from '~/components/apps/repository-select';
 import { BranchSelect } from '~/components/apps/branch-select';
+import { Select } from '~/components/interface/select';
 import {
   getGithubRepositoriesOptions,
   getGithubStatusOptions,
@@ -26,7 +28,10 @@ export function meta() {
 }
 
 export async function clientLoader() {
-  await queryClient.ensureQueryData(getGithubStatusOptions());
+  await Promise.all([
+    queryClient.ensureQueryData(getGithubStatusOptions()),
+    queryClient.ensureQueryData(getNodesOptions()),
+  ]);
 }
 
 export default function NewApp() {
@@ -40,6 +45,12 @@ export default function NewApp() {
   const [gitUrl, setGitUrl] = useState('');
   const [gitBranch, setGitBranch] = useState('');
   const [githubBranch, setGithubBranch] = useState('');
+
+  const { data: nodesData } = useSuspenseQuery(getNodesOptions());
+  const readyNodes =
+    nodesData?.nodes?.filter((n) => n.status === 'Ready') ?? [];
+  const defaultNode = readyNodes.find((n) => n.id === 'local') || readyNodes[0];
+  const [nodeId, setNodeId] = useState(defaultNode?.id || 'local');
 
   const debouncedName = useDebounce(name, 300);
   const debouncedGitUrl = useDebounce(gitUrl, 500);
@@ -80,7 +91,7 @@ export default function NewApp() {
     }
   }, [githubBranches, githubBranch]);
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (source === 'github' && !selectedRepository) {
@@ -101,6 +112,7 @@ export default function NewApp() {
         ? {
             name,
             source,
+            node_id: nodeId,
             installation_id: selectedRepoObj!.installation_id,
             repository_id: selectedRepoObj!.id,
             ...(githubBranch.trim() ? { branch: githubBranch.trim() } : {}),
@@ -109,10 +121,11 @@ export default function NewApp() {
           ? {
               name,
               source,
+              node_id: nodeId,
               url: gitUrl.trim(),
               ...(gitBranch.trim() ? { branch: gitBranch.trim() } : {}),
             }
-          : { name, source };
+          : { name, source, node_id: nodeId };
     const promise = createApp.mutateAsync(payload);
 
     toast.promise(promise, {
@@ -194,6 +207,30 @@ export default function NewApp() {
                 </p>
               ) : null}
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="node_id"
+              className="text-[13px] font-medium text-text-secondary"
+            >
+              Target Node
+            </Label>
+            <Select
+              id="node_id"
+              value={nodeId}
+              onChange={(e) => setNodeId(e.target.value)}
+              className="h-10 w-full"
+            >
+              {readyNodes.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name} {n.id === 'local' ? '(Local)' : `(${n.host})`}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-text-tertiary">
+              Select the server node where the application will be deployed.
+            </p>
           </div>
 
           <div className="space-y-4 pt-2">

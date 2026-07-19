@@ -19,15 +19,32 @@ pub struct Upstream {
 pub struct RouteEntry {
     pub domain: String,
     pub upstreams: Vec<Upstream>,
+    pub tls_root_ca: Option<String>,
+    pub tls_server_name: Option<String>,
 }
 
 impl CaddyClient {
-    pub async fn apply_routes(&self, routes: &[RouteEntry], env: Env) -> ProxyResult<()> {
-        let config = Self::build_config(routes, env);
-        self.apply_config(&config).await
+    pub fn build_routes_config(
+        &self,
+        routes: &[RouteEntry],
+        internal_tls_domains: &[String],
+        env: Env,
+    ) -> Value {
+        Self::build_config(routes, internal_tls_domains, env)
     }
 
-    fn build_config(routes: &[RouteEntry], env: Env) -> Value {
+    pub async fn apply_routes(
+        &self,
+        routes: &[RouteEntry],
+        internal_tls_domains: &[String],
+        env: Env,
+        base_url: &str,
+    ) -> ProxyResult<()> {
+        let config = Self::build_config(routes, internal_tls_domains, env);
+        self.apply_config(&config, base_url).await
+    }
+
+    fn build_config(routes: &[RouteEntry], internal_tls_domains: &[String], env: Env) -> Value {
         let security_headers = Self::security_headers(env);
 
         let caddy_routes: Vec<Value> = routes
@@ -39,6 +56,39 @@ impl CaddyClient {
                     .map(|u| json!({ "dial": format!("{}:{}", u.host, u.port) }))
                     .collect();
 
+                let mut reverse_proxy = json!({
+                    "handler": "reverse_proxy",
+                    "upstreams": upstream_objects
+                });
+
+                // When proxying to a remote app node over HTTPS (using internal self-signed certs),
+                // we strip the PEM headers and pass the raw base64 DER to Caddy so it trusts the node's CA.
+                if let Some(root_ca) = &entry.tls_root_ca {
+                    let base64_der = root_ca
+                        .replace("-----BEGIN CERTIFICATE-----", "")
+                        .replace("-----END CERTIFICATE-----", "")
+                        .replace(['\n', '\r'], "")
+                        .trim()
+                        .to_string();
+
+                    let mut tls_config = json!({
+                        "ca": {
+                            "provider": "inline",
+                            "trusted_ca_certs": [base64_der]
+                        }
+                    });
+
+                    // override sni server name to match the remote node's wildcard certificate
+                    if let Some(server_name) = &entry.tls_server_name {
+                        tls_config["server_name"] = json!(server_name);
+                    }
+
+                    reverse_proxy["transport"] = json!({
+                        "protocol": "http",
+                        "tls": tls_config
+                    });
+                }
+
                 json!({
                     "match": [{ "host": [entry.domain] }],
                     "handle": [
@@ -46,10 +96,7 @@ impl CaddyClient {
                             "handler": "headers",
                             "response": { "set": security_headers }
                         },
-                        {
-                            "handler": "reverse_proxy",
-                            "upstreams": upstream_objects
-                        }
+                        reverse_proxy
                     ]
                 })
             })
@@ -72,10 +119,20 @@ impl CaddyClient {
             }
         });
 
-        if !env.is_production() {
+        if !env.is_production() || !internal_tls_domains.is_empty() {
+            let mut policies = Vec::new();
+            if !env.is_production() {
+                policies.push(json!({ "issuers": [{ "module": "internal" }] }));
+            } else if !internal_tls_domains.is_empty() {
+                policies.push(json!({
+                    "subjects": internal_tls_domains,
+                    "issuers": [{ "module": "internal" }]
+                }));
+            }
+
             apps["tls"] = json!({
                 "automation": {
-                    "policies": [{ "issuers": [{ "module": "internal" }] }]
+                    "policies": policies
                 }
             });
         }
@@ -108,13 +165,9 @@ impl CaddyClient {
         Value::Object(headers)
     }
 
-    async fn apply_config(&self, config: &Value) -> ProxyResult<()> {
-        let res = self
-            .client
-            .post("http://127.0.0.1:2019/load")
-            .json(config)
-            .send()
-            .await?;
+    async fn apply_config(&self, config: &Value, base_url: &str) -> ProxyResult<()> {
+        let url = format!("{}/load", base_url.trim_end_matches('/'));
+        let res = self.client.post(&url).json(config).send().await?;
 
         if !res.status().is_success() {
             let body = res.text().await?;

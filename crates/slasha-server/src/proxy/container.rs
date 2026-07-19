@@ -3,9 +3,8 @@ use std::{collections::HashMap, time::Duration};
 use bollard::{
     Docker,
     models::{
-        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountTypeEnum,
-        NetworkCreateRequest, NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum,
-        VolumeCreateRequest,
+        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountType, NetworkCreateRequest,
+        NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
     },
     query_parameters::{CreateContainerOptions, CreateImageOptions, StartContainerOptionsBuilder},
 };
@@ -132,8 +131,8 @@ pub async fn ensure_caddy_ready(docker: &Docker) -> ProxyResult<()> {
                     ..Default::default()
                 }),
                 mounts: Some(vec![
-                    Mount { typ: Some(MountTypeEnum::VOLUME), source: Some("slasha-caddy-data".into()),   target: Some("/data".into()),   ..Default::default() },
-                    Mount { typ: Some(MountTypeEnum::VOLUME), source: Some("slasha-caddy-config".into()), target: Some("/config".into()), ..Default::default() },
+                    Mount { typ: Some(MountType::VOLUME), source: Some("slasha-caddy-data".into()),   target: Some("/data".into()),   ..Default::default() },
+                    Mount { typ: Some(MountType::VOLUME), source: Some("slasha-caddy-config".into()), target: Some("/config".into()), ..Default::default() },
                 ]),
                 log_config: Some(default_log_config()),
                 ..Default::default()

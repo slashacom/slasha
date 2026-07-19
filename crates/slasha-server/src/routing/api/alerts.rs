@@ -141,15 +141,24 @@ struct RuleInput {
 #[derive(Deserialize, Validate)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum RuleConfigInput {
-    ServerCpu {
+    NodeCpu {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(custom(not_empty))]
+        node_id: String,
         #[garde(range(min = 0.0, max = 100.0))]
         threshold_percent: f64,
     },
-    ServerMemory {
+    NodeMemory {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(custom(not_empty))]
+        node_id: String,
         #[garde(range(min = 0.0, max = 100.0))]
         threshold_percent: f64,
     },
-    ServerLoadAverage {
+    NodeLoadAverage {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(custom(not_empty))]
+        node_id: String,
         #[garde(range(min = 0.0))]
         threshold: f64,
     },
@@ -391,9 +400,15 @@ impl_config_conversion!(ChannelConfigInput => DbAlertChannelConfig {
 });
 
 impl_config_conversion!(RuleConfigInput => DbAlertRuleConfig {
-    ServerCpu { threshold_percent },
-    ServerMemory { threshold_percent },
-    ServerLoadAverage { threshold },
+    NodeCpu {
+        node_id,
+        threshold_percent
+    },
+    NodeMemory {
+        node_id,
+        threshold_percent
+    },
+    NodeLoadAverage { node_id, threshold },
     AppCpu {
         app_id,
         threshold_percent

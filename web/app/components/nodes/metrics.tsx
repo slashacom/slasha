@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   Area,
@@ -13,9 +13,9 @@ import {
 } from 'recharts';
 import { Activity, Cpu, Database, Gauge, HardDrive } from 'lucide-react';
 import {
-  getServerMetricsOptions,
-  getLatestServerMetricOptions,
-} from '~/queries/monitoring';
+  getNodeMetricsOptions,
+  getLatestNodeMetricOptions,
+} from '~/queries/nodes';
 import { SectionHeader } from '~/components/interface/section-header';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
@@ -25,7 +25,7 @@ import {
   TIME_RANGES,
   formatBps,
   formatMiB,
-} from '~/components/apps/metrics-utils';
+} from '~/utils/metrics-utils';
 
 const percent = (used: number | bigint, total: number | bigint) => {
   const numTotal = Number(total);
@@ -35,15 +35,15 @@ const percent = (used: number | bigint, total: number | bigint) => {
   return Math.round((Number(used) / numTotal) * 100);
 };
 
-export function ServerMetricsView() {
+export function NodeMetricsView({ nodeId }: { nodeId: string }) {
   const [selectedRange, setSelectedRange] = useState<TimeRange>(TIME_RANGES[0]);
 
   const { data, isLoading } = useQuery({
-    ...getServerMetricsOptions(selectedRange.hours),
+    ...getNodeMetricsOptions(nodeId, selectedRange.hours),
     placeholderData: keepPreviousData,
   });
 
-  const { data: latestData } = useQuery(getLatestServerMetricOptions());
+  const { data: latestData } = useQuery(getLatestNodeMetricOptions(nodeId));
 
   const metrics = useMemo(() => data?.metrics ?? [], [data]);
 
@@ -82,36 +82,12 @@ export function ServerMetricsView() {
 
   const latest = latestData?.metric ?? metrics[metrics.length - 1];
 
-  if (isLoading && metrics.length === 0) {
-    return (
-      <VStack className="p-8" space={4}>
-        <div className="h-4 w-32 animate-pulse rounded bg-white/[0.06]" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="h-24 animate-pulse rounded-lg border border-border bg-surface"
-            />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="h-72 animate-pulse rounded-lg border border-border bg-surface"
-            />
-          ))}
-        </div>
-      </VStack>
-    );
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <SectionHeader
         className="shrink-0"
         icon={Activity}
-        title="Server Metrics"
+        title="Node Metrics"
         actions={
           <>
             <HStack space={1.5} alignItems="center">
@@ -135,7 +111,8 @@ export function ServerMetricsView() {
                     'h-7 px-3 rounded text-[11px] font-medium transition-colors',
                     selectedRange.hours === range.hours
                       ? 'bg-white/[0.08] text-text'
-                      : 'text-text-tertiary hover:text-text'
+                      : 'text-text-tertiary hover:text-text',
+                    isLoading && 'opacity-70'
                   )}
                 >
                   {range.label}
@@ -157,7 +134,7 @@ export function ServerMetricsView() {
                 No metrics collected yet
               </p>
               <p className="text-xs text-text-tertiary text-center max-w-[320px]">
-                Server metrics are collected every 15 seconds. Graphs will begin
+                Node metrics are collected every 15 seconds. Graphs will begin
                 appearing shortly.
               </p>
             </VStack>

@@ -69,18 +69,17 @@ impl UserRepo {
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             let id = uuid::Uuid::new_v4().to_string();
-            diesel::insert_into(users::table)
+            let inserted_user: User = diesel::insert_into(users::table)
                 .values((
                     users::id.eq(&id),
                     users::email.eq(&user.email),
                     users::password_hash.eq(&user.password_hash),
                     users::role.eq(user.role),
                 ))
-                .execute(&mut conn)?;
+                .returning(User::as_returning())
+                .get_result(&mut conn)?;
 
-            Ok(users::table
-                .filter(users::id.eq(&id))
-                .first::<User>(&mut conn)?)
+            Ok(inserted_user)
         })
         .await?
     }
@@ -92,13 +91,12 @@ impl UserRepo {
             let mut conn = pool.get()?;
             changeset.updated_at = Utc::now().naive_utc();
 
-            diesel::update(users::table.filter(users::id.eq(&id)))
+            let updated_user: User = diesel::update(users::table.filter(users::id.eq(&id)))
                 .set(&changeset)
-                .execute(&mut conn)?;
+                .returning(User::as_returning())
+                .get_result(&mut conn)?;
 
-            Ok(users::table
-                .filter(users::id.eq(&id))
-                .first::<User>(&mut conn)?)
+            Ok(updated_user)
         })
         .await?
     }

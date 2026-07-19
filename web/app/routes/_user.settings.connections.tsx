@@ -195,7 +195,7 @@ function GithubAppSetupManager() {
     }
   };
 
-  const handleManualUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleManualUpdate = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const promise = updateCredentials.mutateAsync({
@@ -215,7 +215,7 @@ function GithubAppSetupManager() {
         queryClient.invalidateQueries({ queryKey: ['github', 'status'] });
         return 'GitHub App credentials updated';
       },
-      error: 'Failed to update credentials',
+      error: (err) => err.message || 'Failed to update credentials',
     });
   };
 
@@ -231,7 +231,7 @@ function GithubAppSetupManager() {
         queryClient.invalidateQueries({ queryKey: ['github', 'status'] });
         return 'GitHub App configuration deleted';
       },
-      error: 'Failed to delete setup',
+      error: (err) => err.message || 'Failed to delete setup',
     });
   };
 

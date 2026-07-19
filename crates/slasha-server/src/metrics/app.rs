@@ -1,16 +1,20 @@
 use std::collections::{HashMap, HashSet};
 
 use bollard::{
-    Docker,
     models::{ContainerBlkioStats, ContainerCpuStats, ContainerNetworkStats},
     query_parameters::{ListContainersOptionsBuilder, StatsOptionsBuilder},
 };
 use futures_util::StreamExt;
 use slasha_db::{
-    DuckdbPool, models::app_metrics::NewAppMetrics, repos::app_metrics::AppMetricsRepo,
+    DbPool, DuckdbPool,
+    models::app_metrics::NewAppMetrics,
+    repos::{app_metrics::AppMetricsRepo, node::NodeRepo},
 };
 
-use crate::metrics::{COLLECT_INTERVAL, utils::bytes_to_mib};
+use crate::{
+    docker::registry::DockerRegistry,
+    metrics::{COLLECT_INTERVAL, utils::bytes_to_mib},
+};
 
 struct PrevCounters {
     rx_bytes: u64,
@@ -33,15 +37,17 @@ struct AppAggregate {
 
 pub struct AppMetricsCollector {
     duckdb_pool: DuckdbPool,
-    docker_client: Docker,
+    db_pool: DbPool,
+    registry: DockerRegistry,
     prev: HashMap<String, PrevCounters>,
 }
 
 impl AppMetricsCollector {
-    pub fn new(duckdb_pool: DuckdbPool, docker_client: Docker) -> Self {
+    pub fn new(duckdb_pool: DuckdbPool, db_pool: DbPool, registry: DockerRegistry) -> Self {
         Self {
             duckdb_pool,
-            docker_client,
+            db_pool,
+            registry,
             prev: HashMap::new(),
         }
     }
@@ -65,17 +71,28 @@ impl AppMetricsCollector {
         filters.insert("label".to_string(), vec!["slasha.managed=true".to_string()]);
         filters.insert("status".to_string(), vec!["running".to_string()]);
 
-        let containers = self
-            .docker_client
-            .list_containers(Some(
-                ListContainersOptionsBuilder::new()
-                    .all(true)
-                    .filters(&filters)
-                    .build(),
-            ))
-            .await?;
+        let mut dockers = vec![];
+        if let Ok(nodes) = NodeRepo::list(&self.db_pool).await {
+            for node in nodes {
+                if let Ok(client) = self.registry.get_client(&node) {
+                    dockers.push(client);
+                }
+            }
+        }
 
-        if containers.is_empty() {
+        let mut all_containers = Vec::new();
+        let list_opts = ListContainersOptionsBuilder::new()
+            .all(true)
+            .filters(&filters)
+            .build();
+
+        for docker in &dockers {
+            if let Ok(containers) = docker.list_containers(Some(list_opts.clone())).await {
+                all_containers.extend(containers.into_iter().map(|c| (docker.clone(), c)));
+            }
+        }
+
+        if all_containers.is_empty() {
             self.prev.clear();
             return Ok(());
         }
@@ -85,7 +102,7 @@ impl AppMetricsCollector {
             .one_shot(true)
             .build();
 
-        let fetch_futures = containers.iter().filter_map(|c| {
+        let fetch_futures = all_containers.into_iter().filter_map(|(docker, c)| {
             let container_id = c.id.as_deref()?;
             let app_id = c
                 .labels
@@ -93,7 +110,6 @@ impl AppMetricsCollector {
                 .and_then(|l| l.get("slasha.app_id"))
                 .cloned()?;
 
-            let docker = self.docker_client.clone();
             let cid = container_id.to_string();
             let opts = stats_opts.clone();
 

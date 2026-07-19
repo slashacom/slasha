@@ -22,7 +22,7 @@ export function AddSshKeyDialog(props: AddSshKeyDialogProps) {
   const { isOpen, onOpenChange } = props;
   const createKey = useCreateSshKey();
 
-  const handleAddKey = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleAddKey = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const title = formData.get('title') as string;

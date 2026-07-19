@@ -46,7 +46,7 @@ export function DomainManager(props: DomainManagerProps) {
 
   const [newDomain, setNewDomain] = useState('');
 
-  const handleAdd = async (e: React.FormEvent) => {
+  const handleAdd = async (e: React.SubmitEvent) => {
     e.preventDefault();
     if (!newDomain.trim()) {
       return;

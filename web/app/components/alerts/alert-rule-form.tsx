@@ -20,6 +20,7 @@ import {
   emptyRuleDraft,
   ruleDraftFromRule,
 } from './alert-definitions';
+import type { NodeWithInfo } from '~/queries/nodes';
 import { AlertChannelMultiSelect } from './alert-channel-multi-select';
 import { ShellCommandEnvHelp } from './shell-command-env-help';
 import { TemplateVarHelp } from './template-var-help';
@@ -28,19 +29,20 @@ type AlertRuleFormProps = {
   apps: App[];
   channels: AlertChannel[];
   crons: CronJob[];
+  nodes: NodeWithInfo[];
   rule?: AlertRule;
   onCancel: () => void;
   onSaved: () => void;
 };
 
 export function AlertRuleForm(props: AlertRuleFormProps) {
-  const { apps, channels, crons, rule, onCancel, onSaved } = props;
+  const { apps, channels, crons, nodes, rule, onCancel, onSaved } = props;
   const createRule = useCreateAlertRule();
   const updateRule = useUpdateAlertRule();
   const [draft, setDraft] = useState(() =>
     rule
       ? ruleDraftFromRule(rule)
-      : emptyRuleDraft('server_cpu', DEFAULT_ALERT_COOLDOWN_SECS)
+      : emptyRuleDraft('node_cpu', DEFAULT_ALERT_COOLDOWN_SECS)
   );
 
   const handleSave = async () => {
@@ -88,7 +90,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
             onChange={(event) =>
               setDraft((current) => ({ ...current, name: event.target.value }))
             }
-            placeholder="Server CPU warning"
+            placeholder="CPU warning"
           />
         </FormField>
 
@@ -124,7 +126,30 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
           </Select>
         </FormField>
 
-        {draft.kind === 'server_cpu' || draft.kind === 'server_memory' ? (
+        {draft.kind === 'node_cpu' ||
+        draft.kind === 'node_memory' ||
+        draft.kind === 'node_load_average' ? (
+          <FormField label="Node">
+            <Select
+              value={draft.node_id}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  node_id: event.target.value,
+                }))
+              }
+            >
+              <option value="">Select a node</option>
+              {nodes.map((node) => (
+                <option key={node.id} value={node.id}>
+                  {node.name} ({node.id})
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        ) : null}
+
+        {draft.kind === 'node_cpu' || draft.kind === 'node_memory' ? (
           <NumberField
             label="Threshold percent"
             value={draft.threshold_percent}
@@ -137,7 +162,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
           />
         ) : null}
 
-        {draft.kind === 'server_load_average' ? (
+        {draft.kind === 'node_load_average' ? (
           <NumberField
             label="Threshold"
             value={draft.threshold}

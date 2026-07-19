@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bollard::{
     Docker,
-    models::{HostConfig, Mount, MountTypeEnum, VolumeCreateRequest},
+    models::{HostConfig, Mount, MountType, VolumeCreateRequest},
     query_parameters::{
         CreateContainerOptions, CreateImageOptions, LogsOptionsBuilder,
         RemoveContainerOptionsBuilder, StartContainerOptionsBuilder, WaitContainerOptions,
@@ -24,7 +24,7 @@ pub const LITESTREAM_VOLUME: &str = "slasha-litestream";
 const LITESTREAM_VERSION: &str = "v0.3.13";
 const SQLITE_AMALGAMATION_URL: &str = "https://sqlite.org/2024/sqlite-amalgamation-3460100.zip";
 const SQLITE_AMALGAMATION_DIR: &str = "sqlite-amalgamation-3460100";
-const HELPER_IMAGE: &str = "alpine:3.20";
+const HELPER_IMAGE: &str = "alpine:latest";
 
 const ACCESS_KEY_ENV: &str = "LITESTREAM_ACCESS_KEY_ID";
 const SECRET_KEY_ENV: &str = "LITESTREAM_SECRET_ACCESS_KEY";
@@ -109,7 +109,7 @@ pub fn plan(backup: &AppBackup, original_cmd: &str) -> LitestreamPlan {
 
 pub fn binary_mount() -> Mount {
     Mount {
-        typ: Some(MountTypeEnum::VOLUME),
+        typ: Some(MountType::VOLUME),
         source: Some(LITESTREAM_VOLUME.to_string()),
         target: Some(CONTAINER_MOUNT_DIR.to_string()),
         read_only: Some(true),
@@ -171,7 +171,7 @@ pub async fn ensure_litestream_volume(docker: &Docker) -> anyhow::Result<String>
                 cmd: Some(vec!["sh".to_string(), "-c".to_string(), populate_script()]),
                 host_config: Some(HostConfig {
                     mounts: Some(vec![Mount {
-                        typ: Some(MountTypeEnum::VOLUME),
+                        typ: Some(MountType::VOLUME),
                         source: Some(LITESTREAM_VOLUME.to_string()),
                         target: Some("/dst".to_string()),
                         ..Default::default()

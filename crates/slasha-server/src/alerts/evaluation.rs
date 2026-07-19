@@ -16,14 +16,16 @@ pub struct EvaluationResult {
 pub fn evaluate_rule(rule: &AlertRule, snapshot: &AlertSnapshot) -> Option<EvaluationResult> {
     let target_key = rule.config.generate_target_key();
     let mut result = match &rule.config {
-        AlertRuleConfig::ServerCpu { threshold_percent } => {
-            evaluate_server_cpu(snapshot, *threshold_percent)
-        }
-        AlertRuleConfig::ServerMemory { threshold_percent } => {
-            evaluate_server_memory(snapshot, *threshold_percent)
-        }
-        AlertRuleConfig::ServerLoadAverage { threshold } => {
-            evaluate_server_load_average(snapshot, *threshold)
+        AlertRuleConfig::NodeCpu {
+            node_id,
+            threshold_percent,
+        } => evaluate_node_cpu(snapshot, node_id, *threshold_percent),
+        AlertRuleConfig::NodeMemory {
+            node_id,
+            threshold_percent,
+        } => evaluate_node_memory(snapshot, node_id, *threshold_percent),
+        AlertRuleConfig::NodeLoadAverage { node_id, threshold } => {
+            evaluate_node_load_average(snapshot, node_id, *threshold)
         }
         AlertRuleConfig::AppCpu {
             app_id,
@@ -49,8 +51,12 @@ pub fn evaluate_rule(rule: &AlertRule, snapshot: &AlertSnapshot) -> Option<Evalu
     Some(result)
 }
 
-fn evaluate_server_cpu(snapshot: &AlertSnapshot, threshold: f64) -> Option<EvaluationResult> {
-    let metric = snapshot.server_metric.as_ref()?;
+fn evaluate_node_cpu(
+    snapshot: &AlertSnapshot,
+    node_id: &str,
+    threshold: f64,
+) -> Option<EvaluationResult> {
+    let metric = snapshot.node_metrics.get(node_id)?.as_ref()?;
     let current = metric.cpu_usage;
     Some(EvaluationResult {
         target_key: String::new(),
@@ -58,13 +64,17 @@ fn evaluate_server_cpu(snapshot: &AlertSnapshot, threshold: f64) -> Option<Evalu
         current_value: Some(current),
         recovery_value: Some(current),
         threshold_value: Some(threshold),
-        detail_display: format!("CPU usage at {current:.1}%, threshold {threshold:.1}%"),
+        detail_display: format!("Node CPU usage at {current:.1}%, threshold {threshold:.1}%"),
         triggered: current >= threshold,
     })
 }
 
-fn evaluate_server_memory(snapshot: &AlertSnapshot, threshold: f64) -> Option<EvaluationResult> {
-    let metric = snapshot.server_metric.as_ref()?;
+fn evaluate_node_memory(
+    snapshot: &AlertSnapshot,
+    node_id: &str,
+    threshold: f64,
+) -> Option<EvaluationResult> {
+    let metric = snapshot.node_metrics.get(node_id)?.as_ref()?;
     let current = percent(metric.memory_used, metric.memory_total);
     Some(EvaluationResult {
         target_key: String::new(),
@@ -72,16 +82,17 @@ fn evaluate_server_memory(snapshot: &AlertSnapshot, threshold: f64) -> Option<Ev
         current_value: Some(current),
         recovery_value: Some(current),
         threshold_value: Some(threshold),
-        detail_display: format!("Memory usage at {current:.1}%, threshold {threshold:.1}%"),
+        detail_display: format!("Node Memory usage at {current:.1}%, threshold {threshold:.1}%"),
         triggered: current >= threshold,
     })
 }
 
-fn evaluate_server_load_average(
+fn evaluate_node_load_average(
     snapshot: &AlertSnapshot,
+    node_id: &str,
     threshold: f64,
 ) -> Option<EvaluationResult> {
-    let metric = snapshot.server_metric.as_ref()?;
+    let metric = snapshot.node_metrics.get(node_id)?.as_ref()?;
     let current = metric.load_average;
     Some(EvaluationResult {
         target_key: String::new(),
@@ -89,7 +100,7 @@ fn evaluate_server_load_average(
         current_value: Some(current),
         recovery_value: Some(current),
         threshold_value: Some(threshold),
-        detail_display: format!("Load Average at {current:.2}, threshold {threshold:.2}"),
+        detail_display: format!("Node Load Average at {current:.2}, threshold {threshold:.2}"),
         triggered: current >= threshold,
     })
 }

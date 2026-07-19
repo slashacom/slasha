@@ -39,18 +39,17 @@ impl SshKeyRepo {
             let mut conn = pool.get()?;
             let id = uuid::Uuid::new_v4().to_string();
 
-            diesel::insert_into(ssh_keys::table)
+            let key: SshKey = diesel::insert_into(ssh_keys::table)
                 .values((
                     ssh_keys::id.eq(&id),
                     ssh_keys::user_id.eq(&key.user_id),
                     ssh_keys::title.eq(&key.title),
                     ssh_keys::public_key.eq(&key.public_key),
                 ))
-                .execute(&mut conn)?;
+                .returning(SshKey::as_returning())
+                .get_result(&mut conn)?;
 
-            Ok(ssh_keys::table
-                .filter(ssh_keys::id.eq(&id))
-                .first::<SshKey>(&mut conn)?)
+            Ok(key)
         })
         .await?
     }

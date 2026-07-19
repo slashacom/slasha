@@ -21,12 +21,13 @@ impl AppScaleRepo {
                 .first::<AppScale>(&mut conn)
                 .optional()?;
 
-            if let Some(mut existing_scale) = existing {
-                existing_scale.desired = scale.desired;
-                diesel::update(app_scale::table.filter(app_scale::id.eq(&existing_scale.id)))
-                    .set(app_scale::desired.eq(scale.desired))
-                    .execute(&mut conn)?;
-                Ok(existing_scale)
+            if let Some(existing_scale) = existing {
+                let updated_scale: AppScale =
+                    diesel::update(app_scale::table.filter(app_scale::id.eq(&existing_scale.id)))
+                        .set(app_scale::desired.eq(scale.desired))
+                        .returning(AppScale::as_returning())
+                        .get_result(&mut conn)?;
+                Ok(updated_scale)
             } else {
                 let new_scale = AppScale {
                     id: uuid::Uuid::new_v4().to_string(),
@@ -34,10 +35,11 @@ impl AppScaleRepo {
                     process_type: scale.process_type,
                     desired: scale.desired,
                 };
-                diesel::insert_into(app_scale::table)
+                let inserted_scale: AppScale = diesel::insert_into(app_scale::table)
                     .values(&new_scale)
-                    .execute(&mut conn)?;
-                Ok(new_scale)
+                    .returning(AppScale::as_returning())
+                    .get_result(&mut conn)?;
+                Ok(inserted_scale)
             }
         })
         .await?

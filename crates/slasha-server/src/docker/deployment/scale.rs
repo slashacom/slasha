@@ -21,8 +21,9 @@ use super::{
     },
     executor::resolve_deployment_context,
 };
-use crate::docker::{
-    DeploymentError, DeploymentResult, Rollback, logs::LogHandle, naming::process_container_name,
+use crate::{
+    docker::{DeploymentError, DeploymentResult, Rollback, naming::process_container_name},
+    logs::LogHandle,
 };
 
 pub struct ScaleDeps<'a> {
@@ -90,6 +91,7 @@ async fn scale_inner(
         return Err(DeploymentError::ScaleError("Cannot scale to 0".to_string()));
     }
 
+    // (index, status)
     let existing = existing_processes(deps.docker_client, &deployment.id, process_type).await?;
 
     if target_count == existing.len() as u32 {
