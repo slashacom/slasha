@@ -10,13 +10,13 @@ use slasha_db::{
         AlertIncident, AlertIncidentStatus, AlertNotification, AlertNotificationKind, AlertRule,
         AlertRuleConfig,
     },
+    node_metrics::NodeMetrics,
     repos::{
         alerts::{AlertIncidentRepo, AlertNotificationRepo, AlertRuleRepo},
         app_metrics::AppMetricsRepo,
         cron::CronRunRepo,
-        server_metrics::ServerMetricsRepo,
+        node_metrics::NodeMetricsRepo,
     },
-    server_metrics::ServerMetrics,
 };
 use tokio::time::sleep;
 use tracing::{error, info, warn};
@@ -28,12 +28,12 @@ use crate::{
 };
 
 pub struct AppSnapshot {
-    pub metric: Option<slasha_db::app_metrics::AppMetrics>,
+    pub metric: Option<AppMetrics>,
     pub health_check: Option<bool>,
 }
 
 pub struct AlertSnapshot {
-    pub server_metric: Option<ServerMetrics>,
+    pub node_metrics: HashMap<String, Option<NodeMetrics>>,
     pub apps: HashMap<String, AppSnapshot>,
     pub domains: HashMap<String, domain_health::DomainHealth>,
     pub crons: HashMap<String, Option<CronRun>>,
@@ -90,12 +90,19 @@ async fn build_snapshot(
     http_client: &Client,
 ) -> AlertSnapshot {
     let mut metric_app_ids = HashSet::new();
+    let mut metric_node_ids = HashSet::new();
     let mut domains_to_check = HashSet::new();
     let mut health_check_urls = HashMap::new();
     let mut cron_job_ids = HashSet::new();
 
     for rule in rules {
         match &rule.config {
+            AlertRuleConfig::NodeCpu { node_id, .. }
+            | AlertRuleConfig::NodeMemory { node_id, .. }
+            | AlertRuleConfig::NodeLoadAverage { node_id, .. } => {
+                metric_node_ids.insert(node_id.clone());
+            }
+
             AlertRuleConfig::AppCpu { app_id, .. } | AlertRuleConfig::AppMemory { app_id, .. } => {
                 metric_app_ids.insert(app_id.clone());
             }
@@ -115,12 +122,14 @@ async fn build_snapshot(
             AlertRuleConfig::CronFailed { cron_job_id } => {
                 cron_job_ids.insert(cron_job_id.clone());
             }
-
-            _ => {}
         }
     }
 
-    let server_metric = get_server_metric(duckdb_pool).await;
+    let mut node_metrics = HashMap::new();
+    for node_id in metric_node_ids {
+        let metric = get_node_metric(duckdb_pool, &node_id).await;
+        node_metrics.insert(node_id, metric);
+    }
 
     let mut app_ids = metric_app_ids.clone();
     app_ids.extend(health_check_urls.keys().cloned());
@@ -162,18 +171,18 @@ async fn build_snapshot(
     }
 
     AlertSnapshot {
-        server_metric,
+        node_metrics,
         apps,
         domains,
         crons,
     }
 }
 
-async fn get_server_metric(duckdb_pool: &DuckdbPool) -> Option<ServerMetrics> {
-    ServerMetricsRepo::get_latest(duckdb_pool, "local")
+async fn get_node_metric(duckdb_pool: &DuckdbPool, node_id: &str) -> Option<NodeMetrics> {
+    NodeMetricsRepo::get_latest(duckdb_pool, node_id)
         .await
         .unwrap_or_else(|err| {
-            warn!(target: "slasha::alerts", error = ?err, "failed to load server metrics");
+            warn!(target: "slasha::alerts", node_id = %node_id, error = ?err, "failed to load node metrics");
             None
         })
 }

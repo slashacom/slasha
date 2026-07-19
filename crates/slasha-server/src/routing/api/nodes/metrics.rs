@@ -5,7 +5,7 @@ use axum::{
     routing::get,
 };
 use serde::Deserialize;
-use slasha_db::repos::server_metrics::ServerMetricsRepo;
+use slasha_db::repos::node_metrics::NodeMetricsRepo;
 
 use crate::{
     HttpResult,
@@ -45,7 +45,7 @@ pub async fn get_node_metrics(
         .start
         .unwrap_or_else(|| end - chrono::Duration::hours(24));
 
-    let metrics = ServerMetricsRepo::get_history(
+    let metrics = NodeMetricsRepo::get_history(
         &storage.duckdb_pool,
         &id,
         start.naive_utc(),
@@ -62,7 +62,7 @@ pub async fn get_latest_metrics(
     AuthUser(_user): AuthUser,
     Path(id): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
-    let metric = ServerMetricsRepo::get_latest(&storage.duckdb_pool, &id).await?;
+    let metric = NodeMetricsRepo::get_latest(&storage.duckdb_pool, &id).await?;
 
     Ok(Json(serde_json::json!({ "metric": metric })))
 }

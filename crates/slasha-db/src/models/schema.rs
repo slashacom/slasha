@@ -42,7 +42,6 @@ diesel::table! {
     alert_rules (id) {
         id -> Text,
         name -> Text,
-        kind -> Text,
         config_json -> Text,
         channel_ids_json -> Text,
         direct_webhook_url -> Nullable<Text>,

@@ -5,7 +5,7 @@ import {
 } from '@tanstack/react-query';
 import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
 import type { Node } from '~/models/node';
-import type { ServerMetrics } from '~/models/server-metrics';
+import type { NodeMetrics } from '~/models/node-metrics';
 
 export type NodeWithInfo = Node & {
   live_status: string;
@@ -88,7 +88,7 @@ export function getNodeMetricsOptions(nodeId: string, hours: number) {
         start: start.toISOString(),
         end: end.toISOString(),
       });
-      return httpGet<{ metrics: ServerMetrics[] }>(
+      return httpGet<{ metrics: NodeMetrics[] }>(
         `nodes/${nodeId}/metrics?${queryParams.toString()}`
       );
     },
@@ -101,9 +101,7 @@ export function getLatestNodeMetricOptions(nodeId: string) {
   return queryOptions({
     queryKey: ['nodes', nodeId, 'metrics', 'latest'],
     queryFn: () =>
-      httpGet<{ metric: ServerMetrics | null }>(
-        `nodes/${nodeId}/metrics/latest`
-      ),
+      httpGet<{ metric: NodeMetrics | null }>(`nodes/${nodeId}/metrics/latest`),
     staleTime: REFRESH_INTERVAL,
     refetchInterval: REFRESH_INTERVAL,
   });

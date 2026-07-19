@@ -7,8 +7,8 @@ use std::{
 
 use slasha_db::{
     DbPool, DuckdbPool,
-    models::server_metrics::NewServerMetrics,
-    repos::{node::NodeRepo, server_metrics::ServerMetricsRepo},
+    models::node_metrics::NewNodeMetrics,
+    repos::{node::NodeRepo, node_metrics::NodeMetricsRepo},
 };
 use sysinfo::{Disks, Networks, System};
 use tokio::time::sleep;
@@ -69,7 +69,7 @@ impl NodeMetricsCollector {
         }
     }
 
-    fn sample_local(&mut self, node_id: &str) -> NewServerMetrics {
+    fn sample_local(&mut self, node_id: &str) -> NewNodeMetrics {
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
         self.networks.refresh(true);
@@ -88,7 +88,7 @@ impl NodeMetricsCollector {
         let (disk_used, disk_total) = root_disk_usage(&self.disks);
         let load = System::load_average();
 
-        NewServerMetrics {
+        NewNodeMetrics {
             node_id: node_id.to_string(),
             cpu_usage: self.system.global_cpu_usage() as f64,
             memory_used: bytes_to_mib(self.system.used_memory()),
@@ -108,7 +108,7 @@ impl NodeMetricsCollector {
         node_id: &str,
         output: &str,
         prev: Option<&PrevCounters>,
-    ) -> Option<(NewServerMetrics, PrevCounters)> {
+    ) -> Option<(NewNodeMetrics, PrevCounters)> {
         let parts: Vec<&str> = output.trim().split(';').collect();
         if parts.len() != 7 {
             return None;
@@ -164,7 +164,7 @@ impl NodeMetricsCollector {
             timestamp: now,
         };
 
-        let metric = NewServerMetrics {
+        let metric = NewNodeMetrics {
             node_id: node_id.to_string(),
             cpu_usage,
             memory_used: bytes_to_mib(mem[0]),
@@ -195,7 +195,7 @@ impl NodeMetricsCollector {
 
                         if node.is_local() {
                             let metric = self.sample_local(&node.id);
-                            let _ = ServerMetricsRepo::insert(&self.duckdb_pool, metric).await;
+                            let _ = NodeMetricsRepo::insert(&self.duckdb_pool, metric).await;
                         } else {
                             if let Ok(out) = self
                                 .connection_manager
@@ -210,7 +210,7 @@ impl NodeMetricsCollector {
                                 {
                                     self.prev.insert(node.id.clone(), new_prev);
                                     let _ =
-                                        ServerMetricsRepo::insert(&self.duckdb_pool, metric).await;
+                                        NodeMetricsRepo::insert(&self.duckdb_pool, metric).await;
                                 }
                             }
                         }
@@ -220,7 +220,7 @@ impl NodeMetricsCollector {
                 self.prev.retain(|id, _| active_nodes.contains(id));
 
                 let cutoff = chrono::Utc::now().naive_utc() - chrono::Duration::days(30);
-                let _ = ServerMetricsRepo::prune_older_than(&self.duckdb_pool, cutoff).await;
+                let _ = NodeMetricsRepo::prune_older_than(&self.duckdb_pool, cutoff).await;
             }
         });
     }

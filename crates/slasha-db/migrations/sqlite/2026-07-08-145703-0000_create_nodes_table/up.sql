@@ -23,3 +23,15 @@ SET node_id = COALESCE(
   (SELECT node_id FROM apps WHERE apps.id = deployments.app_id),
   'local'
 );
+
+DROP INDEX IF EXISTS idx_alert_rules_kind;
+ALTER TABLE alert_rules DROP COLUMN kind;
+
+UPDATE alert_rules
+SET config_json = replace(config_json, '"kind":"server_cpu"', '"kind":"node_cpu","node_id":"local"');
+
+UPDATE alert_rules
+SET config_json = replace(config_json, '"kind":"server_memory"', '"kind":"node_memory","node_id":"local"');
+
+UPDATE alert_rules
+SET config_json = replace(config_json, '"kind":"server_load_average"', '"kind":"node_load_average","node_id":"local"');

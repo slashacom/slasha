@@ -177,7 +177,6 @@ impl AlertRuleRepo {
                 .values((
                     alert_rules::id.eq(&id),
                     alert_rules::name.eq(rule.name),
-                    alert_rules::kind.eq(rule.config.kind()),
                     alert_rules::config_json.eq(config_json),
                     alert_rules::channel_ids_json.eq(channel_ids_json),
                     alert_rules::direct_webhook_url.eq(rule.direct_webhook_url),
@@ -211,7 +210,6 @@ impl AlertRuleRepo {
             diesel::update(alert_rules::table.filter(alert_rules::id.eq(&id)))
                 .set((
                     alert_rules::name.eq(&changeset.name),
-                    alert_rules::kind.eq(changeset.config.kind()),
                     alert_rules::config_json.eq(config_json),
                     alert_rules::channel_ids_json.eq(channel_ids_json),
                     alert_rules::message_template.eq(&changeset.message_template),

@@ -3,19 +3,32 @@ use duckdb::params;
 use crate::{
     connection::DuckdbPool,
     error::{DbError, DbResult},
-    models::server_metrics::{NewServerMetrics, ServerMetrics},
+    models::node_metrics::{NewNodeMetrics, NodeMetrics},
 };
 
-pub struct ServerMetricsRepo;
+pub struct NodeMetricsRepo;
 
-impl ServerMetricsRepo {
-    pub async fn insert(pool: &DuckdbPool, metrics: NewServerMetrics) -> DbResult<ServerMetrics> {
+impl NodeMetricsRepo {
+    pub async fn insert(pool: &DuckdbPool, metrics: NewNodeMetrics) -> DbResult<NodeMetrics> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = pool.get()?;
             let id = uuid::Uuid::new_v4().to_string();
             conn.execute(
-                "INSERT INTO server_metrics (id, node_id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO node_metrics ( \
+                    id, \
+                    node_id, \
+                    cpu_usage, \
+                    memory_used, \
+                    memory_total, \
+                    swap_used, \
+                    swap_total, \
+                    disk_used, \
+                    disk_total, \
+                    network_rx_bps, \
+                    network_tx_bps, \
+                    load_average \
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 params![
                     id,
                     { metrics.node_id },
@@ -32,9 +45,26 @@ impl ServerMetricsRepo {
                 ],
             )?;
 
-            let mut stmt = conn.prepare("SELECT id, node_id, cpu_usage, memory_used, memory_total, swap_used, swap_total, disk_used, disk_total, network_rx_bps, network_tx_bps, load_average, created_at FROM server_metrics WHERE id = ?")?;
+            let mut stmt = conn.prepare(
+                "SELECT \
+                    id, \
+                    node_id, \
+                    cpu_usage, \
+                    memory_used, \
+                    memory_total, \
+                    swap_used, \
+                    swap_total, \
+                    disk_used, \
+                    disk_total, \
+                    network_rx_bps, \
+                    network_tx_bps, \
+                    load_average, \
+                    created_at \
+                 FROM node_metrics \
+                 WHERE id = ?",
+            )?;
             let mut iter = stmt.query_map(params![id], |row| {
-                Ok(ServerMetrics {
+                Ok(NodeMetrics {
                     id: row.get(0)?,
                     node_id: row.get(1)?,
                     cpu_usage: row.get(2)?,
@@ -51,13 +81,14 @@ impl ServerMetricsRepo {
                 })
             })?;
 
-            iter.next().ok_or_else(|| DbError::NotFound("Metric not found".to_string()))?
+            iter.next()
+                .ok_or_else(|| DbError::NotFound("Metric not found".to_string()))?
                 .map_err(DbError::Duckdb)
         })
         .await?
     }
 
-    pub async fn get_latest(pool: &DuckdbPool, node_id: &str) -> DbResult<Option<ServerMetrics>> {
+    pub async fn get_latest(pool: &DuckdbPool, node_id: &str) -> DbResult<Option<NodeMetrics>> {
         let pool = pool.clone();
         let node_id = node_id.to_string();
         tokio::task::spawn_blocking(move || {
@@ -77,13 +108,13 @@ impl ServerMetricsRepo {
                     network_tx_bps, \
                     load_average, \
                     created_at \
-                 FROM server_metrics \
+                 FROM node_metrics \
                  WHERE node_id = ? \
                  ORDER BY created_at DESC \
                  LIMIT 1",
             )?;
             let mut iter = stmt.query_map(params![node_id], |row| {
-                Ok(ServerMetrics {
+                Ok(NodeMetrics {
                     id: row.get(0)?,
                     node_id: row.get(1)?,
                     cpu_usage: row.get(2)?,
@@ -115,7 +146,7 @@ impl ServerMetricsRepo {
         start: chrono::NaiveDateTime,
         end: chrono::NaiveDateTime,
         bucket_seconds: i64,
-    ) -> DbResult<Vec<ServerMetrics>> {
+    ) -> DbResult<Vec<NodeMetrics>> {
         let pool = pool.clone();
         let bucket = bucket_seconds.max(1);
         let node_id = node_id.to_string();
@@ -136,7 +167,7 @@ impl ServerMetricsRepo {
                     avg(network_tx_bps) AS network_tx_bps, \
                     avg(load_average) AS load_average, \
                     time_bucket(to_seconds({bucket}), created_at) AS created_at \
-                 FROM server_metrics \
+                 FROM node_metrics \
                  WHERE node_id = ? AND created_at >= ? AND created_at <= ? \
                  GROUP BY ALL \
                  ORDER BY created_at ASC"
@@ -145,7 +176,7 @@ impl ServerMetricsRepo {
             let mut stmt = conn.prepare(&sql)?;
 
             let iter = stmt.query_map(params![node_id, start, end], |row| {
-                Ok(ServerMetrics {
+                Ok(NodeMetrics {
                     id: row.get(0)?,
                     node_id: row.get(1)?,
                     cpu_usage: row.get(2)?,
@@ -179,7 +210,7 @@ impl ServerMetricsRepo {
         tokio::task::spawn_blocking(move || {
             let conn = pool.get()?;
             let count = conn.execute(
-                "DELETE FROM server_metrics WHERE created_at < ?",
+                "DELETE FROM node_metrics WHERE created_at < ?",
                 params![cutoff],
             )?;
             Ok(count)
