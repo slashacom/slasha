@@ -120,7 +120,13 @@ impl NodeConnectionManager {
             stdin.write_all(script.as_bytes()).await?;
         }
 
-        let output = child.wait_with_output().await?;
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            child.wait_with_output(),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("SSH execution timed out after 10s"))??;
+
         Ok(output)
     }
 

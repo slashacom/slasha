@@ -28,6 +28,7 @@ NET=$(awk '/:/ {rx+=$2; tx+=$10} END {print rx, tx}' /proc/net/dev)
 echo "$TOTAL_CPU;$IDLE_CPU;$MEM;$SWAP;$DISK;$LOAD;$NET"
 "#;
 
+#[derive(Clone)]
 struct PrevCounters {
     total_cpu: u64,
     idle_cpu: u64,
@@ -103,8 +104,7 @@ impl NodeMetricsCollector {
         }
     }
 
-    async fn sample_remote(
-        &self,
+    fn parse_remote(
         node_id: &str,
         output: &str,
         prev: Option<&PrevCounters>,
@@ -190,29 +190,58 @@ impl NodeMetricsCollector {
 
                 let mut active_nodes = vec![];
                 if let Ok(nodes) = NodeRepo::list(&self.db_pool).await {
-                    for node in &nodes {
+                    let mut remote_tasks = vec![];
+
+                    for node in nodes {
                         active_nodes.push(node.id.clone());
 
                         if node.is_local() {
                             let metric = self.sample_local(&node.id);
                             let _ = NodeMetricsRepo::insert(&self.duckdb_pool, metric).await;
                         } else {
-                            if let Ok(out) = self
-                                .connection_manager
-                                .run_ssh_script(node, METRICS_SCRIPT)
-                                .await
-                                && out.status.success()
-                            {
-                                let stdout = String::from_utf8_lossy(&out.stdout);
-                                if let Some((metric, new_prev)) = self
-                                    .sample_remote(&node.id, &stdout, self.prev.get(&node.id))
-                                    .await
-                                {
-                                    self.prev.insert(node.id.clone(), new_prev);
-                                    let _ =
-                                        NodeMetricsRepo::insert(&self.duckdb_pool, metric).await;
-                                }
-                            }
+                            remote_tasks.push({
+                                let connection_manager = self.connection_manager.clone();
+                                let prev_counters = self.prev.get(&node.id).cloned();
+                                let pool = self.duckdb_pool.clone();
+
+                                tokio::spawn(async move {
+                                    match connection_manager
+                                        .run_ssh_script(&node, METRICS_SCRIPT)
+                                        .await
+                                    {
+                                        Ok(out) if out.status.success() => {
+                                            let stdout = String::from_utf8_lossy(&out.stdout);
+                                            if let Some((metric, new_prev)) = Self::parse_remote(
+                                                &node.id,
+                                                &stdout,
+                                                prev_counters.as_ref(),
+                                            ) {
+                                                let _ =
+                                                    NodeMetricsRepo::insert(&pool, metric).await;
+                                                Some((node.id, new_prev))
+                                            } else {
+                                                None
+                                            }
+                                        }
+                                        Ok(_) => None,
+                                        Err(err) => {
+                                            tracing::warn!(
+                                                target: "slasha::metrics",
+                                                node_id = %node.id,
+                                                error = %err,
+                                                "remote metric collection failed or timed out"
+                                            );
+                                            None
+                                        }
+                                    }
+                                })
+                            });
+                        }
+                    }
+
+                    for task in remote_tasks {
+                        if let Ok(Some((node_id, new_prev))) = task.await {
+                            self.prev.insert(node_id, new_prev);
                         }
                     }
                 }
