@@ -11,7 +11,7 @@ import {
 import { EmptyPage } from '~/components/global/empty-page';
 import { Table } from '~/components/interface/table';
 import { CronRunStatusBadge } from '~/components/apps/cron-run-status-badge';
-import { LogStream } from '~/components/apps/log-stream';
+import { LogStream } from '~/components/global/log-stream';
 import type { CronRun } from '~/models/cron';
 import { formatDate } from '~/utils/format';
 

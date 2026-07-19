@@ -31,7 +31,7 @@ export default function EditUser() {
   const { data: appsData } = useSuspenseQuery(getAppsOptions());
   const updateUser = useUpdateUser(id!);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const email = formData.get('email') as string;

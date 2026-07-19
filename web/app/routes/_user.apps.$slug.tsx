@@ -1,13 +1,13 @@
 import { Suspense, useMemo, useState } from 'react';
 import { Outlet, useParams } from 'react-router';
-import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
+import { useSuspenseQuery } from '@tanstack/react-query';
 import { ArrowUpRight, Check, Copy, Folder, GitBranch } from 'lucide-react';
 import { getAppOptions } from '~/queries/apps';
 import { getDeploymentsOptions } from '~/queries/deployments';
 import type { App } from '~/models/app';
 import { TabNav } from '~/components/interface/tab-nav';
 import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
-import { deriveAppStatus, type AppStatusView } from '~/utils/app-status';
+import { getAppStatusView, type AppStatusView } from '~/utils/app-status';
 import { cn } from '~/utils/classname';
 import { queryClient } from '~/utils/query-client';
 
@@ -140,13 +140,18 @@ function AppToolbar(props: AppToolbarProps) {
 
 export default function AppLayout() {
   const { slug } = useParams();
-  const { data } = useSuspenseQuery(getAppOptions(slug!));
-  const { data: deploymentsData } = useQuery({
-    ...getDeploymentsOptions(slug!),
-    refetchInterval: 10000,
+  const { data } = useSuspenseQuery({
+    ...getAppOptions(slug!),
+    refetchInterval: (query) => {
+      const status = query.state.data?.runtime_status;
+      if (status === 'deploying' || status === 'migrating') {
+        return 2000;
+      }
+      return 5000;
+    },
   });
   const app = data.app;
-  const status = deriveAppStatus(deploymentsData?.deployments ?? []);
+  const status = getAppStatusView(data.runtime_status as any);
 
   if (!app) {
     return (

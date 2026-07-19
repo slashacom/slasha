@@ -136,7 +136,7 @@ impl GithubConnectionRepo {
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             conn.transaction::<_, DbError, _>(|tx| {
-                let updated = diesel::update(
+                let connection: GithubConnection = diesel::update(
                     github_connections::table.filter(github_connections::app_id.eq(&app_id)),
                 )
                 .set((
@@ -145,21 +145,21 @@ impl GithubConnectionRepo {
                     github_connections::status.eq(ConnectionStatus::Connected.to_string()),
                     github_connections::updated_at.eq(chrono::Utc::now().naive_utc()),
                 ))
-                .execute(tx)?;
-                if updated == 0 {
-                    return Err(DbError::NotFound(format!(
+                .returning(GithubConnection::as_returning())
+                .get_result(tx)
+                .map_err(|e| match e {
+                    diesel::result::Error::NotFound => DbError::NotFound(format!(
                         "github connection for app '{}' not found",
                         app_id
-                    )));
-                }
+                    )),
+                    _ => DbError::from(e),
+                })?;
 
                 diesel::update(apps::table.filter(apps::id.eq(&app_id)))
                     .set(apps::default_branch.eq(default_branch))
                     .execute(tx)?;
 
-                Ok(github_connections::table
-                    .filter(github_connections::app_id.eq(&app_id))
-                    .first::<GithubConnection>(tx)?)
+                Ok(connection)
             })
         })
         .await?

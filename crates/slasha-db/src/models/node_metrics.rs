@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "./server-metrics.ts")]
-pub struct ServerMetrics {
+#[ts(export, export_to = "./node-metrics.ts")]
+pub struct NodeMetrics {
     pub id: String,
     pub cpu_usage: f64,
     pub memory_used: i64,  // in MiB
@@ -15,10 +15,11 @@ pub struct ServerMetrics {
     pub network_rx_bps: f64,
     pub network_tx_bps: f64,
     pub load_average: f64,
+    pub node_id: String,
     pub created_at: chrono::NaiveDateTime,
 }
 
-pub struct NewServerMetrics {
+pub struct NewNodeMetrics {
     pub cpu_usage: f64,
     pub memory_used: i64,
     pub memory_total: i64,
@@ -29,4 +30,5 @@ pub struct NewServerMetrics {
     pub network_rx_bps: f64,
     pub network_tx_bps: f64,
     pub load_average: f64,
+    pub node_id: String,
 }

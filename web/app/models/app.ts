@@ -9,6 +9,7 @@ export type App = {
   created_at: string;
   auto_deploy: boolean;
   source: AppSource;
+  node_id: string;
 };
 
 export type AppDomain = {

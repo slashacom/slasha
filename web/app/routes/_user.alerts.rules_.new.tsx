@@ -3,6 +3,7 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 import { AlertRuleForm } from '~/components/alerts/alert-rule-form';
 import { getAppsOptions } from '~/queries/apps';
 import { getAlertChannelsOptions, getAllCronsOptions } from '~/queries/alerts';
+import { getNodesOptions } from '~/queries/nodes';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader() {
@@ -10,6 +11,7 @@ export async function clientLoader() {
     queryClient.ensureQueryData(getAppsOptions()),
     queryClient.ensureQueryData(getAlertChannelsOptions()),
     queryClient.ensureQueryData(getAllCronsOptions()),
+    queryClient.ensureQueryData(getNodesOptions()),
   ]);
   return null;
 }
@@ -19,6 +21,7 @@ export default function NewAlertRulePage() {
   const { data: appsData } = useSuspenseQuery(getAppsOptions());
   const { data: channelsData } = useSuspenseQuery(getAlertChannelsOptions());
   const { data: cronsData } = useSuspenseQuery(getAllCronsOptions());
+  const { data: nodesData } = useSuspenseQuery(getNodesOptions());
 
   return (
     <div className="p-8">
@@ -32,6 +35,7 @@ export default function NewAlertRulePage() {
         apps={appsData.apps.map((item) => item.app)}
         channels={channelsData.channels}
         crons={cronsData.crons}
+        nodes={nodesData.nodes}
         onCancel={() => navigate('/alerts/rules')}
         onSaved={() => navigate('/alerts/rules')}
       />

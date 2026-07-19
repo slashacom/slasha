@@ -4,7 +4,6 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use bollard::Docker;
 use chrono::Utc;
 use garde::Validate;
 use serde::{Deserialize, Serialize};
@@ -229,8 +228,9 @@ impl BackupStatus {
 
 async fn backup_status(
     State(storage): State<Storage>,
-    State(docker): State<Docker>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
@@ -240,7 +240,9 @@ async fn backup_status(
         ));
     };
 
-    let web_running = is_web_running(&docker, &app.id).await.unwrap_or(false);
+    let web_running = is_web_running(&docker_client, &app.id)
+        .await
+        .unwrap_or(false);
 
     Ok(Json(serde_json::json!({
         "status": BackupStatus {
@@ -257,8 +259,9 @@ async fn backup_status(
 
 async fn refresh_status(
     State(storage): State<Storage>,
-    State(docker): State<Docker>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
@@ -268,7 +271,7 @@ async fn refresh_status(
         ));
     };
 
-    let probe = litestream::probe_replica(&docker, &backup)
+    let probe = litestream::probe_replica(&docker_client, &backup)
         .await
         .map_err(|e| HttpError::internal(anyhow::anyhow!("Failed to probe replica: {e}")))?;
 

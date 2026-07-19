@@ -13,23 +13,14 @@ use tokio::{
     process::Command as TokioCommand,
 };
 
-use crate::docker::{DeploymentError, DeploymentResult, logs::LogHandle, naming::image_tag};
+use crate::{
+    docker::{DeploymentError, DeploymentResult, naming::image_tag},
+    logs::LogHandle,
+};
 
-async fn checkout_commit_to_dir(
-    repo_path: &Path,
-    commit_sha: &str,
-    dest: &Path,
-) -> DeploymentResult<()> {
+async fn build_git_tar(repo_path: &Path, commit_sha: &str) -> DeploymentResult<Bytes> {
     let out = TokioCommand::new("git")
-        .args([
-            "--work-tree",
-            dest.to_str().unwrap(),
-            "restore",
-            "--source",
-            commit_sha,
-            "--",
-            ".",
-        ])
+        .args(["archive", "--format=tar", commit_sha])
         .current_dir(repo_path)
         .output()
         .await?;
@@ -39,13 +30,37 @@ async fn checkout_commit_to_dir(
         return Err(DeploymentError::GitArchiveFailed(stderr));
     }
 
+    Ok(Bytes::from(out.stdout))
+}
+
+async fn tar_to_directory(tar_bytes: Bytes, dest: &Path) -> DeploymentResult<()> {
+    let mut child = TokioCommand::new("tar")
+        .args(["-xf", "-"])
+        .current_dir(dest)
+        .stdin(Stdio::piped())
+        .spawn()?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        use tokio::io::AsyncWriteExt;
+        stdin.write_all(&tar_bytes).await?;
+    }
+
+    let status = child.wait().await?;
+
+    if !status.success() {
+        return Err(DeploymentError::PhaseFailed {
+            phase: "extract git archive".to_string(),
+            status,
+        });
+    }
+
     Ok(())
 }
 
-async fn build_tar_context(repo_path: &Path, commit_sha: &str) -> DeploymentResult<Bytes> {
-    let out = TokioCommand::new("git")
-        .args(["archive", "--format=tar", commit_sha])
-        .current_dir(repo_path)
+async fn directory_to_tar(dir: &Path) -> DeploymentResult<Bytes> {
+    let out = TokioCommand::new("tar")
+        .args(["-cf", "-", "."])
+        .current_dir(dir)
         .output()
         .await?;
 
@@ -92,21 +107,17 @@ async fn stream_command_output(
     Ok(())
 }
 
-pub async fn build_docker(
+async fn build_image_from_tar(
     docker_client: &Docker,
     log: &LogHandle,
-    app: &App,
-    deployment: &Deployment,
+    image_tag: &str,
+    tar_bytes: Bytes,
 ) -> DeploymentResult<()> {
-    let repo_path = Path::new(&app.repo_path);
-    let image_tag = image_tag(&app.slug, &deployment.id);
-
-    let tar_bytes = build_tar_context(repo_path, &deployment.commit_sha).await?;
     let tar_body_stream = body_stream(stream::once(async move { tar_bytes }));
 
     let session_id = uuid::Uuid::new_v4().to_string();
     let build_opts = BuildImageOptionsBuilder::new()
-        .t(image_tag.as_str())
+        .t(image_tag)
         .rm(true)
         .forcerm(true)
         .version(BuilderVersion::BuilderBuildKit)
@@ -124,6 +135,7 @@ pub async fn build_docker(
                         log.send(line).await?;
                     }
                 }
+
                 if let Some(detail) = info.error_detail
                     && let Some(msg_text) = detail.message
                 {
@@ -146,7 +158,22 @@ pub async fn build_docker(
     Ok(())
 }
 
+pub async fn build_docker(
+    docker_client: &Docker,
+    log: &LogHandle,
+    app: &App,
+    deployment: &Deployment,
+) -> DeploymentResult<()> {
+    let repo_path = Path::new(&app.repo_path);
+    let image_tag = image_tag(&app.slug, &deployment.id);
+
+    let tar_bytes = build_git_tar(repo_path, &deployment.commit_sha).await?;
+
+    build_image_from_tar(docker_client, log, &image_tag, tar_bytes).await
+}
+
 pub async fn build_railpack(
+    docker_client: &Docker,
     log: &LogHandle,
     app: &App,
     deployment: &Deployment,
@@ -161,7 +188,8 @@ pub async fn build_railpack(
     log.send(format!("Checking out commit {} to temp dir", commit_sha))
         .await?;
 
-    checkout_commit_to_dir(repo_path, commit_sha, tmp_path).await?;
+    let source_tar = build_git_tar(repo_path, commit_sha).await?;
+    tar_to_directory(source_tar, tmp_path).await?;
 
     let plan_path = tmp_path.join("railpack-plan.json");
     let info_path = tmp_path.join("railpack-info.json");
@@ -182,28 +210,21 @@ pub async fn build_railpack(
 
     stream_command_output(prepare_child, log, "railpack prepare").await?;
 
-    log.send("Prepare complete, starting BuildKit build…")
+    let plan_content = tokio::fs::read_to_string(&plan_path).await?;
+    let dockerfile_content = format!(
+        "# syntax=ghcr.io/railwayapp/railpack-frontend\n{}",
+        plan_content
+    );
+
+    tokio::fs::write(tmp_path.join("Dockerfile"), dockerfile_content).await?;
+
+    let _ = tokio::fs::remove_file(&plan_path).await;
+    let _ = tokio::fs::remove_file(&info_path).await;
+
+    log.send("Prepare complete, starting BuildKit build on node…")
         .await?;
 
-    let buildx_child = TokioCommand::new("docker")
-        .arg("buildx")
-        .arg("build")
-        .arg("--build-arg")
-        .arg("BUILDKIT_SYNTAX=ghcr.io/railwayapp/railpack-frontend")
-        .arg("-f")
-        .arg(&plan_path)
-        .arg(tmp_path)
-        .arg("--output")
-        .arg(format!("type=docker,name={}", image_tag))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()?;
+    let tar_bytes = directory_to_tar(tmp_path).await?;
 
-    stream_command_output(buildx_child, log, "docker buildx build").await?;
-
-    log.send(format!("Image built and tagged as {}", image_tag))
-        .await?;
-
-    Ok(())
+    build_image_from_tar(docker_client, log, &image_tag, tar_bytes).await
 }

@@ -8,6 +8,7 @@ use crate::{
         deployment::{Deployment, DeploymentStatus, NewDeployment},
         schema::deployments,
     },
+    schema::nodes,
 };
 
 pub struct DeploymentRepo;
@@ -96,12 +97,11 @@ impl DeploymentRepo {
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             conn.transaction::<_, DbError, _>(|tx| {
-                diesel::insert_into(deployments::table)
+                let dep: Deployment = diesel::insert_into(deployments::table)
                     .values(&deployment)
-                    .execute(tx)?;
-                Ok(deployments::table
-                    .filter(deployments::id.eq(&deployment.id))
-                    .first::<Deployment>(tx)?)
+                    .returning(Deployment::as_returning())
+                    .get_result(tx)?;
+                Ok(dep)
             })
         })
         .await?
@@ -135,15 +135,14 @@ impl DeploymentRepo {
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             conn.transaction::<_, DbError, _>(|tx| {
-                diesel::update(deployments::table.filter(deployments::id.eq(&id)))
-                    .set((
-                        deployments::status.eq(DeploymentStatus::Pending.to_string()),
-                        deployments::updated_at.eq(now),
-                    ))
-                    .execute(tx)?;
-                let deployment = deployments::table
-                    .filter(deployments::id.eq(&id))
-                    .first::<Deployment>(tx)?;
+                let deployment: Deployment =
+                    diesel::update(deployments::table.filter(deployments::id.eq(&id)))
+                        .set((
+                            deployments::status.eq(DeploymentStatus::Pending.to_string()),
+                            deployments::updated_at.eq(now),
+                        ))
+                        .returning(Deployment::as_returning())
+                        .get_result(tx)?;
                 Ok(deployment)
             })
         })
@@ -175,6 +174,26 @@ impl DeploymentRepo {
                 }
 
                 diesel::delete(deployments::table.filter(deployments::id.eq(&id))).execute(tx)?;
+
+                let count: i64 = deployments::table
+                    .filter(deployments::node_id.eq(&dep.node_id))
+                    .count()
+                    .get_result(tx)?;
+
+                if count == 0 {
+                    let node_deleted = nodes::table
+                        .filter(nodes::id.eq(&dep.node_id))
+                        .filter(nodes::deleted_at.is_not_null())
+                        .count()
+                        .get_result::<i64>(tx)?
+                        > 0;
+
+                    if node_deleted {
+                        diesel::delete(nodes::table.filter(nodes::id.eq(&dep.node_id)))
+                            .execute(tx)?;
+                    }
+                }
+
                 Ok(dep)
             })
         })

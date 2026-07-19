@@ -52,17 +52,16 @@ impl AppDomainRepo {
 
             let id = uuid::Uuid::new_v4().to_string();
 
-            diesel::insert_into(app_domains::table)
+            let inserted_domain: AppDomain = diesel::insert_into(app_domains::table)
                 .values((
                     app_domains::id.eq(&id),
                     app_domains::app_id.eq(&domain.app_id),
                     app_domains::domain.eq(&domain.domain),
                 ))
-                .execute(&mut conn)?;
+                .returning(AppDomain::as_returning())
+                .get_result(&mut conn)?;
 
-            Ok(app_domains::table
-                .filter(app_domains::id.eq(&id))
-                .first::<AppDomain>(&mut conn)?)
+            Ok(inserted_domain)
         })
         .await?
     }

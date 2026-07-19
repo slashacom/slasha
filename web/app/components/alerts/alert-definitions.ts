@@ -26,6 +26,7 @@ export type RuleDraft = {
   id: string | null;
   name: string;
   kind: AlertRuleConfig['kind'];
+  node_id: string;
   threshold_percent: string;
   threshold: string;
   app_id: string;
@@ -115,35 +116,41 @@ export const alertChannelRegistry = {
 } satisfies { [K in ChannelKind]: ChannelDefinition<K> };
 
 export const alertRuleRegistry = {
-  server_cpu: {
-    label: 'Server CPU',
-    description: 'Trigger when server CPU usage crosses a threshold.',
-    defaults: { threshold_percent: '80' },
+  node_cpu: {
+    label: 'Node CPU',
+    description: 'Trigger when node CPU usage crosses a threshold.',
+    defaults: { node_id: 'local', threshold_percent: '80' },
     buildConfig: (draft) => ({
-      kind: 'server_cpu',
+      kind: 'node_cpu',
+      node_id: draft.node_id || 'local',
       threshold_percent: Number(draft.threshold_percent) || 0,
     }),
-    summary: (config) => `Server CPU >= ${config.threshold_percent}%`,
+    summary: (config) =>
+      `Node CPU (${config.node_id}) >= ${config.threshold_percent}%`,
   },
-  server_memory: {
-    label: 'Server Memory',
-    description: 'Trigger when server memory usage crosses a threshold.',
-    defaults: { threshold_percent: '80' },
+  node_memory: {
+    label: 'Node Memory',
+    description: 'Trigger when node memory usage crosses a threshold.',
+    defaults: { node_id: 'local', threshold_percent: '80' },
     buildConfig: (draft) => ({
-      kind: 'server_memory',
+      kind: 'node_memory',
+      node_id: draft.node_id || 'local',
       threshold_percent: Number(draft.threshold_percent) || 0,
     }),
-    summary: (config) => `Server memory >= ${config.threshold_percent}%`,
+    summary: (config) =>
+      `Node memory (${config.node_id}) >= ${config.threshold_percent}%`,
   },
-  server_load_average: {
-    label: 'Server Load Average',
-    description: 'Trigger when load average crosses a threshold.',
-    defaults: { threshold: '2' },
+  node_load_average: {
+    label: 'Node Load Average',
+    description: 'Trigger when node load average crosses a threshold.',
+    defaults: { node_id: 'local', threshold: '2' },
     buildConfig: (draft) => ({
-      kind: 'server_load_average',
+      kind: 'node_load_average',
+      node_id: draft.node_id || 'local',
       threshold: Number(draft.threshold) || 0,
     }),
-    summary: (config) => `Load average >= ${config.threshold}`,
+    summary: (config) =>
+      `Node load average (${config.node_id}) >= ${config.threshold}`,
   },
   app_cpu: {
     label: 'App CPU',
@@ -258,13 +265,14 @@ export function channelDraftFromChannel(channel: AlertChannel): ChannelDraft {
 }
 
 export function emptyRuleDraft(
-  kind: AlertRuleConfig['kind'] = 'server_cpu',
+  kind: AlertRuleConfig['kind'] = 'node_cpu',
   cooldownSecs = 900
 ): RuleDraft {
   return {
     id: null,
     name: '',
     kind,
+    node_id: 'local',
     threshold_percent: '80',
     threshold: '2',
     app_id: '',

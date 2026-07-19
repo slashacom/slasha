@@ -9,10 +9,12 @@ use slasha_db::{
     service::{Service, ServiceStatus},
 };
 
-use crate::docker::{
-    DeploymentResult,
+use crate::{
+    docker::{
+        DeploymentResult,
+        naming::{service_container_name, service_volume_name},
+    },
     logs::{LogKey, LogManager, stream_container_logs},
-    naming::{service_container_name, service_volume_name},
 };
 
 pub async fn stop_service_container(

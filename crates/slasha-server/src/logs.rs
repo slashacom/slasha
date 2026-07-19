@@ -14,8 +14,6 @@ use file_rotate::{
 use futures_util::StreamExt;
 use tokio::sync::{Mutex, broadcast};
 
-use super::{DeploymentError, DeploymentResult};
-
 const CHANNEL_CAPACITY: usize = 1024;
 
 pub enum LogKey {
@@ -30,6 +28,12 @@ pub enum LogKey {
     Cron {
         app_slug: String,
         cron_run_id: String,
+    },
+    NodeSetup {
+        node_id: String,
+    },
+    NodeTeardown {
+        node_id: String,
     },
 }
 
@@ -53,6 +57,12 @@ impl LogKey {
                 cron_run_id,
             } => {
                 format!("c:{}:{}", app_slug, cron_run_id)
+            }
+            LogKey::NodeSetup { node_id } => {
+                format!("ns:{}", node_id)
+            }
+            LogKey::NodeTeardown { node_id } => {
+                format!("nt:{}", node_id)
             }
         }
     }
@@ -83,6 +93,10 @@ impl LogKey {
                 .join("cron")
                 .join(cron_run_id)
                 .join("run.log"),
+            LogKey::NodeSetup { node_id } => logs_dir.join("nodes").join(node_id).join("setup.log"),
+            LogKey::NodeTeardown { node_id } => {
+                logs_dir.join("nodes").join(node_id).join("teardown.log")
+            }
         }
     }
 }
@@ -110,14 +124,14 @@ impl LogManager {
         }
     }
 
-    pub async fn get_logger(&self, key: &LogKey) -> DeploymentResult<LogHandle> {
+    pub async fn get_logger(&self, key: &LogKey) -> anyhow::Result<LogHandle> {
         let map_key = key.as_map_key();
         let path = key.as_path(&self.logs_dir);
 
         self.build_log_handle(map_key, path).await
     }
 
-    async fn build_log_handle(&self, key: String, path: PathBuf) -> DeploymentResult<LogHandle> {
+    async fn build_log_handle(&self, key: String, path: PathBuf) -> anyhow::Result<LogHandle> {
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
@@ -178,26 +192,53 @@ impl LogManager {
         Ok(())
     }
 
-    pub async fn delete_app_logs(&self, app_slug: &str) -> std::io::Result<()> {
+    pub fn close_app_handles(&self, app_slug: &str) {
         let d_prefix = format!("d:{}:", app_slug);
         let s_prefix = format!("s:{}:", app_slug);
         let c_prefix = format!("c:{}:", app_slug);
+
         let keep = |k: &String| {
             !k.starts_with(&d_prefix) && !k.starts_with(&s_prefix) && !k.starts_with(&c_prefix)
         };
+
         self.channels.retain(|k, _| keep(k));
         self.files.retain(|k, _| keep(k));
+    }
+
+    pub async fn delete_app_logs(&self, app_slug: &str) -> std::io::Result<()> {
+        self.close_app_handles(app_slug);
 
         let app_dir = self.logs_dir.join(app_slug);
         if app_dir.exists() {
             tokio::fs::remove_dir_all(app_dir).await?;
         }
+
+        Ok(())
+    }
+
+    pub async fn delete_node_logs(&self, node_id: &str) -> std::io::Result<()> {
+        let setup_key = LogKey::NodeSetup {
+            node_id: node_id.to_string(),
+        };
+        let teardown_key = LogKey::NodeTeardown {
+            node_id: node_id.to_string(),
+        };
+
+        self.remove(&setup_key);
+        self.remove(&teardown_key);
+
+        if let Some(node_dir) = setup_key.as_path(&self.logs_dir).parent()
+            && tokio::fs::try_exists(node_dir).await.unwrap_or(false)
+        {
+            tokio::fs::remove_dir_all(node_dir).await?;
+        }
+
         Ok(())
     }
 }
 
 impl LogHandle {
-    pub async fn send(&self, line: impl Into<String>) -> DeploymentResult<()> {
+    pub async fn send(&self, line: impl Into<String>) -> anyhow::Result<()> {
         let line = line.into();
         let _ = self.tx.send(line.clone()); // no one may be listening
         let mut file = self.file.lock().await;
@@ -209,24 +250,17 @@ impl LogHandle {
         self.tx.subscribe()
     }
 
-    async fn collect_rotated_files(&self) -> DeploymentResult<Vec<PathBuf>> {
-        let parent = self.path.parent().ok_or_else(|| {
-            DeploymentError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "log path has no parent directory",
-            ))
-        })?;
+    async fn collect_rotated_files(&self) -> anyhow::Result<Vec<PathBuf>> {
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("log path has no parent directory"))?;
 
         let base_name = self
             .path
             .file_name()
             .and_then(|n| n.to_str())
-            .ok_or_else(|| {
-                DeploymentError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "log path has no file name",
-                ))
-            })?
+            .ok_or_else(|| anyhow::anyhow!("log path has no file name"))?
             .to_string();
 
         let mut read_dir = tokio::fs::read_dir(parent).await?;
@@ -242,7 +276,7 @@ impl LogHandle {
         Ok(files)
     }
 
-    pub async fn get_historical(&self) -> DeploymentResult<Vec<String>> {
+    pub async fn get_historical(&self) -> anyhow::Result<Vec<String>> {
         let files = self.collect_rotated_files().await?;
 
         let mut lines = Vec::new();
@@ -254,7 +288,7 @@ impl LogHandle {
         Ok(lines)
     }
 
-    pub async fn delete_logs(&self) -> DeploymentResult<()> {
+    pub async fn delete_logs(&self) -> anyhow::Result<()> {
         for path in self.collect_rotated_files().await? {
             tokio::fs::remove_file(&path).await?;
         }
@@ -272,7 +306,7 @@ pub fn stream_container_logs(
     log: LogHandle,
     container: String,
     prefix: Option<String>,
-) -> tokio::task::JoinHandle<DeploymentResult<()>> {
+) -> tokio::task::JoinHandle<anyhow::Result<()>> {
     tokio::spawn(async move {
         if let Err(e) =
             stream_container_logs_inner(docker_client, log.clone(), container.clone(), prefix).await
@@ -296,7 +330,7 @@ async fn stream_container_logs_inner(
     log: LogHandle,
     container: String,
     prefix: Option<String>,
-) -> DeploymentResult<()> {
+) -> anyhow::Result<()> {
     let opts = LogsOptionsBuilder::new()
         .follow(true)
         .stdout(true)

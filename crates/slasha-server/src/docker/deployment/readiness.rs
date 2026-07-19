@@ -1,9 +1,14 @@
 use std::{collections::HashMap, future::Future, net::SocketAddr, time::Duration};
 
-use bollard::Docker;
+use bollard::{
+    Docker,
+    container::LogOutput,
+    exec::{CreateExecOptions, StartExecOptions},
+};
+use futures_util::StreamExt;
 use tokio::{net::TcpStream, time::Instant};
 
-use crate::proxy::container::PROXY_NETWORK_NAME;
+use crate::proxy::container::{PROXY_CONTAINER_NAME, PROXY_NETWORK_NAME};
 
 pub const HEALTH_CHECK_PATH_ENV: &str = "SLASHA_HEALTH_CHECK_PATH";
 pub const HEALTH_CHECK_TIMEOUT_ENV: &str = "SLASHA_HEALTH_CHECK_TIMEOUT";
@@ -118,9 +123,89 @@ fn status_indicates_ready(status: u16, explicit_path: bool) -> bool {
 
 pub async fn attempt_http(
     client: &reqwest::Client,
+    docker_client: &Docker,
+    is_local: bool,
     addr: SocketAddr,
     config: &ReadinessConfig,
 ) -> Attempt {
+    if !is_local {
+        let exec = match docker_client
+            .create_exec(
+                PROXY_CONTAINER_NAME,
+                CreateExecOptions {
+                    attach_stderr: Some(true),
+                    attach_stdout: Some(true),
+                    cmd: Some(vec![
+                        "wget",
+                        "-q",
+                        "-O",
+                        "/dev/null",
+                        "-S",
+                        "-T",
+                        &config.request_timeout.as_secs().to_string(),
+                        &format!("http://{}{}", addr, config.path),
+                    ]),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(exec) => exec,
+            Err(e) => return Attempt::NotReady(format!("failed to create exec in proxy: {}", e)),
+        };
+
+        let mut output_stream = match docker_client
+            .start_exec(&exec.id, None::<StartExecOptions>)
+            .await
+        {
+            Ok(bollard::exec::StartExecResults::Attached { output, .. }) => output,
+            _ => return Attempt::NotReady("failed to attach to proxy exec".to_string()),
+        };
+
+        let mut buffer = String::new();
+        while let Some(Ok(chunk)) = output_stream.next().await {
+            match chunk {
+                LogOutput::StdErr { message } => {
+                    buffer.push_str(&String::from_utf8_lossy(&message))
+                }
+                LogOutput::StdOut { message } => {
+                    buffer.push_str(&String::from_utf8_lossy(&message))
+                }
+                _ => {}
+            }
+        }
+
+        if let Ok(inspect) = docker_client.inspect_exec(&exec.id).await
+            && let Some(0) = inspect.exit_code
+        {
+            return Attempt::Ready;
+        }
+
+        let mut status = None;
+
+        for line in buffer.lines() {
+            let line = line.trim();
+            if line.starts_with("HTTP/") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2
+                    && let Ok(code) = parts[1].parse::<u16>()
+                {
+                    status = Some(code);
+                    break;
+                }
+            }
+        }
+
+        if let Some(code) = status {
+            if status_indicates_ready(code, config.explicit_path) {
+                return Attempt::Ready;
+            }
+            return Attempt::NotReady(format!("received HTTP {} from GET {}", code, config.path));
+        }
+
+        return Attempt::NotReady(format!("wget failed: {}", buffer));
+    }
+
     match tokio::time::timeout(config.connect_timeout, TcpStream::connect(addr)).await {
         Err(_) => {
             return Attempt::Unreachable;
@@ -212,6 +297,7 @@ pub async fn wait_for_web_ready(
     container_name: &str,
     container_port: u16,
     config: &ReadinessConfig,
+    is_local: bool,
 ) -> ReadinessOutcome {
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -226,6 +312,7 @@ pub async fn wait_for_web_ready(
             container_name,
             container_port,
             config,
+            is_local,
         )
         .await
     })
@@ -238,6 +325,7 @@ async fn observe_container(
     container_name: &str,
     container_port: u16,
     config: &ReadinessConfig,
+    is_local: bool,
 ) -> Round {
     let inspection = match docker_client.inspect_container(container_name, None).await {
         Ok(inspection) => inspection,
@@ -292,7 +380,14 @@ async fn observe_container(
         };
     };
 
-    let attempt = attempt_http(client, SocketAddr::new(ip, container_port), config).await;
+    let attempt = attempt_http(
+        client,
+        docker_client,
+        is_local,
+        SocketAddr::new(ip, container_port),
+        config,
+    )
+    .await;
 
     Round {
         state,

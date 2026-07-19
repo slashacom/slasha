@@ -2,7 +2,7 @@ const TEMPLATE_VARS = [
   ['{{detail}}', 'System-generated alert description'],
   ['{{value}}', 'Current metric value'],
   ['{{notification_status}}', 'triggered | renotified | resolved'],
-  ['{{alert_kind}}', 'Alert kind (server_cpu, app_memory, etc.)'],
+  ['{{alert_kind}}', 'Alert kind (node_cpu, app_memory, etc.)'],
 ];
 
 export function TemplateVarHelp() {

@@ -18,12 +18,9 @@ use tokio_util::io::{ReaderStream, StreamReader};
 
 use crate::{
     AppState, HttpResult,
-    docker::{
-        deployment::{resolve_head_commit, trigger_deployment},
-        logs::LogManager,
-    },
+    docker::deployment::{resolve_head_commit, trigger_deployment},
     extractors::git::{GitAuth, GitError},
-    state::Config,
+    logs::LogManager,
 };
 
 struct AutoDeploy {
@@ -31,7 +28,7 @@ struct AutoDeploy {
     db_pool: DbPool,
     log_manager: Arc<LogManager>,
     proxy_sync_trigger: Arc<Notify>,
-    deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
+    deployment_tasks: Arc<dashmap::DashMap<String, tokio_util::sync::CancellationToken>>,
     config: crate::state::Config,
     app: App,
 }
@@ -233,10 +230,7 @@ async fn upload_pack(auth: GitAuth, req: Request<Body>) -> HttpResult<Response> 
 }
 
 async fn receive_pack(
-    State(docker): State<Docker>,
-    State(db_pool): State<DbPool>,
-    State(runtime): State<crate::state::Runtime>,
-    State(config): State<Config>,
+    State(state): State<AppState>,
     auth: GitAuth,
     req: Request<Body>,
 ) -> HttpResult<Response> {
@@ -248,13 +242,23 @@ async fn receive_pack(
         ));
     }
 
+    let node = slasha_db::repos::node::NodeRepo::get(&state.storage.db_pool, &auth.app.node_id)
+        .await
+        .map_err(|e| crate::routing::api::HttpError::internal(anyhow::anyhow!(e)))?;
+
+    let docker = state
+        .clients
+        .docker_registry
+        .get_client(&node)
+        .map_err(|e| crate::routing::api::HttpError::internal(anyhow::anyhow!(e)))?;
+
     let auto_deploy = AutoDeploy {
         docker,
-        db_pool,
-        log_manager: runtime.log_manager,
-        proxy_sync_trigger: runtime.proxy_sync_trigger,
-        deployment_tasks: runtime.deployment_tasks,
-        config,
+        db_pool: state.storage.db_pool.clone(),
+        log_manager: state.runtime.log_manager.clone(),
+        proxy_sync_trigger: state.runtime.proxy_sync_trigger.clone(),
+        deployment_tasks: state.runtime.deployment_tasks.clone(),
+        config: state.config.clone(),
         app: auth.app.clone(),
     };
 

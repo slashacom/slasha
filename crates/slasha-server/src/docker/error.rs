@@ -78,6 +78,9 @@ pub enum DeploymentError {
 
     #[error("Deployment \"{0}\" no longer has a retained image")]
     ArtifactUnavailable(String),
+
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
 }
 
 pub type DeploymentResult<T> = std::result::Result<T, DeploymentError>;

@@ -4,24 +4,34 @@ use std::{
 };
 
 use axum::extract::FromRef;
-use bollard::Docker;
 use slasha_db::{DbPool, DuckdbPool, repos::github_app_config::GithubAppConfigRepo};
 use tokio::sync::{Notify, RwLock};
 
-use crate::{connections::GithubClient, docker::logs::LogManager, proxy::CaddyClient, utils};
+use crate::{
+    connections::GithubClient,
+    docker::DockerRegistry,
+    logs::LogManager,
+    node_connection_manager::NodeConnectionManager,
+    proxy::CaddyClient,
+    utils::{self},
+};
 
 #[derive(Clone)]
 pub struct Clients {
-    pub docker: Docker,
-    pub caddy: CaddyClient,
+    pub node_connection_manager: Arc<NodeConnectionManager>,
+    pub docker_registry: DockerRegistry,
+    pub caddy_client: CaddyClient,
     pub github: Arc<RwLock<Option<GithubClient>>>,
 }
 
 impl Clients {
-    pub fn new(docker: Docker, github: Option<GithubClient>) -> Self {
+    pub fn new(github: Option<GithubClient>, nodes_dir: PathBuf) -> Self {
+        let node_connection_manager = Arc::new(NodeConnectionManager::new(nodes_dir));
+
         Self {
-            docker,
-            caddy: CaddyClient::default(),
+            docker_registry: DockerRegistry::new(node_connection_manager.clone()),
+            node_connection_manager,
+            caddy_client: CaddyClient::default(),
             github: Arc::new(RwLock::new(github)),
         }
     }
@@ -64,7 +74,8 @@ pub struct Runtime {
     pub proxy_sync_trigger: Arc<Notify>,
     pub scaling_locks: Arc<dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     pub connection_sync_locks: Arc<dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
-    pub deployment_tasks: Arc<dashmap::DashMap<String, tokio::task::AbortHandle>>,
+    pub deployment_tasks: Arc<dashmap::DashMap<String, tokio_util::sync::CancellationToken>>,
+    pub migrating_apps: Arc<dashmap::DashSet<String>>,
 }
 
 impl Runtime {
@@ -75,6 +86,7 @@ impl Runtime {
             scaling_locks: Arc::new(dashmap::DashMap::new()),
             connection_sync_locks: Arc::new(dashmap::DashMap::new()),
             deployment_tasks: Arc::new(dashmap::DashMap::new()),
+            migrating_apps: Arc::new(dashmap::DashSet::new()),
         })
     }
 
@@ -179,15 +191,9 @@ impl FromRef<AppState> for Clients {
     }
 }
 
-impl FromRef<AppState> for Docker {
-    fn from_ref(state: &AppState) -> Self {
-        state.clients.docker.clone()
-    }
-}
-
 impl FromRef<AppState> for CaddyClient {
     fn from_ref(state: &AppState) -> Self {
-        state.clients.caddy.clone()
+        state.clients.caddy_client.clone()
     }
 }
 

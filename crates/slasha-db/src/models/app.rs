@@ -27,6 +27,7 @@ pub struct App {
     pub created_at: chrono::NaiveDateTime,
     pub auto_deploy: bool,
     pub source: AppSource,
+    pub node_id: String,
 }
 
 #[derive(Insertable)]
@@ -39,6 +40,7 @@ pub struct NewApp {
     pub default_branch: String,
     pub auto_deploy: bool,
     pub source: AppSource,
+    pub node_id: String,
 }
 
 #[derive(

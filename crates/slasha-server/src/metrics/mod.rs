@@ -1,5 +1,5 @@
 pub mod app;
-pub mod server;
+pub mod node;
 pub mod service;
 pub mod utils;
 

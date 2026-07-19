@@ -75,10 +75,9 @@ impl AlertChannelRepo {
                 ))
                 .execute(&mut conn)?;
 
-            alert_channels::table
-                .filter(alert_channels::id.eq(id))
-                .first::<AlertChannel>(&mut conn)
-                .map_err(Into::into)
+            Ok(alert_channels::table
+                .filter(alert_channels::id.eq(&id))
+                .first::<AlertChannel>(&mut conn)?)
         })
         .await?
     }
@@ -105,11 +104,9 @@ impl AlertChannelRepo {
                 ))
                 .execute(&mut conn)?;
 
-            alert_channels::table
+            Ok(alert_channels::table
                 .filter(alert_channels::id.eq(&id))
-                .first::<AlertChannel>(&mut conn)
-                .optional()?
-                .ok_or_else(|| DbError::NotFound(format!("alert channel '{}' not found", id)))
+                .first::<AlertChannel>(&mut conn)?)
         })
         .await?
     }
@@ -180,7 +177,6 @@ impl AlertRuleRepo {
                 .values((
                     alert_rules::id.eq(&id),
                     alert_rules::name.eq(rule.name),
-                    alert_rules::kind.eq(rule.config.kind()),
                     alert_rules::config_json.eq(config_json),
                     alert_rules::channel_ids_json.eq(channel_ids_json),
                     alert_rules::direct_webhook_url.eq(rule.direct_webhook_url),
@@ -191,10 +187,9 @@ impl AlertRuleRepo {
                 ))
                 .execute(&mut conn)?;
 
-            alert_rules::table
-                .filter(alert_rules::id.eq(id))
-                .first::<AlertRule>(&mut conn)
-                .map_err(Into::into)
+            Ok(alert_rules::table
+                .filter(alert_rules::id.eq(&id))
+                .first::<AlertRule>(&mut conn)?)
         })
         .await?
     }
@@ -215,7 +210,6 @@ impl AlertRuleRepo {
             diesel::update(alert_rules::table.filter(alert_rules::id.eq(&id)))
                 .set((
                     alert_rules::name.eq(&changeset.name),
-                    alert_rules::kind.eq(changeset.config.kind()),
                     alert_rules::config_json.eq(config_json),
                     alert_rules::channel_ids_json.eq(channel_ids_json),
                     alert_rules::message_template.eq(&changeset.message_template),
@@ -227,11 +221,9 @@ impl AlertRuleRepo {
                 ))
                 .execute(&mut conn)?;
 
-            alert_rules::table
+            Ok(alert_rules::table
                 .filter(alert_rules::id.eq(&id))
-                .first::<AlertRule>(&mut conn)
-                .optional()?
-                .ok_or_else(|| DbError::NotFound(format!("alert rule '{}' not found", id)))
+                .first::<AlertRule>(&mut conn)?)
         })
         .await?
     }
@@ -341,13 +333,9 @@ impl AlertIncidentRepo {
                 alert_incidents::current_value.eq(current_value),
                 alert_incidents::last_notified_at.eq(last_notified_at),
             ))
-            .execute(&mut conn)?;
-
-            alert_incidents::table
-                .filter(alert_incidents::id.eq(&id))
-                .first::<AlertIncident>(&mut conn)
-                .optional()?
-                .ok_or_else(|| DbError::NotFound(format!("alert incident '{}' not found", id)))
+            .returning(AlertIncident::as_returning())
+            .get_result(&mut conn)
+            .map_err(Into::into)
         })
         .await?
     }
@@ -372,13 +360,9 @@ impl AlertIncidentRepo {
                 alert_incidents::recovery_value.eq(recovery_value),
                 alert_incidents::resolved_at.eq(Some(now)),
             ))
-            .execute(&mut conn)?;
-
-            alert_incidents::table
-                .filter(alert_incidents::id.eq(&id))
-                .first::<AlertIncident>(&mut conn)
-                .optional()?
-                .ok_or_else(|| DbError::NotFound(format!("alert incident '{}' not found", id)))
+            .returning(AlertIncident::as_returning())
+            .get_result(&mut conn)
+            .map_err(Into::into)
         })
         .await?
     }

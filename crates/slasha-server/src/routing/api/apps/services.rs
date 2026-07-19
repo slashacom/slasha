@@ -11,10 +11,7 @@ use axum::{
     },
     routing::{get, post},
 };
-use bollard::{
-    Docker,
-    exec::{CreateExecOptions, StartExecOptions, StartExecResults},
-};
+use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
 use garde::Validate;
@@ -30,7 +27,6 @@ use uuid::Uuid;
 use crate::{
     HttpError, HttpResult,
     docker::{
-        logs::{LogKey, LogManager},
         naming::service_container_name,
         service::{
             provision::resolve_env_vars, provision_service, remove_service_container,
@@ -38,6 +34,7 @@ use crate::{
         },
     },
     extractors::{ValidatedJson, app::ActiveApp},
+    logs::{LogKey, LogManager},
     metrics,
     routing::api::validation::not_empty,
     state::AppState,
@@ -80,7 +77,7 @@ const MIN_SHM_BYTES: i64 = 64 * 1024 * 1024;
 const MIN_PIDS_LIMIT: i64 = 64;
 
 async fn validate_resources(
-    docker_client: &Docker,
+    docker_client: &bollard::Docker,
     resources: &ServiceResources,
 ) -> HttpResult<()> {
     if let Some(mem) = resources.memory_bytes
@@ -177,9 +174,10 @@ async fn get_service(
 
 // live on demand stats for a single service container
 async fn service_stats_handler(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
@@ -192,10 +190,11 @@ async fn service_stats_handler(
 }
 
 async fn create_service(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     ValidatedJson(payload): ValidatedJson<CreateServiceReq>,
 ) -> HttpResult<impl IntoResponse> {
     if !payload
@@ -259,9 +258,13 @@ async fn create_service(
 
 async fn tunnel_handler(
     ws: WebSocketUpgrade,
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
-    ActiveApp { app, user }: ActiveApp,
+    ActiveApp {
+        app,
+        user,
+        docker_client,
+        ..
+    }: ActiveApp,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
@@ -277,10 +280,11 @@ async fn tunnel_handler(
 }
 
 async fn restart_service_handler(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
@@ -291,10 +295,11 @@ async fn restart_service_handler(
 }
 
 async fn redeploy_service_handler(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
@@ -314,10 +319,11 @@ async fn redeploy_service_handler(
 }
 
 async fn stop_service_handler(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
@@ -332,10 +338,11 @@ async fn stop_service_handler(
 }
 
 async fn delete_service_handler(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
@@ -354,9 +361,10 @@ async fn delete_service_handler(
 }
 
 async fn backup_service_handler(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;

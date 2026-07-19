@@ -8,6 +8,7 @@ export type Deployment = {
   status: DeploymentStatus;
   created_at: string;
   updated_at: string;
+  node_id: string;
 };
 
 export type DeploymentStatus =

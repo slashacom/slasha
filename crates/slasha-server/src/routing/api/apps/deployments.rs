@@ -9,7 +9,6 @@ use axum::{
     },
     routing::{delete, get, post},
 };
-use bollard::Docker;
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
 use garde::Validate;
@@ -27,16 +26,13 @@ use tokio_stream::wrappers::BroadcastStream;
 use crate::{
     HttpError, HttpResult,
     connections::sync_external_app,
-    docker::{
-        deployment::{
-            ScaleDeps, list_deployment_processes, remove_deployment_image,
-            remove_deployment_processes, restart_deployment_processes, run_deployment,
-            scale_deployment_process, stop_deployment_processes, trigger_deployment,
-            trigger_rollback,
-        },
-        logs::{LogKey, LogManager},
+    docker::deployment::{
+        ScaleDeps, list_deployment_processes, remove_deployment_image, remove_deployment_processes,
+        restart_deployment_processes, run_deployment, scale_deployment_process,
+        stop_deployment_processes, trigger_deployment, trigger_rollback,
     },
     extractors::{ValidatedJson, app::ActiveApp},
+    logs::{LogKey, LogManager},
     state::{AppState, Runtime},
 };
 
@@ -62,9 +58,19 @@ struct TriggerDeployReq {
 
 async fn trigger_deploy(
     State(state): State<AppState>,
-    ActiveApp { mut app, .. }: ActiveApp,
+    ActiveApp {
+        mut app,
+        docker_client,
+        ..
+    }: ActiveApp,
     ValidatedJson(payload): ValidatedJson<TriggerDeployReq>,
 ) -> HttpResult<impl IntoResponse> {
+    if state.runtime.migrating_apps.contains(&app.id) {
+        return Err(HttpError::bad_request(
+            "Cannot deploy app while it is migrating",
+        ));
+    }
+
     if app.source != AppSource::Local {
         let github = state.github_client().await;
         sync_external_app(github.as_ref(), &state.storage, &state.runtime, &mut app)
@@ -73,7 +79,7 @@ async fn trigger_deploy(
     }
 
     let deployment = trigger_deployment(
-        state.clients.docker,
+        docker_client,
         state.storage.db_pool,
         state.runtime.log_manager,
         state.runtime.proxy_sync_trigger,
@@ -112,12 +118,19 @@ async fn get_deployment(
 }
 
 async fn stop_deployment(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(runtime): State<Runtime>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
+    if runtime.migrating_apps.contains(&app.id) {
+        return Err(HttpError::bad_request(
+            "Cannot stop deployment while app is migrating",
+        ));
+    }
+
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     if !matches!(
@@ -148,12 +161,19 @@ async fn stop_deployment(
 }
 
 async fn redeploy_deployment(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(runtime): State<Runtime>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
+    if runtime.migrating_apps.contains(&app.id) {
+        return Err(HttpError::bad_request(
+            "Cannot redeploy while app is migrating",
+        ));
+    }
+
     let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
     if active_deployments
         .iter()
@@ -179,7 +199,9 @@ async fn redeploy_deployment(
     let updated_deployment =
         DeploymentRepo::reset_to_pending(&db_pool, &deployment.id, now).await?;
 
-    let handle = tokio::spawn(run_deployment(
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+
+    tokio::spawn(run_deployment(
         docker_client,
         db_pool,
         runtime.log_manager.clone(),
@@ -188,11 +210,12 @@ async fn redeploy_deployment(
         app,
         updated_deployment.clone(),
         None,
+        cancel_token.clone(),
     ));
 
     runtime
         .deployment_tasks
-        .insert(updated_deployment.id.clone(), handle.abort_handle());
+        .insert(updated_deployment.id.clone(), cancel_token);
 
     Ok(Json(
         serde_json::json!({ "deployment": updated_deployment }),
@@ -200,13 +223,20 @@ async fn redeploy_deployment(
 }
 
 async fn restart_deployment(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
-    ActiveApp { app, .. }: ActiveApp,
+    State(runtime): State<Runtime>,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
+    if runtime.migrating_apps.contains(&app.id) {
+        return Err(HttpError::bad_request(
+            "Cannot restart deployment while app is migrating",
+        ));
+    }
     let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
     if active_deployments
         .iter()
@@ -235,12 +265,19 @@ async fn restart_deployment(
 }
 
 async fn rollback_deployment(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(runtime): State<Runtime>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
+    if runtime.migrating_apps.contains(&app.id) {
+        return Err(HttpError::bad_request(
+            "Cannot rollback while app is migrating",
+        ));
+    }
+
     let source_deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     let deployment = trigger_rollback(
@@ -299,13 +336,20 @@ async fn stream_logs(
 }
 
 async fn delete_deployment(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
     State(proxy_sync_trigger): State<Arc<Notify>>,
-    ActiveApp { app, .. }: ActiveApp,
+    State(runtime): State<Runtime>,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
+    if runtime.migrating_apps.contains(&app.id) {
+        return Err(HttpError::bad_request(
+            "Cannot delete deployment while app is migrating",
+        ));
+    }
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
 
     if matches!(
@@ -345,15 +389,22 @@ struct ScaleDeploymentReq {
 
 async fn scale_deployment(
     State(app_state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
     ValidatedJson(payload): ValidatedJson<ScaleDeploymentReq>,
 ) -> HttpResult<impl IntoResponse> {
+    if app_state.runtime.migrating_apps.contains(&app.id) {
+        return Err(HttpError::bad_request(
+            "Cannot scale app while it is migrating",
+        ));
+    }
+
     if payload.count <= 0 {
         return Err(HttpError::bad_request("Count must be greater than 0"));
     }
 
-    let docker_client = app_state.clients.docker;
     let db_pool = app_state.storage.db_pool;
     let app_runtime = app_state.runtime;
 
@@ -407,9 +458,10 @@ async fn scale_deployment(
 }
 
 async fn list_processes(
-    State(docker_client): State<Docker>,
     State(db_pool): State<DbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;

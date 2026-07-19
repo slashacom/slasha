@@ -8,7 +8,6 @@ use axum::{
     response::IntoResponse,
     routing::{delete, get, post, put},
 };
-use bollard::Docker;
 use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
@@ -17,6 +16,7 @@ use slasha_db::{
     deployment::{Deployment, DeploymentStatus},
     git_connection::NewGitConnection,
     github_connection::{ConnectionStatus, NewGithubConnection},
+    models::node::{LOCAL_NODE_ID, NodeStatus},
     repos::{
         app::{AppRepo, NewAppConnection},
         app_domain::AppDomainRepo,
@@ -24,7 +24,7 @@ use slasha_db::{
         deployment::DeploymentRepo,
         git_connection::GitConnectionRepo,
         github_connection::GithubConnectionRepo,
-        service::ServiceRepo,
+        node::NodeRepo,
     },
 };
 use tokio::process::Command;
@@ -36,11 +36,7 @@ use crate::{
         GithubError, sync_external_app, sync_selected_git_repository,
         sync_selected_github_repository,
     },
-    docker::{
-        deployment::{remove_app_images, remove_app_volumes, remove_deployment_processes},
-        network::{create_app_network, remove_app_network},
-        service::remove_service_container,
-    },
+    docker::{deployment::purge_app_from_node, move_app_to_node, network::create_app_network},
     extractors::{
         ValidatedJson,
         app::{ActiveApp, ActiveAppOwner},
@@ -66,6 +62,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/{slug}/connection/branch", put(update_connection_branch))
         .route("/{slug}/sync", post(sync_app))
+        .route("/{slug}/node", put(move_app_node))
 }
 
 #[derive(Deserialize, Validate)]
@@ -76,6 +73,8 @@ struct CreateAppReq {
     #[garde(skip)]
     #[serde(flatten)]
     source: CreateAppSource,
+    #[garde(skip)]
+    node_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -327,7 +326,28 @@ async fn create_app(
         default_branch,
         auto_deploy: true,
         source,
+        node_id: payload.node_id.unwrap_or_else(|| LOCAL_NODE_ID.to_string()),
     };
+
+    let node = NodeRepo::get(&state.storage.db_pool, &new_app.node_id)
+        .await
+        .map_err(HttpError::internal)?;
+
+    if node.status != NodeStatus::Ready {
+        return Err(HttpError::bad_request("Selected node is not ready"));
+    }
+
+    let docker_client = state
+        .clients
+        .docker_registry
+        .get_client(&node)
+        .map_err(|e| HttpError::bad_request(format!("Target node is not available: {e}")))?;
+
+    if docker_client.ping().await.is_err() {
+        return Err(HttpError::bad_request("Node is offline"));
+    }
+
+    create_app_network(&docker_client, &app_id).await?;
 
     let new_app = match connection {
         Some(connection) => {
@@ -337,18 +357,18 @@ async fn create_app(
         None => AppRepo::create(&state.storage.db_pool, new_app, &user.id).await?,
     };
 
-    create_app_network(&state.clients.docker, &app_id).await?;
-
     Ok(Json(serde_json::json!({
         "app": new_app,
     })))
 }
 
 async fn get_app(
-    State(state): State<AppState>,
+    State(storage): State<Storage>,
+    State(config): State<Config>,
+    State(runtime): State<Runtime>,
     ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let domains = AppDomainRepo::list_for_app(&state.storage.db_pool, &app.id).await?;
+    let domains = AppDomainRepo::list_for_app(&storage.db_pool, &app.id).await?;
     let url = match domains.first() {
         Some(domain) => format!(
             "https://{}",
@@ -358,17 +378,17 @@ async fn get_app(
                 .trim_start_matches("https://")
         ),
         None => {
-            let scheme = if state.config.platform_domain.contains("localhost") {
+            let scheme = if config.platform_domain.contains("localhost") {
                 "http"
             } else {
                 "https"
             };
-            format!("{}://{}.{}", scheme, app.slug, state.config.platform_domain)
+            format!("{}://{}.{}", scheme, app.slug, config.platform_domain)
         }
     };
 
-    let deployments = DeploymentRepo::list_for_app(&state.storage.db_pool, &app.id).await?;
-    let runtime_status = derive_runtime_status(&deployments);
+    let deployments = DeploymentRepo::list_for_app(&storage.db_pool, &app.id).await?;
+    let runtime_status = derive_runtime_status(&deployments, &runtime, &app.id);
 
     Ok(Json(serde_json::json!({
         "app": app,
@@ -445,91 +465,53 @@ async fn get_connection(
 }
 
 async fn delete_app(
-    State(docker): State<Docker>,
-    State(db_pool): State<DbPool>,
+    State(storage): State<Storage>,
     State(runtime): State<Runtime>,
-    ActiveAppOwner { app, user: _ }: ActiveAppOwner,
+    ActiveAppOwner {
+        app, docker_client, ..
+    }: ActiveAppOwner,
 ) -> HttpResult<impl IntoResponse> {
-    let app_services = ServiceRepo::list_for_app(&db_pool, &app.id).await?;
-    let deployments = AppRepo::delete(&db_pool, &app.id).await?;
+    if runtime.migrating_apps.contains(&app.id) {
+        return Err(HttpError::bad_request(
+            "Cannot delete app while it is migrating",
+        ));
+    }
 
-    let app_clone = app.clone();
-    let app_slug = app.slug.clone();
-    let app_id = app.id.clone();
+    AppRepo::delete(&storage.db_pool, &app.id).await?;
 
-    tokio::spawn(async move {
-        for service in app_services {
-            if let Err(e) =
-                remove_service_container(&docker, &runtime.log_manager, &app_clone, &service, true)
-                    .await
-            {
-                tracing::warn!(
-                    service_id = %service.id,
-                    error = %e,
-                    "Failed to delete service"
-                );
-            }
-        }
+    tokio::spawn({
+        let app = app.clone();
+        let db_pool = storage.db_pool.clone();
+        let log_manager = runtime.log_manager.clone();
+        let proxy_sync_trigger = runtime.proxy_sync_trigger.clone();
 
-        for dep in deployments {
-            if let Err(e) = remove_deployment_processes(
-                &docker,
-                &runtime.proxy_sync_trigger,
-                &runtime.log_manager,
-                &app_clone,
-                &dep,
+        async move {
+            if let Err(e) = purge_app_from_node(
+                &docker_client,
+                &db_pool,
+                &log_manager,
+                &proxy_sync_trigger,
+                &app,
             )
             .await
             {
+                tracing::warn!(app_id = %app.id, error = ?e, "Failed to purge app from node");
+            }
+
+            if let Err(e) = log_manager.delete_app_logs(&app.slug).await {
+                tracing::warn!(app_slug = %app.slug, error = ?e, "Failed to delete logs for app");
+            }
+
+            let repo_path = std::path::Path::new(&app.repo_path);
+            if repo_path.exists()
+                && let Err(e) = tokio::fs::remove_dir_all(repo_path).await
+            {
                 tracing::warn!(
-                    deployment_id = %dep.id,
-                    error = %e,
-                    "Failed to remove deployment processes"
+                    app_slug = %app.slug,
+                    error = ?e,
+                    "Failed to remove repo"
                 );
             }
-        }
-
-        if let Err(e) = remove_app_images(&docker, &app_slug).await {
-            tracing::warn!(
-                app_slug = %app_slug,
-                error = ?e,
-                "Failed to remove app images"
-            );
-        }
-
-        if let Err(e) = remove_app_network(&docker, &app_id).await {
-            tracing::warn!(
-                app_id = %app_id,
-                error = ?e,
-                "Failed to remove app network"
-            );
-        }
-
-        if let Err(e) = remove_app_volumes(&docker, &app_id).await {
-            tracing::warn!(
-                app_id = %app_id,
-                error = ?e,
-                "Failed to clean up volumes for app"
-            );
-        }
-
-        if let Err(e) = runtime.log_manager.delete_app_logs(&app_slug).await {
-            tracing::warn!(
-                app_slug = %app_slug,
-                error = ?e,
-                "Failed to delete logs for app"
-            );
-        }
-
-        let repo_path = std::path::Path::new(&app_clone.repo_path);
-        if repo_path.exists()
-            && let Err(e) = tokio::fs::remove_dir_all(repo_path).await
-        {
-            tracing::warn!(
-                app_slug = %app_slug,
-                error = ?e,
-                "Failed to remove repo"
-            );
         }
     });
 
@@ -539,7 +521,14 @@ async fn delete_app(
     })))
 }
 
-fn derive_runtime_status(deployments: &[Deployment]) -> &'static str {
+fn derive_runtime_status(
+    deployments: &[Deployment],
+    runtime: &crate::state::Runtime,
+    app_id: &str,
+) -> &'static str {
+    if runtime.migrating_apps.contains(app_id) {
+        return "migrating";
+    }
     if deployments
         .iter()
         .any(|d| d.status == DeploymentStatus::Running)
@@ -556,6 +545,7 @@ fn derive_runtime_status(deployments: &[Deployment]) -> &'static str {
 async fn list_apps(
     State(storage): State<Storage>,
     State(config): State<Config>,
+    State(runtime): State<Runtime>,
     AuthUser(user): AuthUser,
 ) -> HttpResult<impl IntoResponse> {
     let user_apps = AppRepo::list_for_user(&storage.db_pool, &user.id).await?;
@@ -587,10 +577,13 @@ async fn list_apps(
             ),
             None => format!("{}://{}.{}", scheme, app.slug, config.platform_domain),
         };
+
+        let runtime_status = derive_runtime_status(&deployments, &runtime, &app.id);
+
         items.push(serde_json::json!({
             "app": app,
             "url": url,
-            "runtime_status": derive_runtime_status(&deployments),
+            "runtime_status": runtime_status,
         }));
     }
 
@@ -648,7 +641,7 @@ struct ReconnectGithubReq {
 
 async fn reconnect_github(
     State(state): State<AppState>,
-    ActiveAppOwner { app, user }: ActiveAppOwner,
+    ActiveAppOwner { app, user, .. }: ActiveAppOwner,
     ValidatedJson(payload): ValidatedJson<ReconnectGithubReq>,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Github {
@@ -689,7 +682,7 @@ async fn reconnect_github(
 
 async fn disconnect_github(
     State(state): State<AppState>,
-    ActiveAppOwner { app, user: _ }: ActiveAppOwner,
+    ActiveAppOwner { app, user: _, .. }: ActiveAppOwner,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Github {
         return Err(HttpError::bad_request("App does not use GitHub"));
@@ -714,7 +707,9 @@ struct UpdateBranchReq {
 
 async fn update_connection_branch(
     State(state): State<AppState>,
-    ActiveAppOwner { mut app, user: _ }: ActiveAppOwner,
+    ActiveAppOwner {
+        mut app, user: _, ..
+    }: ActiveAppOwner,
     ValidatedJson(payload): ValidatedJson<UpdateBranchReq>,
 ) -> HttpResult<impl IntoResponse> {
     if !matches!(app.source, AppSource::Git | AppSource::Github) {
@@ -742,7 +737,9 @@ async fn update_connection_branch(
 
 async fn sync_app(
     State(state): State<AppState>,
-    ActiveAppOwner { mut app, user: _ }: ActiveAppOwner,
+    ActiveAppOwner {
+        mut app, user: _, ..
+    }: ActiveAppOwner,
 ) -> HttpResult<impl IntoResponse> {
     if !matches!(app.source, AppSource::Git | AppSource::Github) {
         return Err(HttpError::bad_request(
@@ -760,4 +757,85 @@ async fn sync_app(
     .map_err(|e| HttpError::bad_request(format!("Failed to sync repository: {}", e)))?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, garde::Validate)]
+struct MoveAppNodeReq {
+    #[garde(skip)]
+    node_id: String,
+}
+
+async fn move_app_node(
+    State(state): State<AppState>,
+    ActiveAppOwner {
+        app,
+        docker_client: old_docker_client,
+        ..
+    }: ActiveAppOwner,
+    ValidatedJson(payload): ValidatedJson<MoveAppNodeReq>,
+) -> HttpResult<impl IntoResponse> {
+    if app.node_id == payload.node_id {
+        return Err(HttpError::bad_request("App is already on the target node"));
+    }
+
+    let new_node = NodeRepo::get(&state.storage.db_pool, &payload.node_id).await?;
+
+    if new_node.status != NodeStatus::Ready {
+        return Err(HttpError::bad_request("Target node is not ready"));
+    }
+
+    let new_docker_client = state.clients.docker_registry.get_client(&new_node)?;
+
+    if !state.runtime.migrating_apps.insert(app.id.clone()) {
+        return Err(HttpError::bad_request("App is already migrating"));
+    }
+
+    tokio::spawn({
+        let old_docker_client = old_docker_client.clone();
+        let new_docker_client = new_docker_client.clone();
+        let db_pool = state.storage.db_pool.clone();
+        let runtime = state.runtime.clone();
+        let app = app.clone();
+        let new_node = new_node.clone();
+
+        async move {
+            // Use a drop guard to ensure the app is removed from the migrating set even if panicked
+            struct MigrationGuard {
+                app_id: String,
+                migrating_apps: std::sync::Arc<dashmap::DashSet<String>>,
+            }
+
+            impl Drop for MigrationGuard {
+                fn drop(&mut self) {
+                    self.migrating_apps.remove(&self.app_id);
+                }
+            }
+
+            let _guard = MigrationGuard {
+                app_id: app.id.clone(),
+                migrating_apps: runtime.migrating_apps.clone(),
+            };
+
+            if let Err(e) = move_app_to_node(
+                &old_docker_client,
+                &new_docker_client,
+                &db_pool,
+                &runtime,
+                &app,
+                &new_node,
+            )
+            .await
+            {
+                tracing::error!(
+                    app_id = %app.id,
+                    error = ?e,
+                    "Failed to move app to new node"
+                );
+            }
+        }
+    });
+
+    Ok(Json(serde_json::json!({
+        "app": app,
+    })))
 }

@@ -26,7 +26,7 @@ import {
   formatBytes,
   formatBps,
   formatMiB,
-} from '~/components/apps/metrics-utils';
+} from '~/utils/metrics-utils';
 
 type AppMetricsViewProps = {
   appSlug: string;

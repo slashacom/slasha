@@ -9,9 +9,11 @@ import {
   getAppOptions,
   useDeleteApp,
 } from '~/queries/apps';
+import { getNodesOptions } from '~/queries/nodes';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { AppEnvEditor } from '~/components/apps/app-env-editor';
 import { AppNameManager } from '~/components/apps/app-name-manager';
+import { AppNodeManager } from '~/components/apps/app-node-manager';
 import { AutoDeployManager } from '~/components/apps/auto-deploy-manager';
 import { HealthCheckManager } from '~/components/apps/health-check-manager';
 import { GithubConnectionManager } from '~/components/apps/github-connection-manager';
@@ -37,6 +39,7 @@ export async function clientLoader(args: { params: { slug: string } }) {
     queryClient.ensureQueryData(getAppDomainsOptions(params.slug)),
     queryClient.ensureQueryData(getVolumesOptions(params.slug)),
     queryClient.ensureQueryData(getBackupOptions(params.slug)),
+    queryClient.ensureQueryData(getNodesOptions()),
   ]);
 }
 
@@ -61,6 +64,9 @@ export default function AppSettingsPage() {
       <div className="flex-1 overflow-y-auto p-8">
         <div className="max-w-3xl mb-8">
           <AppNameManager app={app} />
+        </div>
+        <div className="max-w-3xl mb-8">
+          <AppNodeManager app={app} />
         </div>
         <div className="max-w-3xl mb-8">
           <AutoDeployManager app={app} />
@@ -113,7 +119,7 @@ export default function AppSettingsPage() {
           </p>
 
           <div className="mt-6 rounded-lg border border-red-500/20 bg-red-500/5 p-6">
-            <div className="flex items-start justify-between gap-6">
+            <div className="flex items-center justify-between gap-6">
               <div>
                 <h4 className="text-[13px] font-medium text-red-500">
                   Delete this application

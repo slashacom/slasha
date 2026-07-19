@@ -26,6 +26,7 @@ pub struct Deployment {
     pub status: DeploymentStatus,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
+    pub node_id: String,
 }
 
 #[derive(Insertable)]
@@ -36,6 +37,7 @@ pub struct NewDeployment {
     pub commit_sha: String,
     pub commit_message: String,
     pub status: DeploymentStatus,
+    pub node_id: String,
 }
 
 #[derive(

@@ -39,7 +39,7 @@ impl GithubAppConfigRepo {
                 updated_at: Utc::now().naive_utc(),
             };
 
-            diesel::insert_into(github_app_config::table)
+            let config: GithubAppConfig = diesel::insert_into(github_app_config::table)
                 .values((
                     github_app_config::id.eq("default"),
                     github_app_config::app_id.eq(&config.app_id),
@@ -51,11 +51,10 @@ impl GithubAppConfigRepo {
                 .on_conflict(github_app_config::id)
                 .do_update()
                 .set(&changeset)
-                .execute(&mut conn)?;
+                .returning(GithubAppConfig::as_returning())
+                .get_result(&mut conn)?;
 
-            Ok(github_app_config::table
-                .filter(github_app_config::id.eq("default"))
-                .first::<GithubAppConfig>(&mut conn)?)
+            Ok(config)
         })
         .await?
     }

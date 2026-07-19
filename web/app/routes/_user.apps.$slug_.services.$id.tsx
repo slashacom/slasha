@@ -5,7 +5,7 @@ import { getAppOptions } from '~/queries/apps';
 import { getServiceOptions, getServiceStatsOptions } from '~/queries/services';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
-import { LogStream } from '~/components/apps/log-stream';
+import { LogStream } from '~/components/global/log-stream';
 import { ServiceStatsBar } from '~/components/apps/service-stats-bar';
 import { ServiceConfigCard } from '~/components/apps/service-config-card';
 import { ServiceActionsMenu } from '~/components/apps/service-actions-menu';

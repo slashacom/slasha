@@ -6,6 +6,7 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
+import type { NodeStatus } from '~/models/node';
 import { cn } from '~/utils/classname';
 
 export type StatusKind =
@@ -65,6 +66,57 @@ export function StatusBadge(props: StatusBadgeProps) {
     >
       <Icon className={cn('size-3', config.spin && 'animate-spin')} />
       {status}
+    </span>
+  );
+}
+
+type NodeStatusBadgeProps = {
+  status: NodeStatus;
+  liveStatus: string;
+};
+
+export function NodeStatusBadge(props: NodeStatusBadgeProps) {
+  const { status, liveStatus } = props;
+
+  if (status === 'Ready') {
+    if (liveStatus === 'online') {
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+          Online
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
+        <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+        Offline
+      </span>
+    );
+  }
+
+  if (status === 'SettingUp') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400">
+        <CircleDashed className="size-3 animate-spin" />
+        Setting Up
+      </span>
+    );
+  }
+
+  if (status === 'Deleting') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
+        <CircleDashed className="size-3 animate-spin" />
+        Deleting
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
+      <AlertCircle className="size-3" />
+      Error
     </span>
   );
 }

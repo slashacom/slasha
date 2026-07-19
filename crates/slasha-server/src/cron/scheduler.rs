@@ -1,6 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use bollard::Docker;
 use chrono::Utc;
 use slasha_db::{
     DbPool,
@@ -11,11 +10,15 @@ use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 use super::{runner, schedule};
-use crate::docker::logs::LogManager;
+use crate::{docker::DockerRegistry, logs::LogManager};
 
 const TICK_INTERVAL: Duration = Duration::from_secs(30);
 
-pub fn spawn_cron_scheduler(db_pool: DbPool, docker: Docker, log_manager: Arc<LogManager>) {
+pub fn spawn_cron_scheduler(
+    db_pool: DbPool,
+    docker_registry: DockerRegistry,
+    log_manager: Arc<LogManager>,
+) {
     tokio::spawn(async move {
         info!(target: "slasha::cron", "cron scheduler started");
         match CronRunRepo::fail_interrupted(&db_pool).await {
@@ -28,7 +31,7 @@ pub fn spawn_cron_scheduler(db_pool: DbPool, docker: Docker, log_manager: Arc<Lo
             }
         }
         loop {
-            if let Err(err) = tick(&db_pool, &docker, &log_manager).await {
+            if let Err(err) = tick(&db_pool, &docker_registry, &log_manager).await {
                 error!(target: "slasha::cron", error = ?err, "cron scheduler tick failed");
             }
             sleep(TICK_INTERVAL).await;
@@ -38,7 +41,7 @@ pub fn spawn_cron_scheduler(db_pool: DbPool, docker: Docker, log_manager: Arc<Lo
 
 async fn tick(
     db_pool: &DbPool,
-    docker: &Docker,
+    docker_registry: &DockerRegistry,
     log_manager: &Arc<LogManager>,
 ) -> anyhow::Result<()> {
     let jobs = CronJobRepo::list_enabled(db_pool).await?;
@@ -89,10 +92,10 @@ async fn tick(
         let run = CronRunRepo::create(db_pool, new_run_data).await?;
 
         let db_pool = db_pool.clone();
-        let docker = docker.clone();
+        let docker_registry = docker_registry.clone();
         let log_manager = log_manager.clone();
         tokio::spawn(async move {
-            runner::run_cron_job(db_pool, docker, log_manager, job, run).await;
+            runner::run_cron_job(db_pool, docker_registry, log_manager, job, run).await;
         });
     }
 

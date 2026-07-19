@@ -62,13 +62,12 @@ impl ServiceRepo {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            diesel::insert_into(services::table)
+            let inserted_service: Service = diesel::insert_into(services::table)
                 .values(&service)
-                .execute(&mut conn)?;
+                .returning(Service::as_returning())
+                .get_result(&mut conn)?;
 
-            Ok(services::table
-                .filter(services::id.eq(&service.id))
-                .first::<Service>(&mut conn)?)
+            Ok(inserted_service)
         })
         .await?
     }

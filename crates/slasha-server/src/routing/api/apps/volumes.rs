@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Path};
 
-use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
+use axum::{Json, Router, response::IntoResponse, routing::get};
 use bollard::{Docker, query_parameters::DataUsageOptions};
 use serde::Serialize;
 
@@ -47,10 +47,7 @@ async fn volume_sizes(docker: &Docker) -> HashMap<String, i64> {
     let Ok(usage) = docker.df(None::<DataUsageOptions>).await else {
         return sizes;
     };
-    let items = usage
-        .volumes_disk_usage
-        .and_then(|v| v.items)
-        .unwrap_or_default();
+    let items = usage.volume_usage.and_then(|v| v.items).unwrap_or_default();
     for item in items {
         let Some(name) = item.get("Name").and_then(|v| v.as_str()) else {
             continue;
@@ -65,8 +62,9 @@ async fn volume_sizes(docker: &Docker) -> HashMap<String, i64> {
 }
 
 async fn list_volumes(
-    State(docker): State<Docker>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveApp {
+        app, docker_client, ..
+    }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
     let mut paths = vec![MANAGED_DATA_PATH.to_string()];
     for path in dockerfile_volume_paths(&app.repo_path, &app.default_branch).await {
@@ -75,7 +73,7 @@ async fn list_volumes(
         }
     }
 
-    let sizes = volume_sizes(&docker).await;
+    let sizes = volume_sizes(&docker_client).await;
 
     let volumes: Vec<VolumeView> = paths
         .into_iter()

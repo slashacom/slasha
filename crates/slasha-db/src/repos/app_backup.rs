@@ -27,11 +27,10 @@ impl AppBackupRepo {
 
     pub async fn upsert(pool: &DbPool, backup: NewAppBackup) -> DbResult<AppBackup> {
         let pool = pool.clone();
-        let app_id = backup.app_id.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             let id = uuid::Uuid::new_v4().to_string();
-            diesel::insert_into(app_backups::table)
+            let upserted_backup: AppBackup = diesel::insert_into(app_backups::table)
                 .values((
                     app_backups::id.eq(&id),
                     app_backups::app_id.eq(&backup.app_id),
@@ -55,11 +54,10 @@ impl AppBackupRepo {
                     app_backups::secret_access_key.eq(excluded(app_backups::secret_access_key)),
                     app_backups::updated_at.eq(chrono::Utc::now().naive_utc()),
                 ))
-                .execute(&mut conn)?;
+                .returning(AppBackup::as_returning())
+                .get_result(&mut conn)?;
 
-            Ok(app_backups::table
-                .filter(app_backups::app_id.eq(&app_id))
-                .first::<AppBackup>(&mut conn)?)
+            Ok(upserted_backup)
         })
         .await?
     }

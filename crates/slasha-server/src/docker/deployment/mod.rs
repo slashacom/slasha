@@ -9,8 +9,9 @@ pub mod readiness;
 pub mod scale;
 
 pub use container::{
-    list_deployment_processes, remove_app_volumes, remove_deployment_processes,
-    restart_deployment_processes, run_release_container, stop_deployment_processes,
+    cleanup_all_app_containers, list_deployment_processes, purge_app_from_node, remove_app_volumes,
+    remove_deployment_processes, restart_deployment_processes, run_release_container,
+    stop_deployment_processes,
 };
 pub use dockerfile_parser::{BuildStrategy, detect_build_strategy, parse_expose, parse_volumes};
 pub use executor::{resolve_head_commit, run_deployment, trigger_deployment, trigger_rollback};

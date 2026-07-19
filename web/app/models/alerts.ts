@@ -64,9 +64,9 @@ export type AlertRule = {
 };
 
 export type AlertRuleConfig =
-  | { kind: 'server_cpu'; threshold_percent: number }
-  | { kind: 'server_memory'; threshold_percent: number }
-  | { kind: 'server_load_average'; threshold: number }
+  | { kind: 'node_cpu'; node_id: string; threshold_percent: number }
+  | { kind: 'node_memory'; node_id: string; threshold_percent: number }
+  | { kind: 'node_load_average'; node_id: string; threshold: number }
   | { kind: 'app_cpu'; app_id: string; threshold_percent: number }
   | { kind: 'app_memory'; app_id: string; threshold_percent: number }
   | { kind: 'domain_tls_expiry'; domain: string; days_before: number }

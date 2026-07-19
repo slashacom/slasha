@@ -136,13 +136,16 @@ impl AlertChannelConfig {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export, export_to = "./alerts.ts")]
 pub enum AlertRuleConfig {
-    ServerCpu {
+    NodeCpu {
+        node_id: String,
         threshold_percent: f64,
     },
-    ServerMemory {
+    NodeMemory {
+        node_id: String,
         threshold_percent: f64,
     },
-    ServerLoadAverage {
+    NodeLoadAverage {
+        node_id: String,
         threshold: f64,
     },
     AppCpu {
@@ -172,9 +175,9 @@ pub enum AlertRuleConfig {
 impl AlertRuleConfig {
     pub fn kind(&self) -> &'static str {
         match self {
-            AlertRuleConfig::ServerCpu { .. } => "server_cpu",
-            AlertRuleConfig::ServerMemory { .. } => "server_memory",
-            AlertRuleConfig::ServerLoadAverage { .. } => "server_load_average",
+            AlertRuleConfig::NodeCpu { .. } => "node_cpu",
+            AlertRuleConfig::NodeMemory { .. } => "node_memory",
+            AlertRuleConfig::NodeLoadAverage { .. } => "node_load_average",
             AlertRuleConfig::AppCpu { .. } => "app_cpu",
             AlertRuleConfig::AppMemory { .. } => "app_memory",
             AlertRuleConfig::DomainTlsExpiry { .. } => "domain_tls_expiry",
@@ -187,9 +190,11 @@ impl AlertRuleConfig {
     pub fn generate_target_key(&self) -> String {
         let kind = self.kind();
         match self {
-            AlertRuleConfig::ServerCpu { .. }
-            | AlertRuleConfig::ServerMemory { .. }
-            | AlertRuleConfig::ServerLoadAverage { .. } => kind.to_string(),
+            AlertRuleConfig::NodeCpu { node_id, .. }
+            | AlertRuleConfig::NodeMemory { node_id, .. }
+            | AlertRuleConfig::NodeLoadAverage { node_id, .. } => {
+                format!("{kind}:{node_id}")
+            }
             AlertRuleConfig::AppCpu { app_id, .. }
             | AlertRuleConfig::AppMemory { app_id, .. }
             | AlertRuleConfig::AppHealthCheck { app_id, .. } => {
@@ -322,7 +327,6 @@ impl
             Text,
             Text,
             Text,
-            Text,
             Nullable<Text>,
             Nullable<Text>,
             Nullable<Text>,
@@ -335,7 +339,6 @@ impl
     > for AlertRule
 {
     type Row = (
-        String,
         String,
         String,
         String,
@@ -353,7 +356,6 @@ impl
         let (
             id,
             name,
-            kind,
             config_json,
             channel_ids_json,
             direct_webhook_url,
@@ -366,16 +368,6 @@ impl
         ) = row;
 
         let config: AlertRuleConfig = serde_json::from_str(&config_json)?;
-        if config.kind() != kind {
-            return Err(format!(
-                "alert rule '{}' has kind '{}' but config kind '{}'",
-                id,
-                kind,
-                config.kind()
-            )
-            .into());
-        }
-
         let channel_ids: Vec<String> = serde_json::from_str(&channel_ids_json)?;
 
         Ok(Self {

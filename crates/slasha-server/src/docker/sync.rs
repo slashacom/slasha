@@ -1,29 +1,85 @@
-use bollard::Docker;
+use futures_util::future::join_all;
 use slasha_db::{
     DbPool,
     deployment::DeploymentStatus,
     repos::{
-        app::AppRepo, app_scale::AppScaleRepo, deployment::DeploymentRepo, service::ServiceRepo,
+        app::AppRepo, app_scale::AppScaleRepo, deployment::DeploymentRepo, node::NodeRepo,
+        service::ServiceRepo,
     },
     service::ServiceStatus,
 };
 
 use super::{
     deployment::{ScaleDeps, list_deployment_processes, scale_deployment_process},
-    logs::{LogKey, stream_container_logs},
     naming::service_container_name,
 };
-use crate::state::Runtime;
+use crate::{
+    docker::DockerRegistry,
+    logs::{LogKey, stream_container_logs},
+    state::Runtime,
+};
 
 pub async fn startup_container_sync(
-    docker_client: &Docker,
+    docker_registry: &DockerRegistry,
     db_pool: &DbPool,
     runtime: &Runtime,
 ) -> anyhow::Result<()> {
-    let deployments = DeploymentRepo::list_non_terminal(db_pool).await?;
-    let services = ServiceRepo::list_non_terminal(db_pool).await?;
+    let nodes = NodeRepo::list(db_pool).await?;
 
-    for (svc, app_slug) in services {
+    let mut futures = Vec::new();
+
+    for node in nodes {
+        let docker_registry = docker_registry.clone();
+        let db_pool = db_pool.clone();
+        let runtime = runtime.clone();
+
+        futures.push(async move {
+            let docker_client = match docker_registry.get_client(&node) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!(node_id = %node.id, error = ?e, "Failed to connect to node during startup sync");
+                    return;
+                }
+            };
+
+            if let Err(e) = sync_node(&docker_client, &node.id, &db_pool, &runtime).await {
+                tracing::error!(node_id = %node.id, error = ?e, "Node sync failed");
+            }
+        });
+    }
+
+    join_all(futures).await;
+
+    Ok(())
+}
+
+async fn sync_node(
+    docker_client: &bollard::Docker,
+    node_id: &str,
+    db_pool: &DbPool,
+    runtime: &Runtime,
+) -> anyhow::Result<()> {
+    let all_deployments = DeploymentRepo::list_non_terminal(db_pool).await?;
+    let all_services = ServiceRepo::list_non_terminal(db_pool).await?;
+
+    let mut node_deployments = Vec::new();
+    for dep in all_deployments {
+        let app = AppRepo::find_by_id(db_pool, &dep.app_id).await?;
+        if app.node_id == node_id {
+            node_deployments.push((app, dep));
+        }
+    }
+
+    let mut node_services = Vec::new();
+    for (svc, app_slug) in all_services {
+        let app = AppRepo::find_by_slug(db_pool, &app_slug).await?;
+        if app.node_id == node_id {
+            node_services.push((app, svc));
+        }
+    }
+
+    // reconcile Services
+    for (app, svc) in node_services {
         let name = service_container_name(&svc.id);
 
         if svc.status == ServiceStatus::Provisioning {
@@ -49,17 +105,11 @@ pub async fn startup_container_sync(
                             .await?;
                     } else {
                         let log_key = LogKey::Service {
-                            app_slug: app_slug.clone(),
+                            app_slug: app.slug.clone(),
                             service_name: svc.name,
                         };
                         let log = runtime.log_manager.get_logger(&log_key).await?;
-                        let docker_client = docker_client.clone();
-                        stream_container_logs(
-                            docker_client.clone(),
-                            log.clone(),
-                            name.clone(),
-                            None,
-                        );
+                        stream_container_logs(docker_client.clone(), log.clone(), name, None);
                     }
                 }
                 Err(_) => {
@@ -69,9 +119,8 @@ pub async fn startup_container_sync(
         }
     }
 
-    for deployment in deployments {
-        let app = AppRepo::find_by_id(db_pool, &deployment.app_id).await?;
-
+    // reconcile Deployments
+    for (app, deployment) in node_deployments {
         let app_scales = AppScaleRepo::list_for_app(db_pool, &app.id).await?;
 
         let log_key = LogKey::Deployment {

@@ -7,7 +7,7 @@ import { getDeploymentOptions } from '~/queries/deployments';
 import { getAppOptions } from '~/queries/apps';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
-import { LogStream } from '~/components/apps/log-stream';
+import { LogStream } from '~/components/global/log-stream';
 import { formatRelativeTime, parseUTC } from '~/utils/format';
 import { queryClient } from '~/utils/query-client';
 
