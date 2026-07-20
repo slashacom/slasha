@@ -1,5 +1,8 @@
 use bollard::{
-    Docker, query_parameters::{RemoveContainerOptionsBuilder, RemoveVolumeOptions, StopContainerOptionsBuilder},
+    Docker,
+    query_parameters::{
+        RemoveContainerOptionsBuilder, RemoveVolumeOptions, StopContainerOptionsBuilder,
+    },
 };
 use slasha_db::{
     DbPool,
@@ -126,10 +129,7 @@ pub async fn remove_service_container(
 
     if remove_volume {
         docker
-            .remove_volume(
-                &volume_name,
-                None::<RemoveVolumeOptions>,
-            )
+            .remove_volume(&volume_name, None::<RemoveVolumeOptions>)
             .await?;
     }
 

@@ -120,13 +120,16 @@ async fn validate_resources(
 
     if let Some(host_mem) = info.mem_total
         && let Some(mem) = resources.memory_bytes
-        && mem > host_mem
     {
-        return Err(HttpError::bad_request(format!(
-            "memory ({} MB) exceeds host capacity ({} MB)",
-            mem / (1024 * 1024),
-            host_mem / (1024 * 1024)
-        )));
+        let max_allowed_mem = (host_mem as f64 * 0.80) as i64;
+        if mem > max_allowed_mem {
+            return Err(HttpError::bad_request(format!(
+                "Requested memory ({} MB) exceeds 80% host capacity cap ({} MB of {} MB total host RAM)",
+                mem / (1024 * 1024),
+                max_allowed_mem / (1024 * 1024),
+                host_mem / (1024 * 1024)
+            )));
+        }
     }
     if let Some(host_cpus) = info.ncpu
         && let Some(nc) = resources.nano_cpus
@@ -195,9 +198,9 @@ async fn service_stats_handler(
 async fn create_service(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    ActiveApp {
+    ActiveAppOwner {
         app, docker_client, ..
-    }: ActiveApp,
+    }: ActiveAppOwner,
     ValidatedJson(payload): ValidatedJson<CreateServiceReq>,
 ) -> HttpResult<impl IntoResponse> {
     if !payload
@@ -227,9 +230,18 @@ async fn create_service(
         }
     }
 
-    if let Some(ref resources) = payload.resources {
-        validate_resources(&docker_client, resources).await?;
-    }
+    let default_resources = payload.kind.default_resources();
+    let resources = match payload.resources {
+        Some(user_res) => ServiceResources {
+            memory_bytes: user_res.memory_bytes.or(default_resources.memory_bytes),
+            nano_cpus: user_res.nano_cpus.or(default_resources.nano_cpus),
+            pids_limit: user_res.pids_limit.or(default_resources.pids_limit),
+            shm_size: user_res.shm_size.or(default_resources.shm_size),
+        },
+        None => default_resources,
+    };
+
+    validate_resources(&docker_client, &resources).await?;
 
     let service_id = Uuid::new_v4().to_string();
 
@@ -240,7 +252,7 @@ async fn create_service(
         name: payload.name,
         version: payload.version,
         status: ServiceStatus::Provisioning,
-        resources: payload.resources,
+        resources: Some(resources),
     };
 
     let vars: Vec<NewServiceEnvVar> = payload
