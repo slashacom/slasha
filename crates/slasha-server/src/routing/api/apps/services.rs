@@ -253,6 +253,7 @@ async fn create_service(
         version: payload.version,
         status: ServiceStatus::Provisioning,
         resources: Some(resources),
+        image_digest: None,
     };
 
     let vars: Vec<NewServiceEnvVar> = payload

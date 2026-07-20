@@ -183,6 +183,14 @@ async fn provision_inner(
         }
     }
 
+    let image_name = service.kind.docker_image(&service.version);
+    if let Ok(inspect) = docker.inspect_image(&image_name).await
+        && let Some(repo_digests) = inspect.repo_digests
+        && let Some(digest) = repo_digests.into_iter().next()
+    {
+        ServiceRepo::update_image_digest(db_pool, &service.id, &digest).await?;
+    }
+
     let volume_name = service_volume_name(&service.id);
     docker
         .create_volume(VolumeCreateRequest {
@@ -227,7 +235,11 @@ async fn create_service_container(
     resolved_env: &HashMap<String, String>,
     rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
-    let image_name = service.kind.docker_image(&service.version);
+    let image_name = service
+        .image_digest
+        .clone()
+        .unwrap_or_else(|| service.kind.docker_image(&service.version));
+    
     let container_name = service_container_name(&service.id);
     let network_name = app_network_name(&app.id);
     let volume_name = service_volume_name(&service.id);
