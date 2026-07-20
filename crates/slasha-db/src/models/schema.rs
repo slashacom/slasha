@@ -250,6 +250,7 @@ diesel::table! {
         resources -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        image_digest -> Nullable<Text>,
     }
 }
 

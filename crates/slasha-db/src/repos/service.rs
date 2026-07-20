@@ -88,6 +88,23 @@ impl ServiceRepo {
         .await?
     }
 
+    pub async fn update_image_digest(pool: &DbPool, id: &str, digest: &str) -> DbResult<()> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        let digest = digest.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            diesel::update(services::table.filter(services::id.eq(&id)))
+                .set((
+                    services::image_digest.eq(Some(digest)),
+                    services::updated_at.eq(chrono::Utc::now().naive_utc()),
+                ))
+                .execute(&mut conn)?;
+            Ok(())
+        })
+        .await?
+    }
+
     pub async fn delete(pool: &DbPool, id: &str) -> DbResult<Service> {
         let pool = pool.clone();
         let id = id.to_string();

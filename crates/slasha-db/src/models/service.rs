@@ -39,6 +39,7 @@ pub struct Service {
     pub resources: Option<ServiceResources>,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
+    pub image_digest: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -51,6 +52,7 @@ pub struct NewService {
     pub version: String,
     pub status: ServiceStatus,
     pub resources: Option<ServiceResources>,
+    pub image_digest: Option<String>,
 }
 
 #[derive(
