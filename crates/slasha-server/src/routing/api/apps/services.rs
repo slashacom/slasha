@@ -33,7 +33,10 @@ use crate::{
             restart_service_container, stop_service_container,
         },
     },
-    extractors::{ValidatedJson, app::ActiveApp},
+    extractors::{
+        ValidatedJson,
+        app::{ActiveApp, ActiveAppOwner},
+    },
     logs::{LogKey, LogManager},
     metrics,
     routing::api::validation::not_empty,
@@ -270,12 +273,12 @@ async fn create_service(
 async fn tunnel_handler(
     ws: WebSocketUpgrade,
     State(db_pool): State<DbPool>,
-    ActiveApp {
+    ActiveAppOwner {
         app,
         user,
         docker_client,
         ..
-    }: ActiveApp,
+    }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
@@ -293,9 +296,9 @@ async fn tunnel_handler(
 async fn restart_service_handler(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    ActiveApp {
+    ActiveAppOwner {
         app, docker_client, ..
-    }: ActiveApp,
+    }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
@@ -312,9 +315,9 @@ async fn restart_service_handler(
 async fn redeploy_service_handler(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    ActiveApp {
+    ActiveAppOwner {
         app, docker_client, ..
-    }: ActiveApp,
+    }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
@@ -342,9 +345,9 @@ async fn redeploy_service_handler(
 async fn stop_service_handler(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    ActiveApp {
+    ActiveAppOwner {
         app, docker_client, ..
-    }: ActiveApp,
+    }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
@@ -361,9 +364,9 @@ async fn stop_service_handler(
 async fn delete_service_handler(
     State(db_pool): State<DbPool>,
     State(log_manager): State<Arc<LogManager>>,
-    ActiveApp {
+    ActiveAppOwner {
         app, docker_client, ..
-    }: ActiveApp,
+    }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
@@ -383,9 +386,9 @@ async fn delete_service_handler(
 
 async fn backup_service_handler(
     State(db_pool): State<DbPool>,
-    ActiveApp {
+    ActiveAppOwner {
         app, docker_client, ..
-    }: ActiveApp,
+    }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;

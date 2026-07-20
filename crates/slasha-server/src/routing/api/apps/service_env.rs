@@ -12,7 +12,10 @@ use slasha_db::{repos::service::ServiceRepo, service::NewServiceEnvVar};
 
 use crate::{
     HttpResult,
-    extractors::{ValidatedJson, app::ActiveApp},
+    extractors::{
+        ValidatedJson,
+        app::{ActiveApp, ActiveAppOwner},
+    },
     state::{AppState, Storage},
 };
 
@@ -47,7 +50,7 @@ async fn get_env_vars(
 
 async fn update_env_vars(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    ActiveAppOwner { app, .. }: ActiveAppOwner,
     Path((_, service_id)): Path<(String, String)>,
     ValidatedJson(payload): ValidatedJson<UpdateEnvVarsReq>,
 ) -> HttpResult<impl IntoResponse> {
