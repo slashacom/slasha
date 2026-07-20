@@ -134,6 +134,29 @@ impl ServiceKind {
         }
     }
 
+    pub fn default_resources(&self) -> ServiceResources {
+        match self {
+            ServiceKind::PostgreSQL | ServiceKind::MySQL => ServiceResources {
+                memory_bytes: Some(512 * 1024 * 1024),
+                nano_cpus: None,
+                pids_limit: Some(256),
+                shm_size: Some(64 * 1024 * 1024),
+            },
+            ServiceKind::MongoDB => ServiceResources {
+                memory_bytes: Some(1024 * 1024 * 1024),
+                nano_cpus: None,
+                pids_limit: Some(256),
+                shm_size: None,
+            },
+            ServiceKind::Redis => ServiceResources {
+                memory_bytes: Some(256 * 1024 * 1024),
+                nano_cpus: None,
+                pids_limit: Some(256),
+                shm_size: None,
+            },
+        }
+    }
+
     pub fn supported_versions(&self) -> Vec<&str> {
         match self {
             ServiceKind::PostgreSQL => vec!["17", "16", "15", "14", "13"],
