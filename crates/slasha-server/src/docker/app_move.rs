@@ -281,7 +281,7 @@ pub async fn move_app_to_node(
                 runtime.log_manager.clone(),
                 new_app.clone(),
                 service,
-                None,
+                true,
             )
             .await?;
         }
