@@ -19,7 +19,7 @@ use serde::Deserialize;
 use slasha_db::{
     DbPool,
     repos::service::ServiceRepo,
-    service::{ServiceKind, ServiceResources, ServiceStatus},
+    service::{NewService, NewServiceEnvVar, ServiceKind, ServiceResources, ServiceStatus},
 };
 use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
@@ -230,7 +230,7 @@ async fn create_service(
 
     let service_id = Uuid::new_v4().to_string();
 
-    let new_service = slasha_db::service::NewService {
+    let new_service = NewService {
         id: service_id.clone(),
         app_id: app.id.clone(),
         kind: payload.kind,
@@ -240,7 +240,18 @@ async fn create_service(
         resources: payload.resources,
     };
 
+    let vars: Vec<NewServiceEnvVar> = payload
+        .env_vars
+        .into_iter()
+        .map(|(key, value)| NewServiceEnvVar {
+            service_id: service_id.clone(),
+            key,
+            value,
+        })
+        .collect();
+
     let new_service = ServiceRepo::create(&db_pool, new_service).await?;
+    ServiceRepo::set_env_vars(&db_pool, &new_service.id, vars).await?;
 
     tokio::spawn(provision_service(
         docker_client,
@@ -248,7 +259,7 @@ async fn create_service(
         log_manager,
         app,
         new_service.clone(),
-        Some(payload.env_vars),
+        false,
     ));
 
     Ok(Json(serde_json::json!({
@@ -289,6 +300,10 @@ async fn restart_service_handler(
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
+    if service.status == ServiceStatus::Provisioning {
+        return Err(HttpError::bad_request("Service is currently provisioning"));
+    }
+
     restart_service_container(&docker_client, &db_pool, &log_manager, &app, &service).await?;
 
     Ok(Json(serde_json::json!({ "restarted": true })))
@@ -304,6 +319,12 @@ async fn redeploy_service_handler(
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
 
+    if service.status == ServiceStatus::Provisioning {
+        return Err(HttpError::bad_request("Service is currently provisioning"));
+    }
+
+    ServiceRepo::update_status(&db_pool, &service.id, ServiceStatus::Provisioning).await?;
+
     remove_service_container(&docker_client, &log_manager, &app, &service, false).await?;
 
     tokio::spawn(provision_service(
@@ -312,7 +333,7 @@ async fn redeploy_service_handler(
         log_manager,
         app,
         service,
-        None,
+        true,
     ));
 
     Ok(Json(serde_json::json!({ "redeploying": true })))

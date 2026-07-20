@@ -21,7 +21,7 @@ use slasha_db::{
     DbPool,
     app::App,
     repos::service::ServiceRepo,
-    service::{NewServiceEnvVar, Service, ServiceEnvVar, ServiceStatus},
+    service::{Service, ServiceEnvVar, ServiceStatus},
 };
 use tokio::time::sleep;
 
@@ -67,13 +67,25 @@ pub fn resolve_env_vars(
     Ok(resolved)
 }
 
+/// Spawns background provisioning or redeployment of a database service container.
+///
+/// # Arguments
+/// * `docker` - Docker API client.
+/// * `db_pool` - Database connection pool.
+/// * `log_manager` - Service log streaming manager.
+/// * `app` - Parent application owning this service.
+/// * `service` - Service record being provisioned.
+/// * `is_redeploy` - `true` if redeploying an existing service, `false` if creating new.
+///
+/// # Returns
+/// A `DeploymentResult` indicating success or failure of the provisioning process.
 pub async fn provision_service(
     docker: Docker,
     db_pool: DbPool,
     log_manager: Arc<LogManager>,
     app: App,
     service: Service,
-    initial_env: Option<HashMap<String, String>>,
+    is_redeploy: bool,
 ) -> DeploymentResult<()> {
     let log_key = LogKey::Service {
         app_slug: app.slug.clone(),
@@ -87,7 +99,7 @@ pub async fn provision_service(
         &db_pool,
         &app,
         &service,
-        initial_env,
+        is_redeploy,
         &log,
         &mut rollback,
     )
@@ -111,12 +123,30 @@ pub async fn provision_service(
     Ok(())
 }
 
+/// Internal orchestration pipeline called by `provision_service`.
+///
+/// Separated from `provision_service` so that all fallible provisioning steps execute within
+/// a single function context where `rollback` cleanup callbacks can be registered. If `provision_inner`
+/// returns an error, `provision_service` catches it, executes `rollback.execute()`, updates the DB status
+/// to `Failed`, and cleans up active logger handles.
+///
+/// # Arguments
+/// * `docker` - Reference to Docker API client.
+/// * `db_pool` - Database pool reference.
+/// * `app` - Parent app reference.
+/// * `service` - Service model reference.
+/// * `is_redeploy` - `true` if redeploying an existing service, `false` if creating new.
+/// * `log` - Streaming log handle for UI feedback.
+/// * `rollback` - Rollback registry to register cleanup actions on failure.
+///
+/// # Returns
+/// A `DeploymentResult` indicating success or error during container setup.
 async fn provision_inner(
     docker: &Docker,
     db_pool: &DbPool,
     app: &App,
     service: &Service,
-    initial_env: Option<HashMap<String, String>>,
+    is_redeploy: bool,
     log: &LogHandle,
     rollback: &mut Rollback,
 ) -> DeploymentResult<()> {
@@ -161,39 +191,27 @@ async fn provision_inner(
         })
         .await?;
 
-    rollback.register({
-        let docker = docker.clone();
-        let volume_name = volume_name.clone();
-        move || {
-            Box::pin(async move {
-                if let Err(e) = docker
-                    .remove_volume(
-                        &volume_name,
-                        None::<bollard::query_parameters::RemoveVolumeOptions>,
-                    )
-                    .await
-                {
-                    tracing::warn!(volume = %volume_name, error = ?e, "Failed to remove volume");
-                }
-            })
-        }
-    });
+    if !is_redeploy {
+        rollback.register({
+            let docker = docker.clone();
+            let volume_name = volume_name.clone();
+            move || {
+                Box::pin(async move {
+                    if let Err(e) = docker
+                        .remove_volume(
+                            &volume_name,
+                            None::<bollard::query_parameters::RemoveVolumeOptions>,
+                        )
+                        .await
+                    {
+                        tracing::warn!(volume = %volume_name, error = ?e, "Failed to remove volume");
+                    }
+                })
+            }
+        });
+    }
 
-    let env_vars = if let Some(env) = initial_env {
-        let vars: Vec<NewServiceEnvVar> = env
-            .into_iter()
-            .map(|(key, value)| NewServiceEnvVar {
-                service_id: service.id.clone(),
-                key,
-                value,
-            })
-            .collect();
-
-        ServiceRepo::set_env_vars(db_pool, &service.id, vars).await?
-    } else {
-        ServiceRepo::get_env_vars(db_pool, &service.id).await?
-    };
-
+    let env_vars = ServiceRepo::get_env_vars(db_pool, &service.id).await?;
     let resolved_vars = resolve_env_vars(env_vars, service)?;
 
     create_service_container(docker, service, app, &resolved_vars, rollback).await?;
