@@ -232,7 +232,7 @@ impl ServiceKind {
             ServiceKind::Redis => Some(vec![
                 "sh".to_string(),
                 "-c".to_string(),
-                "exec redis-server --requirepass \"$REDIS_PASSWORD\"".to_string(),
+                "exec redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction --requirepass \"$REDIS_PASSWORD\"".to_string(),
             ]),
             _ => None,
         }
@@ -254,7 +254,7 @@ impl ServiceKind {
                 "mysqladmin ping -h 127.0.0.1 -u root -p\"$MYSQL_ROOT_PASSWORD\" --silent"
             }
             ServiceKind::MongoDB => {
-                "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' | grep -q 1"
+                "mongosh -u \"$MONGO_INITDB_ROOT_USERNAME\" -p \"$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --quiet --eval 'db.runCommand({ ping: 1 }).ok' | grep -q 1"
             }
             ServiceKind::Redis => {
                 "redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"
