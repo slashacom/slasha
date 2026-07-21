@@ -64,6 +64,13 @@ async fn run(cli: ClapApp) -> anyhow::Result<i32> {
         anyhow::bail!("No command provided. Run `slasha --help` for usage.");
     };
 
+    // Before AppState so the check needs no API config.
+    if let Command::MigrateCheck { sqlite, duckdb } = &command {
+        slasha_db::migrations::run_migrations(sqlite, duckdb);
+        cli_success("migrations applied cleanly");
+        return Ok(0);
+    }
+
     let state = AppState {
         api_client: ApiClient::from_config()?.with_url_override(url),
         output_mode,
@@ -74,6 +81,8 @@ async fn run(cli: ClapApp) -> anyhow::Result<i32> {
         Command::Serve => slasha_server::serve().await?,
         #[cfg(feature = "serve")]
         Command::GitSsh { user_id } => return git_ssh::handle(user_id).await,
+
+        Command::MigrateCheck { .. } => unreachable!("handled before AppState"),
 
         Command::Status => auth::handle_status(&state).await?,
         Command::Login => auth::handle_login(&state).await?,

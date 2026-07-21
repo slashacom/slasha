@@ -11,6 +11,9 @@ edition = "2024"
 bundled-sqlite = ["libsqlite3-sys/bundled"]
 bundled-duckdb = ["duckdb/bundled"]
 
+[dev-dependencies]
+tempfile = "3.27.0"
+
 [dependencies]
 diesel = { version = "2.2.0", features = ["sqlite", "returning_clauses_for_sqlite_3_35", "r2d2", "chrono"] }
 diesel_migrations = "2.2.0"
