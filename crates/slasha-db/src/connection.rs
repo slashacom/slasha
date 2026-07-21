@@ -26,9 +26,8 @@ impl CustomizeConnection<SqliteConnection, Error> for SqliteConnectionCustomizer
             .execute(conn)
             .map_err(Error::QueryError)?;
 
-        // Enforce foreign keys so ON DELETE CASCADE actually fires; SQLite leaves
-        // this off per connection by default. Migrations use a separate, un-enforced
-        // connection (see run_migrations) so table rebuilds don't cascade-delete.
+        // Enforce foreign keys so ON DELETE CASCADE actually fires. Migrations use a
+        // separate connection that turns it off (see connect_for_migrations).
         diesel::sql_query("PRAGMA foreign_keys=ON;")
             .execute(conn)
             .map_err(Error::QueryError)?;

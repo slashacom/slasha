@@ -44,6 +44,15 @@ pub enum Command {
     #[command(name = "git-ssh", hide = true)]
     GitSsh { user_id: String },
 
+    #[command(name = "migrate-check", hide = true)]
+    MigrateCheck {
+        #[arg(long, value_name = "PATH")]
+        sqlite: String,
+
+        #[arg(long, value_name = "PATH")]
+        duckdb: String,
+    },
+
     #[command(name = "status", about = "Check server health")]
     Status,
 
