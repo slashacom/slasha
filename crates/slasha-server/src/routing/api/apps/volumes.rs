@@ -28,12 +28,12 @@ struct VolumeView {
     size_bytes: Option<i64>,
 }
 
-async fn dockerfile_volume_paths(repo_path: &str, branch: &str) -> Vec<String> {
+async fn dockerfile_volume_paths(repo_path: &str, root_dir: &str, branch: &str) -> Vec<String> {
     let Ok((commit_sha, _)) = resolve_head_commit(repo_path, branch) else {
         return Vec::new();
     };
     let path = Path::new(repo_path);
-    let Ok(strategy) = detect_build_strategy(path, &commit_sha).await else {
+    let Ok(strategy) = detect_build_strategy(path, root_dir, &commit_sha).await else {
         return Vec::new();
     };
     match strategy {
@@ -67,7 +67,7 @@ async fn list_volumes(
     }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
     let mut paths = vec![MANAGED_DATA_PATH.to_string()];
-    for path in dockerfile_volume_paths(&app.repo_path, &app.default_branch).await {
+    for path in dockerfile_volume_paths(&app.repo_path, &app.root_dir, &app.default_branch).await {
         if path != MANAGED_DATA_PATH && !paths.contains(&path) {
             paths.push(path);
         }

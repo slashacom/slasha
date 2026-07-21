@@ -18,6 +18,7 @@ type CreateAppPayload<Source extends AppSource = AppSource> = {
   name: string;
   source: Source;
   node_id?: string;
+  root_dir?: string;
 } & (Source extends 'github'
   ? { installation_id: number; repository_id: number }
   : Source extends 'git'
@@ -53,6 +54,7 @@ type UpdateAppSettingsPayload = {
   appSlug: string;
   name?: string;
   auto_deploy?: boolean;
+  root_dir?: string;
 };
 
 export function getAppsOptions() {
@@ -215,6 +217,7 @@ export function useUpdateAppSettings() {
       httpPut<{ success: boolean }>(`apps/${data.appSlug}/settings`, {
         name: data.name,
         auto_deploy: data.auto_deploy,
+        root_dir: data.root_dir,
       }),
   });
 }

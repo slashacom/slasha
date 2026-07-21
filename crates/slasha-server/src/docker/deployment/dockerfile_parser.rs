@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::docker::{DeploymentError, DeploymentResult};
 
@@ -7,12 +7,24 @@ pub enum BuildStrategy {
     Railpack,
 }
 
-fn read_dockerfile(repo_path: &Path, commit_sha: &str) -> DeploymentResult<Option<String>> {
+pub fn dockerfile_path(root_dir: &str) -> PathBuf {
+    if root_dir.is_empty() {
+        return PathBuf::from("Dockerfile");
+    }
+
+    Path::new(root_dir).join("Dockerfile")
+}
+
+fn read_dockerfile(
+    repo_path: &Path,
+    root_dir: &str,
+    commit_sha: &str,
+) -> DeploymentResult<Option<String>> {
     let repo = git2::Repository::open(repo_path)?;
     let obj = repo.find_commit(git2::Oid::from_str(commit_sha)?)?;
     let tree = obj.tree()?;
 
-    match tree.get_path(Path::new("Dockerfile")) {
+    match tree.get_path(&dockerfile_path(root_dir)) {
         Ok(entry) => {
             let blob = repo.find_blob(entry.id())?;
             let content = std::str::from_utf8(blob.content())
@@ -27,13 +39,15 @@ fn read_dockerfile(repo_path: &Path, commit_sha: &str) -> DeploymentResult<Optio
 
 pub async fn detect_build_strategy(
     repo_path: &Path,
+    root_dir: &str,
     commit_sha: &str,
 ) -> DeploymentResult<BuildStrategy> {
     let repo_path = repo_path.to_path_buf();
+    let root_dir = root_dir.to_string();
     let commit_sha = commit_sha.to_string();
 
     tokio::task::spawn_blocking(move || -> DeploymentResult<BuildStrategy> {
-        match read_dockerfile(&repo_path, &commit_sha)? {
+        match read_dockerfile(&repo_path, &root_dir, &commit_sha)? {
             Some(content) => Ok(BuildStrategy::Dockerfile { content }),
             None => Ok(BuildStrategy::Railpack),
         }

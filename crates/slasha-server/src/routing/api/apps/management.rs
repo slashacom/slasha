@@ -42,7 +42,10 @@ use crate::{
         app::{ActiveApp, ActiveAppOwner},
         auth::AuthUser,
     },
-    routing::api::{deserialize::trim_string, validation::not_empty},
+    routing::api::{
+        deserialize::trim_string,
+        validation::{normalize_root_dir, not_empty, valid_root_dir},
+    },
     state::{AppState, Config, Runtime, Storage},
 };
 
@@ -75,6 +78,12 @@ struct CreateAppReq {
     source: CreateAppSource,
     #[garde(skip)]
     node_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::routing::api::deserialize::trim_optional_string"
+    )]
+    #[garde(inner(custom(valid_root_dir)))]
+    root_dir: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -318,6 +327,13 @@ async fn create_app(
         }
     };
 
+    let root_dir = payload
+        .root_dir
+        .map(|value| normalize_root_dir(&value))
+        .transpose()
+        .map_err(HttpError::bad_request)?
+        .unwrap_or_default();
+
     let new_app = NewApp {
         id: app_id.clone(),
         slug: slug.clone(),
@@ -327,6 +343,7 @@ async fn create_app(
         auto_deploy: true,
         source,
         node_id: payload.node_id.unwrap_or_else(|| LOCAL_NODE_ID.to_string()),
+        root_dir,
     };
 
     let node = NodeRepo::get(&state.storage.db_pool, &new_app.node_id)
@@ -611,6 +628,12 @@ struct UpdateSettingsReq {
     name: Option<String>,
     #[garde(skip)]
     auto_deploy: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::routing::api::deserialize::trim_optional_string"
+    )]
+    #[garde(inner(custom(valid_root_dir)))]
+    root_dir: Option<String>,
 }
 
 async fn update_settings(
@@ -624,6 +647,11 @@ async fn update_settings(
 
     if let Some(name) = payload.name {
         AppRepo::update_name(&storage.db_pool, &app.id, &name).await?;
+    }
+
+    if let Some(root_dir) = payload.root_dir {
+        let root_dir = normalize_root_dir(&root_dir).map_err(HttpError::bad_request)?;
+        AppRepo::update_root_dir(&storage.db_pool, &app.id, &root_dir).await?;
     }
 
     Ok(Json(serde_json::json!({

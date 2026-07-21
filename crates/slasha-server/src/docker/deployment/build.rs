@@ -13,6 +13,7 @@ use tokio::{
     process::Command as TokioCommand,
 };
 
+use super::dockerfile_parser::dockerfile_path;
 use crate::{
     docker::{DeploymentError, DeploymentResult, naming::image_tag},
     logs::LogHandle,
@@ -111,6 +112,7 @@ async fn build_image_from_tar(
     docker_client: &Docker,
     log: &LogHandle,
     image_tag: &str,
+    dockerfile: &str,
     tar_bytes: Bytes,
 ) -> DeploymentResult<()> {
     let tar_body_stream = body_stream(stream::once(async move { tar_bytes }));
@@ -118,6 +120,7 @@ async fn build_image_from_tar(
     let session_id = uuid::Uuid::new_v4().to_string();
     let build_opts = BuildImageOptionsBuilder::new()
         .t(image_tag)
+        .dockerfile(dockerfile)
         .rm(true)
         .forcerm(true)
         .version(BuilderVersion::BuilderBuildKit)
@@ -166,10 +169,18 @@ pub async fn build_docker(
 ) -> DeploymentResult<()> {
     let repo_path = Path::new(&app.repo_path);
     let image_tag = image_tag(&app.slug, &deployment.id);
+    let dockerfile = dockerfile_path(&app.root_dir);
 
     let tar_bytes = build_git_tar(repo_path, &deployment.commit_sha).await?;
 
-    build_image_from_tar(docker_client, log, &image_tag, tar_bytes).await
+    build_image_from_tar(
+        docker_client,
+        log,
+        &image_tag,
+        &dockerfile.to_string_lossy(),
+        tar_bytes,
+    )
+    .await
 }
 
 pub async fn build_railpack(
@@ -191,14 +202,24 @@ pub async fn build_railpack(
     let source_tar = build_git_tar(repo_path, commit_sha).await?;
     tar_to_directory(source_tar, tmp_path).await?;
 
-    let plan_path = tmp_path.join("railpack-plan.json");
-    let info_path = tmp_path.join("railpack-info.json");
+    let app_path = if app.root_dir.is_empty() {
+        tmp_path.to_path_buf()
+    } else {
+        tmp_path.join(&app.root_dir)
+    };
+
+    if !tokio::fs::try_exists(&app_path).await.unwrap_or(false) {
+        return Err(DeploymentError::RootDirNotFound(app.root_dir.clone()));
+    }
+
+    let plan_path = app_path.join("railpack-plan.json");
+    let info_path = app_path.join("railpack-info.json");
 
     log.send("Running railpack prepare…").await?;
 
     let prepare_child = TokioCommand::new("railpack")
         .arg("prepare")
-        .arg(tmp_path)
+        .arg(&app_path)
         .arg("--plan-out")
         .arg(&plan_path)
         .arg("--info-out")
@@ -216,7 +237,7 @@ pub async fn build_railpack(
         plan_content
     );
 
-    tokio::fs::write(tmp_path.join("Dockerfile"), dockerfile_content).await?;
+    tokio::fs::write(app_path.join("Dockerfile"), dockerfile_content).await?;
 
     let _ = tokio::fs::remove_file(&plan_path).await;
     let _ = tokio::fs::remove_file(&info_path).await;
@@ -224,7 +245,7 @@ pub async fn build_railpack(
     log.send("Prepare complete, starting BuildKit build on node…")
         .await?;
 
-    let tar_bytes = directory_to_tar(tmp_path).await?;
+    let tar_bytes = directory_to_tar(&app_path).await?;
 
-    build_image_from_tar(docker_client, log, &image_tag, tar_bytes).await
+    build_image_from_tar(docker_client, log, &image_tag, "Dockerfile", tar_bytes).await
 }

@@ -15,6 +15,7 @@ import { AppEnvEditor } from '~/components/apps/app-env-editor';
 import { AppNameManager } from '~/components/apps/app-name-manager';
 import { AppNodeManager } from '~/components/apps/app-node-manager';
 import { AutoDeployManager } from '~/components/apps/auto-deploy-manager';
+import { BuildSettingsManager } from '~/components/apps/build-settings-manager';
 import { HealthCheckManager } from '~/components/apps/health-check-manager';
 import { GithubConnectionManager } from '~/components/apps/github-connection-manager';
 import { GitConnectionManager } from '~/components/apps/git-connection-manager';
@@ -70,6 +71,9 @@ export default function AppSettingsPage() {
         </div>
         <div className="max-w-3xl mb-8">
           <AutoDeployManager app={app} />
+        </div>
+        <div className="max-w-3xl mb-8">
+          <BuildSettingsManager app={app} />
         </div>
         <div className="max-w-3xl mb-8">
           <HealthCheckManager appSlug={slug!} />

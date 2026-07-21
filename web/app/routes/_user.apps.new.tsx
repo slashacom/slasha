@@ -45,6 +45,7 @@ export default function NewApp() {
   const [gitUrl, setGitUrl] = useState('');
   const [gitBranch, setGitBranch] = useState('');
   const [githubBranch, setGithubBranch] = useState('');
+  const [rootDir, setRootDir] = useState('');
 
   const { data: nodesData } = useSuspenseQuery(getNodesOptions());
   const readyNodes =
@@ -107,6 +108,8 @@ export default function NewApp() {
       return;
     }
 
+    const rootDirPayload = rootDir.trim() ? { root_dir: rootDir.trim() } : {};
+
     const payload =
       source === 'github'
         ? {
@@ -116,6 +119,7 @@ export default function NewApp() {
             installation_id: selectedRepoObj!.installation_id,
             repository_id: selectedRepoObj!.id,
             ...(githubBranch.trim() ? { branch: githubBranch.trim() } : {}),
+            ...rootDirPayload,
           }
         : source === 'git'
           ? {
@@ -124,8 +128,9 @@ export default function NewApp() {
               node_id: nodeId,
               url: gitUrl.trim(),
               ...(gitBranch.trim() ? { branch: gitBranch.trim() } : {}),
+              ...rootDirPayload,
             }
-          : { name, source, node_id: nodeId };
+          : { name, source, node_id: nodeId, ...rootDirPayload };
     const promise = createApp.mutateAsync(payload);
 
     toast.promise(promise, {
@@ -416,6 +421,27 @@ export default function NewApp() {
               </div>
             </div>
           )}
+
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="root_dir"
+              className="text-[13px] font-medium text-text-secondary"
+            >
+              Root Directory
+              <span className="ml-1.5 text-text-tertiary">(optional)</span>
+            </Label>
+            <Input
+              id="root_dir"
+              value={rootDir}
+              onChange={(event) => setRootDir(event.target.value)}
+              placeholder="apps/web"
+              className="h-10 w-full font-mono text-[13px]"
+            />
+            <p className="text-xs text-text-tertiary">
+              Build from a subdirectory of the repository. Leave empty to build
+              from the repository root.
+            </p>
+          </div>
 
           <div className="flex items-center justify-end gap-2 pt-4">
             <Button

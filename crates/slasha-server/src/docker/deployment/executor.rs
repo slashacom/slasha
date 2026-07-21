@@ -58,7 +58,12 @@ pub async fn resolve_deployment_context(
     app: &App,
     deployment: &Deployment,
 ) -> DeploymentResult<DeploymentContext> {
-    let strategy = detect_build_strategy(Path::new(&app.repo_path), &deployment.commit_sha).await?;
+    let strategy = detect_build_strategy(
+        Path::new(&app.repo_path),
+        &app.root_dir,
+        &deployment.commit_sha,
+    )
+    .await?;
     let app_vars = AppRepo::get_env_vars(db_pool, &app.id).await?;
     let app_services = ServiceRepo::list_for_app(db_pool, &app.id).await?;
     let mut env_map = resolve_app_env(db_pool, app, app_vars, app_services).await?;

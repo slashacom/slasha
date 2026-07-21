@@ -28,6 +28,7 @@ pub struct App {
     pub auto_deploy: bool,
     pub source: AppSource,
     pub node_id: String,
+    pub root_dir: String,
 }
 
 #[derive(Insertable)]
@@ -41,6 +42,7 @@ pub struct NewApp {
     pub auto_deploy: bool,
     pub source: AppSource,
     pub node_id: String,
+    pub root_dir: String,
 }
 
 #[derive(

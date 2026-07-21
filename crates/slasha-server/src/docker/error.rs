@@ -22,6 +22,9 @@ pub enum DeploymentError {
     #[error("railpack prepare failed with exit status {0}")]
     RailpackPrepareFailed(std::process::ExitStatus),
 
+    #[error("Root directory \"{0}\" not found in repository")]
+    RootDirNotFound(String),
+
     #[error("docker buildx build failed with exit status {0}")]
     BuildKitFailed(std::process::ExitStatus),
 

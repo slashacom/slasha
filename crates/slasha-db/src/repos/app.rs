@@ -366,6 +366,23 @@ impl AppRepo {
         .await?
     }
 
+    pub async fn update_root_dir(pool: &DbPool, id: &str, root_dir: &str) -> DbResult<()> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        let root_dir = root_dir.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let updated = diesel::update(apps::table.filter(apps::id.eq(&id)))
+                .set(apps::root_dir.eq(root_dir))
+                .execute(&mut conn)?;
+            if updated == 0 {
+                return Err(DbError::NotFound(format!("app '{}' not found", id)));
+            }
+            Ok(())
+        })
+        .await?
+    }
+
     pub async fn list_all(pool: &DbPool) -> DbResult<Vec<App>> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
