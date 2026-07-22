@@ -336,10 +336,8 @@ async fn run_deployment_inner(
         .await?;
 
         match &deployment_context.strategy {
-            BuildStrategy::Dockerfile { .. } => {
-                build_docker(docker_client, &log, app, deployment).await?
-            }
-            BuildStrategy::Railpack => build_railpack(docker_client, &log, app, deployment).await?,
+            BuildStrategy::Dockerfile { .. } => build_docker(&log, app, deployment).await?,
+            BuildStrategy::Railpack => build_railpack(&log, app, deployment).await?,
         }
     }
 

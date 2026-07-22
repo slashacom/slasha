@@ -1,11 +1,6 @@
 use std::{path::Path, process::Stdio};
 
-use bollard::{
-    Docker, body_stream,
-    query_parameters::{BuildImageOptionsBuilder, BuilderVersion},
-};
 use bytes::Bytes;
-use futures_util::{StreamExt, stream};
 use slasha_db::{app::App, deployment::Deployment};
 use tempfile::TempDir;
 use tokio::{
@@ -58,21 +53,6 @@ async fn tar_to_directory(tar_bytes: Bytes, dest: &Path) -> DeploymentResult<()>
     Ok(())
 }
 
-async fn directory_to_tar(dir: &Path) -> DeploymentResult<Bytes> {
-    let out = TokioCommand::new("tar")
-        .args(["-cf", "-", "."])
-        .current_dir(dir)
-        .output()
-        .await?;
-
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        return Err(DeploymentError::GitArchiveFailed(stderr));
-    }
-
-    Ok(Bytes::from(out.stdout))
-}
-
 async fn stream_command_output(
     mut child: tokio::process::Child,
     log: &LogHandle,
@@ -108,52 +88,57 @@ async fn stream_command_output(
     Ok(())
 }
 
-async fn build_image_from_tar(
-    docker_client: &Docker,
+async fn railpack_frontend() -> String {
+    let fallback = String::from("ghcr.io/railwayapp/railpack-frontend:latest");
+
+    let Ok(out) = TokioCommand::new("railpack").arg("--version").output().await else {
+        return fallback;
+    };
+
+    if !out.status.success() {
+        return fallback;
+    }
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let Some(version) = stdout.split_whitespace().last() else {
+        return fallback;
+    };
+
+    format!(
+        "ghcr.io/railwayapp/railpack-frontend:v{}",
+        version.trim_start_matches('v')
+    )
+}
+
+async fn build_image_from_dir(
     log: &LogHandle,
     image_tag: &str,
-    dockerfile: &str,
-    tar_bytes: Bytes,
+    dockerfile: &Path,
+    context_dir: &Path,
+    buildkit_syntax: Option<&str>,
 ) -> DeploymentResult<()> {
-    let tar_body_stream = body_stream(stream::once(async move { tar_bytes }));
+    let mut cmd = TokioCommand::new("docker");
+    cmd.arg("build")
+        .arg("--progress")
+        .arg("plain")
+        .arg("-t")
+        .arg(image_tag)
+        .arg("-f")
+        .arg(dockerfile);
 
-    let session_id = uuid::Uuid::new_v4().to_string();
-    let build_opts = BuildImageOptionsBuilder::new()
-        .t(image_tag)
-        .dockerfile(dockerfile)
-        .rm(true)
-        .forcerm(true)
-        .version(BuilderVersion::BuilderBuildKit)
-        .session(&session_id)
-        .build();
-
-    let mut build_stream = docker_client.build_image(build_opts, None, Some(tar_body_stream));
-
-    while let Some(item) = build_stream.next().await {
-        match item {
-            Ok(info) => {
-                if let Some(line) = info.stream {
-                    let line = line.trim_end_matches('\n').to_string();
-                    if !line.is_empty() {
-                        log.send(line).await?;
-                    }
-                }
-
-                if let Some(detail) = info.error_detail
-                    && let Some(msg_text) = detail.message
-                {
-                    let msg = msg_text.trim().to_string();
-                    log.send(format!("Build error: {}", msg)).await?;
-                    return Err(DeploymentError::BuildFailed(msg));
-                }
-            }
-            Err(e) => {
-                let msg = format!("Docker error during build: {}", e);
-                log.send(msg).await?;
-                return Err(e.into());
-            }
-        }
+    if let Some(syntax) = buildkit_syntax {
+        cmd.arg("--build-arg")
+            .arg(format!("BUILDKIT_SYNTAX={syntax}"));
     }
+
+    let child = cmd
+        .arg(context_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+
+    stream_command_output(child, log, "docker build").await?;
 
     log.send(format!("Image built and tagged as {}", image_tag))
         .await?;
@@ -162,7 +147,6 @@ async fn build_image_from_tar(
 }
 
 pub async fn build_docker(
-    docker_client: &Docker,
     log: &LogHandle,
     app: &App,
     deployment: &Deployment,
@@ -171,20 +155,16 @@ pub async fn build_docker(
     let image_tag = image_tag(&app.slug, &deployment.id);
     let dockerfile = dockerfile_path(&app.root_dir);
 
-    let tar_bytes = build_git_tar(repo_path, &deployment.commit_sha).await?;
+    let tmp = TempDir::new()?;
+    let tmp_path = tmp.path();
 
-    build_image_from_tar(
-        docker_client,
-        log,
-        &image_tag,
-        &dockerfile.to_string_lossy(),
-        tar_bytes,
-    )
-    .await
+    let tar_bytes = build_git_tar(repo_path, &deployment.commit_sha).await?;
+    tar_to_directory(tar_bytes, tmp_path).await?;
+
+    build_image_from_dir(log, &image_tag, &tmp_path.join(&dockerfile), tmp_path, None).await
 }
 
 pub async fn build_railpack(
-    docker_client: &Docker,
     log: &LogHandle,
     app: &App,
     deployment: &Deployment,
@@ -212,8 +192,9 @@ pub async fn build_railpack(
         return Err(DeploymentError::RootDirNotFound(app.root_dir.clone()));
     }
 
-    let plan_path = app_path.join("railpack-plan.json");
-    let info_path = app_path.join("railpack-info.json");
+    let plan_dir = TempDir::new()?;
+    let plan_path = plan_dir.path().join("railpack-plan.json");
+    let info_path = plan_dir.path().join("railpack-info.json");
 
     log.send("Running railpack prepare…").await?;
 
@@ -231,21 +212,10 @@ pub async fn build_railpack(
 
     stream_command_output(prepare_child, log, "railpack prepare").await?;
 
-    let plan_content = tokio::fs::read_to_string(&plan_path).await?;
-    let dockerfile_content = format!(
-        "# syntax=ghcr.io/railwayapp/railpack-frontend\n{}",
-        plan_content
-    );
-
-    tokio::fs::write(app_path.join("Dockerfile"), dockerfile_content).await?;
-
-    let _ = tokio::fs::remove_file(&plan_path).await;
-    let _ = tokio::fs::remove_file(&info_path).await;
+    let frontend = railpack_frontend().await;
 
     log.send("Prepare complete, starting BuildKit build on node…")
         .await?;
 
-    let tar_bytes = directory_to_tar(&app_path).await?;
-
-    build_image_from_tar(docker_client, log, &image_tag, "Dockerfile", tar_bytes).await
+    build_image_from_dir(log, &image_tag, &plan_path, &app_path, Some(&frontend)).await
 }
