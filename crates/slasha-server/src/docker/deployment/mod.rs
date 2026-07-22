@@ -3,6 +3,7 @@ pub mod container;
 pub mod dockerfile_parser;
 pub mod executor;
 pub mod image;
+pub mod js_workspace;
 pub mod litestream;
 pub mod procfile_parser;
 pub mod readiness;

@@ -25,6 +25,12 @@ pub enum DeploymentError {
     #[error("Root directory \"{0}\" not found in repository")]
     RootDirNotFound(String),
 
+    #[error("Could not read \"{0}/package.json\": {1}")]
+    PackageJsonInvalid(String, String),
+
+    #[error("\"{0}\" is part of a JS workspace but its package.json has no \"start\" script")]
+    WorkspaceStartScriptMissing(String),
+
     #[error("docker buildx build failed with exit status {0}")]
     BuildKitFailed(std::process::ExitStatus),
 

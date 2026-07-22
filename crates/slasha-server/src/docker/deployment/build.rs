@@ -8,7 +8,10 @@ use tokio::{
     process::Command as TokioCommand,
 };
 
-use super::dockerfile_parser::dockerfile_path;
+use super::{
+    dockerfile_parser::dockerfile_path,
+    js_workspace::{JsWorkspace, detect_js_workspace},
+};
 use crate::{
     docker::{DeploymentError, DeploymentResult, naming::image_tag},
     logs::LogHandle,
@@ -110,6 +113,20 @@ async fn railpack_frontend() -> String {
     )
 }
 
+async fn detect_workspace(
+    context_root: &Path,
+    app_path: &Path,
+    root_dir: &str,
+) -> DeploymentResult<Option<JsWorkspace>> {
+    let context_root = context_root.to_path_buf();
+    let app_path = app_path.to_path_buf();
+    let root_dir = root_dir.to_string();
+
+    tokio::task::spawn_blocking(move || detect_js_workspace(&context_root, &app_path, &root_dir))
+        .await
+        .map_err(|_| DeploymentError::SpawnBlockingPanicked)?
+}
+
 async fn build_image_from_dir(
     log: &LogHandle,
     image_tag: &str,
@@ -192,19 +209,46 @@ pub async fn build_railpack(
         return Err(DeploymentError::RootDirNotFound(app.root_dir.clone()));
     }
 
+    let workspace = detect_workspace(tmp_path, &app_path, &app.root_dir).await?;
+
+    let build_context = match &workspace {
+        Some(workspace) => {
+            log.send(format!(
+                "\"{}\" is a {} workspace package; building from the workspace root",
+                app.root_dir,
+                workspace.package_manager.label()
+            ))
+            .await?;
+
+            workspace.root.clone()
+        }
+        None => app_path,
+    };
+
     let plan_dir = TempDir::new()?;
     let plan_path = plan_dir.path().join("railpack-plan.json");
     let info_path = plan_dir.path().join("railpack-info.json");
 
     log.send("Running railpack prepare…").await?;
 
-    let prepare_child = TokioCommand::new("railpack")
+    let mut prepare = TokioCommand::new("railpack");
+    prepare
         .arg("prepare")
-        .arg(&app_path)
+        .arg(&build_context)
         .arg("--plan-out")
         .arg(&plan_path)
         .arg("--info-out")
-        .arg(&info_path)
+        .arg(&info_path);
+
+    if let Some(workspace) = &workspace {
+        prepare
+            .arg("--build-cmd")
+            .arg(&workspace.build_command)
+            .arg("--start-cmd")
+            .arg(&workspace.start_command);
+    }
+
+    let prepare_child = prepare
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
@@ -217,5 +261,5 @@ pub async fn build_railpack(
     log.send("Prepare complete, starting BuildKit build on node…")
         .await?;
 
-    build_image_from_dir(log, &image_tag, &plan_path, &app_path, Some(&frontend)).await
+    build_image_from_dir(log, &image_tag, &plan_path, &build_context, Some(&frontend)).await
 }
