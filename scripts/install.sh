@@ -74,7 +74,9 @@ get_latest_version() {
 }
 
 tmpdir=""
-cleanup() { [[ -n "$tmpdir" ]] && rm -rf "$tmpdir"; }
+# return 0 explicitly: under `set -e` a failing last command in an EXIT trap
+# becomes the script's exit status, so the already-up-to-date path would exit 1.
+cleanup() { [[ -n "$tmpdir" ]] && rm -rf "$tmpdir"; return 0; }
 trap cleanup EXIT
 
 download_and_install() {
