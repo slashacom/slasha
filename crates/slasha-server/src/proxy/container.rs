@@ -3,13 +3,17 @@ use std::{collections::HashMap, time::Duration};
 use bollard::{
     Docker,
     models::{
-        ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountType, NetworkCreateRequest,
-        NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
+        ContainerCreateBody, ContainerInspectResponse, EndpointSettings, HostConfig, Mount,
+        MountType, NetworkCreateRequest, NetworkingConfig, PortBinding, RestartPolicy,
+        RestartPolicyNameEnum, VolumeCreateRequest,
     },
-    query_parameters::{CreateContainerOptions, CreateImageOptions, StartContainerOptionsBuilder},
+    query_parameters::{
+        CreateContainerOptions, CreateImageOptions, RemoveContainerOptionsBuilder,
+        StartContainerOptionsBuilder,
+    },
 };
 use futures_util::StreamExt;
-use tokio::time::sleep;
+use tokio::{net::TcpStream, time::sleep, time::timeout};
 
 use super::{ProxyError, ProxyResult};
 use crate::docker::log_driver::default_log_config;
@@ -18,28 +22,44 @@ pub const PROXY_CONTAINER_NAME: &str = "slasha-proxy";
 pub const PROXY_NETWORK_NAME: &str = "slasha-proxy";
 const IMAGE: &str = "caddy:latest";
 const ADMIN_URL: &str = "http://127.0.0.1:2019/config/";
+const HOST_PORTS: [u16; 3] = [80, 443, 2019];
 
 pub async fn ensure_caddy_ready(docker: &Docker) -> ProxyResult<()> {
-    let state = docker
-        .inspect_container(PROXY_CONTAINER_NAME, None)
-        .await
-        .ok()
-        .and_then(|c| c.state);
+    if let Ok(existing) = docker.inspect_container(PROXY_CONTAINER_NAME, None).await {
+        let running = existing.state.as_ref().and_then(|s| s.running) == Some(true);
 
-    if let Some(s) = state {
-        // container exists, just start it
-        if s.running != Some(true) {
+        if running && ports_published(&existing) {
+            return wait_for_admin_api().await;
+        }
+
+        if !running {
             docker
                 .start_container(
                     PROXY_CONTAINER_NAME,
                     Some(StartContainerOptionsBuilder::new().build()),
                 )
-                .await?;
+                .await
+                .map_err(map_port_bind_error)?;
+
+            let started = docker.inspect_container(PROXY_CONTAINER_NAME, None).await?;
+            if ports_published(&started) {
+                return wait_for_admin_api().await;
+            }
         }
 
-        // container running already
-        return wait_for_admin_api().await;
+        tracing::warn!(
+            container = %PROXY_CONTAINER_NAME,
+            "proxy container is up but its host ports are not published — recreating"
+        );
+        docker
+            .remove_container(
+                PROXY_CONTAINER_NAME,
+                Some(RemoveContainerOptionsBuilder::new().force(true).build()),
+            )
+            .await?;
     }
+
+    ensure_host_ports_free().await?;
 
     match docker
         .create_network(NetworkCreateRequest {
@@ -157,9 +177,58 @@ pub async fn ensure_caddy_ready(docker: &Docker) -> ProxyResult<()> {
             PROXY_CONTAINER_NAME,
             Some(StartContainerOptionsBuilder::new().build()),
         )
-        .await?;
+        .await
+        .map_err(map_port_bind_error)?;
 
     wait_for_admin_api().await
+}
+
+fn ports_published(container: &ContainerInspectResponse) -> bool {
+    let Some(ports) = container
+        .network_settings
+        .as_ref()
+        .and_then(|n| n.ports.as_ref())
+    else {
+        return false;
+    };
+
+    HOST_PORTS.iter().all(|port| {
+        ports
+            .get(&format!("{port}/tcp"))
+            .and_then(|bindings| bindings.as_ref())
+            .is_some_and(|bindings| !bindings.is_empty())
+    })
+}
+
+async fn ensure_host_ports_free() -> ProxyResult<()> {
+    for port in HOST_PORTS {
+        let probe = timeout(
+            Duration::from_millis(300),
+            TcpStream::connect(("127.0.0.1", port)),
+        )
+        .await;
+
+        if matches!(probe, Ok(Ok(_))) {
+            return Err(ProxyError::PortConflict(port));
+        }
+    }
+
+    Ok(())
+}
+
+fn map_port_bind_error(e: bollard::errors::Error) -> ProxyError {
+    let bollard::errors::Error::DockerResponseServerError { message, .. } = &e else {
+        return ProxyError::DockerApi(e);
+    };
+
+    if message.contains("address already in use") || message.contains("port is already allocated")
+    {
+        return ProxyError::Caddy(format!(
+            "cannot start the proxy container: {message} — another process on the host is using a port Caddy needs (80, 443 or 2019); find it with `sudo ss -ltnp | grep -E ':80|:443|:2019'`"
+        ));
+    }
+
+    ProxyError::DockerApi(e)
 }
 
 async fn wait_for_admin_api() -> ProxyResult<()> {
@@ -174,7 +243,7 @@ async fn wait_for_admin_api() -> ProxyResult<()> {
         sleep(Duration::from_millis(500)).await;
     }
 
-    Err(ProxyError::Timeout(
-        "Caddy admin API did not become ready within 10s".into(),
-    ))
+    Err(ProxyError::Timeout(format!(
+        "Caddy admin API did not become ready within 10s — check `docker logs {PROXY_CONTAINER_NAME}`"
+    )))
 }
