@@ -117,14 +117,18 @@ async fn build_image_from_tar(
 ) -> DeploymentResult<()> {
     let tar_body_stream = body_stream(stream::once(async move { tar_bytes }));
 
-    let session_id = uuid::Uuid::new_v4().to_string();
+    // bollard's `build_image` is a plain HTTP POST and never opens a BuildKit
+    // gRPC session, so don't declare one. A phantom `session` makes the daemon
+    // route local-source access through that never-connected session and fail
+    // ("no local sources enabled" on Docker >= 29.6.2; silently tolerated on
+    // 29.6.1). Omitting it makes the daemon use the uploaded tar as the build
+    // context; the `# syntax=` frontend is still resolved server-side.
     let build_opts = BuildImageOptionsBuilder::new()
         .t(image_tag)
         .dockerfile(dockerfile)
         .rm(true)
         .forcerm(true)
         .version(BuilderVersion::BuilderBuildKit)
-        .session(&session_id)
         .build();
 
     let mut build_stream = docker_client.build_image(build_opts, None, Some(tar_body_stream));
