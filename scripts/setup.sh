@@ -73,6 +73,30 @@ if ! command -v systemctl >/dev/null 2>&1; then
     err "systemd (systemctl) is required to run slasha on the host, but was not found."
 fi
 
+# port availability
+header "checking ports"
+
+ports_in_use=""
+for port in 80 443 2019; do
+    listener="$($SUDO ss -ltnpH "sport = :$port" 2>/dev/null | head -n 1)"
+    if [[ -z "$listener" ]]; then
+        continue
+    fi
+    proc="$(echo "$listener" | grep -oE 'users:\(\("[^"]+"' | cut -d'"' -f2)"
+    ports_in_use+=$'\n'"    port $port is in use by ${proc:-an unknown process}"
+done
+
+if [[ -n "$ports_in_use" ]]; then
+    if command -v docker >/dev/null 2>&1 && $SUDO docker inspect slasha-proxy >/dev/null 2>&1; then
+        success "ports 80/443/2019 are held by the existing slasha proxy"
+    else
+        err "slasha needs ports 80, 443 and 2019 free for its reverse proxy:$ports_in_use
+  stop the conflicting services (or use a server that is not already running a web server) and re-run."
+    fi
+else
+    success "ports 80, 443 and 2019 are free"
+fi
+
 # dependency checks
 header "checking dependencies"
 

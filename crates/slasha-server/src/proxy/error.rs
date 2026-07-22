@@ -14,6 +14,11 @@ pub enum ProxyError {
     #[error("Caddy error: {0}")]
     Caddy(String),
 
+    #[error(
+        "host port {0} is already in use by another process; slasha needs ports 80, 443 and 2019 free for its Caddy proxy (find the process with `sudo ss -ltnp | grep :{0}`)"
+    )]
+    PortConflict(u16),
+
     #[error("Timeout: {0}")]
     Timeout(String),
 }
