@@ -174,7 +174,7 @@ async fn wait_for_admin_api() -> ProxyResult<()> {
         sleep(Duration::from_millis(500)).await;
     }
 
-    Err(ProxyError::Timeout(
-        "Caddy admin API did not become ready within 10s".into(),
-    ))
+    Err(ProxyError::Timeout(format!(
+        "Caddy admin API did not become ready within 10s — check `docker logs {PROXY_CONTAINER_NAME}`"
+    )))
 }
