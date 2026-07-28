@@ -64,6 +64,36 @@ impl NodeConnectionManager {
         Ok(key_path)
     }
 
+    /// Constructs `DOCKER_HOST` and `SSH_COMMAND` environment variables for executing `docker` CLI commands over SSH against a remote cluster [`Node`].
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - Target remote cluster node ([`Node`]).
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing `(DOCKER_HOST, SSH_COMMAND)` environment variable strings.
+    pub fn get_docker_ssh_env(&self, node: &Node) -> anyhow::Result<(String, String)> {
+        let key_path = self.get_key_path(node)?;
+        let host = node.host.as_deref().unwrap_or("");
+        let user = node.user.as_deref().unwrap_or("root");
+        let port = node.port.unwrap_or(22);
+
+        let known_hosts_file = self.known_hosts_path();
+        let config_file = self.ssh_config_path()?;
+
+        let docker_host = format!("ssh://{user}@{host}:{port}");
+        let ssh_cmd = format!(
+            "ssh -i {} -p {} -F {} -o UserKnownHostsFile={} -o StrictHostKeyChecking=accept-new -o BatchMode=yes",
+            key_path.display(),
+            port,
+            config_file.display(),
+            known_hosts_file.display()
+        );
+
+        Ok((docker_host, ssh_cmd))
+    }
+
     pub async fn probe_ssh(&self, node: &Node) -> anyhow::Result<()> {
         let output = self.run_ssh_script(node, "echo ok").await?;
 
