@@ -1,11 +1,6 @@
 use std::{path::Path, process::Stdio};
 
-use bollard::{
-    Docker, body_stream,
-    query_parameters::{BuildImageOptionsBuilder, BuilderVersion},
-};
 use bytes::Bytes;
-use futures_util::{StreamExt, stream};
 use slasha_db::{app::App, deployment::Deployment};
 use tempfile::TempDir;
 use tokio::{
@@ -18,54 +13,50 @@ use crate::{
     logs::LogHandle,
 };
 
-/// Builds a Docker image for a deployment using Dockerfile instructions.
+/// Builds a Docker image for a deployment using Dockerfile instructions via the Docker CLI.
 ///
 /// # Arguments
 ///
-/// * `docker_client` - Docker API client ([`Docker`]).
 /// * `log` - Log handle for output streaming ([`LogHandle`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
+/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote cluster node build execution.
 pub async fn build_docker(
-    docker_client: &Docker,
     log: &LogHandle,
     app: &App,
     deployment: &Deployment,
+    ssh_opts: Option<(&str, &str)>,
 ) -> DockerResult<()> {
-    let repo_path = Path::new(&app.repo_path);
-    let image_tag = image_tag(&app.slug, &deployment.id);
+    let (tmp, image_tag) = prepare_build_context(log, app, deployment).await?;
+    let dockerfile_path = tmp.path().join("Dockerfile");
 
-    let tar_bytes = build_git_tar(repo_path, &deployment.commit_sha).await?;
-
-    build_image_from_tar(docker_client, log, &image_tag, tar_bytes).await
+    build_image_cli(
+        log,
+        &image_tag,
+        &dockerfile_path,
+        tmp.path(),
+        ssh_opts,
+        None,
+    )
+    .await
 }
 
-/// Builds a Docker image using the Railpack buildpack engine.
+/// Builds a Docker image using the Railpack buildpack engine via the Docker CLI.
 ///
 /// # Arguments
 ///
-/// * `docker_client` - Docker API client ([`Docker`]).
 /// * `log` - Log handle for output streaming ([`LogHandle`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
+/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote cluster node build execution.
 pub async fn build_railpack(
-    docker_client: &Docker,
     log: &LogHandle,
     app: &App,
     deployment: &Deployment,
+    ssh_opts: Option<(&str, &str)>,
 ) -> DockerResult<()> {
-    let repo_path = Path::new(&app.repo_path);
-    let commit_sha = &deployment.commit_sha;
-    let image_tag = image_tag(&app.slug, &deployment.id);
-
-    let tmp = TempDir::new()?;
+    let (tmp, image_tag) = prepare_build_context(log, app, deployment).await?;
     let tmp_path = tmp.path();
-
-    log.send(format!("Checking out commit {} to temp dir", commit_sha))
-        .await?;
-
-    let source_tar = build_git_tar(repo_path, commit_sha).await?;
-    tar_to_directory(source_tar, tmp_path).await?;
 
     let plan_path = tmp_path.join("railpack-plan.json");
     let info_path = tmp_path.join("railpack-info.json");
@@ -86,23 +77,52 @@ pub async fn build_railpack(
 
     stream_command_output(prepare_child, log, "railpack prepare").await?;
 
-    let plan_content = tokio::fs::read_to_string(&plan_path).await?;
-    let dockerfile_content = format!(
-        "# syntax=ghcr.io/railwayapp/railpack-frontend\n{}",
-        plan_content
-    );
-
-    tokio::fs::write(tmp_path.join("Dockerfile"), dockerfile_content).await?;
-
-    let _ = tokio::fs::remove_file(&plan_path).await;
     let _ = tokio::fs::remove_file(&info_path).await;
 
     log.send("Prepare complete, starting BuildKit build on node…")
         .await?;
 
-    let tar_bytes = directory_to_tar(tmp_path).await?;
+    build_image_cli(
+        log,
+        &image_tag,
+        &plan_path,
+        tmp_path,
+        ssh_opts,
+        Some(&[("BUILDKIT_SYNTAX", "ghcr.io/railwayapp/railpack-frontend")]),
+    )
+    .await
+}
 
-    build_image_from_tar(docker_client, log, &image_tag, tar_bytes).await
+/// Prepares a temporary directory containing the archived repository files at the target commit SHA.
+///
+/// # Arguments
+///
+/// * `log` - Log handle for output streaming ([`LogHandle`]).
+/// * `app` - Target application model ([`App`]).
+/// * `deployment` - Target deployment model ([`Deployment`]).
+///
+/// # Returns
+///
+/// A tuple containing the temporary working directory ([`TempDir`]) and calculated image tag string.
+async fn prepare_build_context(
+    log: &LogHandle,
+    app: &App,
+    deployment: &Deployment,
+) -> DockerResult<(TempDir, String)> {
+    let repo_path = Path::new(&app.repo_path);
+    let commit_sha = &deployment.commit_sha;
+    let tag = image_tag(&app.slug, &deployment.id);
+
+    let tmp = TempDir::new()?;
+    let tmp_path = tmp.path();
+
+    log.send(format!("Checking out commit {} to temp dir", commit_sha))
+        .await?;
+
+    let source_tar = build_git_tar(repo_path, commit_sha).await?;
+    tar_to_directory(source_tar, tmp_path).await?;
+
+    Ok((tmp, tag))
 }
 
 /// Creates a tar archive of a repository at a specific Git commit SHA.
@@ -160,30 +180,6 @@ async fn tar_to_directory(tar_bytes: Bytes, dest: &Path) -> DockerResult<()> {
     Ok(())
 }
 
-/// Packs a directory into a tar archive byte stream.
-///
-/// # Arguments
-///
-/// * `dir` - Source directory path ([`Path`]).
-///
-/// # Returns
-///
-/// A [`DockerResult`] containing the packed tar archive bytes ([`Bytes`]).
-async fn directory_to_tar(dir: &Path) -> DockerResult<Bytes> {
-    let out = TokioCommand::new("tar")
-        .args(["-cf", "-", "."])
-        .current_dir(dir)
-        .output()
-        .await?;
-
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        return Err(DockerError::GitArchiveFailed(stderr));
-    }
-
-    Ok(Bytes::from(out.stdout))
-}
-
 /// Streams stdout and stderr lines from a child process to a log handle.
 ///
 /// # Arguments
@@ -226,58 +222,55 @@ async fn stream_command_output(
     Ok(())
 }
 
-/// Builds a Docker image from a tar archive context using BuildKit.
+/// Builds a Docker image by executing the `docker buildx build` CLI process.
 ///
 /// # Arguments
 ///
-/// * `docker_client` - Docker API client ([`Docker`]).
-/// * `log` - Log handle for build output streaming ([`LogHandle`]).
+/// * `log` - Log handle for output streaming ([`LogHandle`]).
 /// * `image_tag` - Target image repository tag string.
-/// * `tar_bytes` - Tar archive context bytes ([`Bytes`]).
-async fn build_image_from_tar(
-    docker_client: &Docker,
+/// * `build_file` - Path to the Dockerfile or build specification file ([`Path`]).
+/// * `context_dir` - Path to the build context directory ([`Path`]).
+/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote cluster node build execution.
+/// * `build_args` - Optional slice of key-value build argument pairs.
+async fn build_image_cli(
     log: &LogHandle,
     image_tag: &str,
-    tar_bytes: Bytes,
+    build_file: &Path,
+    context_dir: &Path,
+    ssh_opts: Option<(&str, &str)>,
+    build_args: Option<&[(&str, &str)]>,
 ) -> DockerResult<()> {
-    let tar_body_stream = body_stream(stream::once(async move { tar_bytes }));
+    let mut cmd = TokioCommand::new("docker");
 
-    let session_id = uuid::Uuid::new_v4().to_string();
-    let build_opts = BuildImageOptionsBuilder::new()
-        .t(image_tag)
-        .rm(true)
-        .forcerm(true)
-        .version(BuilderVersion::BuilderBuildKit)
-        .session(&session_id)
-        .build();
+    if let Some((docker_host, ssh_command)) = ssh_opts {
+        cmd.env("DOCKER_HOST", docker_host);
+        cmd.env("SSH_COMMAND", ssh_command);
+    }
 
-    let mut build_stream = docker_client.build_image(build_opts, None, Some(tar_body_stream));
+    cmd.arg("buildx")
+        .arg("build")
+        .arg("--progress")
+        .arg("plain")
+        .arg("-t")
+        .arg(image_tag)
+        .arg("-f")
+        .arg(build_file);
 
-    while let Some(item) = build_stream.next().await {
-        match item {
-            Ok(info) => {
-                if let Some(line) = info.stream {
-                    let line = line.trim_end_matches('\n').to_string();
-                    if !line.is_empty() {
-                        log.send(line).await?;
-                    }
-                }
-
-                if let Some(detail) = info.error_detail
-                    && let Some(msg_text) = detail.message
-                {
-                    let msg = msg_text.trim().to_string();
-                    log.send(format!("Build error: {}", msg)).await?;
-                    return Err(DockerError::BuildFailed(msg));
-                }
-            }
-            Err(e) => {
-                let msg = format!("Docker error during build: {}", e);
-                log.send(msg).await?;
-                return Err(e.into());
-            }
+    if let Some(args) = build_args {
+        for (k, v) in args {
+            cmd.arg("--build-arg").arg(format!("{k}={v}"));
         }
     }
+
+    cmd.arg(context_dir);
+
+    let child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+
+    stream_command_output(child, log, "docker buildx build").await?;
 
     log.send(format!("Image built and tagged as {}", image_tag))
         .await?;

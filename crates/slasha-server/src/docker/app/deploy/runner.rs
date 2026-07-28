@@ -4,7 +4,10 @@ use slasha_db::{
     deployment::{Deployment, DeploymentStatus},
     models::app_scale::{AppScale, ProcessType},
     node::LOCAL_NODE_ID,
-    repos::{app_backup::AppBackupRepo, app_scale::AppScaleRepo, deployment::DeploymentRepo},
+    repos::{
+        app_backup::AppBackupRepo, app_scale::AppScaleRepo, deployment::DeploymentRepo,
+        node::NodeRepo,
+    },
 };
 
 use super::{
@@ -250,24 +253,30 @@ impl<'a> DeploymentRunner<'a> {
                             ))
                             .await?;
 
+                        let ssh_opts = if self.app.node_id != LOCAL_NODE_ID {
+                            let node =
+                                NodeRepo::get(&self.state.storage.db_pool, &self.app.node_id)
+                                    .await?;
+
+                            let (host, ssh_cmd) = self
+                                .state
+                                .clients
+                                .node_connection_manager
+                                .get_docker_ssh_env(&node)?;
+
+                            Some((host, ssh_cmd))
+                        } else {
+                            None
+                        };
+
+                        let ssh_ref = ssh_opts.as_ref().map(|(h, s)| (h.as_str(), s.as_str()));
+
                         match &self.context.strategy {
                             BuildStrategy::Dockerfile { .. } => {
-                                build_docker(
-                                    self.docker_client,
-                                    self.log,
-                                    self.app,
-                                    self.deployment,
-                                )
-                                .await?
+                                build_docker(self.log, self.app, self.deployment, ssh_ref).await?
                             }
                             BuildStrategy::Railpack => {
-                                build_railpack(
-                                    self.docker_client,
-                                    self.log,
-                                    self.app,
-                                    self.deployment,
-                                )
-                                .await?
+                                build_railpack(self.log, self.app, self.deployment, ssh_ref).await?
                             }
                         }
                     }
