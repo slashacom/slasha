@@ -10,12 +10,12 @@ use serde::{Deserialize, Serialize};
 use slasha_db::{
     app_backup::{AppBackup, NewAppBackup},
     models::app_scale::ProcessType,
-    repos::app_backup::AppBackupRepo,
+    repos::{app_backup::AppBackupRepo, node::NodeRepo},
 };
 
 use crate::{
     AppState, HttpError, HttpResult,
-    docker::deployment::{container::is_web_running, litestream},
+    docker::app::{litestream, process::is_web_running},
     extractors::{ValidatedJson, app::ActiveApp},
     routing::api::{
         deserialize::{trim_optional_string, trim_string},
@@ -227,18 +227,19 @@ impl BackupStatus {
 }
 
 async fn backup_status(
-    State(storage): State<Storage>,
-    ActiveApp {
-        app, docker_client, ..
-    }: ActiveApp,
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
+    let backup = AppBackupRepo::get(&state.storage.db_pool, &app.id).await?;
 
     let Some(backup) = backup else {
         return Ok(Json(
             serde_json::json!({ "status": BackupStatus::disabled() }),
         ));
     };
+
+    let node = NodeRepo::get(&state.storage.db_pool, &app.node_id).await?;
+    let docker_client = state.clients.docker_registry.get_client(&node)?;
 
     let web_running = is_web_running(&docker_client, &app.id)
         .await
@@ -258,12 +259,10 @@ async fn backup_status(
 }
 
 async fn refresh_status(
-    State(storage): State<Storage>,
-    ActiveApp {
-        app, docker_client, ..
-    }: ActiveApp,
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
+    let backup = AppBackupRepo::get(&state.storage.db_pool, &app.id).await?;
 
     let Some(backup) = backup.filter(|b| b.enabled) else {
         return Err(HttpError::bad_request(
@@ -271,12 +270,15 @@ async fn refresh_status(
         ));
     };
 
+    let node = NodeRepo::get(&state.storage.db_pool, &app.node_id).await?;
+    let docker_client = state.clients.docker_registry.get_client(&node)?;
+
     let probe = litestream::probe_replica(&docker_client, &backup)
         .await
         .map_err(|e| HttpError::internal(anyhow::anyhow!("Failed to probe replica: {e}")))?;
 
     AppBackupRepo::set_health(
-        &storage.db_pool,
+        &state.storage.db_pool,
         &app.id,
         Utc::now().naive_utc(),
         probe.reachable,

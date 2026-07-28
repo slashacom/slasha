@@ -1,40 +1,43 @@
 use futures_util::future::join_all;
 use slasha_db::{
-    DbPool,
-    deployment::DeploymentStatus,
+    app::App,
+    deployment::{Deployment, DeploymentStatus},
+    models::app_scale::ProcessStatus,
     repos::{
-        app::AppRepo, app_scale::AppScaleRepo, deployment::DeploymentRepo, node::NodeRepo,
-        service::ServiceRepo,
+        app_scale::AppScaleRepo, deployment::DeploymentRepo, node::NodeRepo, service::ServiceRepo,
     },
-    service::ServiceStatus,
+    service::{Service, ServiceStatus},
 };
 
 use super::{
-    deployment::{ScaleDeps, list_deployment_processes, scale_deployment_process},
+    app::{process::list_deployment_processes, scale::scale_deployment_process},
     naming::service_container_name,
+    utils,
 };
 use crate::{
-    docker::DockerRegistry,
     logs::{LogKey, stream_container_logs},
-    state::Runtime,
+    state::AppState,
 };
 
-pub async fn startup_container_sync(
-    docker_registry: &DockerRegistry,
-    db_pool: &DbPool,
-    runtime: &Runtime,
-) -> anyhow::Result<()> {
-    let nodes = NodeRepo::list(db_pool).await?;
+/// Reconciles container states across all registered cluster nodes at server startup.
+///
+/// # Arguments
+///
+/// * `state` - Application state holding database and runtime handles ([`AppState`]).
+///
+/// # Returns
+///
+/// An [`anyhow::Result`] indicating overall synchronization success.
+pub async fn startup_container_sync(state: &AppState) -> anyhow::Result<()> {
+    let nodes = NodeRepo::list(&state.storage.db_pool).await?;
 
     let mut futures = Vec::new();
 
     for node in nodes {
-        let docker_registry = docker_registry.clone();
-        let db_pool = db_pool.clone();
-        let runtime = runtime.clone();
+        let state = state.clone();
 
         futures.push(async move {
-            let docker_client = match docker_registry.get_client(&node) {
+            let docker_client = match state.clients.docker_registry.get_client(&node) {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!(node_id = %node.id, error = ?e, "Failed to connect to node during startup sync");
@@ -42,7 +45,7 @@ pub async fn startup_container_sync(
                 }
             };
 
-            if let Err(e) = sync_node(&docker_client, &node.id, &db_pool, &runtime).await {
+            if let Err(e) = sync_node(&state, &docker_client, &node.id).await {
                 tracing::error!(node_id = %node.id, error = ?e, "Node sync failed");
             }
         });
@@ -53,116 +56,197 @@ pub async fn startup_container_sync(
     Ok(())
 }
 
+/// Reconciles deployments and services on a single cluster node.
+///
+/// # Arguments
+///
+/// * `state` - Application state holding database and runtime handles ([`AppState`]).
+/// * `docker_client` - Docker API client for the node ([`bollard::Docker`]).
+/// * `node_id` - Target node ID string.
+///
+/// # Returns
+///
+/// An [`anyhow::Result`] indicating single node synchronization success.
 async fn sync_node(
+    state: &AppState,
     docker_client: &bollard::Docker,
     node_id: &str,
-    db_pool: &DbPool,
-    runtime: &Runtime,
 ) -> anyhow::Result<()> {
-    let all_deployments = DeploymentRepo::list_non_terminal(db_pool).await?;
-    let all_services = ServiceRepo::list_non_terminal(db_pool).await?;
+    let db_pool = &state.storage.db_pool;
+    let node_deployments = DeploymentRepo::list_for_node(db_pool, node_id).await?;
+    let node_services = ServiceRepo::list_for_node(db_pool, node_id).await?;
 
-    let mut node_deployments = Vec::new();
-    for dep in all_deployments {
-        let app = AppRepo::find_by_id(db_pool, &dep.app_id).await?;
-        if app.node_id == node_id {
-            node_deployments.push((app, dep));
-        }
+    for (app, service) in node_services {
+        sync_service(state, docker_client, &app, &service).await;
     }
 
-    let mut node_services = Vec::new();
-    for (svc, app_slug) in all_services {
-        let app = AppRepo::find_by_slug(db_pool, &app_slug).await?;
-        if app.node_id == node_id {
-            node_services.push((app, svc));
-        }
-    }
-
-    // reconcile Services
-    for (app, svc) in node_services {
-        let name = service_container_name(&svc.id);
-
-        if svc.status == ServiceStatus::Provisioning {
-            if let Err(e) = docker_client
-                .remove_container(
-                    &name,
-                    Some(
-                        bollard::query_parameters::RemoveContainerOptionsBuilder::new()
-                            .force(true)
-                            .build(),
-                    ),
-                )
-                .await
-            {
-                tracing::warn!(container = %name, error = ?e, "Failed to remove service container");
-            }
-            ServiceRepo::update_status(db_pool, &svc.id, ServiceStatus::Failed).await?;
-        } else if svc.status == ServiceStatus::Running {
-            match docker_client.inspect_container(&name, None).await {
-                Ok(info) => {
-                    if info.state.and_then(|s| s.running) != Some(true) {
-                        ServiceRepo::update_status(db_pool, &svc.id, ServiceStatus::Stopped)
-                            .await?;
-                    } else {
-                        let log_key = LogKey::Service {
-                            app_slug: app.slug.clone(),
-                            service_name: svc.name,
-                        };
-                        let log = runtime.log_manager.get_logger(&log_key).await?;
-                        stream_container_logs(docker_client.clone(), log.clone(), name, None);
-                    }
-                }
-                Err(_) => {
-                    ServiceRepo::update_status(db_pool, &svc.id, ServiceStatus::Failed).await?;
-                }
-            }
-        }
-    }
-
-    // reconcile Deployments
     for (app, deployment) in node_deployments {
-        let app_scales = AppScaleRepo::list_for_app(db_pool, &app.id).await?;
-
-        let log_key = LogKey::Deployment {
-            app_slug: app.slug.clone(),
-            deployment_id: deployment.id.clone(),
-        };
-        let log = runtime.log_manager.get_logger(&log_key).await?;
-
-        if deployment.status == DeploymentStatus::Running {
-            for scale in app_scales {
-                scale_deployment_process(
-                    ScaleDeps {
-                        docker_client,
-                        db_pool,
-                        proxy_sync: &runtime.proxy_sync_trigger,
-                        log: &log,
-                    },
-                    &app,
-                    &deployment,
-                    scale.process_type,
-                    scale.desired as u32,
-                    runtime.get_scaling_lock(&deployment.id),
-                )
-                .await?;
-            }
-
-            let containers = list_deployment_processes(docker_client, &deployment.id).await?;
-            for container in containers {
-                let prefix = format!(
-                    "[{}.{}]",
-                    container.process_type.to_string().to_lowercase(),
-                    container.instance_index
-                );
-                stream_container_logs(
-                    docker_client.clone(),
-                    log.clone(),
-                    container.name,
-                    Some(prefix),
-                );
-            }
-        }
+        sync_deployment(state, docker_client, &app, &deployment).await;
     }
 
     Ok(())
+}
+
+/// Reconciles state for a single managed database or service container.
+///
+/// # Arguments
+///
+/// * `state` - Application state holding database and runtime handles ([`AppState`]).
+/// * `docker_client` - Docker API client for the target node ([`bollard::Docker`]).
+/// * `app` - Target application model ([`App`]).
+/// * `service` - Target service model ([`Service`]).
+async fn sync_service(
+    state: &AppState,
+    docker_client: &bollard::Docker,
+    app: &App,
+    service: &Service,
+) {
+    let db_pool = &state.storage.db_pool;
+    let name = service_container_name(&service.id);
+
+    match service.status {
+        ServiceStatus::Provisioning => {
+            if let Err(e) = utils::remove_container(docker_client, &name).await {
+                tracing::warn!(container = %name, error = ?e, "Failed to remove service container");
+            }
+            let _ = ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Failed).await;
+        }
+        ServiceStatus::Running => match docker_client.inspect_container(&name, None).await {
+            Ok(info) => {
+                if info.state.and_then(|s| s.running) != Some(true) {
+                    let _ =
+                        ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Stopped)
+                            .await;
+                } else if let Ok(log) = state
+                    .runtime
+                    .log_manager
+                    .get_logger(&LogKey::Service {
+                        app_slug: app.slug.clone(),
+                        service_name: service.name.clone(),
+                    })
+                    .await
+                {
+                    stream_container_logs(docker_client.clone(), log, name, None);
+                }
+            }
+            Err(_) => {
+                let _ =
+                    ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Failed).await;
+            }
+        },
+        ServiceStatus::Stopped | ServiceStatus::Failed => {
+            if let Ok(info) = docker_client.inspect_container(&name, None).await
+                && info.state.and_then(|s| s.running) == Some(true)
+            {
+                tracing::info!(
+                    container = %name,
+                    service_id = %service.id,
+                    status = %service.status,
+                    "stopping orphaned running container for stopped or failed service"
+                );
+                let _ = utils::stop_container(docker_client, &name, Some(10)).await;
+            }
+        }
+    }
+}
+
+/// Reconciles process containers for a single application deployment.
+///
+/// # Arguments
+///
+/// * `state` - Application state holding database and runtime handles ([`AppState`]).
+/// * `docker_client` - Docker API client for the target node ([`bollard::Docker`]).
+/// * `app` - Target application model ([`App`]).
+/// * `deployment` - Target deployment model ([`Deployment`]).
+async fn sync_deployment(
+    state: &AppState,
+    docker_client: &bollard::Docker,
+    app: &App,
+    deployment: &Deployment,
+) {
+    let db_pool = &state.storage.db_pool;
+
+    match deployment.status {
+        DeploymentStatus::Building | DeploymentStatus::Pending => {
+            tracing::warn!(
+                app_slug = %app.slug,
+                deployment_id = %deployment.id,
+                status = %deployment.status,
+                "failing orphaned deployment left building or pending across restart"
+            );
+
+            if let Ok(containers) = list_deployment_processes(docker_client, &deployment.id).await {
+                for container in containers {
+                    let _ = utils::remove_container(docker_client, &container.name).await;
+                }
+            }
+
+            let _ =
+                DeploymentRepo::update_status(db_pool, &deployment.id, DeploymentStatus::Failed)
+                    .await;
+        }
+        DeploymentStatus::Running => {
+            if let Ok(app_scales) = AppScaleRepo::list_for_app(db_pool, &app.id).await {
+                for scale in app_scales {
+                    if let Err(e) = scale_deployment_process(
+                        state,
+                        app,
+                        deployment,
+                        scale.process_type,
+                        scale.desired as u32,
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            app_slug = %app.slug,
+                            deployment_id = %deployment.id,
+                            error = ?e,
+                            "failed to scale deployment process during startup sync"
+                        );
+                    }
+                }
+            }
+
+            let log_key = LogKey::Deployment {
+                app_slug: app.slug.clone(),
+                deployment_id: deployment.id.clone(),
+            };
+
+            if let Ok(log) = state.runtime.log_manager.get_logger(&log_key).await
+                && let Ok(containers) =
+                    list_deployment_processes(docker_client, &deployment.id).await
+            {
+                for container in containers {
+                    let prefix = format!(
+                        "[{}.{}]",
+                        container.process_type.to_string().to_lowercase(),
+                        container.instance_index
+                    );
+                    stream_container_logs(
+                        docker_client.clone(),
+                        log.clone(),
+                        container.name,
+                        Some(prefix),
+                    );
+                }
+            }
+        }
+        DeploymentStatus::Stopped | DeploymentStatus::Failed => {
+            if let Ok(containers) = list_deployment_processes(docker_client, &deployment.id).await {
+                for container in containers {
+                    if matches!(container.status, ProcessStatus::Running) {
+                        tracing::info!(
+                            container = %container.name,
+                            app_slug = %app.slug,
+                            deployment_id = %deployment.id,
+                            status = %deployment.status,
+                            "stopping orphaned running container for stopped or failed deployment"
+                        );
+                        let _ =
+                            utils::stop_container(docker_client, &container.name, Some(10)).await;
+                    }
+                }
+            }
+        }
+    }
 }

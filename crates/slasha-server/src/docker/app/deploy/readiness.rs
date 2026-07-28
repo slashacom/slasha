@@ -44,6 +44,15 @@ impl Default for ReadinessConfig {
 }
 
 impl ReadinessConfig {
+    /// Creates a [`ReadinessConfig`] by parsing healthcheck parameters from an environment map.
+    ///
+    /// # Arguments
+    ///
+    /// * `env_map` - Environment variables map.
+    ///
+    /// # Returns
+    ///
+    /// A [`ReadinessConfig`] instance.
     pub fn from_env_map(env_map: &HashMap<String, String>) -> Self {
         let mut config = Self::default();
 
@@ -116,11 +125,22 @@ fn status_indicates_ready(status: u16, explicit_path: bool) -> bool {
         return (200..400).contains(&status);
     }
 
-    // with the default "/" path a 4xx still proves the HTTP server is up and
-    // serving
     (200..500).contains(&status)
 }
 
+/// Performs an HTTP readiness check against a target address.
+///
+/// # Arguments
+///
+/// * `client` - HTTP client instance ([`reqwest::Client`]).
+/// * `docker_client` - Docker API client ([`Docker`]).
+/// * `is_local` - Whether the target container is on the local node.
+/// * `addr` - Target socket address ([`SocketAddr`]).
+/// * `config` - Readiness probe configuration ([`ReadinessConfig`]).
+///
+/// # Returns
+///
+/// An [`Attempt`] status indicating readiness.
 pub async fn attempt_http(
     client: &reqwest::Client,
     docker_client: &Docker,
@@ -232,6 +252,16 @@ pub async fn attempt_http(
     }
 }
 
+/// Runs a polling loop executing readiness probes until a container becomes ready or times out.
+///
+/// # Arguments
+///
+/// * `config` - Readiness probe configuration ([`ReadinessConfig`]).
+/// * `round` - Async closure returning a [`Round`] observation.
+///
+/// # Returns
+///
+/// A [`ReadinessOutcome`] indicating the final state.
 pub async fn probe_loop<F, Fut>(config: &ReadinessConfig, mut round: F) -> ReadinessOutcome
 where
     F: FnMut() -> Fut,
@@ -292,6 +322,19 @@ where
     }
 }
 
+/// Polls a web container until it passes HTTP readiness probes or times out.
+///
+/// # Arguments
+///
+/// * `docker_client` - Docker API client ([`Docker`]).
+/// * `container_name` - Target web process container name.
+/// * `container_port` - Exposure HTTP port.
+/// * `config` - Readiness check configuration ([`ReadinessConfig`]).
+/// * `is_local` - Whether executing on the local host node.
+///
+/// # Returns
+///
+/// A [`ReadinessOutcome`] representing the result.
 pub async fn wait_for_web_ready(
     docker_client: &Docker,
     container_name: &str,
@@ -319,6 +362,20 @@ pub async fn wait_for_web_ready(
     .await
 }
 
+/// Inspects container status and performs a readiness probe if running.
+///
+/// # Arguments
+///
+/// * `docker_client` - Docker API client ([`Docker`]).
+/// * `client` - HTTP client instance ([`reqwest::Client`]).
+/// * `container_name` - Target container name.
+/// * `container_port` - Exposure HTTP port.
+/// * `config` - Readiness check configuration ([`ReadinessConfig`]).
+/// * `is_local` - Whether executing on the local host node.
+///
+/// # Returns
+///
+/// A [`Round`] containing state and probe attempt results.
 async fn observe_container(
     docker_client: &Docker,
     client: &reqwest::Client,
@@ -365,7 +422,7 @@ async fn observe_container(
         .network_settings
         .as_ref()
         .and_then(|s| s.networks.as_ref())
-        .and_then(|n| n.get(PROXY_NETWORK_NAME))
+        .and_then(|net| net.get(PROXY_NETWORK_NAME))
         .and_then(|net| net.ip_address.as_deref())
         .filter(|ip| !ip.is_empty())
         .and_then(|ip| ip.parse().ok());

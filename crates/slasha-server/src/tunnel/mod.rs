@@ -12,7 +12,10 @@ use futures_util::{SinkExt, StreamExt};
 use guard::TunnelGuard;
 use slasha_db::{DbPool, repos::service::ServiceRepo, service::Service};
 
-use crate::{docker::service_container_name, tunnel::error::TunnelResult};
+use crate::{
+    docker::{service::ServiceKindDockerExt, service_container_name},
+    tunnel::error::TunnelResult,
+};
 
 pub async fn close_with_reason(socket: WebSocket, reason: &str) {
     let (mut tx, _) = socket.split();

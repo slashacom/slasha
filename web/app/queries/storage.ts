@@ -15,8 +15,7 @@ export type BackupConfig = {
 
 export type VolumeInfo = {
   path: string;
-  managed: boolean;
-  exists: boolean;
+  is_managed: boolean;
   size_bytes: number | null;
 };
 

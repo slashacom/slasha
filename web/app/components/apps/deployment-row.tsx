@@ -8,10 +8,12 @@ import {
   RotateCcw,
   Square,
   Trash2,
+  XCircle,
 } from 'lucide-react';
 import type { Deployment } from '~/models/deployment';
 import {
   useStopDeployment,
+  useCancelDeployment,
   useDeleteDeployment,
   useRestartDeployment,
   useRedeployDeployment,
@@ -41,12 +43,14 @@ export function DeploymentRow(props: DeploymentRowProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const stopDeployment = useStopDeployment();
+  const cancelDeployment = useCancelDeployment();
   const deleteDeployment = useDeleteDeployment();
   const restartDeployment = useRestartDeployment();
   const redeployDeployment = useRedeployDeployment();
   const rollbackDeployment = useRollbackDeployment();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
 
   const invalidate = () => {
@@ -66,6 +70,20 @@ export function DeploymentRow(props: DeploymentRowProps) {
     } catch {}
   };
 
+  const handleCancel = async () => {
+    try {
+      await cancelDeployment.mutateAsync({
+        appSlug,
+        deploymentId: deployment.id,
+      });
+      invalidate();
+      setShowCancelConfirm(false);
+      toast.success('Deployment cancelled');
+    } catch (e) {
+      toast.error('Failed to cancel deployment: ' + e);
+    }
+  };
+
   const handleRestart = async () => {
     try {
       await restartDeployment.mutateAsync({
@@ -73,9 +91,9 @@ export function DeploymentRow(props: DeploymentRowProps) {
         deploymentId: deployment.id,
       });
       invalidate();
-      toast.success('Container started');
+      toast.success('App restarted');
     } catch (e) {
-      toast.error('Failed to start container: ' + e);
+      toast.error('Failed to restart app: ' + e);
     }
   };
 
@@ -120,8 +138,9 @@ export function DeploymentRow(props: DeploymentRowProps) {
     }
   };
 
-  const canStop =
-    deployment.status === 'Running' || deployment.status === 'Building';
+  const canCancel =
+    deployment.status === 'Building' || deployment.status === 'Pending';
+  const canStop = deployment.status === 'Running';
   const canRestart =
     deployment.status === 'Running' || deployment.status === 'Stopped';
   const canRedeploy =
@@ -171,6 +190,12 @@ export function DeploymentRow(props: DeploymentRowProps) {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {canCancel ? (
+                <DropdownMenuItem onClick={() => setShowCancelConfirm(true)}>
+                  <XCircle className="size-3.5" />
+                  Cancel
+                </DropdownMenuItem>
+              ) : null}
               {canStop ? (
                 <DropdownMenuItem onClick={() => setShowStopConfirm(true)}>
                   <Square className="size-3.5" />
@@ -216,7 +241,7 @@ export function DeploymentRow(props: DeploymentRowProps) {
         open={showRollbackConfirm}
         onOpenChange={setShowRollbackConfirm}
         title="Rollback Deployment"
-        description={`Roll back to commit ${deployment.commit_sha.slice(0, 7)}? A new deployment will be created from its retained image.`}
+        description={`Roll back to commit ${deployment.commit_sha.slice(0, 7)}? A new deployment will be created.`}
         confirmLabel="Rollback"
         onConfirm={handleRollback}
       />
@@ -237,6 +262,15 @@ export function DeploymentRow(props: DeploymentRowProps) {
         description="This stops the running containers and takes the app offline until you restart or redeploy it."
         confirmLabel="Stop"
         onConfirm={handleStop}
+      />
+
+      <ConfirmationDialog
+        open={showCancelConfirm}
+        onOpenChange={setShowCancelConfirm}
+        title="Cancel Deployment"
+        description="This will interrupt the active build and cancel the deployment."
+        confirmLabel="Cancel Deployment"
+        onConfirm={handleCancel}
       />
     </>
   );

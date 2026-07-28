@@ -8,14 +8,12 @@ use slasha_db::{DbPool, DuckdbPool, repos::github_app_config::GithubAppConfigRep
 use tokio::sync::{Notify, RwLock};
 
 use crate::{
-    connections::GithubClient,
-    docker::DockerRegistry,
-    logs::LogManager,
-    node_connection_manager::NodeConnectionManager,
-    proxy::CaddyClient,
-    utils::{self},
+    connections::GithubClient, docker::DockerRegistry, logs::LogManager,
+    node_connection_manager::NodeConnectionManager, operations::OperationRegistry,
+    proxy::CaddyClient, utils,
 };
 
+/// Collection of shared external system clients and connections.
 #[derive(Clone)]
 pub struct Clients {
     pub node_connection_manager: Arc<NodeConnectionManager>,
@@ -25,6 +23,16 @@ pub struct Clients {
 }
 
 impl Clients {
+    /// Constructs a new [`Clients`] container holding connections and API clients.
+    ///
+    /// # Arguments
+    ///
+    /// * `github` - Optional pre-configured GitHub API client ([`GithubClient`]).
+    /// * `nodes_dir` - Directory path storing node SSH keys and configuration.
+    ///
+    /// # Returns
+    ///
+    /// A new [`Clients`] instance.
     pub fn new(github: Option<GithubClient>, nodes_dir: PathBuf) -> Self {
         let node_connection_manager = Arc::new(NodeConnectionManager::new(nodes_dir));
 
@@ -37,6 +45,7 @@ impl Clients {
     }
 }
 
+/// Persistent database connection pools and repository storage paths.
 #[derive(Clone)]
 pub struct Storage {
     pub db_pool: DbPool,
@@ -45,6 +54,17 @@ pub struct Storage {
 }
 
 impl Storage {
+    /// Initializes database connection pools and creates a [`Storage`] instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `db_path` - Path to the primary SQLite database file.
+    /// * `duckdb_path` - Path to the DuckDB metrics database file.
+    /// * `repos_dir` - Root directory where app source repositories are cloned.
+    ///
+    /// # Returns
+    ///
+    /// An [`anyhow::Result`] containing the initialized [`Storage`].
     pub fn new(
         db_path: &std::path::Path,
         duckdb_path: &std::path::Path,
@@ -68,43 +88,35 @@ impl Storage {
     }
 }
 
+/// In-memory runtime state.
 #[derive(Clone)]
 pub struct Runtime {
     pub log_manager: Arc<LogManager>,
     pub proxy_sync_trigger: Arc<Notify>,
-    pub scaling_locks: Arc<dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
-    pub connection_sync_locks: Arc<dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
-    pub deployment_tasks: Arc<dashmap::DashMap<String, tokio_util::sync::CancellationToken>>,
-    pub migrating_apps: Arc<dashmap::DashSet<String>>,
+    pub operations: OperationRegistry,
 }
 
 impl Runtime {
+    /// Constructs a new [`Runtime`] state instance holding log handles and operation registries.
+    ///
+    /// # Arguments
+    ///
+    /// * `logs_dir` - Path to directory where application logs are stored.
+    /// * `proxy_sync_trigger` - Shared notification trigger for proxy route sync ([`Notify`]).
+    ///
+    /// # Returns
+    ///
+    /// An [`anyhow::Result`] containing the initialized [`Runtime`].
     pub async fn new(logs_dir: &Path, proxy_sync_trigger: Arc<Notify>) -> anyhow::Result<Self> {
         Ok(Self {
             log_manager: Arc::new(LogManager::new(utils::ensure_dir(logs_dir))),
             proxy_sync_trigger,
-            scaling_locks: Arc::new(dashmap::DashMap::new()),
-            connection_sync_locks: Arc::new(dashmap::DashMap::new()),
-            deployment_tasks: Arc::new(dashmap::DashMap::new()),
-            migrating_apps: Arc::new(dashmap::DashSet::new()),
+            operations: OperationRegistry::new(),
         })
-    }
-
-    pub fn get_scaling_lock(&self, deployment_id: &str) -> Arc<tokio::sync::Mutex<()>> {
-        self.scaling_locks
-            .entry(deployment_id.to_string())
-            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
-            .clone()
-    }
-
-    pub fn get_connection_sync_lock(&self, app_id: &str) -> Arc<tokio::sync::Mutex<()>> {
-        self.connection_sync_locks
-            .entry(app_id.to_string())
-            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
-            .clone()
     }
 }
 
+/// Server execution environment mode.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Env {
     Development,
@@ -112,6 +124,15 @@ pub enum Env {
 }
 
 impl Env {
+    /// Parses an environment string or defaults to [`Env::Development`].
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - Environment string.
+    ///
+    /// # Returns
+    ///
+    /// An [`Env`] variant.
     pub fn from_str_or_default(s: &str) -> Self {
         match s {
             "production" => Env::Production,
@@ -119,11 +140,17 @@ impl Env {
         }
     }
 
+    /// Returns whether the environment is running in production mode.
+    ///
+    /// # Returns
+    ///
+    /// `true` if production mode, otherwise `false`.
     pub fn is_production(self) -> bool {
         matches!(self, Env::Production)
     }
 }
 
+/// Global configuration options parsed from system environment variables.
 #[derive(Clone)]
 pub struct Config {
     pub env: Env,
@@ -134,6 +161,19 @@ pub struct Config {
 }
 
 impl Config {
+    /// Creates a new [`Config`] instance from platform settings.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - Execution environment mode ([`Env`]).
+    /// * `jwt_secret` - JWT signing secret key string.
+    /// * `platform_domain` - Base platform domain string.
+    /// * `logs_dir` - Directory path for server logs.
+    /// * `port` - Listening HTTP port number (`u16`).
+    ///
+    /// # Returns
+    ///
+    /// A new [`Config`] instance.
     pub fn new(
         env: Env,
         jwt_secret: String,
@@ -151,6 +191,7 @@ impl Config {
     }
 }
 
+/// Top-level application state shared across all HTTP route handlers.
 #[derive(Clone)]
 pub struct AppState {
     pub clients: Clients,
@@ -160,6 +201,18 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Constructs a new [`AppState`] instance shared across HTTP handlers.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Global configuration ([`Config`]).
+    /// * `clients` - External clients container ([`Clients`]).
+    /// * `storage` - Database storage pools ([`Storage`]).
+    /// * `runtime` - Runtime state ([`Runtime`]).
+    ///
+    /// # Returns
+    ///
+    /// A new [`AppState`] instance.
     pub fn new(config: Config, clients: Clients, storage: Storage, runtime: Runtime) -> Self {
         Self {
             clients,
@@ -169,10 +222,20 @@ impl AppState {
         }
     }
 
+    /// Asynchronously retrieves the current GitHub client if initialized.
+    ///
+    /// # Returns
+    ///
+    /// Option containing a [`GithubClient`].
     pub async fn github_client(&self) -> Option<GithubClient> {
         self.clients.github.read().await.clone()
     }
 
+    /// Reloads the GitHub client configuration from the database repository.
+    ///
+    /// # Returns
+    ///
+    /// An [`anyhow::Result`] indicating reload status.
     pub async fn reload_github_client(&self) -> anyhow::Result<()> {
         let config = GithubAppConfigRepo::get(&self.storage.db_pool).await?;
         let client = config.as_ref().map(GithubClient::from_config).transpose()?;
@@ -180,6 +243,7 @@ impl AppState {
         Ok(())
     }
 
+    /// Clears the active GitHub client instance.
     pub async fn clear_github_client(&self) {
         *self.clients.github.write().await = None;
     }

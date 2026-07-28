@@ -22,7 +22,7 @@ function StatTile(props: StatTileProps) {
           {label}
         </span>
       </HStack>
-      <div className="mt-2 font-mono text-[22px] font-medium leading-none tracking-tight text-text">
+      <div className="mt-2 text-2xl font-semibold text-text tracking-tight">
         {value}
       </div>
       {fraction != null ? (

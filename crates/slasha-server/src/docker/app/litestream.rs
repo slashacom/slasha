@@ -2,23 +2,31 @@ use std::collections::HashMap;
 
 use bollard::{
     Docker,
-    models::{HostConfig, Mount, MountType, VolumeCreateRequest},
+    models::{HostConfig, Mount, MountType},
+    plugin::ContainerCreateBody,
     query_parameters::{
         CreateContainerOptions, CreateImageOptions, LogsOptionsBuilder,
-        RemoveContainerOptionsBuilder, StartContainerOptionsBuilder, WaitContainerOptions,
+        RemoveContainerOptionsBuilder, WaitContainerOptions,
     },
 };
 use futures_util::StreamExt;
 use slasha_db::app_backup::AppBackup;
 use uuid::Uuid;
 
+use crate::docker::utils;
+
 const CONFIG_PATH: &str = "/etc/litestream.yml";
 
+/// Mounting target directory in container for Litestream.
 pub const CONTAINER_MOUNT_DIR: &str = "/slasha";
+/// Target location path of Litestream binary in container.
 pub const CONTAINER_BINARY_PATH: &str = "/slasha/litestream";
+/// Target location path of SQLite3 binary in container.
 pub const CONTAINER_SQLITE_PATH: &str = "/slasha/sqlite3";
+/// Target location path of mc binary in container.
 pub const CONTAINER_MC_PATH: &str = "/slasha/mc";
 
+/// Name of the shared persistent volume holding Litestream files.
 pub const LITESTREAM_VOLUME: &str = "slasha-litestream";
 
 const LITESTREAM_VERSION: &str = "v0.3.13";
@@ -55,6 +63,16 @@ fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+/// Generates a [`LitestreamPlan`] detailing restoration and WAL journaling setup before launching the primary app process.
+///
+/// # Arguments
+///
+/// * `backup` - Application backup configuration ([`AppBackup`]).
+/// * `original_cmd` - Original process launch command string.
+///
+/// # Returns
+///
+/// A [`LitestreamPlan`] instance.
 pub fn plan(backup: &AppBackup, original_cmd: &str) -> LitestreamPlan {
     let bin = CONTAINER_BINARY_PATH;
     let sqlite = CONTAINER_SQLITE_PATH;
@@ -107,6 +125,11 @@ pub fn plan(backup: &AppBackup, original_cmd: &str) -> LitestreamPlan {
     LitestreamPlan { command, env }
 }
 
+/// Returns a read-only Docker [`Mount`] configuration for sharing Litestream binaries with app containers.
+///
+/// # Returns
+///
+/// A Docker [`Mount`] struct.
 pub fn binary_mount() -> Mount {
     Mount {
         typ: Some(MountType::VOLUME),
@@ -139,13 +162,17 @@ fn populate_script() -> String {
     )
 }
 
+/// Prepares and populates a persistent volume containing pre-compiled Litestream, mc, and SQLite3 binaries.
+///
+/// # Arguments
+///
+/// * `docker` - Docker API client ([`Docker`]).
+///
+/// # Returns
+///
+/// An [`anyhow::Result`] containing the volume name string.
 pub async fn ensure_litestream_volume(docker: &Docker) -> anyhow::Result<String> {
-    docker
-        .create_volume(VolumeCreateRequest {
-            name: Some(LITESTREAM_VOLUME.to_string()),
-            ..Default::default()
-        })
-        .await?;
+    utils::create_volume(docker, LITESTREAM_VOLUME, None).await?;
 
     let mut pull = docker.create_image(
         Some(CreateImageOptions {
@@ -166,7 +193,7 @@ pub async fn ensure_litestream_volume(docker: &Docker) -> anyhow::Result<String>
                 name: Some(container_name.clone()),
                 ..Default::default()
             }),
-            bollard::models::ContainerCreateBody {
+            ContainerCreateBody {
                 image: Some(HELPER_IMAGE.to_string()),
                 cmd: Some(vec!["sh".to_string(), "-c".to_string(), populate_script()]),
                 host_config: Some(HostConfig {
@@ -197,12 +224,7 @@ pub async fn ensure_litestream_volume(docker: &Docker) -> anyhow::Result<String>
 }
 
 async fn run_setup_container(docker: &Docker, container_name: &str) -> anyhow::Result<()> {
-    docker
-        .start_container(
-            container_name,
-            Some(StartContainerOptionsBuilder::new().build()),
-        )
-        .await?;
+    utils::start_container(docker, container_name).await?;
 
     let wait = docker
         .wait_container(
@@ -232,6 +254,16 @@ pub struct ReplicaProbe {
 
 const PROBE_OK_MARKER: &str = "SLASHA_REACHABLE";
 
+/// Probes the remote S3 replica bucket connectivity using minio client credentials.
+///
+/// # Arguments
+///
+/// * `docker` - Docker API client ([`Docker`]).
+/// * `backup` - Application backup configuration ([`AppBackup`]).
+///
+/// # Returns
+///
+/// An [`anyhow::Result`] containing a [`ReplicaProbe`].
 pub async fn probe_replica(docker: &Docker, backup: &AppBackup) -> anyhow::Result<ReplicaProbe> {
     ensure_litestream_volume(docker).await?;
 
@@ -240,7 +272,6 @@ pub async fn probe_replica(docker: &Docker, backup: &AppBackup) -> anyhow::Resul
     let bucket = shell_single_quote(&backup.bucket);
     let prefix = shell_single_quote(&replica_path(backup));
 
-    // credentials come from the environment; the secret is never in the script.
     let script = format!(
         "OUT=$({mc} alias set slasha {endpoint} \"${ACCESS_KEY_ENV}\" \"${SECRET_KEY_ENV}\" 2>&1 \
          && {mc} ls --recursive --json slasha/{bucket}/{prefix}/ 2>&1)\n\
@@ -274,6 +305,15 @@ pub async fn probe_replica(docker: &Docker, backup: &AppBackup) -> anyhow::Resul
     }
 }
 
+/// Parses minio client output to extract the most recent snapshot sync timestamp.
+///
+/// # Arguments
+///
+/// * `output` - JSON output text from the minio client.
+///
+/// # Returns
+///
+/// An optional [`NaiveDateTime`](chrono::NaiveDateTime).
 pub fn parse_last_modified(output: &str) -> Option<chrono::NaiveDateTime> {
     output
         .split("\"lastModified\":\"")
@@ -322,12 +362,7 @@ async fn run_capture_container(
 }
 
 async fn capture_container_output(docker: &Docker, container_name: &str) -> anyhow::Result<String> {
-    docker
-        .start_container(
-            container_name,
-            Some(StartContainerOptionsBuilder::new().build()),
-        )
-        .await?;
+    utils::start_container(docker, container_name).await?;
 
     docker
         .wait_container(

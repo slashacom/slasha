@@ -1,5 +1,6 @@
 use bollard::{
     Docker,
+    container::LogOutput,
     exec::{CreateExecOptions, StartExecOptions, StartExecResults},
     query_parameters::StatsOptionsBuilder,
 };
@@ -7,6 +8,7 @@ use futures_util::StreamExt;
 use serde::Serialize;
 use slasha_db::service::Service;
 
+use super::spec::ServiceKindDockerExt;
 use crate::{docker::naming::service_container_name, metrics::app::compute_cpu_percent};
 
 #[derive(Serialize)]
@@ -18,6 +20,16 @@ pub struct ServiceStats {
     pub disk_bytes: Option<i64>,
 }
 
+/// Fetches resource usage statistics for a database service container.
+///
+/// # Arguments
+///
+/// * `docker_client` - Docker API client ([`Docker`]).
+/// * `service` - Target database service model ([`Service`]).
+///
+/// # Returns
+///
+/// Option containing a [`ServiceStats`] struct.
 pub async fn get_service_stats(docker_client: &Docker, service: &Service) -> Option<ServiceStats> {
     let container_name = service_container_name(&service.id);
 
@@ -73,7 +85,16 @@ pub async fn get_service_stats(docker_client: &Docker, service: &Service) -> Opt
     })
 }
 
-// measure disk usage of volume using du -sk command
+/// Measures disk usage of a database volume via `du -sk` execution in the container.
+///
+/// # Arguments
+///
+/// * `docker` - Docker API client ([`Docker`]).
+/// * `service` - Target database service model ([`Service`]).
+///
+/// # Returns
+///
+/// Option containing disk usage in bytes (`i64`).
 async fn service_disk_bytes(docker: &Docker, service: &Service) -> Option<i64> {
     let container_name = service_container_name(&service.id);
     let mount = service.kind.volume_mount_path();
@@ -102,12 +123,11 @@ async fn service_disk_bytes(docker: &Docker, service: &Service) -> Option<i64> {
 
     let mut buf = String::new();
     while let Some(Ok(chunk)) = output.next().await {
-        if let bollard::container::LogOutput::StdOut { message } = chunk {
+        if let LogOutput::StdOut { message } = chunk {
             buf.push_str(&String::from_utf8_lossy(&message));
         }
     }
 
-    // `du -sk` prints "<kilobytes>\t<path>"; take the leading block count.
     let kilobytes: i64 = buf.split_whitespace().next()?.parse().ok()?;
     Some(kilobytes * 1024)
 }

@@ -10,6 +10,7 @@ struct NodeClient {
     docker: Docker,
 }
 
+/// Registry managing cached Docker API client connections across local and remote SSH nodes.
 #[derive(Clone)]
 pub struct DockerRegistry {
     node_connection_manager: Arc<NodeConnectionManager>,
@@ -17,6 +18,15 @@ pub struct DockerRegistry {
 }
 
 impl DockerRegistry {
+    /// Creates a new [`DockerRegistry`] and spawns a background task to evict dead SSH node connections.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_connection_manager` - Node connection manager handle ([`NodeConnectionManager`]).
+    ///
+    /// # Returns
+    ///
+    /// A new [`DockerRegistry`] instance.
     pub fn new(node_connection_manager: Arc<NodeConnectionManager>) -> Self {
         let registry = Self {
             node_connection_manager,
@@ -57,6 +67,11 @@ impl DockerRegistry {
         registry
     }
 
+    /// Returns a Docker API client connected via local socket defaults.
+    ///
+    /// # Returns
+    ///
+    /// An [`anyhow::Result`] containing the [`Docker`] client instance.
     pub fn get_local_client(&self) -> anyhow::Result<Docker> {
         if let Some(entry) = self.clients.get(LOCAL_NODE_ID) {
             return Ok(entry.docker.clone());
@@ -74,6 +89,15 @@ impl DockerRegistry {
         Ok(docker)
     }
 
+    /// Obtains or establishes a cached Docker API client connection for a cluster node.
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - Target node model ([`Node`]).
+    ///
+    /// # Returns
+    ///
+    /// An [`anyhow::Result`] containing the [`Docker`] client instance.
     pub fn get_client(&self, node: &Node) -> anyhow::Result<Docker> {
         if let Some(entry) = self.clients.get(&node.id) {
             return Ok(entry.docker.clone());
@@ -113,6 +137,11 @@ impl DockerRegistry {
         Ok(docker)
     }
 
+    /// Evicts a node's cached Docker client connection and removes its stored SSH keys.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_id` - Target node ID string.
     pub fn remove(&self, node_id: &str) {
         self.clients.remove(node_id);
         self.node_connection_manager.remove_key(node_id);

@@ -3,7 +3,10 @@ export type AppStatusTone =
   | 'deploying'
   | 'failed'
   | 'idle'
-  | 'migrating';
+  | 'migrating'
+  | 'scaling'
+  | 'syncing'
+  | 'purging';
 
 export type AppStatusView = {
   label: string;
@@ -11,7 +14,15 @@ export type AppStatusView = {
 };
 
 export function getAppStatusView(
-  status: 'idle' | 'deploying' | 'running' | 'failed' | 'migrating'
+  status:
+    | 'idle'
+    | 'deploying'
+    | 'running'
+    | 'failed'
+    | 'migrating'
+    | 'scaling'
+    | 'syncing'
+    | 'purging'
 ): AppStatusView {
   switch (status) {
     case 'running':
@@ -22,6 +33,12 @@ export function getAppStatusView(
       return { label: 'Failed', tone: 'failed' };
     case 'migrating':
       return { label: 'Migrating', tone: 'migrating' };
+    case 'scaling':
+      return { label: 'Scaling', tone: 'scaling' };
+    case 'syncing':
+      return { label: 'Syncing', tone: 'syncing' };
+    case 'purging':
+      return { label: 'Purging', tone: 'purging' };
     default:
       return { label: 'Idle', tone: 'idle' };
   }

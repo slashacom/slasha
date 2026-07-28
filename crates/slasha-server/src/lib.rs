@@ -11,6 +11,7 @@ pub mod logs;
 pub mod metrics;
 pub mod middleware;
 pub mod node_connection_manager;
+pub mod operations;
 pub mod proxy;
 
 pub mod routing;
@@ -148,12 +149,7 @@ pub async fn serve() -> anyhow::Result<()> {
 
     let state = AppState::new(config, clients, storage, runtime);
 
-    docker::sync::startup_container_sync(
-        &state.clients.docker_registry,
-        &state.storage.db_pool,
-        &state.runtime,
-    )
-    .await?;
+    docker::sync::startup_container_sync(&state).await?;
 
     state.runtime.proxy_sync_trigger.notify_one();
 

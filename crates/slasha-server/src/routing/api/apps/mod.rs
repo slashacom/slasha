@@ -6,7 +6,6 @@ mod env;
 mod files;
 mod management;
 mod metrics;
-mod service_env;
 mod services;
 mod volumes;
 
@@ -50,11 +49,11 @@ fn get_all_commits(repo_path: &str, branch_name: &str) -> anyhow::Result<Vec<Com
 
 async fn list_commits(
     State(state): State<AppState>,
-    ActiveApp { mut app, .. }: ActiveApp,
+    ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Local {
         let github = state.github_client().await;
-        sync_external_app(github.as_ref(), &state.storage, &state.runtime, &mut app)
+        sync_external_app(github.as_ref(), &state.storage, &state.runtime, &app)
             .await
             .map_err(|error| HttpError::bad_request(error.to_string()))?;
     }
@@ -79,5 +78,4 @@ pub fn router() -> Router<AppState> {
         .nest("/{slug}/services", services::router())
         .route("/{slug}/metrics", get(metrics::get_metrics))
         .route("/{slug}/metrics/latest", get(metrics::get_latest_metric))
-        .nest("/{slug}/services/{service_id}/env", service_env::router())
 }

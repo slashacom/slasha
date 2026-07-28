@@ -6,7 +6,7 @@ import { getServiceEnvVarsOptions } from '~/queries/services';
 import { Button } from '~/components/interface/button';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
-import { primaryEnvKey, serviceEnvReference } from '~/utils/service-env';
+import { serviceEnvReference } from '~/utils/service-env';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -74,10 +74,7 @@ export function ConnectModal(props: ConnectModalProps) {
   );
 
   const envKeys = Object.keys(envData?.env_vars ?? {}).sort();
-  const primaryKey = primaryEnvKey(envKeys);
-  const otherKeys = envKeys.filter((key) => key !== primaryKey);
-
-  const appExample = `${primaryKey}=${serviceEnvReference(service.name, primaryKey)}`;
+  const appExample = `DATABASE_URL=${serviceEnvReference(service.name, 'DATABASE_URL')}`;
   const proxyCommand = `slasha proxy --app ${appSlug} ${service.name}`;
 
   return (
@@ -116,15 +113,15 @@ export function ConnectModal(props: ConnectModalProps) {
               in the Settings tab.
             </p>
             <CopyBlock text={appExample} />
-            {otherKeys.length > 0 ? (
+            {envKeys.length > 0 ? (
               <p className="text-[11px] leading-5 text-text-tertiary">
-                Other variables:{' '}
-                {otherKeys.map((key, index) => (
+                Individual variables:{' '}
+                {envKeys.map((key, index) => (
                   <span key={key}>
                     <span className="font-mono text-text-secondary">
                       {serviceEnvReference(service.name, key)}
                     </span>
-                    {index < otherKeys.length - 1 ? ', ' : ''}
+                    {index < envKeys.length - 1 ? ', ' : ''}
                   </span>
                 ))}
               </p>

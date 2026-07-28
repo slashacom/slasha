@@ -9,16 +9,10 @@ use sha2::Sha256;
 use slasha_db::{
     app::AppSource,
     github_connection::ConnectionStatus,
-    repos::{
-        app::AppRepo, deployment::DeploymentRepo, github_connection::GithubConnectionRepo,
-        node::NodeRepo,
-    },
+    repos::{app::AppRepo, deployment::DeploymentRepo, github_connection::GithubConnectionRepo},
 };
 
-use crate::{
-    AppState, HttpError, HttpResult, connections::sync_github_app,
-    docker::deployment::trigger_deployment,
-};
+use crate::{AppState, HttpError, HttpResult, connections::sync_github_app, docker::AppDocker};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -201,38 +195,19 @@ async fn handle_push(state: AppState, payload: PushPayload) {
             continue;
         }
 
-        let node = match NodeRepo::get(&state.storage.db_pool, &app.node_id).await {
-            Ok(node) => node,
+        let app_docker = match AppDocker::new(state.clone(), app.clone()).await {
+            Ok(app_docker) => app_docker,
             Err(error) => {
-                tracing::warn!(error = %error, app_id = %app.id, "github auto-deploy failed: failed to load node");
+                tracing::warn!(error = %error, "github auto-deploy failed");
                 continue;
             }
         };
 
-        let docker_client = match state.clients.docker_registry.get_client(&node) {
-            Ok(client) => client,
-            Err(error) => {
-                tracing::warn!(error = %error, app_id = %app.id, "github auto-deploy failed: failed to get docker client");
-                continue;
-            }
-        };
-
-        match trigger_deployment(
-            docker_client,
-            state.storage.db_pool.clone(),
-            state.runtime.log_manager.clone(),
-            state.runtime.proxy_sync_trigger.clone(),
-            state.runtime.deployment_tasks.clone(),
-            app,
-            Some(payload.after.clone()),
-        )
-        .await
-        {
-            Ok(Some(deployment)) => tracing::info!(
+        match app_docker.deploy(Some(payload.after.clone())).await {
+            Ok(deployment) => tracing::info!(
                 deployment_id = %deployment.id,
                 "auto-deploy triggered from github push"
             ),
-            Ok(None) => tracing::info!("github auto-deploy skipped: build already in progress"),
             Err(error) => tracing::warn!(error = %error, "github auto-deploy failed"),
         }
     }

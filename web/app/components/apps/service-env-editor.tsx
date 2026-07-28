@@ -10,7 +10,7 @@ import {
   type SuggestionGroup,
 } from '~/components/apps/env-dotenv-editor';
 import { EnvEditor } from '~/components/apps/env-editor';
-import { primaryEnvKey, serviceEnvReference } from '~/utils/service-env';
+import { serviceEnvReference } from '~/utils/service-env';
 
 type ServiceEnvEditorProps = {
   appSlug: string;
@@ -45,7 +45,9 @@ export function ServiceEnvEditor(props: ServiceEnvEditorProps) {
         serviceId,
         vars,
       });
-      toast.success('Service environment variables saved');
+      toast.success(
+        'Service environment variables saved. Redeploy the service for changes to take effect.'
+      );
       onSaveSuccess?.();
     } catch (e: any) {
       toast.error(e?.message || 'Failed to save service environment variables');
@@ -59,10 +61,12 @@ export function ServiceEnvEditor(props: ServiceEnvEditorProps) {
   const keys = Object.keys(envData?.env_vars ?? {});
   const hint = (
     <span>
-      Reference these from your app as{' '}
+      Slasha automatically exposes{' '}
       <span className="font-mono text-text-secondary">
-        {serviceEnvReference(serviceName, primaryEnvKey(keys))}
-      </span>
+        {serviceEnvReference(serviceName, 'DATABASE_URL')}
+      </span>{' '}
+      built from these parameters. Your app can use it directly or construct
+      custom connection strings using individual variable references.
     </span>
   );
 

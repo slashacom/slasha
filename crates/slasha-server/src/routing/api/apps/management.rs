@@ -36,12 +36,13 @@ use crate::{
         GithubError, sync_external_app, sync_selected_git_repository,
         sync_selected_github_repository,
     },
-    docker::{deployment::purge_app_from_node, move_app_to_node, network::create_app_network},
+    docker::{AppDocker, app::network::create_app_network},
     extractors::{
         ValidatedJson,
         app::{ActiveApp, ActiveAppOwner},
         auth::AuthUser,
     },
+    operations,
     routing::api::{deserialize::trim_string, validation::not_empty},
     state::{AppState, Config, Runtime, Storage},
 };
@@ -465,60 +466,15 @@ async fn get_connection(
 }
 
 async fn delete_app(
-    State(storage): State<Storage>,
-    State(runtime): State<Runtime>,
-    ActiveAppOwner {
-        app, docker_client, ..
-    }: ActiveAppOwner,
+    State(state): State<AppState>,
+    ActiveAppOwner { app, .. }: ActiveAppOwner,
 ) -> HttpResult<impl IntoResponse> {
-    if runtime.migrating_apps.contains(&app.id) {
-        return Err(HttpError::bad_request(
-            "Cannot delete app while it is migrating",
-        ));
-    }
+    AppDocker::new(state, app.clone())
+        .await?
+        .purge_from_node()
+        .await?;
 
-    AppRepo::delete(&storage.db_pool, &app.id).await?;
-
-    tokio::spawn({
-        let app = app.clone();
-        let db_pool = storage.db_pool.clone();
-        let log_manager = runtime.log_manager.clone();
-        let proxy_sync_trigger = runtime.proxy_sync_trigger.clone();
-
-        async move {
-            if let Err(e) = purge_app_from_node(
-                &docker_client,
-                &db_pool,
-                &log_manager,
-                &proxy_sync_trigger,
-                &app,
-            )
-            .await
-            {
-                tracing::warn!(app_id = %app.id, error = ?e, "Failed to purge app from node");
-            }
-
-            if let Err(e) = log_manager.delete_app_logs(&app.slug).await {
-                tracing::warn!(app_slug = %app.slug, error = ?e, "Failed to delete logs for app");
-            }
-
-            let repo_path = std::path::Path::new(&app.repo_path);
-            if repo_path.exists()
-                && let Err(e) = tokio::fs::remove_dir_all(repo_path).await
-            {
-                tracing::warn!(
-                    app_slug = %app.slug,
-                    error = ?e,
-                    "Failed to remove repo"
-                );
-            }
-        }
-    });
-
-    Ok(Json(serde_json::json!({
-        "deleted": true,
-        "slug": app.slug,
-    })))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn derive_runtime_status(
@@ -526,9 +482,13 @@ fn derive_runtime_status(
     runtime: &crate::state::Runtime,
     app_id: &str,
 ) -> &'static str {
-    if runtime.migrating_apps.contains(app_id) {
-        return "migrating";
+    if let Some(status) = runtime
+        .operations
+        .status_of(&operations::ResourceKey::app(app_id))
+    {
+        return status;
     }
+
     if deployments
         .iter()
         .any(|d| d.status == DeploymentStatus::Running)
@@ -727,7 +687,7 @@ async fn update_connection_branch(
         state.github_client().await.as_ref(),
         &state.storage,
         &state.runtime,
-        &mut app,
+        &app,
     )
     .await
     .map_err(|e| HttpError::bad_request(format!("Failed to sync with new branch: {}", e)))?;
@@ -737,9 +697,7 @@ async fn update_connection_branch(
 
 async fn sync_app(
     State(state): State<AppState>,
-    ActiveAppOwner {
-        mut app, user: _, ..
-    }: ActiveAppOwner,
+    ActiveAppOwner { app, user: _, .. }: ActiveAppOwner,
 ) -> HttpResult<impl IntoResponse> {
     if !matches!(app.source, AppSource::Git | AppSource::Github) {
         return Err(HttpError::bad_request(
@@ -751,7 +709,7 @@ async fn sync_app(
         state.github_client().await.as_ref(),
         &state.storage,
         &state.runtime,
-        &mut app,
+        &app,
     )
     .await
     .map_err(|e| HttpError::bad_request(format!("Failed to sync repository: {}", e)))?;
@@ -767,75 +725,15 @@ struct MoveAppNodeReq {
 
 async fn move_app_node(
     State(state): State<AppState>,
-    ActiveAppOwner {
-        app,
-        docker_client: old_docker_client,
-        ..
-    }: ActiveAppOwner,
+    ActiveAppOwner { app, .. }: ActiveAppOwner,
     ValidatedJson(payload): ValidatedJson<MoveAppNodeReq>,
 ) -> HttpResult<impl IntoResponse> {
-    if app.node_id == payload.node_id {
-        return Err(HttpError::bad_request("App is already on the target node"));
-    }
-
-    let new_node = NodeRepo::get(&state.storage.db_pool, &payload.node_id).await?;
-
-    if new_node.status != NodeStatus::Ready {
-        return Err(HttpError::bad_request("Target node is not ready"));
-    }
-
-    let new_docker_client = state.clients.docker_registry.get_client(&new_node)?;
-
-    if !state.runtime.migrating_apps.insert(app.id.clone()) {
-        return Err(HttpError::bad_request("App is already migrating"));
-    }
-
-    tokio::spawn({
-        let old_docker_client = old_docker_client.clone();
-        let new_docker_client = new_docker_client.clone();
-        let db_pool = state.storage.db_pool.clone();
-        let runtime = state.runtime.clone();
-        let app = app.clone();
-        let new_node = new_node.clone();
-
-        async move {
-            // Use a drop guard to ensure the app is removed from the migrating set even if panicked
-            struct MigrationGuard {
-                app_id: String,
-                migrating_apps: std::sync::Arc<dashmap::DashSet<String>>,
-            }
-
-            impl Drop for MigrationGuard {
-                fn drop(&mut self) {
-                    self.migrating_apps.remove(&self.app_id);
-                }
-            }
-
-            let _guard = MigrationGuard {
-                app_id: app.id.clone(),
-                migrating_apps: runtime.migrating_apps.clone(),
-            };
-
-            if let Err(e) = move_app_to_node(
-                &old_docker_client,
-                &new_docker_client,
-                &db_pool,
-                &runtime,
-                &app,
-                &new_node,
-            )
-            .await
-            {
-                tracing::error!(
-                    app_id = %app.id,
-                    error = ?e,
-                    "Failed to move app to new node"
-                );
-            }
-        }
-    });
+    AppDocker::new(state, app)
+        .await?
+        .move_to_node(&payload.node_id)
+        .await?;
 
     Ok(Json(serde_json::json!({
-        "app": app,
+        "migrating": true,
     })))
 }

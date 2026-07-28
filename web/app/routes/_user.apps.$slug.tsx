@@ -143,8 +143,13 @@ export default function AppLayout() {
   const { data } = useSuspenseQuery({
     ...getAppOptions(slug!),
     refetchInterval: (query) => {
-      const status = query.state.data?.runtime_status;
-      if (status === 'deploying' || status === 'migrating') {
+      const runtimeStatus = query.state.data?.runtime_status;
+      if (
+        runtimeStatus === 'deploying' ||
+        runtimeStatus === 'migrating' ||
+        runtimeStatus === 'scaling' ||
+        runtimeStatus === 'syncing'
+      ) {
         return 2000;
       }
       return 5000;

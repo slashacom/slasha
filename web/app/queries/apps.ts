@@ -11,7 +11,15 @@ import type { GitConnection } from '~/models/connection';
 export type AppListItem = {
   app: App;
   url: string;
-  runtime_status: 'idle' | 'deploying' | 'running' | 'failed' | 'migrating';
+  runtime_status:
+    | 'idle'
+    | 'deploying'
+    | 'running'
+    | 'failed'
+    | 'migrating'
+    | 'scaling'
+    | 'syncing'
+    | 'purging';
 };
 
 type CreateAppPayload<Source extends AppSource = AppSource> = {
@@ -101,7 +109,7 @@ export function useCreateApp() {
 
 export function useDeleteApp() {
   return useMutation({
-    mutationFn: (slug: string) => httpDelete(`apps/${slug}`),
+    mutationFn: (slug: string) => httpDelete<void>(`apps/${slug}`),
   });
 }
 

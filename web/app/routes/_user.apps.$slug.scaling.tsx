@@ -28,7 +28,10 @@ export default function AppScalingPage() {
   const { data: deploymentsData } = useSuspenseQuery(
     getDeploymentsOptions(slug!)
   );
-  const { data: scalesData } = useSuspenseQuery(getScalesOptions(slug!));
+  const { data: scalesData } = useSuspenseQuery({
+    ...getScalesOptions(slug!),
+    refetchInterval: 2000,
+  });
 
   const runningDeployment = deploymentsData.deployments.find(
     (d) => d.status === 'Running'
@@ -38,7 +41,7 @@ export default function AppScalingPage() {
   const { data: processesData } = useQuery({
     ...getProcessesOptions(slug!, runningDeployment?.id ?? ''),
     enabled: !!runningDeployment,
-    refetchInterval: 5000,
+    refetchInterval: 2000,
   });
   const processes = processesData?.processes ?? [];
 
