@@ -192,7 +192,7 @@ impl LogManager {
         Ok(())
     }
 
-    pub fn close_app_handles(&self, app_slug: &str) {
+    fn close_app_handles(&self, app_slug: &str) {
         let d_prefix = format!("d:{}:", app_slug);
         let s_prefix = format!("s:{}:", app_slug);
         let c_prefix = format!("c:{}:", app_slug);

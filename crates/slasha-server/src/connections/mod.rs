@@ -13,13 +13,16 @@ use slasha_db::{
     repos::{git_connection::GitConnectionRepo, github_connection::GithubConnectionRepo},
 };
 
-use crate::state::{Runtime, Storage};
+use crate::{
+    operations,
+    state::{Runtime, Storage},
+};
 
 pub async fn sync_external_app(
     github: Option<&GithubClient>,
     storage: &Storage,
     runtime: &Runtime,
-    app: &mut App,
+    app: &App,
 ) -> anyhow::Result<()> {
     match app.source {
         AppSource::Github => {
@@ -53,8 +56,9 @@ pub async fn sync_github_app(
         anyhow::bail!("GitHub connection is disconnected");
     }
 
-    let lock = runtime.get_connection_sync_lock(&app.id);
-    let _guard = lock.lock().await;
+    let _guard = runtime
+        .operations
+        .try_acquire_app(&app.id, operations::AppOperation::RepoSyncing)?;
 
     let (repository, token) = match client
         .get_repository_with_token(connection.installation_id, connection.repository_id)
@@ -94,9 +98,9 @@ pub async fn sync_selected_github_repository(
     repository_id: i64,
     branch: Option<String>,
 ) -> anyhow::Result<GithubRepository> {
-    // we need to acquire the lock since we also call this when reconnecting
-    let lock = runtime.get_connection_sync_lock(app_id);
-    let _guard = lock.lock().await;
+    let _guard = runtime
+        .operations
+        .try_acquire_app(app_id, operations::AppOperation::RepoSyncing)?;
 
     let (repository, token) = client
         .get_repository_with_token(installation_id, repository_id)
@@ -121,8 +125,9 @@ async fn sync_git_app(storage: &Storage, runtime: &Runtime, app: &App) -> anyhow
         .await?
         .ok_or_else(|| anyhow::anyhow!("Git connection not found"))?;
 
-    let lock = runtime.get_connection_sync_lock(&app.id);
-    let _guard = lock.lock().await;
+    let _guard = runtime
+        .operations
+        .try_acquire_app(&app.id, operations::AppOperation::RepoSyncing)?;
 
     sync_selected_git_repository(
         connection.clone_url,

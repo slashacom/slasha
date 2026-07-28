@@ -65,16 +65,13 @@ impl AppRepo {
         .await?
     }
 
-    pub async fn find_by_slug(pool: &DbPool, slug: &str) -> DbResult<App> {
+    pub async fn find_by_ids(pool: &DbPool, ids: Vec<String>) -> DbResult<Vec<App>> {
         let pool = pool.clone();
-        let slug = slug.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            apps::table
-                .filter(apps::slug.eq(&slug))
-                .first::<App>(&mut conn)
-                .optional()?
-                .ok_or_else(|| DbError::NotFound(format!("app '{}' not found", slug)))
+            Ok(apps::table
+                .filter(apps::id.eq_any(&ids))
+                .load::<App>(&mut conn)?)
         })
         .await?
     }
@@ -217,6 +214,7 @@ impl AppRepo {
     pub async fn delete(pool: &DbPool, app_id: &str) -> DbResult<Vec<Deployment>> {
         let pool = pool.clone();
         let app_id = app_id.to_string();
+
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             conn.transaction::<_, DbError, _>(|tx| {
@@ -362,17 +360,6 @@ impl AppRepo {
                 return Err(DbError::NotFound(format!("app '{}' not found", id)));
             }
             Ok(())
-        })
-        .await?
-    }
-
-    pub async fn list_all(pool: &DbPool) -> DbResult<Vec<App>> {
-        let pool = pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let mut conn = pool.get()?;
-            Ok(apps::table
-                .order(apps::created_at.desc())
-                .load::<App>(&mut conn)?)
         })
         .await?
     }

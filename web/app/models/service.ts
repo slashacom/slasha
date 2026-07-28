@@ -10,6 +10,7 @@ export type Service = {
   resources: ServiceResources | null;
   created_at: string;
   updated_at: string;
+  image_digest: string | null;
 };
 
 export type ServiceEnvVar = {

@@ -4,6 +4,7 @@ use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
     models::{
+        app::App,
         schema::{apps, service_env_vars, services},
         service::{NewService, NewServiceEnvVar, Service, ServiceEnvVar, ServiceStatus},
     },
@@ -12,19 +13,17 @@ use crate::{
 pub struct ServiceRepo;
 
 impl ServiceRepo {
-    pub async fn list_non_terminal(pool: &DbPool) -> DbResult<Vec<(Service, String)>> {
+    pub async fn list_for_node(pool: &DbPool, node_id: &str) -> DbResult<Vec<(App, Service)>> {
         let pool = pool.clone();
+        let node_id = node_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             Ok(services::table
                 .inner_join(apps::table)
-                .filter(
-                    services::status
-                        .eq(ServiceStatus::Provisioning.to_string())
-                        .or(services::status.eq(ServiceStatus::Running.to_string())),
-                )
-                .select((Service::as_select(), apps::slug))
-                .load::<(Service, String)>(&mut conn)?)
+                .filter(apps::node_id.eq(&node_id))
+                .order(services::created_at.desc())
+                .select((App::as_select(), Service::as_select()))
+                .load::<(App, Service)>(&mut conn)?)
         })
         .await?
     }
@@ -58,16 +57,39 @@ impl ServiceRepo {
         .await?
     }
 
-    pub async fn create(pool: &DbPool, service: NewService) -> DbResult<Service> {
+    pub async fn create_with_env_vars(
+        pool: &DbPool,
+        service: NewService,
+        vars: Vec<NewServiceEnvVar>,
+    ) -> DbResult<Service> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            let inserted_service: Service = diesel::insert_into(services::table)
-                .values(&service)
-                .returning(Service::as_returning())
-                .get_result(&mut conn)?;
+            conn.transaction::<_, DbError, _>(|tx| {
+                let inserted_service: Service = diesel::insert_into(services::table)
+                    .values(&service)
+                    .returning(Service::as_returning())
+                    .get_result(tx)?;
 
-            Ok(inserted_service)
+                if !vars.is_empty() {
+                    let inserts: Vec<_> = vars
+                        .into_iter()
+                        .map(|v| {
+                            (
+                                service_env_vars::id.eq(uuid::Uuid::new_v4().to_string()),
+                                service_env_vars::service_id.eq(v.service_id),
+                                service_env_vars::key.eq(v.key),
+                                service_env_vars::value.eq(v.value),
+                            )
+                        })
+                        .collect();
+                    diesel::insert_into(service_env_vars::table)
+                        .values(&inserts)
+                        .execute(tx)?;
+                }
+
+                Ok(inserted_service)
+            })
         })
         .await?
     }

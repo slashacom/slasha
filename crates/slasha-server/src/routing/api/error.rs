@@ -5,7 +5,7 @@ use axum::{
 };
 use serde_json::json;
 
-use crate::proxy::ProxyError;
+use crate::{operations, proxy::ProxyError};
 
 pub struct HttpError {
     pub status: StatusCode,
@@ -126,6 +126,12 @@ impl From<slasha_db::DbError> for HttpError {
             | slasha_db::DbError::Data(message) => HttpError::bad_request(message),
             _ => HttpError::internal(anyhow::anyhow!(error)),
         }
+    }
+}
+
+impl From<operations::OperationError> for HttpError {
+    fn from(error: operations::OperationError) -> Self {
+        HttpError::bad_request(error.to_string())
     }
 }
 

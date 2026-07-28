@@ -23,7 +23,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(get_env_vars))
         .route("/", put(update_env_vars))
-        .route("/suggestions", get(get_env_suggestions))
+        .route("/suggestions", get(get_service_env_suggestions))
 }
 
 #[derive(Deserialize, Validate)]
@@ -51,7 +51,7 @@ struct ServiceSuggestion {
     env_keys: Vec<String>,
 }
 
-async fn get_env_suggestions(
+async fn get_service_env_suggestions(
     State(storage): State<Storage>,
     ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
@@ -61,8 +61,11 @@ async fn get_env_suggestions(
     for svc in services {
         let vars = ServiceRepo::get_env_vars(&storage.db_pool, &svc.id).await?;
         let mut env_keys: Vec<String> = vars.into_iter().map(|v| v.key).collect();
+
+        env_keys.push("DATABASE_URL".to_string());
+        env_keys.push("service_name".to_string());
         env_keys.sort();
-        env_keys.insert(0, "service_container_name".to_string());
+
         out.push(ServiceSuggestion {
             name: svc.name,
             env_keys,

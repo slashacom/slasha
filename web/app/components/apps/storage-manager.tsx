@@ -55,18 +55,16 @@ export function StorageManager(props: StorageManagerProps) {
                       <span className="font-mono text-[13px] text-text">
                         {volume.path}
                       </span>
-                      {volume.managed ? (
+                      {volume.is_managed ? (
                         <span className="rounded border border-border bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-text-tertiary">
                           managed
                         </span>
                       ) : null}
                     </HStack>
                     <span className="text-[12px] text-text-tertiary">
-                      {!volume.exists
-                        ? 'created on first deploy'
-                        : volume.size_bytes == null
-                          ? 'persisted'
-                          : formatFileSize(volume.size_bytes)}
+                      {volume.size_bytes == null
+                        ? 'persisted'
+                        : formatFileSize(volume.size_bytes)}
                     </span>
                   </HStack>
                 </div>

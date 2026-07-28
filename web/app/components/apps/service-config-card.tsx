@@ -6,7 +6,7 @@ import { getServiceEnvVarsOptions } from '~/queries/services';
 import { ServiceEnvEditor } from '~/components/apps/service-env-editor';
 import { EnvVarChips } from '~/components/apps/env-var-chips';
 import { HStack, VStack } from '~/components/interface/stacks';
-import { primaryEnvKey, serviceEnvReference } from '~/utils/service-env';
+import { serviceEnvReference } from '~/utils/service-env';
 
 type ServiceConfigCardProps = {
   appSlug: string;
@@ -41,7 +41,7 @@ export function ServiceConfigCard(props: ServiceConfigCardProps) {
   }
 
   const envKeys = Object.keys(envData?.env_vars ?? {}).sort();
-  const reference = serviceEnvReference(service.name, primaryEnvKey(envKeys));
+  const reference = serviceEnvReference(service.name, 'DATABASE_URL');
 
   return (
     <button
@@ -54,8 +54,9 @@ export function ServiceConfigCard(props: ServiceConfigCardProps) {
           <span className="text-sm font-semibold text-text">Configuration</span>
           <EnvVarChips keys={envKeys} />
           <p className="text-[11px] leading-5 text-text-tertiary">
-            Reference these from your app as{' '}
-            <span className="font-mono text-text-secondary">{reference}</span>.
+            Auto-exposes{' '}
+            <span className="font-mono text-text-secondary">{reference}</span>{' '}
+            built from these parameters.
           </p>
         </VStack>
         <span className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors group-hover:bg-white/5 group-hover:text-text">

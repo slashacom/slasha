@@ -4,11 +4,11 @@ use bollard::{
     Docker,
     models::{
         ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountType, NetworkingConfig,
-        RestartPolicy, RestartPolicyNameEnum, VolumeCreateRequest,
+        RestartPolicy, RestartPolicyNameEnum,
     },
     query_parameters::{
         CreateContainerOptions, CreateImageOptions, RemoveContainerOptionsBuilder,
-        StartContainerOptionsBuilder, WaitContainerOptions,
+        WaitContainerOptions,
     },
 };
 use chrono::Utc;
@@ -17,17 +17,18 @@ use slasha_db::{
     DbPool,
     app::App,
     cron::{CronJob, CronRun, CronRunStatus, CronRuntime},
-    deployment::{Deployment, DeploymentStatus},
-    repos::{app::AppRepo, cron::CronRunRepo, deployment::DeploymentRepo, service::ServiceRepo},
+    deployment::DeploymentStatus,
+    repos::{app::AppRepo, cron::CronRunRepo, deployment::DeploymentRepo},
 };
 
 use crate::{
     docker::{
         DockerRegistry,
-        deployment::{container::MANAGED_DATA_PATH, executor::resolve_app_env},
-        image_tag,
+        app::{deploy::context::MANAGED_DATA_PATH, env::resolve_app_env, image::image_tag},
+        labels::cron_container_labels,
         log_driver::default_log_config,
-        naming::{app_network_name, app_volume_name},
+        naming::{app_network_name, app_volume_name, cron_container_name},
+        utils,
     },
     logs::{LogHandle, LogKey, LogManager, stream_container_logs},
     proxy::container::PROXY_NETWORK_NAME,
@@ -37,15 +38,35 @@ use crate::{
 /// without the app image needing those tools installed.
 const UTILITY_IMAGE: &str = "curlimages/curl:latest";
 
+/// Execution outcome of a cron container task.
 enum CronOutcome {
     Completed { exit_code: i64 },
     TimedOut,
 }
 
-fn cron_container_name(run_id: &str) -> String {
-    format!("slasha-cron-{}", run_id)
+/// Options and contextual references for executing an ephemeral cron container.
+struct RunCronContainerContext<'a> {
+    docker: &'a Docker,
+    log: &'a LogHandle,
+    app: &'a App,
+    image: &'a str,
+    runtime: CronRuntime,
+    cron_job_id: &'a str,
+    cron_run_id: &'a str,
+    command: &'a str,
+    env_map: HashMap<String, String>,
+    timeout_secs: u64,
 }
 
+/// Executes a scheduled or manually triggered cron job run in an ephemeral container.
+///
+/// # Arguments
+///
+/// * `db_pool` - Database connection pool ([`DbPool`]).
+/// * `docker_registry` - Node Docker client registry ([`DockerRegistry`]).
+/// * `log_manager` - Application log manager handle ([`LogManager`]).
+/// * `job` - Cron job model ([`CronJob`]).
+/// * `run` - Cron run tracking model ([`CronRun`]).
 pub async fn run_cron_job(
     db_pool: DbPool,
     docker_registry: DockerRegistry,
@@ -75,7 +96,7 @@ pub async fn run_cron_job(
                 None,
                 Some(format!("run exceeded timeout of {}s", job.timeout_secs)),
             ),
-            Err(message) => (CronRunStatus::Failed, None, Some(message)),
+            Err(err) => (CronRunStatus::Failed, None, Some(err.to_string())),
         };
 
     if let Err(err) = CronRunRepo::mark_finished(&db_pool, &run_id, status, exit_code, error).await
@@ -84,96 +105,112 @@ pub async fn run_cron_job(
     }
 }
 
+/// Internal helper executing the cron job lifecycle and returning the resulting outcome.
+///
+/// # Arguments
+///
+/// * `db_pool` - Database connection pool ([`DbPool`]).
+/// * `docker_registry` - Node Docker client registry ([`DockerRegistry`]).
+/// * `log_manager` - Application log manager handle ([`LogManager`]).
+/// * `job` - Cron job model ([`CronJob`]).
+/// * `run_id` - Target cron run ID string.
+///
+/// # Returns
+///
+/// An [`anyhow::Result`] containing the [`CronOutcome`].
 async fn execute(
     db_pool: &DbPool,
     docker_registry: &DockerRegistry,
     log_manager: &Arc<LogManager>,
     job: &CronJob,
     run_id: &str,
-) -> Result<CronOutcome, String> {
-    let app = AppRepo::find_by_id(db_pool, &job.app_id)
-        .await
-        .map_err(|e| e.to_string())?;
+) -> anyhow::Result<CronOutcome> {
+    let app = AppRepo::find_by_id(db_pool, &job.app_id).await?;
+    let node = slasha_db::repos::node::NodeRepo::get(db_pool, &app.node_id).await?;
 
-    let node = slasha_db::repos::node::NodeRepo::get(db_pool, &app.node_id)
-        .await
-        .map_err(|e| format!("failed to find node for app: {}", e))?;
+    let docker_client = docker_registry.get_client(&node)?;
 
-    let docker = docker_registry
-        .get_client(&node)
-        .map_err(|e| format!("failed to get docker client for node: {}", e))?;
-
-    let running = DeploymentRepo::list_active_for_app(db_pool, &job.app_id)
-        .await
-        .map_err(|e| e.to_string())?
+    let running_deployment = DeploymentRepo::list_active_for_app(db_pool, &job.app_id)
+        .await?
         .into_iter()
         .find(|d| matches!(d.status, DeploymentStatus::Running));
 
     let image = match job.runtime {
         CronRuntime::App => {
-            let deployment = running
-                .as_ref()
-                .ok_or_else(|| "no running deployment to run the command against".to_string())?;
+            let deployment = running_deployment.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("no running deployment to run the command against")
+            })?;
             image_tag(&app.slug, &deployment.id)
         }
         CronRuntime::Utility => {
-            ensure_image(&docker, UTILITY_IMAGE).await?;
+            ensure_image(&docker_client, UTILITY_IMAGE).await?;
             UTILITY_IMAGE.to_string()
         }
     };
 
-    let env_map = resolve_cron_env(db_pool, &app, running.as_ref()).await?;
+    let env_map = resolve_cron_env(db_pool, &app, running_deployment.is_some()).await?;
 
     let log = log_manager
         .get_logger(&LogKey::Cron {
             app_slug: app.slug.clone(),
             cron_run_id: run_id.to_string(),
         })
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
 
-    run_cron_container(
-        &docker,
-        &log,
-        &app,
-        &image,
-        job.runtime,
-        &job.id,
-        run_id,
-        &job.command,
+    let outcome = run_cron_container(RunCronContainerContext {
+        docker: &docker_client,
+        log: &log,
+        app: &app,
+        image: &image,
+        runtime: job.runtime,
+        cron_job_id: &job.id,
+        cron_run_id: run_id,
+        command: &job.command,
         env_map,
-        job.timeout_secs.max(1) as u64,
-    )
-    .await
-    .map_err(|e| e.to_string())
+        timeout_secs: job.timeout_secs.max(1) as u64,
+    })
+    .await?;
+
+    Ok(outcome)
 }
 
-/// Resolve the env the command runs with. When a running deployment exists we
-/// reuse the full deployment resolution (service refs, system keys); otherwise
-/// — only reachable for utility crons — we fall back to the app's raw vars so
-/// secrets like webhook URLs are still available.
+/// Resolves environment variables for a cron job execution based on active deployment availability.
+///
+/// # Arguments
+///
+/// * `db_pool` - Database connection pool ([`DbPool`]).
+/// * `app` - Target application model ([`App`]).
+/// * `has_active_deployment` - Whether an active deployment exists for service reference resolution.
+///
+/// # Returns
+///
+/// An [`anyhow::Result`] containing a [`HashMap`] of key-value environment variables.
 async fn resolve_cron_env(
     db_pool: &DbPool,
     app: &App,
-    deployment: Option<&Deployment>,
-) -> Result<HashMap<String, String>, String> {
-    let app_vars = AppRepo::get_env_vars(db_pool, &app.id)
-        .await
-        .map_err(|e| e.to_string())?;
+    has_active_deployment: bool,
+) -> anyhow::Result<HashMap<String, String>> {
+    if !has_active_deployment {
+        let app_vars = AppRepo::get_env_vars(db_pool, &app.id).await?;
 
-    let Some(_deployment) = deployment else {
         return Ok(app_vars.into_iter().map(|v| (v.key, v.value)).collect());
-    };
+    }
 
-    let services = ServiceRepo::list_for_app(db_pool, &app.id)
-        .await
-        .map_err(|e| e.to_string())?;
-    resolve_app_env(db_pool, app, app_vars, services)
-        .await
-        .map_err(|e| e.to_string())
+    let env_map = resolve_app_env(db_pool, app).await?;
+    Ok(env_map)
 }
 
-async fn ensure_image(docker: &Docker, image: &str) -> Result<(), String> {
+/// Ensures a Docker image is present locally, pulling it if missing.
+///
+/// # Arguments
+///
+/// * `docker` - Docker API client ([`Docker`]).
+/// * `image` - Target Docker image tag string.
+///
+/// # Returns
+///
+/// An [`anyhow::Result`] indicating image readiness.
+async fn ensure_image(docker: &Docker, image: &str) -> anyhow::Result<()> {
     if docker.inspect_image(image).await.is_ok() {
         return Ok(());
     }
@@ -187,38 +224,34 @@ async fn ensure_image(docker: &Docker, image: &str) -> Result<(), String> {
         None,
     );
     while let Some(item) = stream.next().await {
-        item.map_err(|e| format!("failed to pull {}: {}", image, e))?;
+        item?;
     }
     Ok(())
 }
 
+/// Creates, streams logs from, and cleans up an ephemeral Docker container for a cron job.
+///
+/// # Arguments
+///
+/// * `ctx` - Execution context and parameter references ([`RunCronContainerContext`]).
+///
+/// # Returns
+///
+/// A [`DockerResult`](crate::docker::DockerResult) containing the [`CronOutcome`].
 async fn run_cron_container(
-    docker: &Docker,
-    log: &LogHandle,
-    app: &App,
-    image: &str,
-    runtime: CronRuntime,
-    cron_job_id: &str,
-    cron_run_id: &str,
-    command: &str,
-    env_map: HashMap<String, String>,
-    timeout_secs: u64,
-) -> crate::docker::DeploymentResult<CronOutcome> {
-    let container_name = cron_container_name(cron_run_id);
+    ctx: RunCronContainerContext<'_>,
+) -> crate::docker::DockerResult<CronOutcome> {
+    let container_name = cron_container_name(ctx.cron_run_id);
 
-    log.send(format!("Running command: {}", command)).await?;
+    ctx.log
+        .send(format!("Running command: {}", ctx.command))
+        .await?;
 
-    // Utility crons run a generic image, so the app's data volume isn't theirs
-    // to mount; only app-image crons share the app's managed data.
-    let mounts = match runtime {
+    let mounts = match ctx.runtime {
         CronRuntime::App => {
-            let volume_name = app_volume_name(&app.id, MANAGED_DATA_PATH);
-            docker
-                .create_volume(VolumeCreateRequest {
-                    name: Some(volume_name.clone()),
-                    ..Default::default()
-                })
-                .await?;
+            let volume_name = app_volume_name(&ctx.app.id, MANAGED_DATA_PATH);
+            utils::create_volume(ctx.docker, &volume_name, None).await?;
+
             Some(vec![Mount {
                 typ: Some(MountType::VOLUME),
                 source: Some(volume_name),
@@ -229,26 +262,20 @@ async fn run_cron_container(
         CronRuntime::Utility => None,
     };
 
-    let mut labels: HashMap<String, String> = HashMap::new();
-    labels.insert("slasha.managed".into(), "true".into());
-    labels.insert("slasha.app_id".into(), app.id.clone());
-    labels.insert("slasha.app_slug".into(), app.slug.clone());
-    labels.insert("slasha.cron_job_id".into(), cron_job_id.to_string());
-    labels.insert("slasha.cron_run_id".into(), cron_run_id.to_string());
-    labels.insert("slasha.process_type".into(), "cron".into());
+    let labels = cron_container_labels(ctx.app, ctx.cron_job_id, ctx.cron_run_id);
 
-    let env: Option<Vec<String>> = if env_map.is_empty() {
+    let env: Option<Vec<String>> = if ctx.env_map.is_empty() {
         None
     } else {
         Some(
-            env_map
+            ctx.env_map
                 .into_iter()
                 .map(|(k, v)| format!("{}={}", k, v))
                 .collect(),
         )
     };
 
-    let app_network = app_network_name(&app.id);
+    let app_network = app_network_name(&ctx.app.id);
     let mut endpoints_config = HashMap::new();
     endpoints_config.insert(
         app_network.clone(),
@@ -265,21 +292,18 @@ async fn run_cron_container(
         },
     );
 
-    docker
+    ctx.docker
         .create_container(
             Some(CreateContainerOptions {
                 name: Some(container_name.clone()),
                 ..Default::default()
             }),
             ContainerCreateBody {
-                image: Some(image.to_string()),
+                image: Some(ctx.image.to_string()),
                 labels: Some(labels),
                 env,
-                // Override the image entrypoint: buildpack images often set one
-                // (e.g. ["/bin/bash", "-c"]) that would otherwise swallow our
-                // args and never run the command.
                 entrypoint: Some(vec!["sh".to_string(), "-c".to_string()]),
-                cmd: Some(vec![command.to_string()]),
+                cmd: Some(vec![ctx.command.to_string()]),
                 host_config: Some(HostConfig {
                     restart_policy: Some(RestartPolicy {
                         name: Some(RestartPolicyNameEnum::EMPTY),
@@ -297,22 +321,17 @@ async fn run_cron_container(
         )
         .await?;
 
-    docker
-        .start_container(
-            &container_name,
-            Some(StartContainerOptionsBuilder::new().build()),
-        )
-        .await?;
+    utils::start_container(ctx.docker, &container_name).await?;
 
     let stream_handle = stream_container_logs(
-        docker.clone(),
-        log.clone(),
+        ctx.docker.clone(),
+        ctx.log.clone(),
         container_name.clone(),
         Some("[cron]".to_string()),
     );
 
     let wait = async {
-        docker
+        ctx.docker
             .wait_container(
                 &container_name,
                 Some(WaitContainerOptions {
@@ -323,29 +342,30 @@ async fn run_cron_container(
             .await
     };
 
-    let outcome = match tokio::time::timeout(Duration::from_secs(timeout_secs), wait).await {
+    let outcome = match tokio::time::timeout(Duration::from_secs(ctx.timeout_secs), wait).await {
         Ok(Some(Ok(res))) => CronOutcome::Completed {
             exit_code: res.status_code,
         },
         Ok(Some(Err(err))) => {
-            log.send(format!("Error while waiting for container: {}", err))
+            ctx.log
+                .send(format!("Error while waiting for container: {}", err))
                 .await?;
             CronOutcome::Completed { exit_code: -1 }
         }
         Ok(None) => CronOutcome::Completed { exit_code: -1 },
         Err(_) => {
-            log.send(format!(
-                "Command exceeded timeout of {}s; terminating",
-                timeout_secs
-            ))
-            .await?;
+            ctx.log
+                .send(format!(
+                    "Command exceeded timeout of {}s; terminating",
+                    ctx.timeout_secs
+                ))
+                .await?;
             CronOutcome::TimedOut
         }
     };
 
-    // Remove the container first so the follow log stream terminates, then wait
-    // for the stream task to flush any remaining output.
-    if let Err(err) = docker
+    if let Err(err) = ctx
+        .docker
         .remove_container(
             &container_name,
             Some(RemoveContainerOptionsBuilder::new().force(true).build()),
@@ -354,6 +374,7 @@ async fn run_cron_container(
     {
         tracing::warn!(container = %container_name, error = ?err, "Failed to remove cron container");
     }
+
     let _ = stream_handle.await;
 
     Ok(outcome)

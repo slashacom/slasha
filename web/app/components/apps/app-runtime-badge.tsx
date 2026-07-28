@@ -38,6 +38,21 @@ const TONE_STYLES: Record<
     className: 'border-amber-500/20 bg-amber-500/10 text-amber-400',
     spin: true,
   },
+  scaling: {
+    icon: Loader2,
+    className: 'border-purple-500/20 bg-purple-500/10 text-purple-400',
+    spin: true,
+  },
+  syncing: {
+    icon: Loader2,
+    className: 'border-blue-500/20 bg-blue-500/10 text-blue-400',
+    spin: true,
+  },
+  purging: {
+    icon: Loader2,
+    className: 'border-rose-500/20 bg-rose-500/10 text-rose-400',
+    spin: true,
+  },
 };
 
 export function AppRuntimeBadge(props: AppRuntimeBadgeProps) {

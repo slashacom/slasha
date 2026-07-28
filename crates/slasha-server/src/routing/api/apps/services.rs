@@ -11,34 +11,25 @@ use axum::{
     },
     routing::{get, post},
 };
-use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
 use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
     DbPool,
-    repos::service::ServiceRepo,
-    service::{NewService, NewServiceEnvVar, ServiceKind, ServiceResources, ServiceStatus},
+    repos::{node::NodeRepo, service::ServiceRepo},
+    service::{NewServiceEnvVar, ServiceKind, ServiceResources, ServiceStatus},
 };
 use tokio_stream::wrappers::BroadcastStream;
-use uuid::Uuid;
 
 use crate::{
     HttpError, HttpResult,
-    docker::{
-        naming::service_container_name,
-        service::{
-            provision::resolve_env_vars, provision_service, remove_service_container,
-            restart_service_container, stop_service_container,
-        },
-    },
+    docker::service::ServiceDocker,
     extractors::{
         ValidatedJson,
         app::{ActiveApp, ActiveAppOwner},
     },
     logs::{LogKey, LogManager},
-    metrics,
     routing::api::validation::not_empty,
     state::AppState,
     tunnel,
@@ -48,14 +39,15 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_services))
         .route("/", post(create_service))
+        .route("/{id}/env", get(get_env_vars).put(update_env_vars))
         .route("/{id}/logs", get(stream_logs))
-        .route("/{id}/backup", get(backup_service_handler))
-        .route("/{id}/tunnel", get(tunnel_handler))
-        .route("/{id}/restart", post(restart_service_handler))
-        .route("/{id}/redeploy", post(redeploy_service_handler))
-        .route("/{id}/stop", post(stop_service_handler))
-        .route("/{id}/stats", get(service_stats_handler))
-        .route("/{id}", get(get_service).delete(delete_service_handler))
+        .route("/{id}/backup", get(backup_service))
+        .route("/{id}/tunnel", get(tunnel))
+        .route("/{id}/restart", post(restart_service))
+        .route("/{id}/redeploy", post(redeploy_service))
+        .route("/{id}/stop", post(stop_service))
+        .route("/{id}/stats", get(service_stats))
+        .route("/{id}", get(get_service).delete(delete_service))
 }
 
 #[derive(Deserialize, Validate)]
@@ -72,89 +64,6 @@ struct CreateServiceReq {
     #[serde(default)]
     #[garde(skip)]
     resources: Option<ServiceResources>,
-}
-
-const MIN_MEMORY_BYTES: i64 = 64 * 1024 * 1024;
-const MIN_NANO_CPUS: i64 = 100_000_000;
-const MIN_SHM_BYTES: i64 = 64 * 1024 * 1024;
-const MIN_PIDS_LIMIT: i64 = 64;
-
-async fn validate_resources(
-    docker_client: &bollard::Docker,
-    resources: &ServiceResources,
-) -> HttpResult<()> {
-    if let Some(mem) = resources.memory_bytes
-        && mem < MIN_MEMORY_BYTES
-    {
-        return Err(HttpError::bad_request(format!(
-            "memory must be at least {} MB",
-            MIN_MEMORY_BYTES / (1024 * 1024)
-        )));
-    }
-    if let Some(nc) = resources.nano_cpus
-        && nc < MIN_NANO_CPUS
-    {
-        return Err(HttpError::bad_request("CPU must be at least 0.1 cores"));
-    }
-    if let Some(shm) = resources.shm_size
-        && shm < MIN_SHM_BYTES
-    {
-        return Err(HttpError::bad_request(format!(
-            "shared memory must be at least {} MB",
-            MIN_SHM_BYTES / (1024 * 1024)
-        )));
-    }
-    if let Some(pids) = resources.pids_limit
-        && pids < MIN_PIDS_LIMIT
-    {
-        return Err(HttpError::bad_request(format!(
-            "PID limit must be at least {}",
-            MIN_PIDS_LIMIT
-        )));
-    }
-
-    let info = docker_client
-        .info()
-        .await
-        .map_err(|e| HttpError::internal(anyhow::anyhow!(e)))?;
-
-    if let Some(host_mem) = info.mem_total
-        && let Some(mem) = resources.memory_bytes
-    {
-        let max_allowed_mem = (host_mem as f64 * 0.80) as i64;
-        if mem > max_allowed_mem {
-            return Err(HttpError::bad_request(format!(
-                "Requested memory ({} MB) exceeds 80% host capacity cap ({} MB of {} MB total host RAM)",
-                mem / (1024 * 1024),
-                max_allowed_mem / (1024 * 1024),
-                host_mem / (1024 * 1024)
-            )));
-        }
-    }
-    if let Some(host_cpus) = info.ncpu
-        && let Some(nc) = resources.nano_cpus
-    {
-        let host_nano = host_cpus.saturating_mul(1_000_000_000);
-        if nc > host_nano {
-            return Err(HttpError::bad_request(format!(
-                "CPU ({:.2} cores) exceeds host capacity ({} cores)",
-                nc as f64 / 1_000_000_000.0,
-                host_cpus
-            )));
-        }
-    }
-    if let Some(host_mem) = info.mem_total
-        && let Some(shm) = resources.shm_size
-        && shm > host_mem
-    {
-        return Err(HttpError::bad_request(format!(
-            "shared memory ({} MB) exceeds host capacity ({} MB)",
-            shm / (1024 * 1024),
-            host_mem / (1024 * 1024)
-        )));
-    }
-
-    Ok(())
 }
 
 async fn list_services(
@@ -178,278 +87,131 @@ async fn get_service(
     Ok(Json(serde_json::json!({ "service": service })))
 }
 
-// live on demand stats for a single service container
-async fn service_stats_handler(
-    State(db_pool): State<DbPool>,
-    ActiveApp {
-        app, docker_client, ..
-    }: ActiveApp,
+async fn service_stats(
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
-
-    let stats = metrics::service::get_service_stats(&docker_client, &service)
-        .await
-        .ok_or_else(|| HttpError::internal(anyhow::anyhow!("failed to fetch service stats")))?;
+    let stats = ServiceDocker::new(state, app).await?.get_stats(&id).await?;
 
     Ok(Json(stats))
 }
 
 async fn create_service(
-    State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
-    ActiveAppOwner {
-        app, docker_client, ..
-    }: ActiveAppOwner,
+    State(state): State<AppState>,
+    ActiveAppOwner { app, .. }: ActiveAppOwner,
     ValidatedJson(payload): ValidatedJson<CreateServiceReq>,
 ) -> HttpResult<impl IntoResponse> {
-    if !payload
-        .kind
-        .supported_versions()
-        .contains(&payload.version.as_str())
-    {
-        return Err(HttpError::bad_request(format!(
-            "Version {} is not supported for {:?}. Supported versions: {:?}",
-            payload.version,
+    if payload.env_vars.contains_key("DATABASE_URL") {
+        return Err(HttpError::bad_request(
+            "DATABASE_URL cannot be set manually as it is automatically managed and exported by Slasha",
+        ));
+    }
+
+    let service = ServiceDocker::new(state, app)
+        .await?
+        .provision(
             payload.kind,
-            payload.kind.supported_versions()
-        )));
-    }
+            payload.name,
+            payload.version,
+            payload.env_vars,
+            payload.resources,
+        )
+        .await?;
 
-    for key in payload.kind.secret_env_keys() {
-        let missing = payload
-            .env_vars
-            .get(*key)
-            .map(|v| v.trim().is_empty())
-            .unwrap_or(true);
-        if missing {
-            return Err(HttpError::bad_request(format!(
-                "{} is required and cannot be empty",
-                key
-            )));
-        }
-    }
-
-    let default_resources = payload.kind.default_resources();
-    let resources = match payload.resources {
-        Some(user_res) => ServiceResources {
-            memory_bytes: user_res.memory_bytes.or(default_resources.memory_bytes),
-            nano_cpus: user_res.nano_cpus.or(default_resources.nano_cpus),
-            pids_limit: user_res.pids_limit.or(default_resources.pids_limit),
-            shm_size: user_res.shm_size.or(default_resources.shm_size),
-        },
-        None => default_resources,
-    };
-
-    validate_resources(&docker_client, &resources).await?;
-
-    let service_id = Uuid::new_v4().to_string();
-
-    let new_service = NewService {
-        id: service_id.clone(),
-        app_id: app.id.clone(),
-        kind: payload.kind,
-        name: payload.name,
-        version: payload.version,
-        status: ServiceStatus::Provisioning,
-        resources: Some(resources),
-        image_digest: None,
-    };
-
-    let vars: Vec<NewServiceEnvVar> = payload
-        .env_vars
-        .into_iter()
-        .map(|(key, value)| NewServiceEnvVar {
-            service_id: service_id.clone(),
-            key,
-            value,
-        })
-        .collect();
-
-    let new_service = ServiceRepo::create(&db_pool, new_service).await?;
-    ServiceRepo::set_env_vars(&db_pool, &new_service.id, vars).await?;
-
-    tokio::spawn(provision_service(
-        docker_client,
-        db_pool,
-        log_manager,
-        app,
-        new_service.clone(),
-        false,
-    ));
-
-    Ok(Json(serde_json::json!({
-        "service": new_service,
-    })))
+    Ok(Json(serde_json::json!({ "service": service })))
 }
 
-async fn tunnel_handler(
+async fn tunnel(
     ws: WebSocketUpgrade,
-    State(db_pool): State<DbPool>,
-    ActiveAppOwner {
-        app,
-        user,
-        docker_client,
-        ..
-    }: ActiveAppOwner,
+    State(state): State<AppState>,
+    ActiveAppOwner { app, user, .. }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+    let service = ServiceRepo::find(&state.storage.db_pool, &id, &app.id).await?;
 
     if service.status != ServiceStatus::Running {
         return Err(HttpError::bad_request("Service is not running"));
     }
 
-    let user_id = user.id.clone();
+    let node = NodeRepo::get(&state.storage.db_pool, &app.node_id).await?;
+    let docker_client = state.clients.docker_registry.get_client(&node)?;
+
     Ok(ws.on_upgrade(move |socket| async move {
-        tunnel::handle_tunnel(socket, docker_client, db_pool, service, user_id).await;
+        tunnel::handle_tunnel(
+            socket,
+            docker_client,
+            state.storage.db_pool,
+            service,
+            user.id,
+        )
+        .await;
     }))
 }
 
-async fn restart_service_handler(
-    State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
-    ActiveAppOwner {
-        app, docker_client, ..
-    }: ActiveAppOwner,
+async fn restart_service(
+    State(state): State<AppState>,
+    ActiveAppOwner { app, .. }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
-
-    if service.status == ServiceStatus::Provisioning {
-        return Err(HttpError::bad_request("Service is currently provisioning"));
-    }
-
-    restart_service_container(&docker_client, &db_pool, &log_manager, &app, &service).await?;
+    ServiceDocker::new(state, app)
+        .await?
+        .restart_service(&id)
+        .await?;
 
     Ok(Json(serde_json::json!({ "restarted": true })))
 }
 
-async fn redeploy_service_handler(
-    State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
-    ActiveAppOwner {
-        app, docker_client, ..
-    }: ActiveAppOwner,
+async fn redeploy_service(
+    State(state): State<AppState>,
+    ActiveAppOwner { app, .. }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
-
-    if service.status == ServiceStatus::Provisioning {
-        return Err(HttpError::bad_request("Service is currently provisioning"));
-    }
-
-    ServiceRepo::update_status(&db_pool, &service.id, ServiceStatus::Provisioning).await?;
-
-    remove_service_container(&docker_client, &log_manager, &app, &service, false).await?;
-
-    tokio::spawn(provision_service(
-        docker_client,
-        db_pool,
-        log_manager,
-        app,
-        service,
-        true,
-    ));
+    ServiceDocker::new(state, app)
+        .await?
+        .redeploy_service(&id)
+        .await?;
 
     Ok(Json(serde_json::json!({ "redeploying": true })))
 }
 
-async fn stop_service_handler(
-    State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
-    ActiveAppOwner {
-        app, docker_client, ..
-    }: ActiveAppOwner,
+async fn stop_service(
+    State(state): State<AppState>,
+    ActiveAppOwner { app, .. }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
-
-    if service.status != ServiceStatus::Running {
-        return Err(HttpError::bad_request("Service is not running"));
-    }
-
-    stop_service_container(&docker_client, &db_pool, &log_manager, &app, &service).await?;
+    ServiceDocker::new(state, app)
+        .await?
+        .stop_service(&id)
+        .await?;
 
     Ok(Json(serde_json::json!({ "stopped": true })))
 }
 
-async fn delete_service_handler(
-    State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
-    ActiveAppOwner {
-        app, docker_client, ..
-    }: ActiveAppOwner,
+async fn delete_service(
+    State(state): State<AppState>,
+    ActiveAppOwner { app, .. }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
-
-    if service.status != ServiceStatus::Stopped && service.status != ServiceStatus::Failed {
-        return Err(HttpError::bad_request(
-            "Cannot delete a running or provisioning service. Please stop it first.",
-        ));
-    }
-
-    remove_service_container(&docker_client, &log_manager, &app, &service, true).await?;
-
-    ServiceRepo::delete(&db_pool, &service.id).await?;
+    ServiceDocker::new(state, app)
+        .await?
+        .delete_service(&id)
+        .await?;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
 
-async fn backup_service_handler(
-    State(db_pool): State<DbPool>,
-    ActiveAppOwner {
-        app, docker_client, ..
-    }: ActiveAppOwner,
+async fn backup_service(
+    State(state): State<AppState>,
+    ActiveAppOwner { app, .. }: ActiveAppOwner,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
+    let service = ServiceRepo::find(&state.storage.db_pool, &id, &app.id).await?;
 
-    if service.status != ServiceStatus::Running {
-        return Err(HttpError::bad_request("Service is not running"));
-    }
-
-    let env_vars = ServiceRepo::get_env_vars(&db_pool, &service.id).await?;
-    let resolved = resolve_env_vars(env_vars, &service)?;
-
-    let cmd = service.kind.backup_cmd(&resolved);
-    let container_name = service_container_name(&service.id);
-
-    let exec_id = docker_client
-        .create_exec(
-            &container_name,
-            CreateExecOptions {
-                attach_stdout: Some(true),
-                attach_stderr: Some(false),
-                cmd: Some(cmd),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(|e| HttpError::internal(anyhow::anyhow!(e)))?;
-
-    let output_stream = match docker_client
-        .start_exec(&exec_id.id, None::<StartExecOptions>)
-        .await
-        .map_err(|e| HttpError::internal(anyhow::anyhow!(e)))?
-    {
-        StartExecResults::Attached { output, .. } => output,
-        StartExecResults::Detached => {
-            return Err(HttpError::internal(anyhow::anyhow!(
-                "exec returned detached"
-            )));
-        }
-    };
-
-    let byte_stream = output_stream.filter_map(|item| async move {
-        match item {
-            Ok(bollard::container::LogOutput::StdOut { message }) => {
-                Some(Ok::<_, std::io::Error>(message))
-            }
-            _ => None,
-        }
-    });
+    let byte_stream = ServiceDocker::new(state.clone(), app.clone())
+        .await?
+        .backup_service(&id)
+        .await?;
 
     let timestamp = Utc::now().format("%Y%m%d%H%M%S");
     let filename = format!("{}-{}.dump", service.name, timestamp);
@@ -498,9 +260,70 @@ async fn stream_logs(
         Err(e) => Ok(Event::default().event("error").data(e.to_string())),
     });
 
-    // marker to help distinguish between historical and live logs
     let done_marker = stream::once(async { Ok(Event::default().data("[done]")) });
     let combined = historical_stream.chain(done_marker).chain(live_stream);
 
     Ok(Sse::new(combined).keep_alive(KeepAlive::default()))
+}
+
+#[derive(Deserialize, Validate)]
+struct UpdateEnvVarsReq {
+    #[garde(skip)]
+    vars: HashMap<String, String>,
+}
+
+async fn get_env_vars(
+    State(db_pool): State<DbPool>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, service_id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    ServiceRepo::find(&db_pool, &service_id, &app.id).await?;
+
+    let vars = ServiceRepo::get_env_vars(&db_pool, &service_id).await?;
+
+    let env_map: HashMap<String, String> = vars.into_iter().map(|v| (v.key, v.value)).collect();
+
+    Ok(Json(serde_json::json!({
+        "env_vars": env_map,
+    })))
+}
+
+async fn update_env_vars(
+    State(db_pool): State<DbPool>,
+    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    Path((_, service_id)): Path<(String, String)>,
+    ValidatedJson(payload): ValidatedJson<UpdateEnvVarsReq>,
+) -> HttpResult<impl IntoResponse> {
+    ServiceRepo::find(&db_pool, &service_id, &app.id).await?;
+
+    for (key, val) in &payload.vars {
+        if key == "DATABASE_URL" {
+            return Err(HttpError::bad_request(
+                "DATABASE_URL cannot be set manually as it is automatically managed and exported by Slasha",
+            ));
+        }
+
+        if val.trim().is_empty() {
+            return Err(HttpError::bad_request(format!(
+                "Environment variable '{}' cannot be empty",
+                key
+            )));
+        }
+    }
+
+    let new_vars: Vec<NewServiceEnvVar> = payload
+        .vars
+        .into_iter()
+        .map(|(key, value)| NewServiceEnvVar {
+            service_id: service_id.clone(),
+            key,
+            value,
+        })
+        .collect();
+
+    let new_vars = ServiceRepo::set_env_vars(&db_pool, &service_id, new_vars).await?;
+
+    Ok(Json(serde_json::json!({
+        "env_vars": new_vars.into_iter().map(|v| (v.key, v.value)).collect::<HashMap<String, String>>(),
+    })))
 }

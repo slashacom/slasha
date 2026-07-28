@@ -1,38 +1,26 @@
 use thiserror::Error;
 
-use crate::HttpError;
+use crate::{HttpError, operations::OperationError, proxy::ProxyError};
 
 #[derive(Debug, Error)]
-pub enum DeploymentError {
+pub enum DockerError {
     #[error("Database error: {0}")]
     Db(#[from] slasha_db::DbError),
 
-    #[error("git archive failed: {0}")]
-    GitArchiveFailed(String),
+    #[error("{0}")]
+    Operation(#[from] OperationError),
 
     #[error("Git error: {0}")]
-    GitError(#[from] git2::Error),
+    Git(#[from] git2::Error),
 
-    #[error("Dockerfile is not valid UTF-8")]
-    DockerfileEncoding,
+    #[error("Git archive failed: {0}")]
+    GitArchiveFailed(String),
+
+    #[error("Docker client error: {0}")]
+    DockerClient(#[from] bollard::errors::Error),
 
     #[error("Build failed: {0}")]
     BuildFailed(String),
-
-    #[error("railpack prepare failed with exit status {0}")]
-    RailpackPrepareFailed(std::process::ExitStatus),
-
-    #[error("docker buildx build failed with exit status {0}")]
-    BuildKitFailed(std::process::ExitStatus),
-
-    #[error("{phase} failed with exit status {status}")]
-    PhaseFailed {
-        phase: String,
-        status: std::process::ExitStatus,
-    },
-
-    #[error("Docker API error: {0}")]
-    DockerApi(#[from] bollard::errors::Error),
 
     #[error("Service \"{0}\" not found")]
     ServiceNotFound(String),
@@ -40,26 +28,20 @@ pub enum DeploymentError {
     #[error("Service \"{0}\" is not running")]
     ServiceNotRunning(String),
 
-    #[error("Service \"{0}\" does not export env key \"{1}\"")]
-    KeyNotExported(String, String),
-
-    #[error("Env resolve failed: {0}")]
+    #[error("Environment resolution failed: {0}")]
     EnvResolveFailed(String),
-
-    #[error("Port allocation failed: {0}")]
-    PortAllocationFailed(String),
 
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("spawn_blocking panicked")]
-    SpawnBlockingPanicked,
+    #[error("UTF-8 error: {0}")]
+    Utf8(#[from] std::str::Utf8Error),
 
-    #[error("Path is not valid UTF-8")]
-    PathNotUtf8,
+    #[error("Tokio join error: {0}")]
+    TokioJoin(#[from] tokio::task::JoinError),
 
     #[error("Proxy error: {0}")]
-    Proxy(#[from] crate::proxy::error::ProxyError),
+    Proxy(#[from] ProxyError),
 
     #[error("Scale error: {0}")]
     ScaleError(String),
@@ -68,10 +50,10 @@ pub enum DeploymentError {
     ReleaseFailed(i64),
 
     #[error("Service \"{0}\" did not become healthy within {1}s")]
-    HealthcheckTimeout(String, u64),
+    ServiceHealthcheckTimeout(String, u64),
 
     #[error("Service \"{0}\" reported unhealthy")]
-    HealthcheckFailed(String),
+    ServiceHealthcheckFailed(String),
 
     #[error("App failed readiness check: {0}")]
     AppNotReady(String),
@@ -79,29 +61,33 @@ pub enum DeploymentError {
     #[error("Deployment \"{0}\" no longer has a retained image")]
     ArtifactUnavailable(String),
 
+    #[error("Validation error: {0}")]
+    Validation(String),
+
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }
 
-pub type DeploymentResult<T> = std::result::Result<T, DeploymentError>;
+pub type DockerResult<T> = std::result::Result<T, DockerError>;
 
-impl From<DeploymentError> for HttpError {
-    fn from(e: DeploymentError) -> Self {
+impl From<DockerError> for HttpError {
+    fn from(e: DockerError) -> Self {
         match e {
-            DeploymentError::ServiceNotFound(msg) => HttpError::not_found(msg),
-            DeploymentError::ServiceNotRunning(msg) => {
+            DockerError::ServiceNotFound(msg) => HttpError::not_found(msg),
+            DockerError::ServiceNotRunning(msg) => {
                 HttpError::bad_request(format!("Service {} is not running", msg))
             }
-            DeploymentError::KeyNotExported(svc, key) => {
-                HttpError::bad_request(format!("Service {} does not export key {}", svc, key))
-            }
-            DeploymentError::ReleaseFailed(code) => {
+            DockerError::ReleaseFailed(code) => {
                 HttpError::bad_request(format!("Release command failed with exit code {}", code))
             }
-            DeploymentError::ArtifactUnavailable(msg) => {
+            DockerError::ArtifactUnavailable(msg) => {
                 HttpError::bad_request(format!("Deployment {} no longer has a retained image", msg))
             }
-            _ => HttpError::internal(anyhow::anyhow!(e)),
+            DockerError::Validation(msg) => HttpError::bad_request(msg),
+            DockerError::EnvResolveFailed(msg) => HttpError::bad_request(msg),
+            DockerError::Git(err) => HttpError::bad_request(err.message()),
+            DockerError::Operation(err) => HttpError::bad_request(err.to_string()),
+            _ => HttpError::internal(e),
         }
     }
 }

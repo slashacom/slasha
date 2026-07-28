@@ -15,7 +15,16 @@ type ServicesViewProps = {
 
 export function ServicesView(props: ServicesViewProps) {
   const { appSlug } = props;
-  const { data, isLoading } = useQuery(getAppServicesOptions(appSlug));
+  const { data, isLoading } = useQuery({
+    ...getAppServicesOptions(appSlug),
+    refetchInterval: (query) => {
+      const services = query.state.data?.services ?? [];
+      const isAnyProvisioning = services.some(
+        (s) => s.status === 'Provisioning'
+      );
+      return isAnyProvisioning ? 2000 : 5000;
+    },
+  });
   const [isProvisionModalOpen, setProvisionModalOpen] = useState(false);
 
   const services = data?.services ?? [];

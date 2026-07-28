@@ -30,8 +30,10 @@ export default function ServiceDetailPage() {
   const { data: appData } = useSuspenseQuery(getAppOptions(slug!));
   const { data: serviceData } = useQuery({
     ...getServiceOptions(slug!, id!),
-    refetchInterval: (query) =>
-      query.state.data?.service.status === 'Provisioning' ? 2000 : false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.service.status;
+      return status === 'Provisioning' ? 2000 : 5000;
+    },
   });
   const { data: stats } = useQuery({
     ...getServiceStatsOptions(slug!, id!),

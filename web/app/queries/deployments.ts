@@ -59,88 +59,107 @@ export function getProcessesOptions(appSlug: string, deploymentId: string) {
   });
 }
 
+function useInvalidateAppQueries() {
+  const queryClient = useQueryClient();
+  return (appSlug: string) => {
+    queryClient.invalidateQueries({ queryKey: ['apps', appSlug] });
+    queryClient.invalidateQueries({ queryKey: ['apps'], exact: true });
+  };
+}
+
 export function useTriggerDeploy() {
+  const invalidate = useInvalidateAppQueries();
   return useMutation({
     mutationFn: (data: TriggerDeployPayload) =>
       httpPost<{ deployment: Deployment }>(`apps/${data.appSlug}/deployments`, {
         commit_sha: data.commitSha,
       }),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }
 
 export function useStopDeployment() {
+  const invalidate = useInvalidateAppQueries();
   return useMutation({
     mutationFn: (data: DeploymentRef) =>
       httpPost<{ stopped: boolean }>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}/stop`,
         {}
       ),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
+  });
+}
+
+export function useCancelDeployment() {
+  const invalidate = useInvalidateAppQueries();
+  return useMutation({
+    mutationFn: (data: DeploymentRef) =>
+      httpPost<{ cancelled: boolean }>(
+        `apps/${data.appSlug}/deployments/${data.deploymentId}/cancel`,
+        {}
+      ),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }
 
 export function useDeleteDeployment() {
+  const invalidate = useInvalidateAppQueries();
   return useMutation({
     mutationFn: (data: DeploymentRef) =>
       httpDelete<{ deleted: boolean }>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}`
       ),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }
 
 export function useRestartDeployment() {
+  const invalidate = useInvalidateAppQueries();
   return useMutation({
     mutationFn: (data: DeploymentRef) =>
       httpPost<{ restarted: boolean }>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}/restart`,
         {}
       ),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }
 
 export function useRedeployDeployment() {
+  const invalidate = useInvalidateAppQueries();
   return useMutation({
     mutationFn: (data: DeploymentRef) =>
       httpPost<{ deployment: Deployment }>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}/redeploy`,
         {}
       ),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }
 
 export function useRollbackDeployment() {
+  const invalidate = useInvalidateAppQueries();
   return useMutation({
     mutationFn: (data: DeploymentRef) =>
       httpPost<{ deployment: Deployment }>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}/rollback`,
         {}
       ),
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }
 
 export function useScaleDeployment() {
-  const queryClient = useQueryClient();
+  const invalidate = useInvalidateAppQueries();
   return useMutation({
     mutationFn: (data: ScaleDeploymentPayload) =>
-      httpPost<{ scaled: boolean }>(
+      httpPost<void>(
         `apps/${data.appSlug}/deployments/${data.deploymentId}/scale`,
         {
           process_type: data.processType,
           count: data.count,
         }
       ),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: [
-          'apps',
-          variables.appSlug,
-          'deployments',
-          variables.deploymentId,
-          'processes',
-        ],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['apps', variables.appSlug, 'scales'],
-      });
-    },
+    onSuccess: (_, variables) => invalidate(variables.appSlug),
   });
 }

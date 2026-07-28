@@ -3,45 +3,35 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{Path, State},
+    http::StatusCode,
     response::{
         IntoResponse,
         sse::{Event, KeepAlive, Sse},
     },
     routing::{delete, get, post},
 };
-use chrono::Utc;
 use futures_util::{StreamExt, stream};
 use garde::Validate;
 use serde::Deserialize;
-use slasha_db::{
-    DbPool,
-    app::AppSource,
-    deployment::DeploymentStatus,
-    models::app_scale::ProcessType,
-    repos::{app_backup::AppBackupRepo, deployment::DeploymentRepo},
-};
-use tokio::sync::Notify;
+use slasha_db::{DbPool, models::app_scale::ProcessType, repos::deployment::DeploymentRepo};
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
     HttpError, HttpResult,
-    connections::sync_external_app,
-    docker::deployment::{
-        ScaleDeps, list_deployment_processes, remove_deployment_image, remove_deployment_processes,
-        restart_deployment_processes, run_deployment, scale_deployment_process,
-        stop_deployment_processes, trigger_deployment, trigger_rollback,
-    },
+    docker::AppDocker,
     extractors::{ValidatedJson, app::ActiveApp},
     logs::{LogKey, LogManager},
-    state::{AppState, Runtime},
+    state::AppState,
 };
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/", post(trigger_deploy).get(list_deployments))
+        .route("/", post(trigger_deploy))
+        .route("/", get(list_deployments))
         .route("/{deployment_id}", get(get_deployment))
         .route("/{deployment_id}/logs", get(stream_logs))
         .route("/{deployment_id}/stop", post(stop_deployment))
+        .route("/{deployment_id}/cancel", post(cancel_deployment))
         .route("/{deployment_id}/restart", post(restart_deployment))
         .route("/{deployment_id}/redeploy", post(redeploy_deployment))
         .route("/{deployment_id}/rollback", post(rollback_deployment))
@@ -58,53 +48,24 @@ struct TriggerDeployReq {
 
 async fn trigger_deploy(
     State(state): State<AppState>,
-    ActiveApp {
-        mut app,
-        docker_client,
-        ..
-    }: ActiveApp,
+    ActiveApp { app, .. }: ActiveApp,
     ValidatedJson(payload): ValidatedJson<TriggerDeployReq>,
 ) -> HttpResult<impl IntoResponse> {
-    if state.runtime.migrating_apps.contains(&app.id) {
-        return Err(HttpError::bad_request(
-            "Cannot deploy app while it is migrating",
-        ));
-    }
+    let deployment = AppDocker::new(state, app)
+        .await?
+        .deploy(payload.commit_sha)
+        .await?;
 
-    if app.source != AppSource::Local {
-        let github = state.github_client().await;
-        sync_external_app(github.as_ref(), &state.storage, &state.runtime, &mut app)
-            .await
-            .map_err(|error| HttpError::bad_request(error.to_string()))?;
-    }
-
-    let deployment = trigger_deployment(
-        docker_client,
-        state.storage.db_pool,
-        state.runtime.log_manager,
-        state.runtime.proxy_sync_trigger,
-        state.runtime.deployment_tasks.clone(),
-        app,
-        payload.commit_sha,
-    )
-    .await
-    .map_err(|e| HttpError::bad_request(format!("Failed to start deployment: {}", e)))?;
-
-    match deployment {
-        Some(deployment) => Ok(Json(serde_json::json!({ "deployment": deployment }))),
-        None => Err(HttpError::bad_request(
-            "A deployment is already building for this app",
-        )),
-    }
+    Ok(Json(serde_json::json!({ "deployment": deployment })))
 }
 
 async fn list_deployments(
     State(db_pool): State<DbPool>,
     ActiveApp { app, .. }: ActiveApp,
 ) -> HttpResult<impl IntoResponse> {
-    let deps = DeploymentRepo::list_for_app(&db_pool, &app.id).await?;
+    let deployments = DeploymentRepo::list_for_app(&db_pool, &app.id).await?;
 
-    Ok(Json(serde_json::json!({ "deployments": deps })))
+    Ok(Json(serde_json::json!({ "deployments": deployments })))
 }
 
 async fn get_deployment(
@@ -117,42 +78,31 @@ async fn get_deployment(
     Ok(Json(serde_json::json!({ "deployment": deployment })))
 }
 
-async fn stop_deployment(
-    State(db_pool): State<DbPool>,
-    State(runtime): State<Runtime>,
-    ActiveApp {
-        app, docker_client, ..
-    }: ActiveApp,
+async fn cancel_deployment(
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    if runtime.migrating_apps.contains(&app.id) {
-        return Err(HttpError::bad_request(
-            "Cannot stop deployment while app is migrating",
-        ));
-    }
+    AppDocker::new(state, app)
+        .await?
+        .cancel_deployment(&deployment_id)
+        .await?;
 
-    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
+    Ok(Json(serde_json::json!({
+        "cancelled": true,
+        "deployment_id": deployment_id
+    })))
+}
 
-    if !matches!(
-        deployment.status,
-        DeploymentStatus::Running | DeploymentStatus::Building
-    ) {
-        return Err(HttpError::bad_request(format!(
-            "Deployment is already in state '{}'",
-            deployment.status
-        )));
-    }
-
-    stop_deployment_processes(
-        &docker_client,
-        &db_pool,
-        &runtime.proxy_sync_trigger,
-        &runtime.log_manager,
-        &runtime.deployment_tasks,
-        &app,
-        &deployment,
-    )
-    .await?;
+async fn stop_deployment(
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, deployment_id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    AppDocker::new(state, app)
+        .await?
+        .stop_deployment(&deployment_id)
+        .await?;
 
     Ok(Json(serde_json::json!({
         "stopped": true,
@@ -161,61 +111,14 @@ async fn stop_deployment(
 }
 
 async fn redeploy_deployment(
-    State(db_pool): State<DbPool>,
-    State(runtime): State<Runtime>,
-    ActiveApp {
-        app, docker_client, ..
-    }: ActiveApp,
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    if runtime.migrating_apps.contains(&app.id) {
-        return Err(HttpError::bad_request(
-            "Cannot redeploy while app is migrating",
-        ));
-    }
-
-    let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
-    if active_deployments
-        .iter()
-        .any(|d| d.status == DeploymentStatus::Building)
-    {
-        return Err(HttpError::bad_request(
-            "A deployment is already building for this app",
-        ));
-    }
-
-    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
-
-    remove_deployment_processes(
-        &docker_client,
-        &runtime.proxy_sync_trigger,
-        &runtime.log_manager,
-        &app,
-        &deployment,
-    )
-    .await?;
-
-    let now = Utc::now().naive_utc();
-    let updated_deployment =
-        DeploymentRepo::reset_to_pending(&db_pool, &deployment.id, now).await?;
-
-    let cancel_token = tokio_util::sync::CancellationToken::new();
-
-    tokio::spawn(run_deployment(
-        docker_client,
-        db_pool,
-        runtime.log_manager.clone(),
-        runtime.proxy_sync_trigger.clone(),
-        runtime.deployment_tasks.clone(),
-        app,
-        updated_deployment.clone(),
-        None,
-        cancel_token.clone(),
-    ));
-
-    runtime
-        .deployment_tasks
-        .insert(updated_deployment.id.clone(), cancel_token);
+    let updated_deployment = AppDocker::new(state, app)
+        .await?
+        .redeploy(&deployment_id)
+        .await?;
 
     Ok(Json(
         serde_json::json!({ "deployment": updated_deployment }),
@@ -223,40 +126,14 @@ async fn redeploy_deployment(
 }
 
 async fn restart_deployment(
-    State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
-    State(proxy_sync_trigger): State<Arc<Notify>>,
-    State(runtime): State<Runtime>,
-    ActiveApp {
-        app, docker_client, ..
-    }: ActiveApp,
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    if runtime.migrating_apps.contains(&app.id) {
-        return Err(HttpError::bad_request(
-            "Cannot restart deployment while app is migrating",
-        ));
-    }
-    let active_deployments = DeploymentRepo::list_active_for_app(&db_pool, &app.id).await?;
-    if active_deployments
-        .iter()
-        .any(|d| d.status == DeploymentStatus::Building)
-    {
-        return Err(HttpError::bad_request(
-            "A deployment is already building for this app",
-        ));
-    }
-
-    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
-
-    restart_deployment_processes(
-        &docker_client,
-        &log_manager,
-        &proxy_sync_trigger,
-        &app,
-        &deployment.id,
-    )
-    .await?;
+    AppDocker::new(state, app)
+        .await?
+        .restart_deployment(&deployment_id)
+        .await?;
 
     Ok(Json(serde_json::json!({
         "restarted": true,
@@ -265,33 +142,14 @@ async fn restart_deployment(
 }
 
 async fn rollback_deployment(
-    State(db_pool): State<DbPool>,
-    State(runtime): State<Runtime>,
-    ActiveApp {
-        app, docker_client, ..
-    }: ActiveApp,
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    if runtime.migrating_apps.contains(&app.id) {
-        return Err(HttpError::bad_request(
-            "Cannot rollback while app is migrating",
-        ));
-    }
-
-    let source_deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
-
-    let deployment = trigger_rollback(
-        docker_client,
-        db_pool,
-        runtime.log_manager,
-        runtime.proxy_sync_trigger,
-        runtime.deployment_tasks,
-        app,
-        source_deployment,
-    )
-    .await
-    .map_err(|error| HttpError::bad_request(format!("Failed to roll back: {}", error)))?
-    .ok_or_else(|| HttpError::bad_request("A deployment is already building for this app"))?;
+    let deployment = AppDocker::new(state, app)
+        .await?
+        .rollback_to_deployment(&deployment_id)
+        .await?;
 
     Ok(Json(serde_json::json!({ "deployment": deployment })))
 }
@@ -328,7 +186,6 @@ async fn stream_logs(
         Err(e) => Ok(Event::default().event("error").data(e.to_string())),
     });
 
-    // marker to help distinguish between historical and live logs
     let done_marker = stream::once(async { Ok(Event::default().data("[done]")) });
     let combined = historical_stream.chain(done_marker).chain(live_stream);
 
@@ -336,42 +193,14 @@ async fn stream_logs(
 }
 
 async fn delete_deployment(
-    State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
-    State(proxy_sync_trigger): State<Arc<Notify>>,
-    State(runtime): State<Runtime>,
-    ActiveApp {
-        app, docker_client, ..
-    }: ActiveApp,
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    if runtime.migrating_apps.contains(&app.id) {
-        return Err(HttpError::bad_request(
-            "Cannot delete deployment while app is migrating",
-        ));
-    }
-    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
-
-    if matches!(
-        deployment.status,
-        DeploymentStatus::Running | DeploymentStatus::Building
-    ) {
-        return Err(HttpError::bad_request(
-            "Active deployments must be stopped before deletion",
-        ));
-    }
-
-    remove_deployment_processes(
-        &docker_client,
-        &proxy_sync_trigger,
-        &log_manager,
-        &app,
-        &deployment,
-    )
-    .await?;
-
-    remove_deployment_image(&docker_client, &app.slug, &deployment.id).await?;
-    DeploymentRepo::delete(&db_pool, &deployment.id, &app.id).await?;
+    AppDocker::new(state, app)
+        .await?
+        .delete_deployment(&deployment_id)
+        .await?;
 
     Ok(Json(serde_json::json!({
         "deleted": true,
@@ -384,89 +213,32 @@ struct ScaleDeploymentReq {
     #[garde(skip)]
     process_type: ProcessType,
     #[garde(range(min = 1))]
-    count: i32,
+    count: u32,
 }
 
 async fn scale_deployment(
     State(app_state): State<AppState>,
-    ActiveApp {
-        app, docker_client, ..
-    }: ActiveApp,
+    ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
     ValidatedJson(payload): ValidatedJson<ScaleDeploymentReq>,
 ) -> HttpResult<impl IntoResponse> {
-    if app_state.runtime.migrating_apps.contains(&app.id) {
-        return Err(HttpError::bad_request(
-            "Cannot scale app while it is migrating",
-        ));
-    }
+    AppDocker::new(app_state, app)
+        .await?
+        .scale(&deployment_id, payload.process_type, payload.count)
+        .await?;
 
-    if payload.count <= 0 {
-        return Err(HttpError::bad_request("Count must be greater than 0"));
-    }
-
-    let db_pool = app_state.storage.db_pool;
-    let app_runtime = app_state.runtime;
-
-    // litestream only allows one writer; multiple web instances would cause db corruption
-    if payload.process_type == ProcessType::Web && payload.count > 1 {
-        let backups_on = AppBackupRepo::get(&db_pool, &app.id)
-            .await?
-            .is_some_and(|b| b.enabled);
-        if backups_on {
-            return Err(HttpError::bad_request(
-                "Backups require a single web instance (Litestream must be the only writer). Disable backups to scale web beyond 1.",
-            ));
-        }
-    }
-
-    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
-
-    if deployment.status != DeploymentStatus::Running {
-        return Err(HttpError::bad_request(
-            "Scaling is only allowed for running deployments",
-        ));
-    }
-
-    let log_key = LogKey::Deployment {
-        app_slug: app.slug.clone(),
-        deployment_id: deployment.id.clone(),
-    };
-
-    let log = app_runtime.log_manager.get_logger(&log_key).await?;
-
-    scale_deployment_process(
-        ScaleDeps {
-            docker_client: &docker_client,
-            db_pool: &db_pool,
-            proxy_sync: &app_runtime.proxy_sync_trigger,
-            log: &log,
-        },
-        &app,
-        &deployment,
-        payload.process_type,
-        payload.count as u32,
-        app_runtime.get_scaling_lock(&deployment.id),
-    )
-    .await?;
-
-    Ok(Json(serde_json::json!({
-        "scaled": true,
-        "process_type": payload.process_type,
-        "count": payload.count
-    })))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn list_processes(
-    State(db_pool): State<DbPool>,
-    ActiveApp {
-        app, docker_client, ..
-    }: ActiveApp,
+    State(state): State<AppState>,
+    ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
-
-    let processes = list_deployment_processes(&docker_client, &deployment.id).await?;
+    let processes = AppDocker::new(state, app)
+        .await?
+        .list_processes(&deployment_id)
+        .await?;
 
     Ok(Json(serde_json::json!({ "processes": processes })))
 }

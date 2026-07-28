@@ -107,32 +107,12 @@ pub enum ServiceKind {
 }
 
 impl ServiceKind {
-    pub fn docker_image(&self, version: &str) -> String {
-        match self {
-            ServiceKind::PostgreSQL => format!("postgres:{}", version),
-            ServiceKind::MySQL => format!("mysql:{}", version),
-            ServiceKind::MongoDB => format!("mongo:{}", version),
-            ServiceKind::Redis => format!("redis:{}", version),
-        }
-    }
-
     pub fn default_container_port(&self) -> u16 {
         match self {
             ServiceKind::PostgreSQL => 5432,
             ServiceKind::MySQL => 3306,
             ServiceKind::MongoDB => 27017,
             ServiceKind::Redis => 6379,
-        }
-    }
-
-    pub fn exec_tunnel_cmd(&self, port: u16) -> Vec<String> {
-        match self {
-            ServiceKind::Redis => vec!["nc".to_string(), "127.0.0.1".to_string(), port.to_string()],
-            _ => vec![
-                "bash".to_string(),
-                "-c".to_string(),
-                format!("exec 3<>/dev/tcp/127.0.0.1/{port}; cat <&3 & cat >&3; wait"),
-            ],
         }
     }
 
@@ -175,10 +155,6 @@ impl ServiceKind {
                 ("POSTGRES_PASSWORD".to_string(), "postgres".to_string()),
                 ("POSTGRES_DB".to_string(), "postgres".to_string()),
                 ("PORT".to_string(), "5432".to_string()),
-                (
-                    "DATABASE_URL".to_string(),
-                    "postgres://${{ POSTGRES_USER }}:${{ POSTGRES_PASSWORD }}@${{ SLASHA.service_container_name }}:${{ PORT }}/${{ POSTGRES_DB }}".to_string(),
-                ),
             ]),
             ServiceKind::MySQL => HashMap::from([
                 ("MYSQL_ROOT_PASSWORD".to_string(), "mysql".to_string()),
@@ -186,33 +162,27 @@ impl ServiceKind {
                 ("MYSQL_PASSWORD".to_string(), "mysql".to_string()),
                 ("MYSQL_DATABASE".to_string(), "mysql".to_string()),
                 ("PORT".to_string(), "3306".to_string()),
-                (
-                    "DATABASE_URL".to_string(),
-                    "mysql://${{ MYSQL_USER }}:${{ MYSQL_PASSWORD }}@${{ SLASHA.service_container_name }}:${{ PORT }}/${{ MYSQL_DATABASE }}".to_string(),
-                ),
             ]),
             ServiceKind::MongoDB => HashMap::from([
-                ("MONGO_INITDB_ROOT_USERNAME".to_string(), "mongo".to_string()),
-                ("MONGO_INITDB_ROOT_PASSWORD".to_string(), "mongo".to_string()),
+                (
+                    "MONGO_INITDB_ROOT_USERNAME".to_string(),
+                    "mongo".to_string(),
+                ),
+                (
+                    "MONGO_INITDB_ROOT_PASSWORD".to_string(),
+                    "mongo".to_string(),
+                ),
                 ("MONGO_INITDB_DATABASE".to_string(), "mongo".to_string()),
                 ("PORT".to_string(), "27017".to_string()),
-                (
-                    "DATABASE_URL".to_string(),
-                    "mongodb://${{ MONGO_INITDB_ROOT_USERNAME }}:${{ MONGO_INITDB_ROOT_PASSWORD }}@${{ SLASHA.service_container_name }}:${{ PORT }}/${{ MONGO_INITDB_DATABASE }}?authSource=admin".to_string(),
-                ),
             ]),
             ServiceKind::Redis => HashMap::from([
                 ("REDIS_PASSWORD".to_string(), "redis".to_string()),
                 ("PORT".to_string(), "6379".to_string()),
-                (
-                    "DATABASE_URL".to_string(),
-                    "redis://default:${{ REDIS_PASSWORD }}@${{ SLASHA.service_container_name }}:${{ PORT }}".to_string(),
-                ),
             ]),
         }
     }
 
-    pub fn secret_env_keys(&self) -> &'static [&'static str] {
+    fn secret_env_keys(&self) -> &'static [&'static str] {
         match self {
             ServiceKind::PostgreSQL => &["POSTGRES_PASSWORD"],
             ServiceKind::MySQL => &["MYSQL_ROOT_PASSWORD", "MYSQL_PASSWORD"],
@@ -227,79 +197,6 @@ impl ServiceKind {
             vars.insert((*key).to_string(), generate_password());
         }
         vars
-    }
-
-    pub fn command(&self) -> Option<Vec<String>> {
-        match self {
-            ServiceKind::Redis => Some(vec![
-                "sh".to_string(),
-                "-c".to_string(),
-                "exec redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction --requirepass \"$REDIS_PASSWORD\"".to_string(),
-            ]),
-            _ => None,
-        }
-    }
-
-    pub fn volume_mount_path(&self) -> &'static str {
-        match self {
-            ServiceKind::PostgreSQL => "/var/lib/postgresql/data",
-            ServiceKind::MySQL => "/var/lib/mysql",
-            ServiceKind::MongoDB => "/data/db",
-            ServiceKind::Redis => "/data",
-        }
-    }
-
-    pub fn health_test(&self) -> Vec<String> {
-        let cmd = match self {
-            ServiceKind::PostgreSQL => "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"",
-            ServiceKind::MySQL => {
-                "mysqladmin ping -h 127.0.0.1 -u root -p\"$MYSQL_ROOT_PASSWORD\" --silent"
-            }
-            ServiceKind::MongoDB => {
-                "mongosh -u \"$MONGO_INITDB_ROOT_USERNAME\" -p \"$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --quiet --eval 'db.runCommand({ ping: 1 }).ok' | grep -q 1"
-            }
-            ServiceKind::Redis => {
-                "redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"
-            }
-        };
-        vec!["CMD-SHELL".to_string(), cmd.to_string()]
-    }
-
-    pub fn backup_cmd(&self, env: &std::collections::HashMap<String, String>) -> Vec<String> {
-        let get = |key: &str| env.get(key).map(String::as_str).unwrap_or("");
-        match self {
-            ServiceKind::PostgreSQL => vec![
-                "pg_dump".to_string(),
-                "-U".to_string(),
-                get("POSTGRES_USER").to_string(),
-                get("POSTGRES_DB").to_string(),
-            ],
-            ServiceKind::MySQL => vec![
-                "mysqldump".to_string(),
-                format!("-u{}", get("MYSQL_USER")),
-                format!("-p{}", get("MYSQL_PASSWORD")),
-                get("MYSQL_DATABASE").to_string(),
-            ],
-            ServiceKind::MongoDB => vec![
-                "mongodump".to_string(),
-                "--username".to_string(),
-                get("MONGO_INITDB_ROOT_USERNAME").to_string(),
-                "--password".to_string(),
-                get("MONGO_INITDB_ROOT_PASSWORD").to_string(),
-                "--authenticationDatabase".to_string(),
-                "admin".to_string(),
-                "--archive".to_string(),
-                "--gzip".to_string(),
-            ],
-            ServiceKind::Redis => vec![
-                "sh".to_string(),
-                "-c".to_string(),
-                format!(
-                    "redis-cli -a '{}' --no-auth-warning --rdb /dev/stdout",
-                    get("REDIS_PASSWORD")
-                ),
-            ],
-        }
     }
 }
 
@@ -334,7 +231,7 @@ where
 impl FromSql<Text, Sqlite> for ServiceKind {
     fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
         <String as FromSql<Text, Sqlite>>::from_sql(bytes)
-            .map(|s| ServiceKind::from_str(&s).unwrap())
+            .and_then(|s| ServiceKind::from_str(&s).map_err(|e| e.to_string().into()))
     }
 }
 
@@ -374,6 +271,6 @@ where
 impl FromSql<Text, Sqlite> for ServiceStatus {
     fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
         <String as FromSql<Text, Sqlite>>::from_sql(bytes)
-            .map(|s| ServiceStatus::from_str(&s).unwrap())
+            .and_then(|s| ServiceStatus::from_str(&s).map_err(|e| e.to_string().into()))
     }
 }

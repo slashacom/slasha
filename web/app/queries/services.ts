@@ -78,10 +78,19 @@ export function getServiceStatsOptions(appSlug: string, serviceId: string) {
 // prefix, also covers the single-service and stats queries).
 function useInvalidateServices() {
   const queryClient = useQueryClient();
-  return (appSlug: string) =>
+  return (appSlug: string, serviceId?: string) => {
     queryClient.invalidateQueries({
       queryKey: ['apps', appSlug, 'services'],
     });
+    if (serviceId) {
+      queryClient.invalidateQueries({
+        queryKey: ['apps', appSlug, 'services', serviceId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['apps', appSlug, 'services', serviceId, 'stats'],
+      });
+    }
+  };
 }
 
 export function useProvisionService() {
@@ -107,7 +116,8 @@ export function useRestartService() {
         `apps/${data.appSlug}/services/${data.serviceId}/restart`,
         {}
       ),
-    onSuccess: (_, variables) => invalidate(variables.appSlug),
+    onSuccess: (_, variables) =>
+      invalidate(variables.appSlug, variables.serviceId),
   });
 }
 
@@ -119,7 +129,8 @@ export function useRedeployService() {
         `apps/${data.appSlug}/services/${data.serviceId}/redeploy`,
         {}
       ),
-    onSuccess: (_, variables) => invalidate(variables.appSlug),
+    onSuccess: (_, variables) =>
+      invalidate(variables.appSlug, variables.serviceId),
   });
 }
 
@@ -131,7 +142,8 @@ export function useStopService() {
         `apps/${data.appSlug}/services/${data.serviceId}/stop`,
         {}
       ),
-    onSuccess: (_, variables) => invalidate(variables.appSlug),
+    onSuccess: (_, variables) =>
+      invalidate(variables.appSlug, variables.serviceId),
   });
 }
 
@@ -142,7 +154,8 @@ export function useDeleteService() {
       httpDelete<{ deleted: boolean }>(
         `apps/${data.appSlug}/services/${data.serviceId}`
       ),
-    onSuccess: (_, variables) => invalidate(variables.appSlug),
+    onSuccess: (_, variables) =>
+      invalidate(variables.appSlug, variables.serviceId),
   });
 }
 

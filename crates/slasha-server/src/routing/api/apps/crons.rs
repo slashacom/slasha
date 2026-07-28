@@ -21,8 +21,8 @@ use slasha_db::{
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
-    HttpError, HttpResult,
-    cron::{runner, schedule},
+    HttpError, HttpResult, cron,
+    docker::cron::run_cron_job,
     extractors::{ValidatedJson, app::ActiveApp},
     logs::{LogKey, LogManager},
     routing::api::{
@@ -94,14 +94,11 @@ struct ValidatedCron {
 }
 
 fn validate(input: CronInput) -> HttpResult<ValidatedCron> {
-    let parsed = schedule::parse(&input.schedule).map_err(HttpError::bad_request)?;
-
     let timezone = input
         .timezone
         .map(|tz| tz.trim().to_string())
         .filter(|tz| !tz.is_empty())
         .unwrap_or_else(|| "UTC".to_string());
-    let tz = schedule::parse_timezone(&timezone).map_err(HttpError::bad_request)?;
 
     let timeout_secs = input.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS);
 
@@ -111,11 +108,8 @@ fn validate(input: CronInput) -> HttpResult<ValidatedCron> {
         _ => CronRuntime::App,
     };
 
-    let next_run_at = if input.enabled {
-        parsed.next_after(Utc::now(), tz).map(|dt| dt.naive_utc())
-    } else {
-        None
-    };
+    let next_run_at =
+        cron::next_run_at(&input.schedule, &timezone, &Utc::now())?.filter(|_| input.enabled);
 
     Ok(ValidatedCron {
         name: input.name,
@@ -216,8 +210,6 @@ async fn delete_cron(
 ) -> HttpResult<impl IntoResponse> {
     CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
 
-    // Capture run ids before deletion cascades the rows away; the FK cascade
-    // clears the database rows but not their on-disk logs.
     let run_ids = CronRunRepo::list_ids_for_job(&db_pool, &cron_id).await?;
     CronJobRepo::delete(&db_pool, &cron_id, &app.id).await?;
 
@@ -256,7 +248,7 @@ async fn run_now(
 
     let dispatched = run.clone();
     tokio::spawn(async move {
-        runner::run_cron_job(db_pool, docker_registry, log_manager, job, dispatched).await;
+        run_cron_job(db_pool, docker_registry, log_manager, job, dispatched).await;
     });
 
     Ok(Json(serde_json::json!({ "run": run })))
@@ -276,18 +268,14 @@ async fn preview_schedule(
     ActiveApp { .. }: ActiveApp,
     ValidatedJson(input): ValidatedJson<PreviewInput>,
 ) -> HttpResult<impl IntoResponse> {
-    let parsed = schedule::parse(&input.schedule).map_err(HttpError::bad_request)?;
     let timezone = input
         .timezone
         .filter(|tz| !tz.is_empty())
         .unwrap_or_else(|| "UTC".to_string());
-    let tz = schedule::parse_timezone(&timezone).map_err(HttpError::bad_request)?;
 
-    let next_runs: Vec<String> = parsed
-        .upcoming(Utc::now(), tz, PREVIEW_COUNT)
-        .into_iter()
-        .map(|dt| dt.to_rfc3339())
-        .collect();
+    let upcoming = cron::upcoming_runs(&input.schedule, &timezone, &Utc::now(), PREVIEW_COUNT)?;
+
+    let next_runs: Vec<String> = upcoming.into_iter().map(|dt| dt.to_rfc3339()).collect();
 
     Ok(Json(serde_json::json!({ "next_runs": next_runs })))
 }

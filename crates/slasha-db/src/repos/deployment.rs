@@ -5,8 +5,9 @@ use crate::{
     connection::DbPool,
     error::{DbError, DbResult},
     models::{
+        app::App,
         deployment::{Deployment, DeploymentStatus, NewDeployment},
-        schema::deployments,
+        schema::{apps, deployments},
     },
     schema::nodes,
 };
@@ -14,19 +15,17 @@ use crate::{
 pub struct DeploymentRepo;
 
 impl DeploymentRepo {
-    pub async fn list_non_terminal(pool: &DbPool) -> DbResult<Vec<Deployment>> {
+    pub async fn list_for_node(pool: &DbPool, node_id: &str) -> DbResult<Vec<(App, Deployment)>> {
         let pool = pool.clone();
+        let node_id = node_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             Ok(deployments::table
-                .filter(
-                    deployments::status
-                        .eq(DeploymentStatus::Pending.to_string())
-                        .or(deployments::status.eq(DeploymentStatus::Building.to_string()))
-                        .or(deployments::status.eq(DeploymentStatus::Running.to_string())),
-                )
-                .select(Deployment::as_select())
-                .load::<Deployment>(&mut conn)?)
+                .inner_join(apps::table)
+                .filter(deployments::node_id.eq(&node_id))
+                .order(deployments::created_at.desc())
+                .select((App::as_select(), Deployment::as_select()))
+                .load::<(App, Deployment)>(&mut conn)?)
         })
         .await?
     }
@@ -73,21 +72,6 @@ impl DeploymentRepo {
                 .first::<Deployment>(&mut conn)
                 .optional()?
                 .ok_or_else(|| DbError::NotFound(format!("deployment '{}' not found", id)))
-        })
-        .await?
-    }
-
-    pub async fn any_running(pool: &DbPool, app_id: &str) -> DbResult<bool> {
-        let pool = pool.clone();
-        let app_id = app_id.to_string();
-        tokio::task::spawn_blocking(move || {
-            let mut conn = pool.get()?;
-            Ok(diesel::select(diesel::dsl::exists(
-                deployments::table
-                    .filter(deployments::app_id.eq(&app_id))
-                    .filter(deployments::status.eq(DeploymentStatus::Running)),
-            ))
-            .get_result::<bool>(&mut conn)?)
         })
         .await?
     }

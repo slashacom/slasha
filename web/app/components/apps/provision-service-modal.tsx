@@ -21,7 +21,7 @@ import { TextInput } from '~/components/interface/text-input';
 import { EnvEditor } from '~/components/apps/env-editor';
 import { EnvVarChips } from '~/components/apps/env-var-chips';
 import { buildResourcesPayload } from '~/components/apps/service-resources';
-import { primaryEnvKey, serviceEnvReference } from '~/utils/service-env';
+import { serviceEnvReference } from '~/utils/service-env';
 
 type ProvisionServiceModalProps = {
   appSlug: string;
@@ -267,11 +267,12 @@ function EnvConfigSection(props: EnvConfigSectionProps) {
       )}
 
       <p className="text-[11px] leading-5 text-text-tertiary">
-        Reference these from your app as{' '}
+        Slasha automatically exposes{' '}
         <span className="font-mono text-text-secondary">
-          {serviceEnvReference(refName, primaryEnvKey(keys))}
-        </span>
-        . Edit anytime from the service&apos;s settings.
+          {serviceEnvReference(refName, 'DATABASE_URL')}
+        </span>{' '}
+        built from these parameters. Your app can reference it directly or build
+        custom connection strings using individual variable references.
       </p>
     </VStack>
   );

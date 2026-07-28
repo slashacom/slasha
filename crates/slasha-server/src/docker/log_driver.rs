@@ -5,6 +5,11 @@ use bollard::models::HostConfigLogConfig;
 const MAX_SIZE: &str = "10m";
 const MAX_FILE: &str = "3";
 
+/// Returns the default JSON-file log driver configuration with rotation caps.
+///
+/// # Returns
+///
+/// A [`HostConfigLogConfig`](bollard::models::HostConfigLogConfig) struct.
 pub fn default_log_config() -> HostConfigLogConfig {
     HostConfigLogConfig {
         typ: Some("json-file".to_string()),

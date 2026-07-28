@@ -1,4 +1,4 @@
-use std::{fs, os::unix::fs::PermissionsExt, process::Stdio, sync::Arc};
+use std::{fs, os::unix::fs::PermissionsExt, process::Stdio};
 
 use anyhow::Context;
 use async_compression::tokio::bufread::GzipDecoder;
@@ -10,26 +10,19 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use bollard::Docker;
 use futures_util::StreamExt;
-use slasha_db::{DbPool, app::App, repos::deployment::DeploymentRepo};
-use tokio::{io::AsyncReadExt, process::Command, sync::Notify};
+use slasha_db::{app::App, repos::deployment::DeploymentRepo};
+use tokio::{io::AsyncReadExt, process::Command};
 use tokio_util::io::{ReaderStream, StreamReader};
 
 use crate::{
     AppState, HttpResult,
-    docker::deployment::{resolve_head_commit, trigger_deployment},
+    docker::{AppDocker, app::deploy::context::resolve_head_commit},
     extractors::git::{GitAuth, GitError},
-    logs::LogManager,
 };
 
-struct AutoDeploy {
-    docker: Docker,
-    db_pool: DbPool,
-    log_manager: Arc<LogManager>,
-    proxy_sync_trigger: Arc<Notify>,
-    deployment_tasks: Arc<dashmap::DashMap<String, tokio_util::sync::CancellationToken>>,
-    config: crate::state::Config,
+struct AutoDeployContext {
+    state: AppState,
     app: App,
 }
 
@@ -71,38 +64,34 @@ fn create_push_message_hook(
     Ok(hooks_dir)
 }
 
-async fn run_auto_deploy(ctx: AutoDeploy) {
-    if !ctx.app.auto_deploy {
+async fn run_auto_deploy(context: AutoDeployContext) {
+    if !context.app.auto_deploy {
         return;
     }
 
-    let head = match resolve_head_commit(&ctx.app.repo_path, &ctx.app.default_branch) {
+    let head = match resolve_head_commit(&context.app.repo_path, &context.app.default_branch) {
         Ok((sha, _)) => sha,
         Err(_) => return,
     };
 
-    if let Ok(deployments) = DeploymentRepo::list_for_app(&ctx.db_pool, &ctx.app.id).await
+    if let Ok(deployments) =
+        DeploymentRepo::list_for_app(&context.state.storage.db_pool, &context.app.id).await
         && deployments.first().map(|d| d.commit_sha.as_str()) == Some(head.as_str())
     {
         return;
     }
 
-    match trigger_deployment(
-        ctx.docker,
-        ctx.db_pool,
-        ctx.log_manager,
-        ctx.proxy_sync_trigger,
-        ctx.deployment_tasks,
-        ctx.app,
-        Some(head),
-    )
-    .await
-    {
-        Ok(Some(deployment)) => {
-            tracing::info!(deployment_id = %deployment.id, "auto-deploy triggered from push")
+    let app_docker = match AppDocker::new(context.state, context.app).await {
+        Ok(app_docker) => app_docker,
+        Err(e) => {
+            tracing::warn!(error = %e, "auto-deploy from push failed");
+            return;
         }
-        Ok(None) => {
-            tracing::info!("auto-deploy skipped: a build is already in progress")
+    };
+
+    match app_docker.deploy(Some(head)).await {
+        Ok(deployment) => {
+            tracing::info!(deployment_id = %deployment.id, "auto-deploy triggered from push")
         }
         Err(e) => tracing::warn!(error = %e, "auto-deploy from push failed"),
     }
@@ -242,23 +231,8 @@ async fn receive_pack(
         ));
     }
 
-    let node = slasha_db::repos::node::NodeRepo::get(&state.storage.db_pool, &auth.app.node_id)
-        .await
-        .map_err(|e| crate::routing::api::HttpError::internal(anyhow::anyhow!(e)))?;
-
-    let docker = state
-        .clients
-        .docker_registry
-        .get_client(&node)
-        .map_err(|e| crate::routing::api::HttpError::internal(anyhow::anyhow!(e)))?;
-
-    let auto_deploy = AutoDeploy {
-        docker,
-        db_pool: state.storage.db_pool.clone(),
-        log_manager: state.runtime.log_manager.clone(),
-        proxy_sync_trigger: state.runtime.proxy_sync_trigger.clone(),
-        deployment_tasks: state.runtime.deployment_tasks.clone(),
-        config: state.config.clone(),
+    let auto_deploy = AutoDeployContext {
+        state,
         app: auth.app.clone(),
     };
 
@@ -269,7 +243,7 @@ async fn handle_git_service(
     service: &str,
     auth: GitAuth,
     req: Request<Body>,
-    auto_deploy: Option<AutoDeploy>,
+    auto_deploy: Option<AutoDeployContext>,
 ) -> HttpResult<Response> {
     let git_protocol = req
         .headers()
@@ -290,7 +264,7 @@ async fn handle_git_service(
         .map(|ctx| {
             create_push_message_hook(
                 &ctx.app.slug,
-                &ctx.config.platform_domain,
+                &ctx.state.config.platform_domain,
                 ctx.app.auto_deploy,
             )
         })
