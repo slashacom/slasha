@@ -2,12 +2,11 @@ import { Suspense, useMemo, useState } from 'react';
 import { Outlet, useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { ArrowUpRight, Check, Copy, Folder, GitBranch } from 'lucide-react';
-import { getAppOptions } from '~/queries/apps';
+import { getAppOptions, type AppRuntimeStatus } from '~/queries/apps';
 import { getDeploymentsOptions } from '~/queries/deployments';
 import type { App } from '~/models/app';
 import { TabNav } from '~/components/interface/tab-nav';
 import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
-import { getAppStatusView, type AppStatusView } from '~/utils/app-status';
 import { cn } from '~/utils/classname';
 import { queryClient } from '~/utils/query-client';
 
@@ -27,7 +26,7 @@ type Protocol = 'https' | 'ssh';
 
 type AppToolbarProps = {
   app: App;
-  status: AppStatusView;
+  status: AppRuntimeStatus;
   url: string;
 };
 
@@ -76,7 +75,7 @@ function AppToolbar(props: AppToolbarProps) {
           {app.default_branch}
         </span>
         <AppRuntimeBadge status={status} />
-        {status.tone === 'live' ? (
+        {status === 'running' ? (
           <a
             href={appUrl}
             target="_blank"
@@ -156,7 +155,7 @@ export default function AppLayout() {
     },
   });
   const app = data.app;
-  const status = getAppStatusView(data.runtime_status as any);
+  const status = data.runtime_status as AppRuntimeStatus;
 
   if (!app) {
     return (

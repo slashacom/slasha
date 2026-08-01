@@ -2,7 +2,6 @@ import { Link } from 'react-router';
 import { ArrowUpRight, GitBranchIcon } from 'lucide-react';
 import type { AppListItem } from '~/queries/apps';
 import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
-import { getAppStatusView } from '~/utils/app-status';
 
 type AppCardProps = {
   item: AppListItem;
@@ -11,7 +10,6 @@ type AppCardProps = {
 export function AppCard(props: AppCardProps) {
   const { item } = props;
   const { app, url, runtime_status } = item;
-  const status = getAppStatusView(runtime_status);
 
   return (
     <Link
@@ -27,7 +25,7 @@ export function AppCard(props: AppCardProps) {
             {app.slug}
           </p>
         </div>
-        <AppRuntimeBadge status={status} />
+        <AppRuntimeBadge status={runtime_status} />
       </div>
 
       <div className="mt-4 flex items-center justify-between text-[12px] text-text-tertiary">
@@ -37,7 +35,7 @@ export function AppCard(props: AppCardProps) {
           <span className="px-1">·</span>
           <span>{new Date(app.created_at).toLocaleDateString()}</span>
         </div>
-        {status.tone === 'live' ? (
+        {runtime_status === 'running' ? (
           <a
             href={url}
             target="_blank"

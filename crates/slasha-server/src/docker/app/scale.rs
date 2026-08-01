@@ -84,7 +84,7 @@ pub async fn scale_deployment_process(
     let command = deployment_ctx
         .procfile
         .as_ref()
-        .and_then(|pf| pf.commands.get(&process_type).cloned());
+        .and_then(|pf| pf.get_process_command(process_type));
 
     log.send(format!(
         "Reconciling {} replicas to target count: {}",
@@ -106,7 +106,7 @@ pub async fn scale_deployment_process(
                         process_type,
                         instance_index: index,
                         container_port: Some(deployment_ctx.container_port),
-                        cmd: command.as_deref(),
+                        cmd: command,
                         env_map: &deployment_ctx.env_map,
                         volume_paths: &deployment_ctx.volume_paths,
                         backup: None,

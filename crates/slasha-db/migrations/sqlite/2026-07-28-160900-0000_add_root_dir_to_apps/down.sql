@@ -1,0 +1,1 @@
+ALTER TABLE apps DROP COLUMN root_dir;

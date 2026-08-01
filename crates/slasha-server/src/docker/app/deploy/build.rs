@@ -4,12 +4,15 @@ use bytes::Bytes;
 use slasha_db::{app::App, deployment::Deployment};
 use tempfile::TempDir;
 use tokio::{
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command as TokioCommand,
 };
 
 use crate::{
-    docker::{DockerError, DockerResult, app::image::image_tag},
+    docker::{
+        DockerError, DockerResult,
+        app::{image::image_tag, parser::repo_file_path},
+    },
     logs::LogHandle,
 };
 
@@ -28,7 +31,7 @@ pub async fn build_docker(
     ssh_opts: Option<(&str, &str)>,
 ) -> DockerResult<()> {
     let (tmp, image_tag) = prepare_build_context(log, app, deployment).await?;
-    let dockerfile_path = tmp.path().join("Dockerfile");
+    let dockerfile_path = tmp.path().join(repo_file_path(&app.root_dir, "Dockerfile"));
 
     build_image_cli(
         log,
@@ -58,6 +61,8 @@ pub async fn build_railpack(
     let (tmp, image_tag) = prepare_build_context(log, app, deployment).await?;
     let tmp_path = tmp.path();
 
+    let target_dir = tmp_path.join(&app.root_dir);
+
     let plan_path = tmp_path.join("railpack-plan.json");
     let info_path = tmp_path.join("railpack-info.json");
 
@@ -65,7 +70,7 @@ pub async fn build_railpack(
 
     let prepare_child = TokioCommand::new("railpack")
         .arg("prepare")
-        .arg(tmp_path)
+        .arg(&target_dir)
         .arg("--plan-out")
         .arg(&plan_path)
         .arg("--info-out")
@@ -164,7 +169,6 @@ async fn tar_to_directory(tar_bytes: Bytes, dest: &Path) -> DockerResult<()> {
         .spawn()?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        use tokio::io::AsyncWriteExt;
         stdin.write_all(&tar_bytes).await?;
     }
 
