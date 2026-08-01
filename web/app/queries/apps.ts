@@ -8,18 +8,26 @@ import type { DomainHealth } from '~/models/domain-health';
 import type { AppMetrics } from '~/models/app-metrics';
 import type { GitConnection } from '~/models/connection';
 
+export type AppRuntimeStatus =
+  | 'idle'
+  | 'deploying'
+  | 'running'
+  | 'failed'
+  | 'migrating'
+  | 'scaling'
+  | 'syncing'
+  | 'purging';
+
+export function isAppTransitional(status: string): boolean {
+  return ['deploying', 'scaling', 'purging', 'syncing', 'migrating'].includes(
+    status
+  );
+}
+
 export type AppListItem = {
   app: App;
   url: string;
-  runtime_status:
-    | 'idle'
-    | 'deploying'
-    | 'running'
-    | 'failed'
-    | 'migrating'
-    | 'scaling'
-    | 'syncing'
-    | 'purging';
+  runtime_status: AppRuntimeStatus;
 };
 
 type CreateAppPayload<Source extends AppSource = AppSource> = {
@@ -61,12 +69,21 @@ type UpdateAppSettingsPayload = {
   appSlug: string;
   name?: string;
   auto_deploy?: boolean;
+  root_dir?: string;
 };
 
 export function getAppsOptions() {
   return queryOptions({
     queryKey: ['apps'],
     queryFn: () => httpGet<{ apps: AppListItem[] }>('apps'),
+    refetchInterval: (query) => {
+      const apps = query.state.data?.apps;
+      if (!apps) return false;
+      const isTransitional = apps.some((item) =>
+        isAppTransitional(item.runtime_status)
+      );
+      return isTransitional ? 2000 : false;
+    },
   });
 }
 
@@ -89,6 +106,11 @@ export function getAppOptions(slug: string) {
         url: string;
         runtime_status: string;
       }>(`apps/${slug}`),
+    refetchInterval: (query) => {
+      const status = query.state.data?.runtime_status;
+      const isTransitional = status && isAppTransitional(status);
+      return isTransitional ? 2000 : false;
+    },
   });
 }
 
@@ -97,6 +119,14 @@ export function getAppConnectionOptions(slug: string) {
     queryKey: ['apps', slug, 'connection'],
     queryFn: () =>
       httpGet<{ connection?: AppConnection }>(`apps/${slug}/connection`),
+  });
+}
+
+export function getAppDirectoriesOptions(slug: string) {
+  return queryOptions({
+    queryKey: ['apps', slug, 'directories'],
+    queryFn: () =>
+      httpGet<{ directories: string[] }>(`apps/${slug}/files/directories`),
   });
 }
 
@@ -223,6 +253,7 @@ export function useUpdateAppSettings() {
       httpPut<{ success: boolean }>(`apps/${data.appSlug}/settings`, {
         name: data.name,
         auto_deploy: data.auto_deploy,
+        root_dir: data.root_dir,
       }),
   });
 }

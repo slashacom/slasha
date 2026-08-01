@@ -561,6 +561,27 @@ async fn list_scales(
     Ok(Json(serde_json::json!({ "scales": scales })))
 }
 
+fn normalize_root_dir(value: &str) -> anyhow::Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed == "/" || trimmed == "./" {
+        return Ok(String::new());
+    }
+
+    if trimmed.starts_with('/') {
+        anyhow::bail!("Root directory path must be relative");
+    }
+
+    let path = std::path::Path::new(trimmed);
+    for component in path.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            anyhow::bail!("Root directory cannot contain '..'");
+        }
+    }
+
+    let clean = trimmed.trim_start_matches("./").trim_matches('/');
+    Ok(clean.to_string())
+}
+
 #[derive(Deserialize, Validate)]
 struct UpdateSettingsReq {
     #[serde(
@@ -571,6 +592,12 @@ struct UpdateSettingsReq {
     name: Option<String>,
     #[garde(skip)]
     auto_deploy: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::routing::api::deserialize::trim_optional_string"
+    )]
+    #[garde(skip)]
+    root_dir: Option<String>,
 }
 
 async fn update_settings(
@@ -584,6 +611,12 @@ async fn update_settings(
 
     if let Some(name) = payload.name {
         AppRepo::update_name(&storage.db_pool, &app.id, &name).await?;
+    }
+
+    if let Some(root_dir) = payload.root_dir {
+        let normalized =
+            normalize_root_dir(&root_dir).map_err(|e| HttpError::bad_request(e.to_string()))?;
+        AppRepo::update_root_dir(&storage.db_pool, &app.id, &normalized).await?;
     }
 
     Ok(Json(serde_json::json!({

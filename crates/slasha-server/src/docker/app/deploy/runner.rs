@@ -109,7 +109,7 @@ impl<'a> DeploymentRunner<'a> {
         self.build_and_tag_image(source_image).await?;
 
         if let Some(procfile) = &self.context.procfile
-            && let Some(cmd) = procfile.get_process_command(&ProcessType::Release)
+            && let Some(cmd) = procfile.get_process_command(ProcessType::Release)
         {
             self.wf
                 .step(

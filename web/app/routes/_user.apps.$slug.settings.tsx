@@ -8,11 +8,13 @@ import {
   getAppEnvVarsOptions,
   getAppOptions,
   useDeleteApp,
+  getAppDirectoriesOptions,
 } from '~/queries/apps';
 import { getNodesOptions } from '~/queries/nodes';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { AppEnvEditor } from '~/components/apps/app-env-editor';
 import { AppNameManager } from '~/components/apps/app-name-manager';
+import { AppRootDirManager } from '~/components/apps/app-root-dir-manager';
 import { AppNodeManager } from '~/components/apps/app-node-manager';
 import { AutoDeployManager } from '~/components/apps/auto-deploy-manager';
 import { HealthCheckManager } from '~/components/apps/health-check-manager';
@@ -40,6 +42,7 @@ export async function clientLoader(args: { params: { slug: string } }) {
     queryClient.ensureQueryData(getVolumesOptions(params.slug)),
     queryClient.ensureQueryData(getBackupOptions(params.slug)),
     queryClient.ensureQueryData(getNodesOptions()),
+    queryClient.ensureQueryData(getAppDirectoriesOptions(params.slug)),
   ]);
 }
 
@@ -64,6 +67,9 @@ export default function AppSettingsPage() {
       <div className="flex-1 overflow-y-auto p-8">
         <div className="max-w-3xl mb-8">
           <AppNameManager app={app} />
+        </div>
+        <div className="max-w-3xl mb-8">
+          <AppRootDirManager app={app} />
         </div>
         <div className="max-w-3xl mb-8">
           <AppNodeManager app={app} />

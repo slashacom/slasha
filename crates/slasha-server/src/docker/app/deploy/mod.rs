@@ -93,7 +93,7 @@ pub async fn run_deployment_workflow(
             "deployment finish"
         );
 
-        let _ = log.send(format!("Deployment failed: {}", e)).await;
+        let _ = log.send(format!("{}", e)).await;
         let _ = log
             .send(
                 "Rolling back this release; the previous deployment (if any) stays active"

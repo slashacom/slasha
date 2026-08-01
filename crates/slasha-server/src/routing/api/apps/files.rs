@@ -9,6 +9,7 @@ const MAX_FILE_SIZE: usize = 1024 * 1024;
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/directories", get(get_directories))
         .route("/", get(get_file_tree))
         .route("/{*path}", get(get_file_content))
 }
@@ -216,4 +217,43 @@ async fn get_file_content(
         is_truncated,
         content: Some(content),
     }))
+}
+
+fn collect_directories_recursive(
+    repo: &git2::Repository,
+    tree: &git2::Tree,
+    prefix: &str,
+    dirs: &mut Vec<String>,
+) {
+    for entry in tree.iter() {
+        if entry.kind() == Some(ObjectType::Tree) {
+            let Some(name) = entry.name() else { continue };
+            let path = if prefix.is_empty() {
+                name.to_string()
+            } else {
+                format!("{}/{}", prefix, name)
+            };
+
+            dirs.push(path.clone());
+
+            if let Ok(obj) = entry.to_object(repo)
+                && let Ok(subtree) = obj.into_tree()
+            {
+                collect_directories_recursive(repo, &subtree, &path, dirs);
+            }
+        }
+    }
+}
+
+async fn get_directories(ActiveApp { app, .. }: ActiveApp) -> HttpResult<impl IntoResponse> {
+    let repo = git2::Repository::open_bare(&app.repo_path).context("Failed to open repository")?;
+    let tree = resolve_head_tree(&repo)?;
+
+    let mut dirs = Vec::new();
+    if let Some(tree) = tree {
+        collect_directories_recursive(&repo, &tree, "", &mut dirs);
+    }
+    dirs.sort();
+
+    Ok(Json(serde_json::json!({ "directories": dirs })))
 }

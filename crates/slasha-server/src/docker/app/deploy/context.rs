@@ -7,8 +7,8 @@ use crate::docker::{
     app::{
         env::resolve_app_env,
         parser::{
-            BuildStrategy, Procfile, detect_build_strategy, load_procfile, parse_expose,
-            parse_volumes,
+            BuildStrategy, Procfile, detect_build_strategy, parse_expose, parse_volumes,
+            read_procfile,
         },
     },
 };
@@ -32,12 +32,22 @@ pub async fn resolve_deployment_context(
     app: &App,
     deployment: &Deployment,
 ) -> DockerResult<DeploymentContext> {
-    let strategy = detect_build_strategy(Path::new(&app.repo_path), &deployment.commit_sha).await?;
+    let strategy = detect_build_strategy(
+        Path::new(&app.repo_path),
+        &deployment.commit_sha,
+        &app.root_dir,
+    )
+    .await?;
     let mut env_map = resolve_app_env(db_pool, app).await?;
 
     let container_port = resolve_container_port(&strategy, &mut env_map)?;
     let volume_paths = resolve_volume_paths(&strategy);
-    let procfile = load_procfile(Path::new(&app.repo_path), &deployment.commit_sha).await?;
+    let procfile = read_procfile(
+        Path::new(&app.repo_path),
+        &deployment.commit_sha,
+        &app.root_dir,
+    )
+    .await?;
 
     Ok(DeploymentContext {
         strategy,

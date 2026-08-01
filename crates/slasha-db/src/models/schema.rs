@@ -124,6 +124,7 @@ diesel::table! {
         auto_deploy -> Bool,
         source -> Text,
         node_id -> Text,
+        root_dir -> Text,
     }
 }
 

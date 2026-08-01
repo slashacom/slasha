@@ -22,6 +22,9 @@ fn print_app(state: &AppState, app: &App, status: &str) {
     cli_label("Slug", &app.slug);
     cli_label("Status", status);
     cli_label("Branch", &app.default_branch);
+    if !app.root_dir.is_empty() {
+        cli_label("Root Dir", &app.root_dir);
+    }
     cli_label("Source", app.source.to_string());
 
     match app.source {
@@ -69,9 +72,17 @@ pub async fn handle_list(state: &AppState) -> Result<()> {
                     status.to_string(),
                     app.default_branch,
                     app.source.to_string(),
+                    if app.root_dir.is_empty() {
+                        "/".to_string()
+                    } else {
+                        app.root_dir
+                    },
                 ]);
             }
-            print_table(&["NAME", "SLUG", "STATUS", "BRANCH", "SOURCE"], rows);
+            print_table(
+                &["NAME", "SLUG", "STATUS", "BRANCH", "SOURCE", "ROOT DIR"],
+                rows,
+            );
         }
     })?;
 

@@ -10,6 +10,7 @@ export type App = {
   auto_deploy: boolean;
   source: AppSource;
   node_id: string;
+  root_dir: string;
 };
 
 export type AppDomain = {
