@@ -2,6 +2,7 @@ use bollard::{Docker, plugin::ProgressDetail, query_parameters::CreateImageOptio
 use futures_util::StreamExt;
 use slasha_db::{
     app::App,
+    logs::LogPrefix,
     repos::service::ServiceRepo,
     service::{Service, ServiceStatus},
 };
@@ -12,10 +13,10 @@ use crate::{
         DockerError, DockerResult,
         naming::{service_container_name, service_volume_name},
         service::{resolve_service_env, spec::ServiceKindDockerExt},
-        utils,
+        utils::{self, stream_container_logs},
         workflow::runner::WorkflowContext,
     },
-    logs::{LogHandle, stream_container_logs},
+    logs::LogWriter,
     state::AppState,
 };
 
@@ -25,7 +26,7 @@ pub struct ServiceProvisionRunner<'a> {
     pub service: &'a Service,
     pub docker_client: &'a Docker,
     pub wf: &'a WorkflowContext<'a>,
-    pub log: &'a LogHandle,
+    pub log: &'a LogWriter,
 }
 
 impl<'a> ServiceProvisionRunner<'a> {
@@ -42,8 +43,7 @@ impl<'a> ServiceProvisionRunner<'a> {
         let image_name = self.service.kind.docker_image(&self.service.version);
 
         self.log
-            .send(format!("Pulling Docker image {}", image_name))
-            .await?;
+            .stdout(format!("Pulling Docker image {}", image_name));
 
         let mut stream = self.docker_client.create_image(
             Some(CreateImageOptions {
@@ -64,7 +64,7 @@ impl<'a> ServiceProvisionRunner<'a> {
                     }) => format!("{}: {}/{}", status, current, total),
                     _ => status,
                 };
-                self.log.send(msg).await?;
+                self.log.stdout(msg);
             }
         }
 
@@ -130,16 +130,14 @@ impl<'a> ServiceProvisionRunner<'a> {
             .await?;
 
         self.log
-            .send(format!("Starting service {}", self.service.name))
-            .await?;
+            .stdout(format!("Starting service {}", self.service.name));
 
         utils::start_container(self.docker_client, &container_name).await?;
 
         stream_container_logs(
             self.docker_client.clone(),
-            self.log.clone(),
+            self.log.clone().prefix(LogPrefix::Service),
             container_name.clone(),
-            None,
         );
 
         instance::wait_for_service_health(
@@ -147,7 +145,7 @@ impl<'a> ServiceProvisionRunner<'a> {
             &container_name,
             &self.service.name,
             180,
-            Some(self.log),
+            self.log,
         )
         .await?;
 

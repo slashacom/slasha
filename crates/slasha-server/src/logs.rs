@@ -1,387 +1,201 @@
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{sync::Arc, time::Duration};
 
-use bollard::{Docker, query_parameters::LogsOptionsBuilder};
 use dashmap::DashMap;
-use file_rotate::{
-    ContentLimit, FileRotate,
-    compression::Compression,
-    suffix::{AppendTimestamp, DateFrom, FileLimit},
+use slasha_db::{
+    DuckdbPool,
+    models::logs::{LogPrefix, LogRecord, LogStream, ResourceKind},
+    repos::logs::LogsRepo,
 };
-use futures_util::StreamExt;
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{broadcast, mpsc};
 
 const CHANNEL_CAPACITY: usize = 1024;
-
-pub enum LogKey {
-    Deployment {
-        app_slug: String,
-        deployment_id: String,
-    },
-    Service {
-        app_slug: String,
-        service_name: String,
-    },
-    Cron {
-        app_slug: String,
-        cron_run_id: String,
-    },
-    NodeSetup {
-        node_id: String,
-    },
-    NodeTeardown {
-        node_id: String,
-    },
-}
-
-impl LogKey {
-    fn as_map_key(&self) -> String {
-        match self {
-            LogKey::Deployment {
-                app_slug,
-                deployment_id,
-            } => {
-                format!("d:{}:{}", app_slug, deployment_id)
-            }
-            LogKey::Service {
-                app_slug,
-                service_name,
-            } => {
-                format!("s:{}:{}", app_slug, service_name)
-            }
-            LogKey::Cron {
-                app_slug,
-                cron_run_id,
-            } => {
-                format!("c:{}:{}", app_slug, cron_run_id)
-            }
-            LogKey::NodeSetup { node_id } => {
-                format!("ns:{}", node_id)
-            }
-            LogKey::NodeTeardown { node_id } => {
-                format!("nt:{}", node_id)
-            }
-        }
-    }
-
-    fn as_path(&self, logs_dir: &Path) -> PathBuf {
-        match self {
-            LogKey::Deployment {
-                app_slug,
-                deployment_id,
-            } => logs_dir
-                .join(app_slug)
-                .join("deployments")
-                .join(deployment_id)
-                .join("deployment.log"),
-            LogKey::Service {
-                app_slug,
-                service_name,
-            } => logs_dir
-                .join(app_slug)
-                .join("services")
-                .join(service_name)
-                .join("service.log"),
-            LogKey::Cron {
-                app_slug,
-                cron_run_id,
-            } => logs_dir
-                .join(app_slug)
-                .join("cron")
-                .join(cron_run_id)
-                .join("run.log"),
-            LogKey::NodeSetup { node_id } => logs_dir.join("nodes").join(node_id).join("setup.log"),
-            LogKey::NodeTeardown { node_id } => {
-                logs_dir.join("nodes").join(node_id).join("teardown.log")
-            }
-        }
-    }
-}
-
-pub struct LogManager {
-    channels: DashMap<String, broadcast::Sender<String>>,
-    files: DashMap<String, Arc<Mutex<FileRotate<AppendTimestamp>>>>,
-    logs_dir: PathBuf,
-}
+const BATCH_INTERVAL_MS: u64 = 100;
+const MAX_BATCH_SIZE: usize = 500;
 
 #[derive(Clone)]
-pub struct LogHandle {
-    key: String,
-    path: PathBuf,
-    tx: broadcast::Sender<String>,
-    file: Arc<Mutex<FileRotate<AppendTimestamp>>>,
+pub struct LogBus {
+    channels: Arc<DashMap<String, broadcast::Sender<LogRecord>>>,
+    batch_tx: mpsc::UnboundedSender<LogRecord>,
 }
 
-impl LogManager {
-    pub fn new(logs_dir: PathBuf) -> Self {
-        Self {
-            channels: DashMap::new(),
-            files: DashMap::new(),
-            logs_dir,
+/// Contextual log builder that automatically fills resource metadata and timestamps.
+#[derive(Clone)]
+pub struct LogWriter {
+    bus: LogBus,
+    pub resource_kind: ResourceKind,
+    pub resource_id: String,
+    pub app_id: Option<String>,
+    pub prefix: Option<LogPrefix>,
+}
+
+impl LogBus {
+    /// Creates a new [`LogBus`] instance and spawns the background DuckDB flusher task.
+    ///
+    /// # Arguments
+    ///
+    /// * `pool` - DuckDB connection pool ([`DuckdbPool`]).
+    ///
+    /// # Returns
+    ///
+    /// A new [`LogBus`] instance.
+    pub fn new(pool: DuckdbPool) -> Self {
+        let (batch_tx, batch_rx) = mpsc::unbounded_channel();
+        let bus = Self {
+            channels: Arc::new(DashMap::new()),
+            batch_tx,
+        };
+
+        Self::spawn_flusher(pool, batch_rx);
+        bus
+    }
+
+    /// Creates a contextual [`LogWriter`] pre-populated with resource metadata.
+    ///
+    /// # Arguments
+    ///
+    /// * `resource_kind` - The kind of resource ([`ResourceKind`]).
+    /// * `resource_id` - Unique identifier of the resource.
+    ///
+    /// # Returns
+    ///
+    /// A contextual [`LogWriter`].
+    pub fn writer(&self, resource_kind: ResourceKind, resource_id: impl Into<String>) -> LogWriter {
+        LogWriter {
+            bus: self.clone(),
+            resource_kind,
+            resource_id: resource_id.into(),
+            app_id: None,
+            prefix: Some(LogPrefix::System),
         }
     }
 
-    pub async fn get_logger(&self, key: &LogKey) -> anyhow::Result<LogHandle> {
-        let map_key = key.as_map_key();
-        let path = key.as_path(&self.logs_dir);
-
-        self.build_log_handle(map_key, path).await
-    }
-
-    async fn build_log_handle(&self, key: String, path: PathBuf) -> anyhow::Result<LogHandle> {
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+    /// Publishes a [`LogRecord`] to active live subscribers and queues it for DuckDB batch insertion.
+    ///
+    /// # Arguments
+    ///
+    /// * `record` - The log record to publish.
+    pub fn publish(&self, record: LogRecord) {
+        if let Some(tx) = self.channels.get(&record.resource_id) {
+            if tx.receiver_count() == 0 {
+                self.channels.remove(&record.resource_id);
+            } else {
+                let _ = tx.send(record.clone());
+            }
         }
 
-        let tx = self
-            .channels
-            .entry(key.clone())
+        let _ = self.batch_tx.send(record);
+    }
+
+    /// Subscribes to live log records for a specific resource ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `resource_id` - Unique identifier of the resource.
+    ///
+    /// # Returns
+    ///
+    /// A [`broadcast::Receiver<LogRecord>`] stream handle.
+    pub fn subscribe(&self, resource_id: &str) -> broadcast::Receiver<LogRecord> {
+        self.channels
+            .entry(resource_id.to_string())
             .or_insert_with(|| {
                 let (tx, _) = broadcast::channel(CHANNEL_CAPACITY);
                 tx
             })
-            .clone();
-
-        let file = self
-            .files
-            .entry(key.clone())
-            .or_insert_with(|| {
-                Arc::new(Mutex::new(FileRotate::new(
-                    &path,
-                    AppendTimestamp::with_format(
-                        "%Y-%m-%d_%H-%M-%S",
-                        FileLimit::MaxFiles(10),
-                        DateFrom::Now,
-                    ),
-                    ContentLimit::Lines(10_000),
-                    Compression::None,
-                    None,
-                )))
-            })
-            .clone();
-
-        Ok(LogHandle {
-            key,
-            path,
-            tx,
-            file,
-        })
+            .subscribe()
     }
 
-    pub fn remove(&self, key: &LogKey) {
-        let k = key.as_map_key();
-        self.channels.remove(&k);
-        self.files.remove(&k);
+    /// Drops the in-memory broadcast channel for a resource.
+    ///
+    /// # Arguments
+    ///
+    /// * `resource_id` - Resource ID whose broadcast channel should be closed.
+    pub fn remove(&self, resource_id: &str) {
+        self.channels.remove(resource_id);
     }
 
-    pub async fn delete_cron_run_logs(&self, app_slug: &str, run_id: &str) -> std::io::Result<()> {
-        let key = LogKey::Cron {
-            app_slug: app_slug.to_string(),
-            cron_run_id: run_id.to_string(),
-        };
-        self.remove(&key);
+    /// Spawns a background task that flushes queued log records to DuckDB every 100ms.
+    fn spawn_flusher(pool: DuckdbPool, mut rx: mpsc::UnboundedReceiver<LogRecord>) {
+        async fn flush(pool: &DuckdbPool, buffer: &mut Vec<LogRecord>) {
+            if buffer.is_empty() {
+                return;
+            }
 
-        if let Some(run_dir) = key.as_path(&self.logs_dir).parent()
-            && tokio::fs::try_exists(run_dir).await.unwrap_or(false)
-        {
-            tokio::fs::remove_dir_all(run_dir).await?;
-        }
-        Ok(())
-    }
+            let batch = std::mem::take(buffer);
 
-    fn close_app_handles(&self, app_slug: &str) {
-        let d_prefix = format!("d:{}:", app_slug);
-        let s_prefix = format!("s:{}:", app_slug);
-        let c_prefix = format!("c:{}:", app_slug);
-
-        let keep = |k: &String| {
-            !k.starts_with(&d_prefix) && !k.starts_with(&s_prefix) && !k.starts_with(&c_prefix)
-        };
-
-        self.channels.retain(|k, _| keep(k));
-        self.files.retain(|k, _| keep(k));
-    }
-
-    pub async fn delete_app_logs(&self, app_slug: &str) -> std::io::Result<()> {
-        self.close_app_handles(app_slug);
-
-        let app_dir = self.logs_dir.join(app_slug);
-        if app_dir.exists() {
-            tokio::fs::remove_dir_all(app_dir).await?;
-        }
-
-        Ok(())
-    }
-
-    pub async fn delete_node_logs(&self, node_id: &str) -> std::io::Result<()> {
-        let setup_key = LogKey::NodeSetup {
-            node_id: node_id.to_string(),
-        };
-        let teardown_key = LogKey::NodeTeardown {
-            node_id: node_id.to_string(),
-        };
-
-        self.remove(&setup_key);
-        self.remove(&teardown_key);
-
-        if let Some(node_dir) = setup_key.as_path(&self.logs_dir).parent()
-            && tokio::fs::try_exists(node_dir).await.unwrap_or(false)
-        {
-            tokio::fs::remove_dir_all(node_dir).await?;
-        }
-
-        Ok(())
-    }
-}
-
-impl LogHandle {
-    pub async fn send(&self, line: impl Into<String>) -> anyhow::Result<()> {
-        let line = line.into();
-        let _ = self.tx.send(line.clone()); // no one may be listening
-        let mut file = self.file.lock().await;
-        writeln!(file, "{line}")?;
-        Ok(())
-    }
-
-    pub fn subscribe(&self) -> broadcast::Receiver<String> {
-        self.tx.subscribe()
-    }
-
-    async fn collect_rotated_files(&self) -> anyhow::Result<Vec<PathBuf>> {
-        let parent = self
-            .path
-            .parent()
-            .ok_or_else(|| anyhow::anyhow!("log path has no parent directory"))?;
-
-        let base_name = self
-            .path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| anyhow::anyhow!("log path has no file name"))?
-            .to_string();
-
-        let mut read_dir = tokio::fs::read_dir(parent).await?;
-        let mut files: Vec<PathBuf> = Vec::new();
-
-        while let Some(entry) = read_dir.next_entry().await? {
-            if entry.file_name().to_string_lossy().starts_with(&base_name) {
-                files.push(entry.path());
+            if let Err(err) = LogsRepo::insert_batch(pool, batch).await {
+                tracing::error!(error = ?err, "failed to insert log batch to duckdb");
             }
         }
 
-        files.sort();
-        Ok(files)
-    }
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(BATCH_INTERVAL_MS));
+            let mut buffer = Vec::with_capacity(MAX_BATCH_SIZE);
 
-    pub async fn get_historical(&self) -> anyhow::Result<Vec<String>> {
-        let files = self.collect_rotated_files().await?;
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        flush(&pool, &mut buffer).await;
+                    }
 
-        let mut lines = Vec::new();
-        for path in files {
-            let content = tokio::fs::read_to_string(&path).await?;
-            lines.extend(content.lines().map(|s| s.to_string()));
-        }
+                    item = rx.recv() => {
+                        match item {
+                            Some(record) => {
+                                buffer.push(record);
 
-        Ok(lines)
-    }
-
-    pub async fn delete_logs(&self) -> anyhow::Result<()> {
-        for path in self.collect_rotated_files().await? {
-            tokio::fs::remove_file(&path).await?;
-        }
-        Ok(())
-    }
-
-    pub fn key(&self) -> &str {
-        &self.key
-    }
-}
-
-// optionally return the result if the caller cares
-pub fn stream_container_logs(
-    docker_client: Docker,
-    log: LogHandle,
-    container: String,
-    prefix: Option<String>,
-) -> tokio::task::JoinHandle<anyhow::Result<()>> {
-    tokio::spawn(async move {
-        if let Err(e) =
-            stream_container_logs_inner(docker_client, log.clone(), container.clone(), prefix).await
-        {
-            tracing::warn!(
-                container = %container,
-                key = %log.key(),
-                error = ?e,
-                "Log stream failed"
-            );
-
-            return Err(e);
-        }
-
-        Ok(())
-    })
-}
-
-async fn stream_container_logs_inner(
-    docker_client: Docker,
-    log: LogHandle,
-    container: String,
-    prefix: Option<String>,
-) -> anyhow::Result<()> {
-    let opts = LogsOptionsBuilder::new()
-        .follow(true)
-        .stdout(true)
-        .stderr(true)
-        .build();
-
-    let mut log_stream = docker_client.logs(&container, Some(opts));
-    let mut buffer = String::new();
-
-    while let Some(item) = log_stream.next().await {
-        match item {
-            Ok(output) => {
-                let chunk = output.to_string();
-                buffer.push_str(&chunk);
-
-                while let Some(pos) = buffer.find('\n') {
-                    let line = buffer[..pos].to_string();
-                    buffer.drain(..=pos);
-
-                    let formatted = match &prefix {
-                        Some(p) => format!("{} {}", p, line),
-                        None => line,
-                    };
-                    log.send(formatted).await?;
+                                if buffer.len() >= MAX_BATCH_SIZE {
+                                    flush(&pool, &mut buffer).await;
+                                }
+                            }
+                            // channel closed, drain buffer and exit
+                            None => {
+                                flush(&pool, &mut buffer).await;
+                                break;
+                            }
+                        }
+                    }
                 }
             }
-            Err(e) => {
-                let msg = format!("log stream error for {}: {}", log.key(), e);
-                tracing::warn!(
-                    key = %log.key(),
-                    error = %e,
-                    "log stream error"
-                );
-                log.send(msg).await?;
-                break;
-            }
-        }
+        });
+    }
+}
+
+impl LogWriter {
+    /// Binds an app ID to the log writer for cascading deletes and app filtering.
+    pub fn app_id(mut self, app_id: impl Into<String>) -> Self {
+        self.app_id = Some(app_id.into());
+        self
     }
 
-    if !buffer.is_empty() {
-        let formatted = match &prefix {
-            Some(p) => format!("{} {}", p, buffer),
-            None => buffer,
+    /// Add a prefix to the emitted log records.
+    pub fn prefix(mut self, prefix: LogPrefix) -> Self {
+        self.prefix = Some(prefix);
+        self
+    }
+
+    /// Emits a stdout log record.
+    pub fn stdout(&self, message: impl Into<String>) {
+        self.send(LogStream::Stdout, message);
+    }
+
+    /// Emits a stderr log record.
+    pub fn stderr(&self, message: impl Into<String>) {
+        self.send(LogStream::Stderr, message);
+    }
+
+    /// Emits a log record with explicit stream classification.
+    fn send(&self, stream: LogStream, message: impl Into<String>) {
+        let record = LogRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now().naive_utc(),
+            resource_kind: self.resource_kind,
+            resource_id: self.resource_id.clone(),
+            app_id: self.app_id.clone(),
+            prefix: self.prefix.clone(),
+            stream,
+            message: message.into(),
         };
-        log.send(formatted).await?;
+
+        self.bus.publish(record);
     }
-
-    tracing::info!(
-        key = %log.key(),
-        "Runtime log stream ended"
-    );
-
-    Ok(())
 }

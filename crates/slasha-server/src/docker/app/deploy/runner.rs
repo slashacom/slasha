@@ -34,7 +34,7 @@ use crate::{
         utils,
         workflow::runner::WorkflowContext,
     },
-    logs::LogHandle,
+    logs::LogWriter,
     state::AppState,
 };
 
@@ -95,7 +95,7 @@ pub struct DeploymentRunner<'a> {
     pub docker_client: &'a Docker,
     pub deployment: &'a Deployment,
     pub wf: &'a WorkflowContext<'a>,
-    pub log: &'a LogHandle,
+    pub log: &'a LogWriter,
     pub context: &'a DeploymentContext,
 }
 
@@ -152,7 +152,6 @@ impl<'a> DeploymentRunner<'a> {
         if is_stateful {
             let previous_deployments = self.get_previous_deployments().await?;
             if !previous_deployments.is_empty() {
-                let log = self.log.clone();
                 self.wf
                     .step(
                         "Stopping previous deployment processes for stateful application",
@@ -160,6 +159,7 @@ impl<'a> DeploymentRunner<'a> {
                         {
                             let docker_client = self.docker_client.clone();
                             let app = self.app.clone();
+                            let log = self.log.clone();
                             async move {
                                 for prev in &previous_deployments {
                                     let _ = start_process_container(
@@ -200,8 +200,7 @@ impl<'a> DeploymentRunner<'a> {
             .is_some_and(|b| b.enabled && b.restore_pending)
         {
             self.log
-                .send("Restored SQLite database from backup replica".to_string())
-                .await?;
+                .stdout("Restored SQLite database from backup replica");
             if let Err(e) =
                 AppBackupRepo::set_restore_pending(&self.state.storage.db_pool, &self.app.id, false)
                     .await
@@ -226,17 +225,13 @@ impl<'a> DeploymentRunner<'a> {
         DeploymentRepo::update_status(db_pool, &self.deployment.id, DeploymentStatus::Building)
             .await?;
 
-        let tag = image_tag(&self.app.slug, &self.deployment.id);
-
         self.wf
             .step(
                 "Building application Docker image",
                 async {
                     if let Some(source_image) = source_image {
                         self.log
-                            .send(format!("Reusing retained image {}", source_image))
-                            .await?;
-
+                            .stdout(format!("Reusing retained image {}", source_image));
                         tag_deployment_image(
                             self.docker_client,
                             source_image,
@@ -246,12 +241,10 @@ impl<'a> DeploymentRunner<'a> {
                         .await?;
                     } else {
                         let build_label = self.context.strategy.to_string();
-                        self.log
-                            .send(format!(
-                                "Building image slasha/{}:{} ({})",
-                                self.app.slug, self.deployment.id, build_label
-                            ))
-                            .await?;
+                        self.log.stdout(format!(
+                            "Building image slasha/{}:{} ({})",
+                            self.app.slug, self.deployment.id, build_label
+                        ));
 
                         let ssh_opts = if self.app.node_id != LOCAL_NODE_ID {
                             let node =
@@ -284,7 +277,7 @@ impl<'a> DeploymentRunner<'a> {
                 },
                 {
                     let docker_client = self.docker_client.clone();
-                    let tag = tag.clone();
+                    let tag = image_tag(&self.app.slug, &self.deployment.id);
                     async move {
                         let _ = docker_client
                             .remove_image(
@@ -323,12 +316,9 @@ impl<'a> DeploymentRunner<'a> {
             match litestream::ensure_litestream_volume(self.docker_client).await {
                 Ok(volume) => Some(volume),
                 Err(e) => {
-                    let _ = self
-                        .log
-                        .send(format!(
-                            "Warning: could not prepare litestream binary, skipping backups: {e}"
-                        ))
-                        .await;
+                    self.log.stdout(format!(
+                        "Warning: could not prepare litestream binary, skipping backups: {e}"
+                    ));
                     None
                 }
             }
@@ -409,13 +399,11 @@ impl<'a> DeploymentRunner<'a> {
             let is_local = self.app.node_id == LOCAL_NODE_ID;
             let config = ReadinessConfig::from_env_map(&self.context.env_map);
 
-            self.log
-                .send(format!(
-                    "Waiting for web process to respond on GET {} (timeout: {}s)",
-                    config.path,
-                    config.timeout.as_secs()
-                ))
-                .await?;
+            self.log.stdout(format!(
+                "Waiting for web process to respond on GET {} (timeout: {}s)",
+                config.path,
+                config.timeout.as_secs()
+            ));
 
             for container_name in &web_containers {
                 match wait_for_web_ready(
@@ -428,13 +416,11 @@ impl<'a> DeploymentRunner<'a> {
                 .await
                 {
                     ReadinessOutcome::Ready { elapsed } => {
-                        self.log
-                            .send(format!(
-                                "{} became ready in {:.1}s",
-                                container_name,
-                                elapsed.as_secs_f64()
-                            ))
-                            .await?;
+                        self.log.stdout(format!(
+                            "{} became ready in {:.1}s",
+                            container_name,
+                            elapsed.as_secs_f64()
+                        ));
                     }
                     ReadinessOutcome::Unreachable => {
                         return Err(DockerError::AppNotReady(format!(
@@ -473,10 +459,7 @@ impl<'a> DeploymentRunner<'a> {
         let previous_deployments = self.get_previous_deployments().await?;
 
         for previous in &previous_deployments {
-            let _ = self
-                .log
-                .send("Stopping previous deployment processes...".to_string())
-                .await;
+            self.log.stdout("Stopping previous deployment processes...");
 
             if let Err(e) = stop_deployment_processes(self.docker_client, previous).await {
                 tracing::warn!(

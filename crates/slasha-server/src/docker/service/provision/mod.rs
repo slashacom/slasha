@@ -5,6 +5,7 @@ use bollard::Docker;
 use runner::ServiceProvisionRunner;
 use slasha_db::{
     app::App,
+    logs::ResourceKind,
     repos::service::ServiceRepo,
     service::{Service, ServiceStatus},
 };
@@ -12,7 +13,6 @@ use slasha_db::{
 pub use super::env::resolve_service_env;
 use crate::{
     docker::{DockerResult, workflow::WorkflowRunner},
-    logs::LogKey,
     state::AppState,
 };
 
@@ -43,21 +43,20 @@ pub async fn run_provision_service_workflow(
         "service provision start"
     );
 
-    let log_key = LogKey::Service {
-        app_slug: app.slug.clone(),
-        service_name: service.name.clone(),
-    };
-
-    let log = state.runtime.log_manager.get_logger(&log_key).await?;
+    let log_writer = state
+        .runtime
+        .log_bus
+        .writer(ResourceKind::Service, &service.id)
+        .app_id(&app.id);
 
     let result = WorkflowRunner::new(format!("provision_service:{}", service.name))
-        .with_log(&log)
+        .with_log(&log_writer)
         .run({
             let state = state.clone();
             let app = app.clone();
             let docker_client = docker_client.clone();
             let service = service.clone();
-            let log = log.clone();
+            let log_writer = log_writer.clone();
 
             move |wf| async move {
                 let runner = ServiceProvisionRunner {
@@ -66,7 +65,7 @@ pub async fn run_provision_service_workflow(
                     service: &service,
                     docker_client: &docker_client,
                     wf: &wf,
-                    log: &log,
+                    log: &log_writer,
                 };
 
                 runner.execute(is_redeploy).await
@@ -83,12 +82,12 @@ pub async fn run_provision_service_workflow(
             "service provision failed"
         );
 
-        let _ = log.send(format!("Service provision failed: {}", e)).await;
+        log_writer.stdout(format!("Service provision failed: {}", e));
         let _ =
             ServiceRepo::update_status(&state.storage.db_pool, &service.id, ServiceStatus::Failed)
                 .await;
 
-        state.runtime.log_manager.remove(&log_key);
+        state.runtime.log_bus.remove(&service.id);
         return Err(e);
     }
 

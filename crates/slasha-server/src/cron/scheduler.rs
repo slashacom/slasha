@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use chrono::Utc;
 use slasha_db::{
@@ -11,7 +11,7 @@ use tracing::{error, info, warn};
 
 use crate::{
     docker::{DockerRegistry, cron::run_cron_job},
-    logs::LogManager,
+    logs::LogBus,
 };
 
 const TICK_INTERVAL: Duration = Duration::from_secs(30);
@@ -22,12 +22,8 @@ const TICK_INTERVAL: Duration = Duration::from_secs(30);
 ///
 /// * `db_pool` - Database connection pool ([`DbPool`]).
 /// * `docker_registry` - Node Docker client registry ([`DockerRegistry`]).
-/// * `log_manager` - Application log manager handle ([`LogManager`]).
-pub fn spawn_cron_scheduler(
-    db_pool: DbPool,
-    docker_registry: DockerRegistry,
-    log_manager: Arc<LogManager>,
-) {
+/// * `log_bus` - Application event log bus handle ([`LogBus`]).
+pub fn spawn_cron_scheduler(db_pool: DbPool, docker_registry: DockerRegistry, log_bus: LogBus) {
     tokio::spawn(async move {
         info!(target: "slasha::cron", "cron scheduler started");
         match CronRunRepo::fail_interrupted(&db_pool).await {
@@ -40,7 +36,7 @@ pub fn spawn_cron_scheduler(
             }
         }
         loop {
-            if let Err(err) = tick(&db_pool, &docker_registry, &log_manager).await {
+            if let Err(err) = tick(&db_pool, &docker_registry, &log_bus).await {
                 error!(target: "slasha::cron", error = ?err, "cron scheduler tick failed");
             }
             sleep(TICK_INTERVAL).await;
@@ -54,7 +50,7 @@ pub fn spawn_cron_scheduler(
 ///
 /// * `db_pool` - Database connection pool ([`DbPool`]).
 /// * `docker_registry` - Node Docker client registry ([`DockerRegistry`]).
-/// * `log_manager` - Application log manager handle ([`LogManager`]).
+/// * `log_bus` - Application log bus handle ([`LogBus`]).
 ///
 /// # Returns
 ///
@@ -62,7 +58,7 @@ pub fn spawn_cron_scheduler(
 async fn tick(
     db_pool: &DbPool,
     docker_registry: &DockerRegistry,
-    log_manager: &Arc<LogManager>,
+    log_bus: &LogBus,
 ) -> anyhow::Result<()> {
     let jobs = CronJobRepo::list_enabled(db_pool).await?;
     let now = Utc::now();
@@ -109,10 +105,10 @@ async fn tick(
         tokio::spawn({
             let db_pool = db_pool.clone();
             let docker_registry = docker_registry.clone();
-            let log_manager = log_manager.clone();
+            let log_bus = log_bus.clone();
 
             async move {
-                run_cron_job(db_pool, docker_registry, log_manager, job, run).await;
+                run_cron_job(db_pool, docker_registry, log_bus, job, run).await;
             }
         });
     }

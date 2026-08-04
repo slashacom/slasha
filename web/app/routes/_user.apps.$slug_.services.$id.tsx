@@ -85,14 +85,12 @@ export default function ServiceDetailPage() {
         <ServiceStatsBar service={service} stats={stats} />
         <ServiceConfigCard appSlug={slug!} service={service} />
 
-        <VStack space={3} className="flex min-h-0 flex-1 flex-col">
-          <HStack space={2} alignItems="center">
-            <Terminal className="size-4 text-text-tertiary" />
-            <h3 className="text-sm font-semibold text-text">Logs</h3>
-          </HStack>
+        <VStack space={3} className="flex min-h-0 flex-1 flex-col mt-4">
           <LogStream
-            url={`/api/apps/${slug}/services/${id}/logs`}
-            className="min-h-[24rem] flex-1 rounded-lg border border-border"
+            url={`/api/apps/${slug}/services/${id}`}
+            title="Service Logs"
+            initialFilters={{ resourceKind: 'service' }}
+            className="min-h-[24rem] flex-1"
           />
         </VStack>
       </div>

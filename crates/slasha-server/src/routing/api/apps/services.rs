@@ -1,26 +1,21 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use axum::{
     Json, Router,
     body::Body,
-    extract::{Path, State, WebSocketUpgrade},
+    extract::{Path, Query, State, WebSocketUpgrade},
     http::header,
-    response::{
-        IntoResponse, Response,
-        sse::{Event, KeepAlive, Sse},
-    },
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use chrono::Utc;
-use futures_util::{StreamExt, stream};
 use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
-    DbPool,
+    DbPool, DuckdbPool,
     repos::{node::NodeRepo, service::ServiceRepo},
     service::{NewServiceEnvVar, ServiceKind, ServiceResources, ServiceStatus},
 };
-use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
     HttpError, HttpResult,
@@ -29,8 +24,11 @@ use crate::{
         ValidatedJson,
         app::{ActiveApp, ActiveAppOwner},
     },
-    logs::{LogKey, LogManager},
-    routing::api::validation::not_empty,
+    logs::LogBus,
+    routing::api::{
+        logs::{LogQuery, fetch_resource_logs, stream_resource_logs},
+        validation::not_empty,
+    },
     state::AppState,
     tunnel,
 };
@@ -40,7 +38,8 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list_services))
         .route("/", post(create_service))
         .route("/{id}/env", get(get_env_vars).put(update_env_vars))
-        .route("/{id}/logs", get(stream_logs))
+        .route("/{id}/logs", get(get_logs))
+        .route("/{id}/stream", get(stream_logs))
         .route("/{id}/backup", get(backup_service))
         .route("/{id}/tunnel", get(tunnel))
         .route("/{id}/restart", post(restart_service))
@@ -228,42 +227,25 @@ async fn backup_service(
     Ok(response)
 }
 
+async fn get_logs(
+    State(db_pool): State<DbPool>,
+    State(duckdb_pool): State<DuckdbPool>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, service_id)): Path<(String, String)>,
+    Query(query): Query<LogQuery>,
+) -> HttpResult<impl IntoResponse> {
+    ServiceRepo::find(&db_pool, &service_id, &app.id).await?;
+    fetch_resource_logs(&duckdb_pool, &service_id, query).await
+}
+
 async fn stream_logs(
     State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
+    State(log_bus): State<LogBus>,
     ActiveApp { app, .. }: ActiveApp,
-    Path((_, id)): Path<(String, String)>,
-) -> HttpResult<
-    Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
-> {
-    let service = ServiceRepo::find(&db_pool, &id, &app.id).await?;
-
-    let log = log_manager
-        .get_logger(&LogKey::Service {
-            app_slug: app.slug.clone(),
-            service_name: service.name.clone(),
-        })
-        .await
-        .map_err(HttpError::internal)?;
-
-    let historical = log.get_historical().await?;
-
-    let historical_stream = stream::iter(
-        historical
-            .into_iter()
-            .map(|msg| Ok(Event::default().data(msg))),
-    );
-
-    let rx = log.subscribe();
-    let live_stream = BroadcastStream::new(rx).map(|res| match res {
-        Ok(msg) => Ok(Event::default().data(msg)),
-        Err(e) => Ok(Event::default().event("error").data(e.to_string())),
-    });
-
-    let done_marker = stream::once(async { Ok(Event::default().data("[done]")) });
-    let combined = historical_stream.chain(done_marker).chain(live_stream);
-
-    Ok(Sse::new(combined).keep_alive(KeepAlive::default()))
+    Path((_, service_id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    ServiceRepo::find(&db_pool, &service_id, &app.id).await?;
+    stream_resource_logs(&log_bus, &service_id).await
 }
 
 #[derive(Deserialize, Validate)]

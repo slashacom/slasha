@@ -6,7 +6,7 @@ use tokio::{
     process::Command,
 };
 
-use crate::logs::LogHandle;
+use crate::logs::LogWriter;
 
 #[derive(Clone)]
 pub struct NodeConnectionManager {
@@ -162,7 +162,7 @@ impl NodeConnectionManager {
         &self,
         node: &Node,
         script: &str,
-        log: &LogHandle,
+        log: &LogWriter,
     ) -> anyhow::Result<String> {
         let key_path = self.get_key_path(node)?;
         let host = node.host.as_deref().unwrap_or("");
@@ -212,9 +212,7 @@ impl NodeConnectionManager {
                 while let Some(line) = lines.next_line().await? {
                     stdout_buffer.push_str(&line);
                     stdout_buffer.push('\n');
-                    log.send(line)
-                        .await
-                        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                    log.stdout(line);
                 }
             }
             Ok::<(), anyhow::Error>(())
@@ -224,9 +222,7 @@ impl NodeConnectionManager {
             if let Some(reader) = stderr {
                 let mut lines = reader.lines();
                 while let Some(line) = lines.next_line().await? {
-                    log.send(line)
-                        .await
-                        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                    log.stderr(line);
                 }
             }
             Ok::<(), anyhow::Error>(())

@@ -20,7 +20,7 @@ use crate::{
         naming::{app_network_name, service_container_name, service_volume_name},
         service::ServiceKindDockerExt,
     },
-    logs::LogHandle,
+    logs::LogWriter,
 };
 
 /// Creates a database service process container in Docker.
@@ -139,13 +139,9 @@ pub async fn wait_for_service_health(
     container_name: &str,
     service_name: &str,
     timeout_secs: u64,
-    log: Option<&LogHandle>,
+    log: &LogWriter,
 ) -> DockerResult<()> {
-    if let Some(log) = log {
-        let _ = log
-            .send(format!("Waiting for {} to become healthy...", service_name))
-            .await;
-    }
+    log.stdout(format!("Waiting for {} to become healthy...", service_name));
 
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     let mut last_status: Option<HealthStatusEnum> = None;
@@ -162,10 +158,8 @@ pub async fn wait_for_service_health(
             .and_then(|h| h.status);
 
         if status != last_status {
-            if let Some(s) = status
-                && let Some(log) = log
-            {
-                let _ = log.send(format!("Health: {}", s)).await;
+            if let Some(s) = status {
+                log.stdout(format!("Health: {}", s));
             }
 
             last_status = status;

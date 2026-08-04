@@ -5,6 +5,7 @@ use futures_util::future::try_join_all;
 use slasha_db::{
     app::App,
     deployment::Deployment,
+    logs::ResourceKind,
     models::app_scale::{NewAppScale, ProcessStatus, ProcessType},
     repos::{app_scale::AppScaleRepo, node::NodeRepo},
 };
@@ -18,7 +19,6 @@ use crate::{
         DockerError, DockerResult, app::deploy::context::resolve_deployment_context,
         naming::process_container_name, utils,
     },
-    logs::LogKey,
     state::AppState,
 };
 
@@ -41,11 +41,11 @@ pub async fn scale_deployment_process(
     let node = NodeRepo::get(&state.storage.db_pool, &app.node_id).await?;
     let docker_client = state.clients.docker_registry.get_client(&node)?;
 
-    let log_key = LogKey::Deployment {
-        app_slug: app.slug.clone(),
-        deployment_id: deployment.id.clone(),
-    };
-    let log = state.runtime.log_manager.get_logger(&log_key).await?;
+    let log_writer = state
+        .runtime
+        .log_bus
+        .writer(ResourceKind::Deployment, &deployment.id)
+        .app_id(&app.id);
 
     if process_type == ProcessType::Release {
         return Err(DockerError::ScaleError(
@@ -86,17 +86,15 @@ pub async fn scale_deployment_process(
         .as_ref()
         .and_then(|pf| pf.get_process_command(process_type));
 
-    log.send(format!(
+    log_writer.stdout(format!(
         "Reconciling {} replicas to target count: {}",
         process_type, target_count
-    ))
-    .await?;
+    ));
 
     for index in 0..target_count {
         match existing.get(&index) {
             None => {
-                log.send(format!("Creating replica {}.{}", process_type, index))
-                    .await?;
+                log_writer.stdout(format!("Creating replica {}.{}", process_type, index));
 
                 create_process_container(
                     &docker_client,
@@ -115,16 +113,29 @@ pub async fn scale_deployment_process(
                 )
                 .await?;
 
-                start_process_container(&docker_client, &log, app, deployment, process_type, index)
-                    .await?;
+                start_process_container(
+                    &docker_client,
+                    &log_writer,
+                    app,
+                    deployment,
+                    process_type,
+                    index,
+                )
+                .await?;
             }
 
             Some(ProcessStatus::Stopped) => {
-                log.send(format!("Restarting replica {}.{}", process_type, index))
-                    .await?;
+                log_writer.stdout(format!("Restarting replica {}.{}", process_type, index));
 
-                start_process_container(&docker_client, &log, app, deployment, process_type, index)
-                    .await?;
+                start_process_container(
+                    &docker_client,
+                    &log_writer,
+                    app,
+                    deployment,
+                    process_type,
+                    index,
+                )
+                .await?;
             }
 
             Some(ProcessStatus::Running) => {}
@@ -138,14 +149,13 @@ pub async fn scale_deployment_process(
         .map(|index| {
             let docker_client = docker_client.clone();
             let name = process_container_name(&app.id, &deployment.id, &process_type, index);
-            let log = log.clone();
+            let log_writer = log_writer.clone();
 
             async move {
-                log.send(format!(
+                log_writer.stdout(format!(
                     "Removing excess replica {}.{}",
                     process_type, index
-                ))
-                .await?;
+                ));
 
                 if let Err(e) = utils::stop_container(&docker_client, &name, Some(10)).await {
                     tracing::warn!(container = %name, error = ?e, "Failed to stop excess replica container");

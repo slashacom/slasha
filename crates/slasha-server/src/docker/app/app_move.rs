@@ -24,7 +24,7 @@ use crate::{
         app::{
             deploy,
             network::{create_app_network, remove_app_network},
-            process::{self, stop_deployment_processes},
+            process::stop_deployment_processes,
             purge::purge_app_from_node,
         },
         naming::{app_volume_prefix, service_volume_name},
@@ -32,7 +32,6 @@ use crate::{
         service_container_name, utils,
         workflow::{WorkflowRunner, runner::WorkflowContext},
     },
-    logs::LogKey,
     operations,
     state::AppState,
 };
@@ -240,43 +239,15 @@ impl<'a> AppMoveRunner<'a> {
             self.wf
                 .step(
                     "Starting application on target host",
-                    async {
-                        let context = deploy::context::resolve_deployment_context(
-                            &self.state.storage.db_pool,
-                            &target_app,
-                            deployment,
-                        )
-                        .await?;
-
-                        let log_key = LogKey::Deployment {
-                            app_slug: target_app.slug.clone(),
-                            deployment_id: deployment.id.clone(),
-                        };
-                        let log = self.state.runtime.log_manager.get_logger(&log_key).await?;
-
-                        let runner = deploy::runner::DeploymentRunner {
-                            state: self.state,
-                            app: &target_app,
-                            docker_client: self.target_docker_client,
-                            deployment,
-                            wf: self.wf,
-                            log: &log,
-                            context: &context,
-                        };
-
-                        runner.execute(None).await
-                    },
-                    {
-                        let target_docker_client = self.target_docker_client.clone();
-                        let deployment = deployment.clone();
-                        async move {
-                            let _ = process::remove_deployment_processes(
-                                &target_docker_client,
-                                &deployment,
-                            )
-                            .await;
-                        }
-                    },
+                    deploy::run_deployment_workflow(
+                        self.state.clone(),
+                        target_app,
+                        self.target_docker_client.clone(),
+                        deployment.clone(),
+                        None,
+                        tokio_util::sync::CancellationToken::new(),
+                    ),
+                    async {},
                 )
                 .await?;
         }
@@ -408,31 +379,38 @@ impl<'a> AppMoveRunner<'a> {
             return Ok(());
         }
 
-        let service_futures = app_services.into_iter().map(|service| {
-            let target_docker_client = self.target_docker_client.clone();
-            let state = self.state.clone();
-            let target_app = target_app.clone();
+        self.wf
+            .step(
+                "Re-provisioning database services on target host",
+                async {
+                    let service_futures = app_services.into_iter().map(|service| {
+                        let target_docker_client = self.target_docker_client.clone();
+                        let state = self.state.clone();
+                        let target_app = target_app.clone();
 
-            async move {
-                let _guard = state
-                    .runtime
-                    .operations
-                    .try_acquire_service(&service.id, operations::ServiceOperation::Provisioning)?;
+                        async move {
+                            let _guard = state.runtime.operations.try_acquire_service(
+                                &service.id,
+                                operations::ServiceOperation::Provisioning,
+                            )?;
 
-                run_provision_service_workflow(
-                    state,
-                    target_app,
-                    target_docker_client,
-                    service,
-                    true,
-                )
-                .await
-            }
-        });
+                            run_provision_service_workflow(
+                                state,
+                                target_app,
+                                target_docker_client,
+                                service,
+                                true,
+                            )
+                            .await
+                        }
+                    });
 
-        futures_util::future::try_join_all(service_futures).await?;
-
-        Ok(())
+                    futures_util::future::try_join_all(service_futures).await?;
+                    Ok(())
+                },
+                async {},
+            )
+            .await
     }
 }
 

@@ -13,19 +13,19 @@ use crate::{
         DockerError, DockerResult,
         app::{image::image_tag, parser::repo_file_path},
     },
-    logs::LogHandle,
+    logs::LogWriter,
 };
 
 /// Builds a Docker image for a deployment using Dockerfile instructions via the Docker CLI.
 ///
 /// # Arguments
 ///
-/// * `log` - Log handle for output streaming ([`LogHandle`]).
+/// * `log` - Log writer for output streaming ([`LogWriter`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
 /// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote cluster node build execution.
 pub async fn build_docker(
-    log: &LogHandle,
+    log: &LogWriter,
     app: &App,
     deployment: &Deployment,
     ssh_opts: Option<(&str, &str)>,
@@ -48,12 +48,12 @@ pub async fn build_docker(
 ///
 /// # Arguments
 ///
-/// * `log` - Log handle for output streaming ([`LogHandle`]).
+/// * `log` - Log writer for output streaming ([`LogWriter`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
 /// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote cluster node build execution.
 pub async fn build_railpack(
-    log: &LogHandle,
+    log: &LogWriter,
     app: &App,
     deployment: &Deployment,
     ssh_opts: Option<(&str, &str)>,
@@ -66,7 +66,7 @@ pub async fn build_railpack(
     let plan_path = tmp_path.join("railpack-plan.json");
     let info_path = tmp_path.join("railpack-info.json");
 
-    log.send("Running railpack prepare…").await?;
+    log.stdout("Running railpack prepare…");
 
     let prepare_child = TokioCommand::new("railpack")
         .arg("prepare")
@@ -84,8 +84,7 @@ pub async fn build_railpack(
 
     let _ = tokio::fs::remove_file(&info_path).await;
 
-    log.send("Prepare complete, starting BuildKit build on node…")
-        .await?;
+    log.stdout("Prepare complete, starting BuildKit build on node…");
 
     build_image_cli(
         log,
@@ -102,7 +101,7 @@ pub async fn build_railpack(
 ///
 /// # Arguments
 ///
-/// * `log` - Log handle for output streaming ([`LogHandle`]).
+/// * `log` - Log writer for output streaming ([`LogWriter`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
 ///
@@ -110,7 +109,7 @@ pub async fn build_railpack(
 ///
 /// A tuple containing the temporary working directory ([`TempDir`]) and calculated image tag string.
 async fn prepare_build_context(
-    log: &LogHandle,
+    log: &LogWriter,
     app: &App,
     deployment: &Deployment,
 ) -> DockerResult<(TempDir, String)> {
@@ -121,8 +120,7 @@ async fn prepare_build_context(
     let tmp = TempDir::new()?;
     let tmp_path = tmp.path();
 
-    log.send(format!("Checking out commit {} to temp dir", commit_sha))
-        .await?;
+    log.stdout(format!("Checking out commit {} to temp dir", commit_sha));
 
     let source_tar = build_git_tar(repo_path, commit_sha).await?;
     tar_to_directory(source_tar, tmp_path).await?;
@@ -184,19 +182,22 @@ async fn tar_to_directory(tar_bytes: Bytes, dest: &Path) -> DockerResult<()> {
     Ok(())
 }
 
-/// Streams stdout and stderr lines from a child process to a log handle.
+/// Streams stdout and stderr lines from a child process to a log writer.
 ///
 /// # Arguments
 ///
 /// * `child` - Active child process handle ([`tokio::process::Child`]).
-/// * `log` - Log handle for output streaming ([`LogHandle`]).
+/// * `log` - Log writer for output streaming ([`LogWriter`]).
 /// * `phase_label` - Descriptive label for error reporting.
 async fn stream_command_output(
     mut child: tokio::process::Child,
-    log: &LogHandle,
+    log: &LogWriter,
     phase_label: &str,
 ) -> DockerResult<()> {
-    async fn drain<R>(reader: Option<BufReader<R>>, log: &LogHandle) -> DockerResult<()>
+    async fn drain<R>(
+        reader: Option<BufReader<R>>,
+        mut emit: impl FnMut(String),
+    ) -> DockerResult<()>
     where
         R: tokio::io::AsyncRead + Unpin,
     {
@@ -204,7 +205,7 @@ async fn stream_command_output(
             let mut lines = reader.lines();
 
             while let Some(line) = lines.next_line().await? {
-                log.send(line).await?;
+                emit(line);
             }
         }
         Ok(())
@@ -213,7 +214,10 @@ async fn stream_command_output(
     let stdout = child.stdout.take().map(BufReader::new);
     let stderr = child.stderr.take().map(BufReader::new);
 
-    tokio::try_join!(drain(stdout, log), drain(stderr, log),)?;
+    tokio::try_join!(
+        drain(stdout, |line| log.stdout(line)),
+        drain(stderr, |line| log.stderr(line)),
+    )?;
 
     let status = child.wait().await?;
     if !status.success() {
@@ -230,14 +234,14 @@ async fn stream_command_output(
 ///
 /// # Arguments
 ///
-/// * `log` - Log handle for output streaming ([`LogHandle`]).
+/// * `log` - Log writer for output streaming ([`LogWriter`]).
 /// * `image_tag` - Target image repository tag string.
 /// * `build_file` - Path to the Dockerfile or build specification file ([`Path`]).
 /// * `context_dir` - Path to the build context directory ([`Path`]).
 /// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote cluster node build execution.
 /// * `build_args` - Optional slice of key-value build argument pairs.
 async fn build_image_cli(
-    log: &LogHandle,
+    log: &LogWriter,
     image_tag: &str,
     build_file: &Path,
     context_dir: &Path,
@@ -276,8 +280,7 @@ async fn build_image_cli(
 
     stream_command_output(child, log, "docker buildx build").await?;
 
-    log.send(format!("Image built and tagged as {}", image_tag))
-        .await?;
+    log.stdout(format!("Image built and tagged as {}", image_tag));
 
     Ok(())
 }

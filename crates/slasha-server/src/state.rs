@@ -1,16 +1,13 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::PathBuf, sync::Arc};
 
 use axum::extract::FromRef;
 use slasha_db::{DbPool, DuckdbPool, repos::github_app_config::GithubAppConfigRepo};
 use tokio::sync::{Notify, RwLock};
 
 use crate::{
-    connections::GithubClient, docker::DockerRegistry, logs::LogManager,
+    connections::GithubClient, docker::DockerRegistry, logs::LogBus,
     node_connection_manager::NodeConnectionManager, operations::OperationRegistry,
-    proxy::CaddyClient, utils,
+    proxy::CaddyClient,
 };
 
 /// Collection of shared external system clients and connections.
@@ -91,7 +88,7 @@ impl Storage {
 /// In-memory runtime state.
 #[derive(Clone)]
 pub struct Runtime {
-    pub log_manager: Arc<LogManager>,
+    pub log_bus: LogBus,
     pub proxy_sync_trigger: Arc<Notify>,
     pub operations: OperationRegistry,
 }
@@ -101,15 +98,18 @@ impl Runtime {
     ///
     /// # Arguments
     ///
-    /// * `logs_dir` - Path to directory where application logs are stored.
+    /// * `duckdb_pool` - DuckDB connection pool for the log bus ([`DuckdbPool`]).
     /// * `proxy_sync_trigger` - Shared notification trigger for proxy route sync ([`Notify`]).
     ///
     /// # Returns
     ///
     /// An [`anyhow::Result`] containing the initialized [`Runtime`].
-    pub async fn new(logs_dir: &Path, proxy_sync_trigger: Arc<Notify>) -> anyhow::Result<Self> {
+    pub async fn new(
+        duckdb_pool: DuckdbPool,
+        proxy_sync_trigger: Arc<Notify>,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
-            log_manager: Arc::new(LogManager::new(utils::ensure_dir(logs_dir))),
+            log_bus: LogBus::new(duckdb_pool),
             proxy_sync_trigger,
             operations: OperationRegistry::new(),
         })
@@ -156,7 +156,6 @@ pub struct Config {
     pub env: Env,
     pub jwt_secret: String,
     pub platform_domain: String,
-    pub logs_dir: PathBuf,
     pub port: u16,
 }
 
@@ -168,24 +167,16 @@ impl Config {
     /// * `env` - Execution environment mode ([`Env`]).
     /// * `jwt_secret` - JWT signing secret key string.
     /// * `platform_domain` - Base platform domain string.
-    /// * `logs_dir` - Directory path for server logs.
     /// * `port` - Listening HTTP port number (`u16`).
     ///
     /// # Returns
     ///
     /// A new [`Config`] instance.
-    pub fn new(
-        env: Env,
-        jwt_secret: String,
-        platform_domain: String,
-        logs_dir: PathBuf,
-        port: u16,
-    ) -> Self {
+    pub fn new(env: Env, jwt_secret: String, platform_domain: String, port: u16) -> Self {
         Self {
             env,
             jwt_secret,
             platform_domain,
-            logs_dir,
             port,
         }
     }
@@ -291,9 +282,9 @@ impl FromRef<AppState> for Arc<Notify> {
     }
 }
 
-impl FromRef<AppState> for Arc<LogManager> {
+impl FromRef<AppState> for LogBus {
     fn from_ref(state: &AppState) -> Self {
-        state.runtime.log_manager.clone()
+        state.runtime.log_bus.clone()
     }
 }
 

@@ -9,6 +9,7 @@ pub mod auth;
 pub mod connections;
 pub mod deserialize;
 pub mod error;
+pub mod logs;
 pub mod nodes;
 pub mod service_kinds;
 pub mod ssh_keys;

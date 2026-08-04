@@ -211,42 +211,87 @@ pub async fn handle_delete(state: &AppState, slug: &str, service: &str, yes: boo
     Ok(())
 }
 
+fn format_log_prefix(val: &serde_json::Value) -> Option<String> {
+    serde_json::from_value::<slasha_db::logs::LogPrefix>(val.clone())
+        .ok()
+        .map(|p| p.to_string())
+}
+
 pub async fn handle_logs(state: &AppState, slug: &str, service: &str, follow: bool) -> Result<()> {
     let service_id = resolve_service_id(state, slug, service).await?;
 
-    let res = state
-        .api_client
-        .get_stream(&format!("/api/apps/{}/services/{}/logs", slug, service_id))
-        .await?;
+    if follow {
+        let res = state
+            .api_client
+            .get_stream(&format!(
+                "/api/apps/{}/services/{}/stream",
+                slug, service_id
+            ))
+            .await?;
 
-    let mut stream = res.bytes_stream().eventsource();
+        let mut stream = res.bytes_stream().eventsource();
 
-    while let Some(event) = stream.next().await {
-        match event {
-            Ok(event) => {
-                if event.data == "[done]" {
-                    output(
-                        state.output_mode,
-                        &json!({ "type": "status", "event": "history_complete" }),
-                        || {},
-                    )?;
-                    if !follow {
-                        break;
+        while let Some(event) = stream.next().await {
+            match event {
+                Ok(event) => {
+                    if event.data == "[done]" {
+                        continue;
                     }
-                } else {
-                    output(
-                        state.output_mode,
-                        &json!({ "type": "log", "message": event.data }),
-                        || {
-                            cli_info(&event.data);
-                        },
-                    )?;
+                    if let Ok(rec) = serde_json::from_str::<serde_json::Value>(&event.data) {
+                        let timestamp = rec["timestamp"].as_str().unwrap_or("").dimmed();
+                        let prefix = format_log_prefix(&rec["prefix"])
+                            .map(|p| format!("[{}]", p).cyan())
+                            .unwrap_or_default();
+                        let msg = rec["message"].as_str().unwrap_or("");
+
+                        output(state.output_mode, &rec, || {
+                            if prefix.is_empty() {
+                                cli_info(format!("{} {}", timestamp, msg));
+                            } else {
+                                cli_info(format!("{} {} {}", timestamp, prefix, msg));
+                            }
+                        })?;
+                    } else {
+                        output(
+                            state.output_mode,
+                            &json!({ "type": "log", "message": event.data }),
+                            || {
+                                cli_info(&event.data);
+                            },
+                        )?;
+                    }
+                }
+                Err(e) => {
+                    cli_error(format!("Stream error: {}", e));
+                    break;
                 }
             }
-            Err(e) => {
-                cli_error(format!("Stream error: {}", e));
-                break;
-            }
+        }
+    } else {
+        let data = state
+            .api_client
+            .get(&format!(
+                "/api/apps/{}/services/{}/logs?limit=2000",
+                slug, service_id
+            ))
+            .await?;
+
+        if let Some(logs) = data["logs"].as_array() {
+            output(state.output_mode, &data["logs"], || {
+                for rec in logs {
+                    let timestamp = rec["timestamp"].as_str().unwrap_or("").dimmed();
+                    let prefix = format_log_prefix(&rec["prefix"])
+                        .map(|p| format!("[{}]", p).cyan())
+                        .unwrap_or_default();
+                    let msg = rec["message"].as_str().unwrap_or("");
+
+                    if prefix.is_empty() {
+                        cli_info(format!("{} {}", timestamp, msg));
+                    } else {
+                        cli_info(format!("{} {} {}", timestamp, prefix, msg));
+                    }
+                }
+            })?;
         }
     }
 

@@ -1,32 +1,31 @@
-use std::{str::FromStr, sync::Arc};
+use std::str::FromStr;
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
-    response::{
-        IntoResponse,
-        sse::{Event, KeepAlive, Sse},
-    },
+    extract::{Path, Query, State},
+    response::IntoResponse,
     routing::{get, post},
 };
 use chrono::{NaiveDateTime, Utc};
-use futures_util::{StreamExt, stream};
 use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
-    DbPool,
+    DbPool, DuckdbPool,
     cron::{CronJobChangeset, CronRunStatus, CronRunTrigger, CronRuntime, NewCronJob, NewCronRun},
-    repos::cron::{CronJobRepo, CronRunRepo},
+    repos::{
+        cron::{CronJobRepo, CronRunRepo},
+        logs::LogsRepo,
+    },
 };
-use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
     HttpError, HttpResult, cron,
     docker::cron::run_cron_job,
     extractors::{ValidatedJson, app::ActiveApp},
-    logs::{LogKey, LogManager},
+    logs::LogBus,
     routing::api::{
         deserialize::{trim_optional_string, trim_string},
+        logs::{LogQuery, fetch_resource_logs, stream_resource_logs},
         validation::not_empty,
     },
     state::AppState,
@@ -46,7 +45,8 @@ pub fn router() -> Router<AppState> {
         )
         .route("/{cron_id}/run", post(run_now))
         .route("/{cron_id}/runs", get(list_runs))
-        .route("/{cron_id}/runs/{run_id}/logs", get(stream_run_logs))
+        .route("/{cron_id}/runs/{run_id}/logs", get(get_run_logs))
+        .route("/{cron_id}/runs/{run_id}/stream", get(stream_run_logs))
 }
 
 #[derive(Deserialize, Validate)]
@@ -204,7 +204,8 @@ async fn update_cron(
 
 async fn delete_cron(
     State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
+    State(duckdb_pool): State<DuckdbPool>,
+    State(log_bus): State<LogBus>,
     ActiveApp { app, .. }: ActiveApp,
     Path((_, cron_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
@@ -214,9 +215,8 @@ async fn delete_cron(
     CronJobRepo::delete(&db_pool, &cron_id, &app.id).await?;
 
     for run_id in run_ids {
-        if let Err(err) = log_manager.delete_cron_run_logs(&app.slug, &run_id).await {
-            tracing::warn!(target: "slasha::cron", run = %run_id, error = ?err, "failed to delete cron run logs");
-        }
+        log_bus.remove(&run_id);
+        let _ = LogsRepo::delete_by_resource_id(&duckdb_pool, &run_id).await;
     }
 
     Ok(Json(serde_json::json!({ "deleted": true })))
@@ -227,9 +227,9 @@ async fn run_now(
     ActiveApp { app, .. }: ActiveApp,
     Path((_, cron_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    let db_pool = app_state.storage.db_pool;
-    let log_manager = app_state.runtime.log_manager;
-    let docker_registry = app_state.clients.docker_registry;
+    let db_pool = app_state.storage.db_pool.clone();
+    let log_bus = app_state.runtime.log_bus.clone();
+    let docker_registry = app_state.clients.docker_registry.clone();
 
     let job = CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
 
@@ -248,7 +248,7 @@ async fn run_now(
 
     let dispatched = run.clone();
     tokio::spawn(async move {
-        run_cron_job(db_pool, docker_registry, log_manager, job, dispatched).await;
+        run_cron_job(db_pool, docker_registry, log_bus, job, dispatched).await;
     });
 
     Ok(Json(serde_json::json!({ "run": run })))
@@ -280,40 +280,25 @@ async fn preview_schedule(
     Ok(Json(serde_json::json!({ "next_runs": next_runs })))
 }
 
-async fn stream_run_logs(
+async fn get_run_logs(
     State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
+    State(duckdb_pool): State<DuckdbPool>,
     ActiveApp { app, .. }: ActiveApp,
     Path((_, cron_id, run_id)): Path<(String, String, String)>,
-) -> HttpResult<
-    Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
-> {
+    Query(query): Query<LogQuery>,
+) -> HttpResult<impl IntoResponse> {
     CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
     CronRunRepo::find(&db_pool, &run_id, &cron_id).await?;
+    fetch_resource_logs(&duckdb_pool, &run_id, query).await
+}
 
-    let log = log_manager
-        .get_logger(&LogKey::Cron {
-            app_slug: app.slug.clone(),
-            cron_run_id: run_id,
-        })
-        .await
-        .map_err(HttpError::internal)?;
-
-    let historical = log.get_historical().await?;
-    let historical_stream = stream::iter(
-        historical
-            .into_iter()
-            .map(|msg| Ok(Event::default().data(msg))),
-    );
-
-    let rx = log.subscribe();
-    let live_stream = BroadcastStream::new(rx).map(|res| match res {
-        Ok(msg) => Ok(Event::default().data(msg)),
-        Err(e) => Ok(Event::default().event("error").data(e.to_string())),
-    });
-
-    let done_marker = stream::once(async { Ok(Event::default().data("[done]")) });
-    let combined = historical_stream.chain(done_marker).chain(live_stream);
-
-    Ok(Sse::new(combined).keep_alive(KeepAlive::default()))
+async fn stream_run_logs(
+    State(db_pool): State<DbPool>,
+    State(log_bus): State<LogBus>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, cron_id, run_id)): Path<(String, String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
+    CronRunRepo::find(&db_pool, &run_id, &cron_id).await?;
+    stream_resource_logs(&log_bus, &run_id).await
 }

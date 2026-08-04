@@ -165,16 +165,12 @@ export default function DeploymentDetailPage() {
           </div>
         </div>
 
-        <VStack space={3} className="flex min-h-0 flex-1 flex-col">
-          <HStack space={2} alignItems="center">
-            <Terminal className="size-4 text-text-tertiary" />
-            <h3 className="text-sm font-semibold text-text">
-              Build & runtime logs
-            </h3>
-          </HStack>
+        <VStack space={3} className="flex min-h-0 flex-1 flex-col mt-4">
           <LogStream
-            url={`/api/apps/${slug}/deployments/${id}/logs`}
-            className="min-h-0 flex-1 rounded-lg border border-border"
+            url={`/api/apps/${slug}/deployments/${id}`}
+            title="Build & runtime logs"
+            initialFilters={{ resourceKind: 'deployment' }}
+            className="min-h-0 flex-1"
           />
         </VStack>
       </div>

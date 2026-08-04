@@ -52,7 +52,10 @@ export default function NodeLogsTab() {
       />
       <div className="flex-1 overflow-hidden p-8 flex flex-col min-h-0">
         <LogStream
-          url={`/api/nodes/${id}/logs?type=${logType}`}
+          url={`/api/nodes/${id}`}
+          initialFilters={{
+            resourceKind: logType === 'setup' ? 'node_setup' : 'node_teardown',
+          }}
           emptyMessage={
             logType === 'setup'
               ? 'No setup logs found.'
