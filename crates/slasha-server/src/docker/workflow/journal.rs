@@ -7,7 +7,7 @@ use std::{
 use futures_util::future::BoxFuture;
 use tokio::time::timeout;
 
-use crate::logs::LogHandle;
+use crate::logs::LogWriter;
 
 pub struct Compensation {
     pub name: String,
@@ -77,8 +77,8 @@ impl RollbackJournal {
     ///
     /// # Arguments
     ///
-    /// * `log` - Optional log handle reference ([`LogHandle`]).
-    pub async fn compensate(&self, log: Option<&LogHandle>) {
+    /// * `log` - Optional log writer reference ([`LogWriter`]).
+    pub async fn compensate(&self, log: Option<&LogWriter>) {
         let compensations = {
             let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
 
@@ -106,20 +106,20 @@ impl RollbackJournal {
 /// # Arguments
 ///
 /// * `compensations` - Vector of compensation steps ([`Compensation`]).
-/// * `log` - Optional log handle reference ([`LogHandle`]).
-async fn execute_compensations(compensations: Vec<Compensation>, log: Option<&LogHandle>) {
+/// * `log` - Optional log writer reference ([`LogWriter`]).
+async fn execute_compensations(compensations: Vec<Compensation>, log: Option<&LogWriter>) {
     if compensations.is_empty() {
         return;
     }
 
     if let Some(log) = log {
-        let _ = log.send("Rolling back changes...".to_string()).await;
+        log.stdout("Rolling back changes...");
     }
 
     for comp in compensations.into_iter().rev() {
         tracing::info!(step = %comp.name, "executing rollback step");
         if let Some(log) = log {
-            let _ = log.send(format!("Rolling back step: {}", comp.name)).await;
+            log.stdout(format!("Rolling back step: {}", comp.name));
         }
 
         let timeout_res = timeout(Duration::from_secs(30), comp.step).await;
@@ -127,12 +127,10 @@ async fn execute_compensations(compensations: Vec<Compensation>, log: Option<&Lo
         if timeout_res.is_err() {
             tracing::warn!(step = %comp.name, "rollback step timed out after 30s");
             if let Some(log) = log {
-                let _ = log
-                    .send(format!(
-                        "Warning: rollback step '{}' timed out after 30s",
-                        comp.name
-                    ))
-                    .await;
+                log.stderr(format!(
+                    "Warning: rollback step '{}' timed out after 30s",
+                    comp.name
+                ));
             }
         }
     }

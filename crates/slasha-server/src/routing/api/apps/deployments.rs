@@ -1,26 +1,22 @@
-use std::sync::Arc;
-
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
-    response::{
-        IntoResponse,
-        sse::{Event, KeepAlive, Sse},
-    },
+    response::IntoResponse,
     routing::{delete, get, post},
 };
-use futures_util::{StreamExt, stream};
 use garde::Validate;
 use serde::Deserialize;
-use slasha_db::{DbPool, models::app_scale::ProcessType, repos::deployment::DeploymentRepo};
-use tokio_stream::wrappers::BroadcastStream;
+use slasha_db::{
+    DbPool, DuckdbPool, models::app_scale::ProcessType, repos::deployment::DeploymentRepo,
+};
 
 use crate::{
-    HttpError, HttpResult,
+    HttpResult,
     docker::AppDocker,
     extractors::{ValidatedJson, app::ActiveApp},
-    logs::{LogKey, LogManager},
+    logs::LogBus,
+    routing::api::logs::{LogQuery, fetch_resource_logs, stream_resource_logs},
     state::AppState,
 };
 
@@ -29,7 +25,8 @@ pub fn router() -> Router<AppState> {
         .route("/", post(trigger_deploy))
         .route("/", get(list_deployments))
         .route("/{deployment_id}", get(get_deployment))
-        .route("/{deployment_id}/logs", get(stream_logs))
+        .route("/{deployment_id}/logs", get(get_logs))
+        .route("/{deployment_id}/stream", get(stream_logs))
         .route("/{deployment_id}/stop", post(stop_deployment))
         .route("/{deployment_id}/cancel", post(cancel_deployment))
         .route("/{deployment_id}/restart", post(restart_deployment))
@@ -154,42 +151,25 @@ async fn rollback_deployment(
     Ok(Json(serde_json::json!({ "deployment": deployment })))
 }
 
-async fn stream_logs(
+async fn get_logs(
     State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
+    State(duckdb_pool): State<DuckdbPool>,
     ActiveApp { app, .. }: ActiveApp,
     Path((_, deployment_id)): Path<(String, String)>,
-) -> HttpResult<
-    Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
-> {
+    Query(query): Query<LogQuery>,
+) -> HttpResult<impl IntoResponse> {
     DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
+    fetch_resource_logs(&duckdb_pool, &deployment_id, query).await
+}
 
-    let log = log_manager
-        .get_logger(&LogKey::Deployment {
-            app_slug: app.slug.clone(),
-            deployment_id,
-        })
-        .await
-        .map_err(HttpError::internal)?;
-
-    let historical = log.get_historical().await?;
-
-    let historical_stream = stream::iter(
-        historical
-            .into_iter()
-            .map(|msg| Ok(Event::default().data(msg))),
-    );
-
-    let rx = log.subscribe();
-    let live_stream = BroadcastStream::new(rx).map(|res| match res {
-        Ok(msg) => Ok(Event::default().data(msg)),
-        Err(e) => Ok(Event::default().event("error").data(e.to_string())),
-    });
-
-    let done_marker = stream::once(async { Ok(Event::default().data("[done]")) });
-    let combined = historical_stream.chain(done_marker).chain(live_stream);
-
-    Ok(Sse::new(combined).keep_alive(KeepAlive::default()))
+async fn stream_logs(
+    State(db_pool): State<DbPool>,
+    State(log_bus): State<LogBus>,
+    ActiveApp { app, .. }: ActiveApp,
+    Path((_, deployment_id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
+    stream_resource_logs(&log_bus, &deployment_id).await
 }
 
 async fn delete_deployment(

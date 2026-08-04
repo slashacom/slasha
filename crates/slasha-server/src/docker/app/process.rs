@@ -5,6 +5,7 @@ pub use slasha_db::models::app_scale::ProcessContainer as ProcessContainerInfo;
 use slasha_db::{
     app::App,
     deployment::Deployment,
+    logs::{LogPrefix, ResourceKind},
     models::app_scale::{ProcessStatus, ProcessType},
 };
 
@@ -12,9 +13,10 @@ use crate::{
     docker::{
         DockerError, DockerResult,
         labels::{LABEL_APP_ID, LABEL_DEPLOYMENT_ID, LABEL_INSTANCE_INDEX, LABEL_PROCESS_TYPE},
-        process_container_name, utils,
+        process_container_name,
+        utils::{self, stream_container_logs},
     },
-    logs::{LogHandle, LogKey, stream_container_logs},
+    logs::LogWriter,
     state::Runtime,
 };
 
@@ -84,14 +86,14 @@ pub async fn list_deployment_processes(
 /// # Arguments
 ///
 /// * `docker_client` - Docker API client ([`Docker`]).
-/// * `log` - Log handle for output streaming ([`LogHandle`]).
+/// * `log` - Log writer for output streaming ([`LogWriter`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
 /// * `process_type` - Process type enum ([`ProcessType`]).
 /// * `instance_index` - Replica instance index.
 pub async fn start_process_container(
     docker_client: &Docker,
-    log: &LogHandle,
+    log: &LogWriter,
     app: &App,
     deployment: &Deployment,
     process_type: ProcessType,
@@ -100,19 +102,18 @@ pub async fn start_process_container(
     let container_name =
         process_container_name(&app.id, &deployment.id, &process_type, instance_index);
 
-    let prefix = format!("[{}.{}]", process_type, instance_index);
+    let log_prefix = match process_type {
+        ProcessType::Web => LogPrefix::Web(instance_index),
+        ProcessType::Worker => LogPrefix::Worker(instance_index),
+        _ => LogPrefix::System,
+    };
+    let log = log.clone().prefix(log_prefix);
 
     utils::start_container(docker_client, &container_name).await?;
 
-    log.send(format!("Container {} started", container_name))
-        .await?;
+    log.stdout(format!("Container {} started", container_name));
 
-    stream_container_logs(
-        docker_client.clone(),
-        log.clone(),
-        container_name,
-        Some(prefix),
-    );
+    stream_container_logs(docker_client.clone(), log, container_name);
 
     Ok(())
 }
@@ -186,11 +187,10 @@ pub async fn restart_deployment_processes(
     deployment: &Deployment,
 ) -> DockerResult<()> {
     let processes = list_deployment_processes(docker_client, &deployment.id).await?;
-    let log_key = LogKey::Deployment {
-        app_slug: app.slug.clone(),
-        deployment_id: deployment.id.clone(),
-    };
-    let log = runtime.log_manager.get_logger(&log_key).await?;
+    let log = runtime
+        .log_bus
+        .writer(ResourceKind::Deployment, &deployment.id)
+        .app_id(&app.id);
 
     let restart_futures = processes.into_iter().map(|process| {
         let docker_client = docker_client.clone();
@@ -198,13 +198,13 @@ pub async fn restart_deployment_processes(
         async move {
             utils::restart_container(&docker_client, &process.name).await?;
 
-            let prefix = format!(
-                "[{}.{}]",
-                process.process_type.to_string().to_lowercase(),
-                process.instance_index
-            );
+            let log_prefix = match process.process_type {
+                ProcessType::Web => LogPrefix::Web(process.instance_index),
+                ProcessType::Worker => LogPrefix::Worker(process.instance_index),
+                _ => LogPrefix::System,
+            };
 
-            stream_container_logs(docker_client, log, process.name, Some(prefix));
+            stream_container_logs(docker_client, log.prefix(log_prefix), process.name);
 
             Ok::<(), DockerError>(())
         }

@@ -10,12 +10,12 @@ use context::resolve_deployment_context;
 use slasha_db::{
     app::App,
     deployment::{Deployment, DeploymentStatus},
+    logs::ResourceKind,
     repos::deployment::DeploymentRepo,
 };
 
 use crate::{
     docker::{DockerResult, app::deploy::runner::DeploymentRunner, workflow::WorkflowRunner},
-    logs::LogKey,
     state::AppState,
 };
 
@@ -47,15 +47,14 @@ pub async fn run_deployment_workflow(
         "deployment start"
     );
 
-    let log_key = LogKey::Deployment {
-        app_slug: app.slug.clone(),
-        deployment_id: deployment.id.clone(),
-    };
-
-    let log = state.runtime.log_manager.get_logger(&log_key).await?;
+    let log_writer = state
+        .runtime
+        .log_bus
+        .writer(ResourceKind::Deployment, &deployment.id)
+        .app_id(&app.id);
 
     let result = WorkflowRunner::new(format!("deploy_app:{}", app.slug))
-        .with_log(&log)
+        .with_log(&log_writer)
         .with_cancel_token(&cancel_token)
         .run({
             let state = state.clone();
@@ -63,7 +62,7 @@ pub async fn run_deployment_workflow(
             let docker_client = docker_client.clone();
             let deployment = deployment.clone();
             let source_image = source_image.clone();
-            let log = log.clone();
+            let log_writer = log_writer.clone();
 
             move |wf| async move {
                 let db_pool = &state.storage.db_pool;
@@ -75,7 +74,7 @@ pub async fn run_deployment_workflow(
                     docker_client: &docker_client,
                     deployment: &deployment,
                     wf: &wf,
-                    log: &log,
+                    log: &log_writer,
                     context: &context,
                 };
 
@@ -84,22 +83,18 @@ pub async fn run_deployment_workflow(
         })
         .await;
 
-    if let Err(e) = &result {
+    if let Err(error) = result {
         tracing::info!(
             app_slug = %app.slug,
             deployment_id = %deployment.id,
             status = "failed",
-            error = ?e,
+            error = ?error,
             "deployment finish"
         );
 
-        let _ = log.send(format!("{}", e)).await;
-        let _ = log
-            .send(
-                "Rolling back this release; the previous deployment (if any) stays active"
-                    .to_string(),
-            )
-            .await;
+        log_writer.stdout(format!(
+            "{error}\nRolling back this release; the previous deployment (if any) stays active"
+        ));
 
         let _ = DeploymentRepo::update_status(
             &state.storage.db_pool,
@@ -108,9 +103,7 @@ pub async fn run_deployment_workflow(
         )
         .await;
 
-        state.runtime.log_manager.remove(&log_key);
-
-        return Ok(());
+        return Err(error);
     }
 
     tracing::info!(

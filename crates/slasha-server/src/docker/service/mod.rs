@@ -14,7 +14,8 @@ use futures_util::StreamExt;
 pub use provision::run_provision_service_workflow;
 use slasha_db::{
     app::App,
-    repos::{node::NodeRepo, service::ServiceRepo},
+    logs::{LogPrefix, ResourceKind},
+    repos::{logs::LogsRepo, node::NodeRepo, service::ServiceRepo},
     service::{
         NewService, NewServiceEnvVar, Service, ServiceKind, ServiceResources, ServiceStatus,
     },
@@ -28,9 +29,8 @@ use crate::{
         DockerError, DockerResult,
         naming::{service_container_name, service_volume_name},
         service::provision::instance::wait_for_service_health,
-        utils,
+        utils::{self, stream_container_logs},
     },
-    logs::{LogKey, stream_container_logs},
     operations,
     state::AppState,
 };
@@ -179,7 +179,7 @@ impl ServiceDocker {
                 )
                 .await
                 {
-                    tracing::error!(error = ?e, "deployment workflow failed");
+                    tracing::error!(error = ?e, "provision workflow failed");
                 }
             }
         });
@@ -203,15 +203,11 @@ impl ServiceDocker {
         let _guard = self.get_guard(&service.id, operations::ServiceOperation::Stopping)?;
 
         let container_name = service_container_name(&service.id);
-        let log_key = LogKey::Service {
-            app_slug: self.app.slug.clone(),
-            service_name: service.name.clone(),
-        };
 
         utils::stop_container(&self.docker_client, &container_name, Some(10)).await?;
 
         ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Stopped).await?;
-        self.state.runtime.log_manager.remove(&log_key);
+        self.state.runtime.log_bus.remove(&service.id);
 
         Ok(())
     }
@@ -235,19 +231,20 @@ impl ServiceDocker {
         let _guard = self.get_guard(&service.id, operations::ServiceOperation::Restarting)?;
 
         let container_name = service_container_name(&service.id);
-        let log_key = LogKey::Service {
-            app_slug: self.app.slug.clone(),
-            service_name: service.name.clone(),
-        };
 
         utils::restart_container(&self.docker_client, &container_name).await?;
 
-        let log = self.state.runtime.log_manager.get_logger(&log_key).await?;
+        let log_writer = self
+            .state
+            .runtime
+            .log_bus
+            .writer(ResourceKind::Service, &service.id)
+            .app_id(&self.app.id);
+
         stream_container_logs(
             self.docker_client.clone(),
-            log.clone(),
+            log_writer.clone().prefix(LogPrefix::Service),
             container_name.clone(),
-            None,
         );
 
         if let Err(e) = wait_for_service_health(
@@ -255,7 +252,7 @@ impl ServiceDocker {
             &container_name,
             &service.name,
             180,
-            Some(&log),
+            &log_writer,
         )
         .await
         {
@@ -282,16 +279,12 @@ impl ServiceDocker {
         ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Provisioning).await?;
 
         let container_name = service_container_name(&service.id);
-        let log_key = LogKey::Service {
-            app_slug: self.app.slug.clone(),
-            service_name: service.name.clone(),
-        };
 
         if let Err(e) = utils::remove_container(&self.docker_client, &container_name).await {
             tracing::warn!(container = %container_name, error = ?e, "Failed to remove service container during redeploy");
         }
 
-        self.state.runtime.log_manager.remove(&log_key);
+        self.state.runtime.log_bus.remove(&service.id);
 
         tokio::spawn({
             let state = self.state.clone();
@@ -339,10 +332,6 @@ impl ServiceDocker {
 
         let container_name = service_container_name(&service.id);
         let volume_name = service_volume_name(&service.id);
-        let log_key = LogKey::Service {
-            app_slug: self.app.slug.clone(),
-            service_name: service.name.clone(),
-        };
 
         if let Err(e) = utils::remove_container(&self.docker_client, &container_name).await {
             tracing::warn!(container = %container_name, error = ?e, "Failed to remove service container");
@@ -353,7 +342,8 @@ impl ServiceDocker {
         }
 
         ServiceRepo::delete(db_pool, &service.id).await?;
-        self.state.runtime.log_manager.remove(&log_key);
+        self.state.runtime.log_bus.remove(&service.id);
+        let _ = LogsRepo::delete_by_resource_id(&self.state.storage.duckdb_pool, &service.id).await;
 
         Ok(())
     }

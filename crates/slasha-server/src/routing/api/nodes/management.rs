@@ -1,31 +1,30 @@
-use std::sync::Arc;
-
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    response::{
-        IntoResponse,
-        sse::{Event, KeepAlive, Sse},
-    },
+    response::IntoResponse,
     routing::{delete, get, post, put},
 };
-use futures_util::{StreamExt, stream};
 use garde::Validate;
 use serde::{Deserialize, Serialize};
 use slasha_db::{
-    DbPool,
-    models::node::{NewNode, Node, NodeChangeset, NodeStatus},
-    repos::node::NodeRepo,
+    DbPool, DuckdbPool,
+    models::{
+        logs::ResourceKind,
+        node::{NewNode, Node, NodeChangeset, NodeStatus},
+    },
+    repos::{logs::LogsRepo, node::NodeRepo},
 };
-use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
 use crate::{
     HttpError, HttpResult,
     docker::registry::DockerRegistry,
     extractors::{ValidatedJson, auth::AuthUser},
-    logs::{LogKey, LogManager},
-    routing::api::validation::not_empty,
+    logs::LogBus,
+    routing::api::{
+        logs::{LogQuery, fetch_resource_logs, stream_resource_logs},
+        validation::not_empty,
+    },
     state::AppState,
 };
 
@@ -36,7 +35,8 @@ pub fn router() -> Router<AppState> {
         .route("/{id}", get(get_node))
         .route("/{id}", put(update_node))
         .route("/{id}", delete(delete_node))
-        .route("/{id}/logs", get(stream_node_logs))
+        .route("/{id}/logs", get(get_node_logs))
+        .route("/{id}/stream", get(stream_node_logs))
 }
 
 #[derive(Serialize)]
@@ -162,23 +162,18 @@ async fn create_node(
 
     let setup_script = format!("export SSH_PORT={}\n{}", port, SETUP_SCRIPT);
 
-    let log_handle = state
-        .runtime
-        .log_manager
-        .get_logger(&LogKey::NodeSetup {
-            node_id: node.id.clone(),
-        })
-        .await
-        .map_err(HttpError::internal)?;
-
     tokio::spawn({
         let db_pool = state.storage.db_pool.clone();
         let node_connection_manager = state.clients.node_connection_manager.clone();
         let node = node.clone();
+        let log_writer = state
+            .runtime
+            .log_bus
+            .writer(ResourceKind::NodeSetup, &node.id);
 
         async move {
             let result = node_connection_manager
-                .run_ssh_script_streaming(&node, &setup_script, &log_handle)
+                .run_ssh_script_streaming(&node, &setup_script, &log_writer)
                 .await;
 
             let mut internal_root_ca = None;
@@ -197,12 +192,12 @@ async fn create_node(
                         }
                     }
                     tracing::info!(node_id = %node.id, node_name = %node.name, "node setup completed");
-                    let _ = log_handle.send("setup completed successfully").await;
+                    log_writer.stdout("setup completed successfully");
                     NodeStatus::Ready
                 }
                 Err(e) => {
                     tracing::error!(node_id = %node.id, node_name = %node.name, error = %e, "node setup failed");
-                    let _ = log_handle.send(format!("setup failed: {}", e)).await;
+                    log_writer.stdout(format!("setup failed: {}", e));
                     NodeStatus::Error
                 }
             };
@@ -309,38 +304,39 @@ async fn delete_node(
 
     NodeRepo::set_status(&state.storage.db_pool, &id, NodeStatus::Deleting).await?;
 
+    let log_writer = state
+        .runtime
+        .log_bus
+        .writer(ResourceKind::NodeTeardown, &node.id);
+
     tokio::spawn({
-        let db_pool = state.storage.db_pool.clone();
-        let node_connection_manager = state.clients.node_connection_manager.clone();
-        let docker_registry = state.clients.docker_registry.clone();
-        let node = node.clone();
-        let log_manager = state.runtime.log_manager.clone();
-        let log_handle = log_manager
-            .get_logger(&LogKey::NodeTeardown {
-                node_id: id.clone(),
-            })
-            .await?;
+        let db_pool = state.storage.db_pool;
+        let duckdb_pool = state.storage.duckdb_pool;
+        let node_connection_manager = state.clients.node_connection_manager;
+        let docker_registry = state.clients.docker_registry;
+        let log_bus = state.runtime.log_bus;
 
         async move {
             let result = node_connection_manager
-                .run_ssh_script_streaming(&node, TEARDOWN_SCRIPT, &log_handle)
+                .run_ssh_script_streaming(&node, TEARDOWN_SCRIPT, &log_writer)
                 .await;
 
             match result {
                 Ok(_) => {
                     tracing::info!(node_id = %node.id, node_name = %node.name, "node teardown completed");
-                    let _ = log_handle.send("teardown completed successfully").await;
+                    log_writer.stdout("teardown completed successfully");
 
                     if let Err(e) = NodeRepo::delete(&db_pool, &node.id).await {
                         tracing::error!(node_id = %node.id, error = %e, "failed to delete node from database");
                     } else {
                         node_connection_manager.remove_key(&node.id);
-                        let _ = log_manager.delete_node_logs(&node.id).await;
+                        log_bus.remove(&node.id);
+                        let _ = LogsRepo::delete_by_resource_id(&duckdb_pool, &node.id).await;
                     }
                 }
                 Err(e) => {
                     tracing::error!(node_id = %node.id, error = %e, "node teardown failed");
-                    let _ = log_handle.send(format!("teardown failed: {}", e)).await;
+                    log_writer.stdout(format!("teardown failed: {}", e));
 
                     if let Err(db_err) =
                         NodeRepo::set_status(&db_pool, &node.id, NodeStatus::Error).await
@@ -359,54 +355,23 @@ async fn delete_node(
     ))
 }
 
-#[derive(Deserialize)]
-struct LogsQuery {
-    #[serde(rename = "type")]
-    log_type: String,
+async fn get_node_logs(
+    State(db_pool): State<DbPool>,
+    State(duckdb_pool): State<DuckdbPool>,
+    AuthUser(_user): AuthUser,
+    Path(id): Path<String>,
+    Query(query): Query<LogQuery>,
+) -> HttpResult<impl IntoResponse> {
+    NodeRepo::get(&db_pool, &id).await?;
+    fetch_resource_logs(&duckdb_pool, &id, query).await
 }
 
 async fn stream_node_logs(
     State(db_pool): State<DbPool>,
-    State(log_manager): State<Arc<LogManager>>,
+    State(log_bus): State<LogBus>,
     AuthUser(_user): AuthUser,
     Path(id): Path<String>,
-    Query(query): Query<LogsQuery>,
-) -> HttpResult<
-    Sse<impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>>>,
-> {
+) -> HttpResult<impl IntoResponse> {
     NodeRepo::get(&db_pool, &id).await?;
-
-    let log_key = match query.log_type.as_str() {
-        "setup" => LogKey::NodeSetup { node_id: id },
-        "teardown" => LogKey::NodeTeardown { node_id: id },
-        _ => {
-            return Err(HttpError::bad_request(
-                "log type must be 'setup' or 'teardown'",
-            ));
-        }
-    };
-
-    let log = log_manager
-        .get_logger(&log_key)
-        .await
-        .map_err(HttpError::internal)?;
-
-    let historical = log.get_historical().await?;
-
-    let historical_stream = stream::iter(
-        historical
-            .into_iter()
-            .map(|msg| Ok(Event::default().data(msg))),
-    );
-
-    let rx = log.subscribe();
-    let live_stream = BroadcastStream::new(rx).map(|res| match res {
-        Ok(msg) => Ok(Event::default().data(msg)),
-        Err(e) => Ok(Event::default().event("error").data(e.to_string())),
-    });
-
-    let done_marker = stream::once(async { Ok(Event::default().data("[done]")) });
-    let combined = historical_stream.chain(done_marker).chain(live_stream);
-
-    Ok(Sse::new(combined).keep_alive(KeepAlive::default()))
+    stream_resource_logs(&log_bus, &id).await
 }

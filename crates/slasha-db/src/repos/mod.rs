@@ -9,6 +9,7 @@ pub mod deployment;
 pub mod git_connection;
 pub mod github_app_config;
 pub mod github_connection;
+pub mod logs;
 pub mod node;
 pub mod node_metrics;
 pub mod service;

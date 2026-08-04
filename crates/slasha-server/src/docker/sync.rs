@@ -2,7 +2,8 @@ use futures_util::future::join_all;
 use slasha_db::{
     app::App,
     deployment::{Deployment, DeploymentStatus},
-    models::app_scale::ProcessStatus,
+    logs::{LogPrefix, ResourceKind},
+    models::app_scale::{ProcessStatus, ProcessType},
     repos::{
         app_scale::AppScaleRepo, deployment::DeploymentRepo, node::NodeRepo, service::ServiceRepo,
     },
@@ -12,12 +13,9 @@ use slasha_db::{
 use super::{
     app::{process::list_deployment_processes, scale::scale_deployment_process},
     naming::service_container_name,
-    utils,
+    utils::{self, stream_container_logs},
 };
-use crate::{
-    logs::{LogKey, stream_container_logs},
-    state::AppState,
-};
+use crate::state::AppState;
 
 /// Reconciles container states across all registered cluster nodes at server startup.
 ///
@@ -117,16 +115,15 @@ async fn sync_service(
                     let _ =
                         ServiceRepo::update_status(db_pool, &service.id, ServiceStatus::Stopped)
                             .await;
-                } else if let Ok(log) = state
-                    .runtime
-                    .log_manager
-                    .get_logger(&LogKey::Service {
-                        app_slug: app.slug.clone(),
-                        service_name: service.name.clone(),
-                    })
-                    .await
-                {
-                    stream_container_logs(docker_client.clone(), log, name, None);
+                } else {
+                    let log_writer = state
+                        .runtime
+                        .log_bus
+                        .writer(ResourceKind::Service, &service.id)
+                        .app_id(&app.id)
+                        .prefix(LogPrefix::Service);
+
+                    stream_container_logs(docker_client.clone(), log_writer, name);
                 }
             }
             Err(_) => {
@@ -207,27 +204,22 @@ async fn sync_deployment(
                 }
             }
 
-            let log_key = LogKey::Deployment {
-                app_slug: app.slug.clone(),
-                deployment_id: deployment.id.clone(),
-            };
+            let log_writer = state
+                .runtime
+                .log_bus
+                .writer(ResourceKind::Deployment, &deployment.id)
+                .app_id(&app.id);
 
-            if let Ok(log) = state.runtime.log_manager.get_logger(&log_key).await
-                && let Ok(containers) =
-                    list_deployment_processes(docker_client, &deployment.id).await
-            {
+            if let Ok(containers) = list_deployment_processes(docker_client, &deployment.id).await {
                 for container in containers {
-                    let prefix = format!(
-                        "[{}.{}]",
-                        container.process_type.to_string().to_lowercase(),
-                        container.instance_index
-                    );
-                    stream_container_logs(
-                        docker_client.clone(),
-                        log.clone(),
-                        container.name,
-                        Some(prefix),
-                    );
+                    let log_prefix = match container.process_type {
+                        ProcessType::Web => LogPrefix::Web(container.instance_index),
+                        ProcessType::Worker => LogPrefix::Worker(container.instance_index),
+                        ProcessType::Release => LogPrefix::System,
+                    };
+
+                    let container_log = log_writer.clone().prefix(log_prefix);
+                    stream_container_logs(docker_client.clone(), container_log, container.name);
                 }
             }
         }

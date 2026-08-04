@@ -71,7 +71,7 @@ pub async fn find_deployment_image(
 /// # Arguments
 ///
 /// * `docker_client` - Docker API client ([`Docker`]).
-/// * `source` - Source image tag or ID string.
+/// * `source` - Source image name.
 /// * `app_slug` - Target application slug string.
 /// * `deployment_id` - Target deployment ID string.
 ///

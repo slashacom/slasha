@@ -14,10 +14,16 @@ use bollard::Docker;
 use chrono::Utc;
 pub use env::resolve_app_env;
 use slasha_db::{
-    app::App,
+    app::{App, AppSource},
     deployment::{Deployment, DeploymentStatus, NewDeployment},
-    models::app_scale::{ProcessContainer, ProcessType},
-    repos::{app::AppRepo, app_backup::AppBackupRepo, deployment::DeploymentRepo, node::NodeRepo},
+    models::{
+        app_scale::{ProcessContainer, ProcessType},
+        node::NodeStatus,
+    },
+    repos::{
+        app::AppRepo, app_backup::AppBackupRepo, deployment::DeploymentRepo, logs::LogsRepo,
+        node::NodeRepo,
+    },
 };
 use uuid::Uuid;
 pub use volume::AppVolume;
@@ -28,7 +34,6 @@ use crate::{
         DockerError, DockerResult,
         app::{purge::purge_app_from_node, scale::scale_deployment_process},
     },
-    logs::LogKey,
     operations::{self, ActiveOperation, AppOperation, ResourceKey},
     state::AppState,
 };
@@ -101,7 +106,7 @@ impl AppDocker {
     ///
     /// A [`DockerResult`] containing the created [`Deployment`] model.
     pub async fn deploy(&self, commit_sha: Option<String>) -> DockerResult<Deployment> {
-        if self.app.source != slasha_db::app::AppSource::Local {
+        if self.app.source != AppSource::Local {
             connections::sync_external_app(
                 self.state.github_client().await.as_ref(),
                 &self.state.storage,
@@ -385,10 +390,7 @@ impl AppDocker {
 
         process::stop_deployment_processes(&self.docker_client, &deployment).await?;
 
-        self.state.runtime.log_manager.remove(&LogKey::Deployment {
-            app_slug: self.app.slug.clone(),
-            deployment_id: deployment.id.clone(),
-        });
+        self.state.runtime.log_bus.remove(&deployment.id);
 
         DeploymentRepo::update_status(
             &self.state.storage.db_pool,
@@ -450,10 +452,8 @@ impl AppDocker {
 
         image::remove_deployment_image(&self.docker_client, &self.app.slug, &deployment.id).await?;
 
-        self.state.runtime.log_manager.remove(&LogKey::Deployment {
-            app_slug: self.app.slug.clone(),
-            deployment_id: deployment.id.clone(),
-        });
+        self.state.runtime.log_bus.remove(&deployment.id);
+        LogsRepo::delete_by_resource_id(&self.state.storage.duckdb_pool, &deployment.id).await?;
 
         DeploymentRepo::delete(&self.state.storage.db_pool, &deployment.id, &self.app.id).await?;
 
@@ -486,7 +486,7 @@ impl AppDocker {
         }
 
         let target_node = NodeRepo::get(&self.state.storage.db_pool, target_node_id).await?;
-        if target_node.status != slasha_db::models::node::NodeStatus::Ready {
+        if target_node.status != NodeStatus::Ready {
             return Err(crate::docker::DockerError::EnvResolveFailed(
                 "Target node is not ready".to_string(),
             ));
@@ -541,7 +541,7 @@ impl AppDocker {
                 }
 
                 state.runtime.proxy_sync_trigger.notify_one();
-                let _ = state.runtime.log_manager.delete_app_logs(&app.slug).await;
+                let _ = LogsRepo::delete_by_app_id(&state.storage.duckdb_pool, &app.id).await;
 
                 let repo_path = std::path::PathBuf::from(&app.repo_path);
                 if repo_path.exists()

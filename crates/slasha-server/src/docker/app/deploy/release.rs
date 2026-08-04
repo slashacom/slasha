@@ -9,9 +9,9 @@ use crate::{
         DockerError, DockerResult,
         app::deploy::create::{CreateContainerContext, create_process_container},
         naming::process_container_name,
-        utils,
+        utils::{self, stream_container_logs},
     },
-    logs::{LogHandle, stream_container_logs},
+    logs::LogWriter,
 };
 
 /// Runs an ephemeral release phase container and waits for completion.
@@ -19,21 +19,20 @@ use crate::{
 /// # Arguments
 ///
 /// * `docker_client` - Docker API client ([`Docker`]).
-/// * `log` - Log handle for output streaming ([`LogHandle`]).
+/// * `log` - Log writer for output streaming ([`LogWriter`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
 /// * `cmd` - Release command string.
 /// * `env_map` - Resolved environment variable map.
 pub async fn run_release_container(
     docker_client: &Docker,
-    log: &LogHandle,
+    log: &LogWriter,
     app: &App,
     deployment: &Deployment,
     cmd: &str,
     env_map: &HashMap<String, String>,
 ) -> DockerResult<()> {
-    log.send(format!("Running release command: {}", cmd))
-        .await?;
+    log.stdout(format!("Running release command: {}", cmd));
 
     create_process_container(
         docker_client,
@@ -61,7 +60,6 @@ pub async fn run_release_container(
         docker_client.clone(),
         log.clone(),
         release_container_name.clone(),
-        Some("[release]".to_string()),
     );
 
     if let Ok(deployment_result) = stream_handle.await {
@@ -107,7 +105,7 @@ pub async fn run_release_container(
         return Err(DockerError::ReleaseFailed(exit_code));
     }
 
-    log.send("Release command completed successfully").await?;
+    log.stdout("Release command completed successfully");
 
     Ok(())
 }

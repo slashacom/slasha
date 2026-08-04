@@ -6,13 +6,13 @@ use tokio_util::sync::CancellationToken;
 use super::journal::RollbackJournal;
 use crate::{
     docker::{DockerError, DockerResult},
-    logs::LogHandle,
+    logs::LogWriter,
 };
 
 pub struct WorkflowContext<'a> {
     pub name: String,
     pub journal: RollbackJournal,
-    pub log: Option<&'a LogHandle>,
+    pub log: Option<&'a LogWriter>,
 }
 
 impl<'a> WorkflowContext<'a> {
@@ -29,7 +29,7 @@ impl<'a> WorkflowContext<'a> {
     /// A [`Result`] containing the action output or error.
     pub async fn step<FutAction, FutUndo, T, E>(
         &self,
-        name: impl std::fmt::Display,
+        step_name: impl std::fmt::Display,
         action: FutAction,
         undo: FutUndo,
     ) -> Result<T, E>
@@ -37,14 +37,14 @@ impl<'a> WorkflowContext<'a> {
         FutAction: std::future::Future<Output = Result<T, E>>,
         FutUndo: std::future::Future<Output = ()> + Send + 'static,
     {
-        tracing::info!(workflow = %self.name, step = %name, "executing workflow step");
+        tracing::info!(workflow = %self.name, step = %step_name, "executing workflow step");
         if let Some(log) = self.log {
-            let _ = log.send(format!("{}", name)).await;
+            log.stdout(format!("{}", step_name));
         }
 
         let result = action.await;
         if result.is_ok() {
-            self.journal.push(name.to_string(), undo);
+            self.journal.push(step_name.to_string(), undo);
         }
 
         result
@@ -53,7 +53,7 @@ impl<'a> WorkflowContext<'a> {
 
 pub struct WorkflowRunner<'a> {
     name: String,
-    log: Option<&'a LogHandle>,
+    log: Option<&'a LogWriter>,
     cancel_token: Option<&'a CancellationToken>,
 }
 
@@ -75,16 +75,16 @@ impl<'a> WorkflowRunner<'a> {
         }
     }
 
-    /// Attaches a log handle to the runner.
+    /// Attaches a log writer to the runner.
     ///
     /// # Arguments
     ///
-    /// * `log` - Log handle reference ([`LogHandle`]).
+    /// * `log` - Log writer reference ([`LogWriter`]).
     ///
     /// # Returns
     ///
     /// Updated [`WorkflowRunner`] builder.
-    pub fn with_log(mut self, log: &'a LogHandle) -> Self {
+    pub fn with_log(mut self, log: &'a LogWriter) -> Self {
         self.log = Some(log);
         self
     }

@@ -76,7 +76,7 @@ pub async fn serve() -> anyhow::Result<()> {
     dotenv().ok();
     setup_tracing();
 
-    let (db_path, duckdb_path, repos_dir, logs_dir, nodes_dir) = setup_dirs();
+    let (db_path, duckdb_path, repos_dir, _logs_dir, nodes_dir) = setup_dirs();
 
     let slasha_env = Env::from_str_or_default(
         &std::env::var("SLASHA_ENV").unwrap_or_else(|_| "development".to_string()),
@@ -90,13 +90,7 @@ pub async fn serve() -> anyhow::Result<()> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(3000);
 
-    let config = Config::new(
-        slasha_env,
-        jwt_secret,
-        platform_domain,
-        logs_dir.clone(),
-        port,
-    );
+    let config = Config::new(slasha_env, jwt_secret, platform_domain, port);
 
     slasha_db::migrations::run_migrations(
         db_path.to_str().expect("Invalid DB path"),
@@ -139,12 +133,12 @@ pub async fn serve() -> anyhow::Result<()> {
 
     let proxy_sync_trigger =
         proxy::spawn_route_syncer(clients.clone(), storage.db_pool.clone(), config.clone());
-    let runtime = Runtime::new(&logs_dir, proxy_sync_trigger).await?;
+    let runtime = Runtime::new(storage.duckdb_pool.clone(), proxy_sync_trigger).await?;
 
     cron::spawn_cron_scheduler(
         storage.db_pool.clone(),
         clients.docker_registry.clone(),
-        runtime.log_manager.clone(),
+        runtime.log_bus.clone(),
     );
 
     let state = AppState::new(config, clients, storage, runtime);

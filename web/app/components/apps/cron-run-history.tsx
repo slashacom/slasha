@@ -118,8 +118,9 @@ export function CronRunHistory(props: CronRunHistoryProps) {
 
           {selectedRun ? (
             <LogStream
-              url={`/api/apps/${appSlug}/crons/${cronId}/runs/${selectedRun.id}/logs`}
-              className="h-[55vh] rounded-md border border-border"
+              url={`/api/apps/${appSlug}/crons/${cronId}/runs/${selectedRun.id}`}
+              initialFilters={{ resourceKind: 'cron' }}
+              className="h-[55vh]"
             />
           ) : null}
         </DialogContent>
