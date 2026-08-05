@@ -168,8 +168,8 @@ export default function DeploymentDetailPage() {
         <VStack space={3} className="flex min-h-0 flex-1 flex-col mt-4">
           <LogStream
             url={`/api/apps/${slug}/deployments/${id}`}
-            title="Build & runtime logs"
-            initialFilters={{ resourceKind: 'deployment' }}
+            title="Logs"
+            resourceKind="deployment"
             className="min-h-0 flex-1"
           />
         </VStack>

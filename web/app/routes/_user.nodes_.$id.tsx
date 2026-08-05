@@ -1,12 +1,13 @@
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { Outlet, useParams, useNavigate, redirect } from 'react-router';
-import { useSuspenseQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Server, HardDrive, Network } from 'lucide-react';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getNodeOptions } from '~/queries/nodes';
 import { TabNav } from '~/components/interface/tab-nav';
 import { queryClient } from '~/utils/query-client';
 import { NodeStatusBadge } from '~/components/interface/status-badge';
+import { toast } from 'sonner';
 
 export async function clientLoader(args: { params: { id: string } }) {
   const { params } = args;
@@ -14,7 +15,12 @@ export async function clientLoader(args: { params: { id: string } }) {
   if (me.user.role !== 'Admin') {
     throw redirect('/apps');
   }
-  await queryClient.ensureQueryData(getNodeOptions(params.id));
+  try {
+    await queryClient.ensureQueryData(getNodeOptions(params.id));
+  } catch (err: any) {
+    if (err?.status === 404) throw redirect('/nodes');
+    throw err;
+  }
   return null;
 }
 
@@ -22,9 +28,15 @@ export default function NodeDetailLayout() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data: nodeData } = useSuspenseQuery({
+  const {
+    data: nodeData,
+    isError,
+    error,
+  } = useQuery({
     ...getNodeOptions(id!),
+    throwOnError: false,
     refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
       const node = query.state.data?.node;
       if (node && (node.status === 'SettingUp' || node.status === 'Deleting')) {
         return 2000;
@@ -32,7 +44,18 @@ export default function NodeDetailLayout() {
       return 5000;
     },
   });
-  const node = nodeData.node;
+
+  const node = nodeData?.node;
+  const isDeleted = isError && (error as any)?.status === 404;
+
+  useEffect(() => {
+    if (isDeleted) {
+      toast.success('Node deleted successfully.');
+      navigate('/nodes');
+    }
+  }, [isDeleted, navigate]);
+
+  if (!node) return null;
 
   return (
     <div className="flex flex-1 flex-col min-h-0">

@@ -27,13 +27,9 @@ import type {
   LogPrefix,
 } from '~/models/logs';
 
-export type InitialLogFilters = {
-  resourceKind?: ResourceKind;
-};
-
 type LogStreamProps = {
   url: string;
-  initialFilters?: InitialLogFilters;
+  resourceKind: ResourceKind;
   className?: string;
   emptyMessage?: string;
   title?: string;
@@ -48,7 +44,12 @@ export function formatLogPrefix(prefix?: LogPrefix | null | string): string {
   return String(prefix);
 }
 
-const PREFIX_BADGE_STYLES: Record<string, string> = {
+type BasePrefix = Exclude<
+  LogPrefix extends infer T ? (T extends string ? T : keyof T) : never,
+  'custom'
+>;
+
+const PREFIX_BADGE_STYLES: Record<BasePrefix, string> = {
   system: 'bg-zinc-700/40 text-zinc-400',
   web: 'bg-emerald-500/10 text-emerald-400',
   worker: 'bg-purple-500/10 text-purple-400',
@@ -58,18 +59,18 @@ const PREFIX_BADGE_STYLES: Record<string, string> = {
 function getPrefixBadge(prefix?: LogPrefix | null): string {
   if (!prefix) return 'bg-white/5 text-text-tertiary';
   const category = typeof prefix === 'string' ? prefix : Object.keys(prefix)[0];
-  return PREFIX_BADGE_STYLES[category] || 'bg-white/5 text-text-tertiary';
+  return (
+    PREFIX_BADGE_STYLES[category as BasePrefix] ||
+    'bg-white/5 text-text-tertiary'
+  );
 }
 
-const DEFAULT_PREFIX_BY_KIND: Record<ResourceKind, string[]> = {
+const ALLOWED_PREFIXES_BY_KIND: Record<ResourceKind, BasePrefix[]> = {
   deployment: ['system', 'web', 'worker'],
   service: ['system', 'service'],
   cron: ['system'],
-  node_setup: ['system'],
-  node_teardown: ['system'],
+  node: ['system'],
 };
-
-const ALL_BASE_PREFIXES: string[] = ['system', 'web', 'worker', 'service'];
 
 function formatLocalTime(isoString: string): string {
   try {
@@ -317,8 +318,7 @@ function logReducer(state: LogState, action: LogAction): LogState {
 }
 
 export function LogStream(props: LogStreamProps) {
-  const { url, initialFilters, className, emptyMessage, title } = props;
-  const resourceKind = initialFilters?.resourceKind;
+  const { url, resourceKind, className, emptyMessage, title } = props;
 
   const [state, dispatch] = useReducer(logReducer, {
     logs: [],
@@ -343,9 +343,7 @@ export function LogStream(props: LogStreamProps) {
   const selectedPrefixRef = useRef(selectedPrefix);
   selectedPrefixRef.current = selectedPrefix;
 
-  const allowedPrefixes = resourceKind
-    ? DEFAULT_PREFIX_BY_KIND[resourceKind]
-    : ALL_BASE_PREFIXES;
+  const allowedPrefixes = ALLOWED_PREFIXES_BY_KIND[resourceKind];
 
   const fetchLogs = useCallback(
     async (params: {
@@ -358,7 +356,7 @@ export function LogStream(props: LogStreamProps) {
       if (params.before_ts) queryParams.set('before_ts', params.before_ts);
       if (params.after_ts) queryParams.set('after_ts', params.after_ts);
 
-      if (resourceKind) queryParams.set('resource_kind', resourceKind);
+      queryParams.set('resource_kind', resourceKind);
 
       const q = search.trim();
       if (q) queryParams.set('search', q);
@@ -568,12 +566,11 @@ export function LogStream(props: LogStreamProps) {
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-hidden bg-surface rounded-lg text-[12px] leading-relaxed selection:bg-sky-500/20">
+      <div className="relative flex-1 overflow-hidden bg-surface border border-border rounded-lg text-[12px] leading-relaxed selection:bg-sky-500/20">
         {state.logs.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 py-16 text-text-tertiary">
             <p>
-              {emptyMessage ||
-                'No matching log entries found. Waiting for new logs...'}
+              {emptyMessage || 'No log entries found. Waiting for new logs...'}
             </p>
           </div>
         ) : (

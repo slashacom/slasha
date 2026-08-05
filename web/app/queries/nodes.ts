@@ -39,6 +39,11 @@ export function getNodeOptions(id: string) {
   return queryOptions({
     queryKey: ['nodes', id],
     queryFn: () => httpGet<{ node: NodeWithInfo }>(`nodes/${id}`),
+    retry: (failureCount, error: any) => {
+      if (error?.status === 404) return false;
+      return failureCount < 3;
+    },
+    throwOnError: (error: any) => error?.status === 404,
   });
 }
 
@@ -68,8 +73,7 @@ export function useUpdateNode() {
 export function useDeleteNode() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      httpDelete<{ deleting: boolean; deleted: boolean }>(`nodes/${id}`),
+    mutationFn: (id: string) => httpDelete<void>(`nodes/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nodes'] });
     },

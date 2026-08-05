@@ -8,6 +8,7 @@ use tokio::{
 
 use crate::logs::LogWriter;
 
+/// Manages SSH connections, key files, and known hosts configurations for remote nodes.
 #[derive(Clone)]
 pub struct NodeConnectionManager {
     nodes_dir: PathBuf,
@@ -15,6 +16,11 @@ pub struct NodeConnectionManager {
 }
 
 impl NodeConnectionManager {
+    /// Initializes a new [`NodeConnectionManager`] using the provided directory to store SSH configuration and keys.
+    ///
+    /// # Arguments
+    ///
+    /// * `nodes_dir` - Path to the directory where SSH artifacts will be stored.
     pub fn new(nodes_dir: PathBuf) -> Self {
         let keys_dir = nodes_dir.join("keys");
         let _ = std::fs::create_dir_all(&keys_dir);
@@ -25,10 +31,20 @@ impl NodeConnectionManager {
         }
     }
 
+    /// Resolves the file path for the SSH `known_hosts` file.
+    ///
+    /// # Returns
+    ///
+    /// The absolute path to the `known_hosts` file.
     pub fn known_hosts_path(&self) -> PathBuf {
         self.nodes_dir.join("known_hosts")
     }
 
+    /// Resolves the file path for the SSH `config` file, creating an empty one if it doesn't exist.
+    ///
+    /// # Returns
+    ///
+    /// The absolute path to the SSH config file.
     pub fn ssh_config_path(&self) -> anyhow::Result<PathBuf> {
         let path = self.nodes_dir.join("config");
         if !path.exists() {
@@ -38,7 +54,16 @@ impl NodeConnectionManager {
         Ok(path)
     }
 
-    pub fn get_key_path(&self, node: &Node) -> anyhow::Result<PathBuf> {
+    /// Resolves and ensures the SSH private key file for the given [`Node`] is present with correct permissions (0600).
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - Target remote cluster node ([`Node`]).
+    ///
+    /// # Returns
+    ///
+    /// The absolute path to the node's SSH private key file.
+    pub fn key_path(&self, node: &Node) -> anyhow::Result<PathBuf> {
         if node.is_local() {
             return Err(anyhow::anyhow!("local node does not use SSH"));
         }
@@ -74,7 +99,7 @@ impl NodeConnectionManager {
     ///
     /// A tuple containing `(DOCKER_HOST, SSH_COMMAND)` environment variable strings.
     pub fn get_docker_ssh_env(&self, node: &Node) -> anyhow::Result<(String, String)> {
-        let key_path = self.get_key_path(node)?;
+        let key_path = self.key_path(node)?;
         let host = node.host.as_deref().unwrap_or("");
         let user = node.user.as_deref().unwrap_or("root");
         let port = node.port.unwrap_or(22);
@@ -94,13 +119,18 @@ impl NodeConnectionManager {
         Ok((docker_host, ssh_cmd))
     }
 
+    /// Verifies the SSH connection to the [`Node`] by running a simple echo command, removing the node's local files on failure.
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - Target remote cluster node ([`Node`]).
     pub async fn probe_ssh(&self, node: &Node) -> anyhow::Result<()> {
         let output = self.run_ssh_script(node, "echo ok").await?;
 
         if output.status.success() {
             Ok(())
         } else {
-            self.remove_key(&node.id);
+            self.remove_node(node);
             anyhow::bail!(
                 "SSH probe failed: {}",
                 String::from_utf8_lossy(&output.stderr)
@@ -108,12 +138,22 @@ impl NodeConnectionManager {
         }
     }
 
+    /// Executes a bash script over SSH on the target [`Node`] and returns the standard output and error.
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - Target remote cluster node ([`Node`]).
+    /// * `script` - The bash script content to execute.
+    ///
+    /// # Returns
+    ///
+    /// The standard [`std::process::Output`] of the executed script.
     pub async fn run_ssh_script(
         &self,
         node: &Node,
         script: &str,
     ) -> anyhow::Result<std::process::Output> {
-        let key_path = self.get_key_path(node)?;
+        let key_path = self.key_path(node)?;
         let host = node.host.as_deref().unwrap_or("");
         let user = node.user.as_deref().unwrap_or("root");
         let port = node.port.unwrap_or(22);
@@ -158,13 +198,24 @@ impl NodeConnectionManager {
         Ok(output)
     }
 
+    /// Executes a bash script over SSH on the target [`Node`], streaming stdout and stderr to the provided [`LogWriter`].
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - Target remote cluster node ([`Node`]).
+    /// * `script` - The bash script content to execute.
+    /// * `log` - A [`LogWriter`] instance for streaming the output lines.
+    ///
+    /// # Returns
+    ///
+    /// A `String` containing the full standard output collected during execution.
     pub async fn run_ssh_script_streaming(
         &self,
         node: &Node,
         script: &str,
         log: &LogWriter,
     ) -> anyhow::Result<String> {
-        let key_path = self.get_key_path(node)?;
+        let key_path = self.key_path(node)?;
         let host = node.host.as_deref().unwrap_or("");
         let user = node.user.as_deref().unwrap_or("root");
         let port = node.port.unwrap_or(22);
@@ -238,7 +289,34 @@ impl NodeConnectionManager {
         Ok(stdout_buffer)
     }
 
-    pub fn remove_key(&self, node_id: &str) {
-        let _ = std::fs::remove_file(self.keys_dir.join(node_id));
+    /// Deletes local SSH artifacts (private key and `known_hosts` entries) associated with the given [`Node`].
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - Target remote cluster node ([`Node`]).
+    pub fn remove_node(&self, node: &Node) {
+        let _ = std::fs::remove_file(self.keys_dir.join(&node.id));
+
+        if let Some(host) = &node.host {
+            let known_hosts = self.known_hosts_path();
+            if known_hosts.exists() {
+                let _ = std::process::Command::new("ssh-keygen")
+                    .args(["-f", known_hosts.to_str().unwrap_or_default(), "-R", host])
+                    .output();
+
+                if let Some(port) = node.port
+                    && port != 22
+                {
+                    let _ = std::process::Command::new("ssh-keygen")
+                        .args([
+                            "-f",
+                            known_hosts.to_str().unwrap_or_default(),
+                            "-R",
+                            &format!("[{}]:{}", host, port),
+                        ])
+                        .output();
+                }
+            }
+        }
     }
 }

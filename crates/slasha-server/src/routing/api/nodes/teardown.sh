@@ -12,16 +12,25 @@ if [[ "$(id -u)" -ne 0 ]]; then
     exit 1
 fi
 
+echo "stopping slasha-proxy container..."
 docker stop slasha-proxy >/dev/null 2>&1 || true
+
+echo "removing slasha-proxy container..."
 docker rm slasha-proxy >/dev/null 2>&1 || true
+
+echo "removing slasha docker volumes..."
 docker volume rm slasha-caddy-data slasha-caddy-config >/dev/null 2>&1 || true
+
+echo "removing slasha docker network..."
 docker network rm slasha-proxy >/dev/null 2>&1 || true
 
 if command -v ufw >/dev/null 2>&1; then
+    echo "reverting ufw firewall rules..."
     ufw delete allow 80/tcp >/dev/null 2>&1 || true
     ufw delete allow 443/tcp >/dev/null 2>&1 || true
 
     if grep -q "slasha: allow docker bridges" /etc/ufw/before.rules 2>/dev/null; then
+        echo "removing docker bridge rules from ufw..."
         python3 - <<'PY'
 src = open("/etc/ufw/before.rules").read()
 marker = "-A ufw-before-input -i lo -j ACCEPT"
@@ -36,5 +45,3 @@ PY
         ufw reload >/dev/null 2>&1 || true
     fi
 fi
-
-echo "slasha-node-teardown: done"

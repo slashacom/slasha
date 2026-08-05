@@ -95,7 +95,7 @@ export default function NodeSettingsTab() {
                   loading: 'Initiating node teardown and deletion...',
                   success: () => {
                     queryClient.invalidateQueries({ queryKey: ['nodes'] });
-                    navigate('/nodes');
+                    navigate(`/nodes/${node.id}/logs`);
                     return `Node ${node.name} deletion initiated successfully`;
                   },
                   error: (err) => err.message || 'Failed to delete node.',

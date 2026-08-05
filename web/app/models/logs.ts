@@ -20,9 +20,4 @@ export type LogRecord = {
 
 export type LogStream = 'stdout' | 'stderr';
 
-export type ResourceKind =
-  | 'deployment'
-  | 'service'
-  | 'cron'
-  | 'node_setup'
-  | 'node_teardown';
+export type ResourceKind = 'deployment' | 'service' | 'cron' | 'node';

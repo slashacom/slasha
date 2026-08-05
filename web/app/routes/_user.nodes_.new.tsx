@@ -22,14 +22,14 @@ export default function NewNodePage() {
 
     toast.promise(promise, {
       loading: 'Probing connection and creating node...',
-      success: 'Node record created successfully. Initiating server setup.',
+      success: 'Initiating server setup.',
       error: (err) => err.message || 'Failed to connect/create node.',
     });
 
     try {
       const data = await promise;
       void queryClient.invalidateQueries({ queryKey: ['nodes'] });
-      navigate(`/nodes/${data.node.id}/logs?type=setup`);
+      navigate(`/nodes/${data.node.id}/logs`);
     } catch {}
   };
 
@@ -38,8 +38,8 @@ export default function NewNodePage() {
       <div>
         <h3 className="font-semibold text-text">Connect Node</h3>
         <p className="mt-2 text-sm text-text-secondary">
-          Add a remote Docker host to your cluster. Slasha will connect via SSH
-          and automatically provision the server.
+          Connect a remote node to use as a server for app deployments. Slasha
+          will connect via SSH and automatically provision it.
         </p>
       </div>
 
