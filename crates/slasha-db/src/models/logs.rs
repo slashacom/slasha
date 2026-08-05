@@ -13,8 +13,7 @@ pub enum ResourceKind {
     Deployment,
     Service,
     Cron,
-    NodeSetup,
-    NodeTeardown,
+    Node,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, EnumString, TS)]

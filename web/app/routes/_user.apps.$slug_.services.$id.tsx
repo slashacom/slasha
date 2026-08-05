@@ -88,9 +88,9 @@ export default function ServiceDetailPage() {
         <VStack space={3} className="flex min-h-0 flex-1 flex-col mt-4">
           <LogStream
             url={`/api/apps/${slug}/services/${id}`}
-            title="Service Logs"
-            initialFilters={{ resourceKind: 'service' }}
-            className="min-h-[24rem] flex-1"
+            title="Logs"
+            resourceKind="service"
+            className="min-h-0 flex-1"
           />
         </VStack>
       </div>

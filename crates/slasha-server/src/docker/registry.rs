@@ -6,15 +6,11 @@ use slasha_db::models::node::{LOCAL_NODE_ID, Node};
 
 use crate::node_connection_manager::NodeConnectionManager;
 
-struct NodeClient {
-    docker: Docker,
-}
-
 /// Registry managing cached Docker API client connections across local and remote SSH nodes.
 #[derive(Clone)]
 pub struct DockerRegistry {
     node_connection_manager: Arc<NodeConnectionManager>,
-    clients: Arc<DashMap<String, Arc<NodeClient>>>,
+    docker_clients: Arc<DashMap<String, Docker>>, // node_id -> docker client
 }
 
 impl DockerRegistry {
@@ -30,10 +26,10 @@ impl DockerRegistry {
     pub fn new(node_connection_manager: Arc<NodeConnectionManager>) -> Self {
         let registry = Self {
             node_connection_manager,
-            clients: Arc::new(DashMap::new()),
+            docker_clients: Arc::new(DashMap::new()),
         };
 
-        let clients = registry.clients.clone();
+        let clients = registry.docker_clients.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(30)).await;
@@ -46,7 +42,7 @@ impl DockerRegistry {
                     }
                     if let Ok(Err(_)) | Err(_) = tokio::time::timeout(
                         std::time::Duration::from_secs(5),
-                        entry.value().docker.ping(),
+                        entry.value().ping(),
                     )
                     .await
                     {
@@ -73,18 +69,14 @@ impl DockerRegistry {
     ///
     /// An [`anyhow::Result`] containing the [`Docker`] client instance.
     pub fn get_local_client(&self) -> anyhow::Result<Docker> {
-        if let Some(entry) = self.clients.get(LOCAL_NODE_ID) {
-            return Ok(entry.docker.clone());
+        if let Some(entry) = self.docker_clients.get(LOCAL_NODE_ID) {
+            return Ok(entry.clone());
         }
 
         let docker = Docker::connect_with_local_defaults()?;
 
-        self.clients.insert(
-            LOCAL_NODE_ID.to_string(),
-            Arc::new(NodeClient {
-                docker: docker.clone(),
-            }),
-        );
+        self.docker_clients
+            .insert(LOCAL_NODE_ID.to_string(), docker.clone());
 
         Ok(docker)
     }
@@ -99,14 +91,14 @@ impl DockerRegistry {
     ///
     /// An [`anyhow::Result`] containing the [`Docker`] client instance.
     pub fn get_client(&self, node: &Node) -> anyhow::Result<Docker> {
-        if let Some(entry) = self.clients.get(&node.id) {
-            return Ok(entry.docker.clone());
+        if let Some(entry) = self.docker_clients.get(&node.id) {
+            return Ok(entry.clone());
         }
 
         let docker = if node.is_local() {
             Docker::connect_with_local_defaults()?
         } else {
-            let key_path = self.node_connection_manager.get_key_path(node)?;
+            let key_path = self.node_connection_manager.key_path(node)?;
             let known_hosts_file = self.node_connection_manager.known_hosts_path();
             let config_file = self.node_connection_manager.ssh_config_path()?;
 
@@ -127,23 +119,18 @@ impl DockerRegistry {
             Docker::connect_with_ssh_options(&address, 120, bollard::API_DEFAULT_VERSION, options)?
         };
 
-        self.clients.insert(
-            node.id.clone(),
-            Arc::new(NodeClient {
-                docker: docker.clone(),
-            }),
-        );
+        self.docker_clients.insert(node.id.clone(), docker.clone());
 
         Ok(docker)
     }
 
-    /// Evicts a node's cached Docker client connection and removes its stored SSH keys.
+    /// Evicts a node's cached Docker client connection and removes its stored SSH keys and known hosts.
     ///
     /// # Arguments
     ///
-    /// * `node_id` - Target node ID string.
-    pub fn remove(&self, node_id: &str) {
-        self.clients.remove(node_id);
-        self.node_connection_manager.remove_key(node_id);
+    /// * `node` - Target node model.
+    pub fn remove(&self, node: &Node) {
+        self.docker_clients.remove(&node.id);
+        self.node_connection_manager.remove_node(node);
     }
 }

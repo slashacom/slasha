@@ -166,10 +166,7 @@ async fn create_node(
         let db_pool = state.storage.db_pool.clone();
         let node_connection_manager = state.clients.node_connection_manager.clone();
         let node = node.clone();
-        let log_writer = state
-            .runtime
-            .log_bus
-            .writer(ResourceKind::NodeSetup, &node.id);
+        let log_writer = state.runtime.log_bus.writer(ResourceKind::Node, &node.id);
 
         async move {
             let result = node_connection_manager
@@ -279,7 +276,7 @@ async fn update_node(
     }
 
     let node = NodeRepo::update(&state.storage.db_pool, &id, changeset).await?;
-    state.clients.docker_registry.remove(&id);
+    state.clients.docker_registry.remove(&node);
 
     Ok(Json(serde_json::json!({ "node": node })))
 }
@@ -304,10 +301,7 @@ async fn delete_node(
 
     NodeRepo::set_status(&state.storage.db_pool, &id, NodeStatus::Deleting).await?;
 
-    let log_writer = state
-        .runtime
-        .log_bus
-        .writer(ResourceKind::NodeTeardown, &node.id);
+    let log_writer = state.runtime.log_bus.writer(ResourceKind::Node, &node.id);
 
     tokio::spawn({
         let db_pool = state.storage.db_pool;
@@ -324,19 +318,19 @@ async fn delete_node(
             match result {
                 Ok(_) => {
                     tracing::info!(node_id = %node.id, node_name = %node.name, "node teardown completed");
-                    log_writer.stdout("teardown completed successfully");
+                    log_writer.stdout("node teardown completed successfully");
 
                     if let Err(e) = NodeRepo::delete(&db_pool, &node.id).await {
                         tracing::error!(node_id = %node.id, error = %e, "failed to delete node from database");
                     } else {
-                        node_connection_manager.remove_key(&node.id);
+                        node_connection_manager.remove_node(&node);
                         log_bus.remove(&node.id);
                         let _ = LogsRepo::delete_by_resource_id(&duckdb_pool, &node.id).await;
                     }
                 }
                 Err(e) => {
                     tracing::error!(node_id = %node.id, error = %e, "node teardown failed");
-                    log_writer.stdout(format!("teardown failed: {}", e));
+                    log_writer.stdout(format!("node teardown failed: {}", e));
 
                     if let Err(db_err) =
                         NodeRepo::set_status(&db_pool, &node.id, NodeStatus::Error).await
@@ -346,13 +340,11 @@ async fn delete_node(
                 }
             }
 
-            docker_registry.remove(&node.id);
+            docker_registry.remove(&node);
         }
     });
 
-    Ok(Json(
-        serde_json::json!({ "deleting": true, "deleted": true }),
-    ))
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 async fn get_node_logs(

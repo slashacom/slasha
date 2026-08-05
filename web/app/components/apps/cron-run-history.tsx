@@ -119,7 +119,7 @@ export function CronRunHistory(props: CronRunHistoryProps) {
           {selectedRun ? (
             <LogStream
               url={`/api/apps/${appSlug}/crons/${cronId}/runs/${selectedRun.id}`}
-              initialFilters={{ resourceKind: 'cron' }}
+              resourceKind="cron"
               className="h-[55vh]"
             />
           ) : null}
