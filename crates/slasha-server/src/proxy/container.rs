@@ -11,7 +11,7 @@ use bollard::{
 use futures_util::StreamExt;
 use tokio::time::sleep;
 
-use super::{ProxyError, ProxyResult};
+use super::{ProxyError, error::ProxyResult};
 use crate::docker::log_driver::default_log_config;
 
 pub const PROXY_CONTAINER_NAME: &str = "slasha-proxy";
@@ -19,6 +19,15 @@ pub const PROXY_NETWORK_NAME: &str = "slasha-proxy";
 const IMAGE: &str = "caddy:latest";
 const ADMIN_URL: &str = "http://127.0.0.1:2019/config/";
 
+/// Ensures the Caddy proxy container and its network are created and running.
+///
+/// # Arguments
+///
+/// * `docker` - The Docker API client.
+///
+/// # Returns
+///
+/// A [`ProxyResult`] indicating success or failure.
 pub async fn ensure_caddy_ready(docker: &Docker) -> ProxyResult<()> {
     let state = docker
         .inspect_container(PROXY_CONTAINER_NAME, None)

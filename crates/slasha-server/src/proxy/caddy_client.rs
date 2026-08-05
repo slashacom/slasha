@@ -1,20 +1,23 @@
 use reqwest::Client;
 use serde_json::{Value, json};
 
-use super::{ProxyError, ProxyResult};
+use super::{ProxyError, error::ProxyResult};
 use crate::state::Env;
 
+/// Client for interacting with the Caddy admin API.
 #[derive(Default, Clone)]
 pub struct CaddyClient {
     client: Client,
 }
 
+/// Represents a backend upstream destination for proxying.
 #[derive(Debug, Clone)]
 pub struct Upstream {
     pub host: String,
     pub port: u16,
 }
 
+/// Represents a route mapping a domain to its backend upstreams.
 #[derive(Debug)]
 pub struct RouteEntry {
     pub domain: String,
@@ -24,27 +27,22 @@ pub struct RouteEntry {
 }
 
 impl CaddyClient {
+    /// Builds a JSON configuration for Caddy routes based on the provided route entries.
+    ///
+    /// # Arguments
+    ///
+    /// * `routes` - List of route entries to configure ([`RouteEntry`]).
+    /// * `internal_tls_domains` - List of internal domains requiring TLS.
+    /// * `env` - Current application environment ([`Env`]).
+    ///
+    /// # Returns
+    ///
+    /// The generated Caddy configuration JSON.
     pub fn build_routes_config(
-        &self,
         routes: &[RouteEntry],
         internal_tls_domains: &[String],
         env: Env,
     ) -> Value {
-        Self::build_config(routes, internal_tls_domains, env)
-    }
-
-    pub async fn apply_routes(
-        &self,
-        routes: &[RouteEntry],
-        internal_tls_domains: &[String],
-        env: Env,
-        base_url: &str,
-    ) -> ProxyResult<()> {
-        let config = Self::build_config(routes, internal_tls_domains, env);
-        self.apply_config(&config, base_url).await
-    }
-
-    fn build_config(routes: &[RouteEntry], internal_tls_domains: &[String], env: Env) -> Value {
         let security_headers = Self::security_headers(env);
 
         let caddy_routes: Vec<Value> = routes
@@ -61,8 +59,9 @@ impl CaddyClient {
                     "upstreams": upstream_objects
                 });
 
-                // When proxying to a remote app node over HTTPS (using internal self-signed certs),
-                // we strip the PEM headers and pass the raw base64 DER to Caddy so it trusts the node's CA.
+                // on node setup we extract the remote ca and save it to the db
+                // here the main server injects that ca so caddy trusts the remote node
+                // we strip the pem headers because caddy expects raw base64 der
                 if let Some(root_ca) = &entry.tls_root_ca {
                     let base64_der = root_ca
                         .replace("-----BEGIN CERTIFICATE-----", "")
@@ -78,7 +77,8 @@ impl CaddyClient {
                         }
                     });
 
-                    // override sni server name to match the remote node's wildcard certificate
+                    // when routing from the main server to a remote node, override sni so the
+                    // remote node presents its self-signed cert instead of failing on a custom domain
                     if let Some(server_name) = &entry.tls_server_name {
                         tls_config["server_name"] = json!(server_name);
                     }
@@ -119,6 +119,9 @@ impl CaddyClient {
             }
         });
 
+        // forces self-signed certs for remote nodes (platform domain only)
+        // main server proxies to them and trusts their ca
+        // hitting the remote node directly on the platform domain causes a cert error
         if !env.is_production() || !internal_tls_domains.is_empty() {
             let mut policies = Vec::new();
             if !env.is_production() {
@@ -143,6 +146,29 @@ impl CaddyClient {
         })
     }
 
+    /// Builds and applies a new routing configuration to a Caddy instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `routes` - List of route entries to configure ([`RouteEntry`]).
+    /// * `internal_tls_domains` - List of internal domains requiring TLS.
+    /// * `env` - Current application environment ([`Env`]).
+    /// * `base_url` - The base URL of the Caddy admin API.
+    ///
+    /// # Returns
+    ///
+    /// A [`ProxyResult`] indicating success or failure.
+    pub async fn apply_routes(
+        &self,
+        routes: &[RouteEntry],
+        internal_tls_domains: &[String],
+        env: Env,
+        base_url: &str,
+    ) -> ProxyResult<()> {
+        let config = Self::build_routes_config(routes, internal_tls_domains, env);
+        self.apply_config(&config, base_url).await
+    }
+
     fn security_headers(env: Env) -> Value {
         let mut headers = serde_json::Map::new();
         headers.insert("X-Content-Type-Options".into(), json!(["nosniff"]));
@@ -153,8 +179,8 @@ impl CaddyClient {
         );
         headers.insert("Permissions-Policy".into(), json!(["interest-cohort=()"]));
 
-        // HSTS only in production — sending it from a self-signed dev cert
-        // pins browsers to a broken HTTPS state.
+        // hsts forces browsers to only use https. if sent during local dev,
+        // a broken self-signed cert will permanently lock you out of localhost.
         if env.is_production() {
             headers.insert(
                 "Strict-Transport-Security".into(),

@@ -11,7 +11,9 @@ use tokio::{
     time::{Duration, sleep},
 };
 
-use super::{PROXY_NETWORK_NAME, ProxyError, ProxyResult, RouteEntry, Upstream};
+use super::{
+    CaddyClient, PROXY_NETWORK_NAME, ProxyError, RouteEntry, Upstream, error::ProxyResult,
+};
 use crate::state::{Clients, Config};
 
 async fn apply_remote_routes_via_ssh(
@@ -21,10 +23,7 @@ async fn apply_remote_routes_via_ssh(
     internal_domains: &[String],
     config: &Config,
 ) -> ProxyResult<()> {
-    let caddy_config =
-        clients
-            .caddy_client
-            .build_routes_config(routes, internal_domains, config.env);
+    let caddy_config = CaddyClient::build_routes_config(routes, internal_domains, config.env);
 
     let caddy_config = serde_json::to_string(&caddy_config)
         .map_err(|e| ProxyError::Caddy(format!("failed to serialize caddy config: {e}")))?;
@@ -62,36 +61,52 @@ fi
     Ok(())
 }
 
+/// Represents the configuration for a domain's upstreams, including TLS details.
+#[derive(Default)]
+struct UpstreamConfig {
+    upstreams: Vec<Upstream>,
+    tls_root_ca: Option<String>,
+    tls_server_name: Option<String>,
+}
+
+/// Synchronizes routing configuration for all active deployments across all nodes.
+///
+/// # Arguments
+///
+/// * `clients` - Application clients including Docker and Caddy ([`Clients`]).
+/// * `db_pool` - Database connection pool ([`DbPool`]).
+/// * `config` - Application configuration ([`Config`]).
+///
+/// # Returns
+///
+/// A [`ProxyResult`] indicating success or failure.
 pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -> ProxyResult<()> {
-    let mut filters: HashMap<String, Vec<String>> = HashMap::new();
-    filters.insert("label".to_string(), vec!["slasha.managed=true".to_string()]);
-    filters.insert("status".to_string(), vec!["running".to_string()]);
-
-    let opts = ListContainersOptionsBuilder::new()
-        .all(true)
-        .filters(&filters)
-        .build();
-
     let nodes = NodeRepo::list(db_pool).await?;
 
-    // domain -> (list of upstreams, tls_root_ca, tls_server_name)
-    let mut local_server_upstreams: HashMap<
-        String,
-        (Vec<Upstream>, Option<String>, Option<String>),
-    > = HashMap::new();
+    // domain -> upstream_config
+    let mut local_server_upstreams: HashMap<String, UpstreamConfig> = HashMap::new();
 
     #[cfg(feature = "bundle")]
     local_server_upstreams.insert(
         config.platform_domain.clone(),
-        (
-            vec![Upstream {
+        UpstreamConfig {
+            upstreams: vec![Upstream {
                 host: "host.docker.internal".to_string(),
                 port: config.port,
             }],
-            None,
-            None,
-        ),
+            tls_root_ca: None,
+            tls_server_name: None,
+        },
     );
+
+    let mut filters: HashMap<String, Vec<String>> = HashMap::new();
+    filters.insert("label".to_string(), vec!["slasha.managed=true".to_string()]);
+    filters.insert("status".to_string(), vec!["running".to_string()]);
+
+    let list_container_opts = ListContainersOptionsBuilder::new()
+        .all(true)
+        .filters(&filters)
+        .build();
 
     for node in nodes {
         let is_local = node.is_local();
@@ -103,7 +118,10 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
             }
         };
 
-        let containers = match docker_client.list_containers(Some(opts.clone())).await {
+        let containers = match docker_client
+            .list_containers(Some(list_container_opts.clone()))
+            .await
+        {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(node_id = %node.id, error = %e, "Failed to list containers for node, skipping route sync");
@@ -144,6 +162,11 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
             match DeploymentRepo::find(db_pool, deployment_id, app_id).await {
                 Ok(deployment) => {
                     if deployment.status != DeploymentStatus::Running {
+                        tracing::warn!(
+                            app_slug = %app_slug,
+                            deployment_id = %deployment_id,
+                            "Deployment is not in running state, skipping route"
+                        );
                         continue;
                     }
                 }
@@ -196,25 +219,10 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
                 port: container_port,
             };
 
-            // add default domain
-            let default_domain = format!("{}.{}", app_slug, config.platform_domain);
-            node_domain_upstreams
-                .entry(default_domain.clone())
-                .or_default()
-                .push(upstream.clone());
-
-            // add custom domains
-            let custom_domains = AppDomainRepo::list_for_app(db_pool, app_id).await?;
-            for domain in &custom_domains {
-                node_domain_upstreams
-                    .entry(domain.domain.clone())
-                    .or_default()
-                    .push(upstream.clone());
-            }
-
-            // populate main server fallback routes
+            // configure how the main server reaches this app
+            // local apps route directly to docker. remote apps proxy to the remote node
             let local_server_upstream = if is_local {
-                upstream
+                upstream.clone()
             } else {
                 Upstream {
                     host: node.host.clone().unwrap(),
@@ -222,29 +230,27 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
                 }
             };
 
-            local_server_upstreams
-                .entry(default_domain.clone())
-                .or_default()
-                .0
-                .push(local_server_upstream.clone());
+            let default_domain = format!("{}.{}", app_slug, config.platform_domain);
+            let custom_domains = AppDomainRepo::list_for_app(db_pool, app_id).await?;
 
-            if !is_local {
-                let entry = local_server_upstreams.get_mut(&default_domain).unwrap();
-                entry.1 = node.internal_root_ca.clone();
-                entry.2 = Some(default_domain.clone());
-            }
+            let all_domains =
+                std::iter::once(&default_domain).chain(custom_domains.iter().map(|d| &d.domain));
 
-            for domain in &custom_domains {
-                local_server_upstreams
-                    .entry(domain.domain.clone())
+            for domain in all_domains {
+                node_domain_upstreams
+                    .entry(domain.clone())
                     .or_default()
-                    .0
-                    .push(local_server_upstream.clone());
+                    .push(upstream.clone());
 
+                let local_entry = local_server_upstreams.entry(domain.clone()).or_default();
+                local_entry.upstreams.push(local_server_upstream.clone());
+
+                // proxy securely to remote nodes by trusting their internal ca
+                // we override sni to the default domain so the remote node presents its
+                // self-signed cert even when routing a custom domain
                 if !is_local {
-                    let entry = local_server_upstreams.get_mut(&domain.domain).unwrap();
-                    entry.1 = node.internal_root_ca.clone();
-                    entry.2 = Some(default_domain.clone());
+                    local_entry.tls_root_ca = node.internal_root_ca.clone();
+                    local_entry.tls_server_name = Some(default_domain.clone());
                 }
             }
         }
@@ -283,14 +289,12 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
 
     let local_routes: Vec<RouteEntry> = local_server_upstreams
         .into_iter()
-        .map(
-            |(domain, (upstreams, tls_root_ca, tls_server_name))| RouteEntry {
-                domain,
-                upstreams,
-                tls_root_ca,
-                tls_server_name,
-            },
-        )
+        .map(|(domain, config)| RouteEntry {
+            domain,
+            upstreams: config.upstreams,
+            tls_root_ca: config.tls_root_ca,
+            tls_server_name: config.tls_server_name,
+        })
         .collect();
 
     let local_internal_domains = vec![];
@@ -309,6 +313,17 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
     Ok(())
 }
 
+/// Spawns a background task that synchronizes proxy routes whenever notified.
+///
+/// # Arguments
+///
+/// * `clients` - Application clients including Docker and Caddy ([`Clients`]).
+/// * `db_pool` - Database connection pool ([`DbPool`]).
+/// * `config` - Application configuration ([`Config`]).
+///
+/// # Returns
+///
+/// An [`Arc<Notify>`] used to trigger route synchronization.
 pub fn spawn_route_syncer(clients: Clients, db_pool: DbPool, config: Config) -> Arc<Notify> {
     let notify = Arc::new(Notify::new());
 

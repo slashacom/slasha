@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ProxyError {
-    #[error("Docker API error: {0}")]
+    #[error("Docker client error: {0}")]
     DockerApi(#[from] bollard::errors::Error),
 
     #[error("Database error: {0}")]
@@ -17,3 +17,5 @@ pub enum ProxyError {
     #[error("Timeout: {0}")]
     Timeout(String),
 }
+
+pub type ProxyResult<T> = std::result::Result<T, ProxyError>;
