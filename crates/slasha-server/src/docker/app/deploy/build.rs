@@ -23,7 +23,7 @@ use crate::{
 /// * `log` - Log writer for output streaming ([`LogWriter`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
-/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote cluster node build execution.
+/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote node build execution.
 pub async fn build_docker(
     log: &LogWriter,
     app: &App,
@@ -51,7 +51,7 @@ pub async fn build_docker(
 /// * `log` - Log writer for output streaming ([`LogWriter`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
-/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote cluster node build execution.
+/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote node build execution.
 pub async fn build_railpack(
     log: &LogWriter,
     app: &App,
@@ -238,7 +238,7 @@ async fn stream_command_output(
 /// * `image_tag` - Target image repository tag string.
 /// * `build_file` - Path to the Dockerfile or build specification file ([`Path`]).
 /// * `context_dir` - Path to the build context directory ([`Path`]).
-/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote cluster node build execution.
+/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote node build execution.
 /// * `build_args` - Optional slice of key-value build argument pairs.
 async fn build_image_cli(
     log: &LogWriter,

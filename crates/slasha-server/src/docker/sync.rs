@@ -17,7 +17,7 @@ use super::{
 };
 use crate::state::AppState;
 
-/// Reconciles container states across all registered cluster nodes at server startup.
+/// Reconciles container states across all registered nodes at server startup.
 ///
 /// # Arguments
 ///
@@ -35,7 +35,7 @@ pub async fn startup_container_sync(state: &AppState) -> anyhow::Result<()> {
         let state = state.clone();
 
         futures.push(async move {
-            let docker_client = match state.clients.docker_registry.get_client(&node) {
+            let docker_client = match state.node_registry.get_client(&node) {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!(node_id = %node.id, error = ?e, "Failed to connect to node during startup sync");
@@ -54,7 +54,7 @@ pub async fn startup_container_sync(state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Reconciles deployments and services on a single cluster node.
+/// Reconciles deployments and services on a single node.
 ///
 /// # Arguments
 ///
@@ -186,6 +186,7 @@ async fn sync_deployment(
             if let Ok(app_scales) = AppScaleRepo::list_for_app(db_pool, &app.id).await {
                 for scale in app_scales {
                     if let Err(e) = scale_deployment_process(
+                        docker_client,
                         state,
                         app,
                         deployment,

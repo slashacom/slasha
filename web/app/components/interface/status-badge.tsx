@@ -7,6 +7,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { NodeStatus } from '~/models/node';
+import type { NodeConnectionStatus } from '~/queries/nodes';
 import { cn } from '~/utils/classname';
 
 export type StatusKind =
@@ -59,7 +60,7 @@ export function StatusBadge(props: StatusBadgeProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium',
+        'inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded px-2 py-0.5 text-[11px] font-medium',
         config.color,
         config.bg
       )}
@@ -72,23 +73,23 @@ export function StatusBadge(props: StatusBadgeProps) {
 
 type NodeStatusBadgeProps = {
   status: NodeStatus;
-  liveStatus: string;
+  connectionStatus: NodeConnectionStatus;
 };
 
 export function NodeStatusBadge(props: NodeStatusBadgeProps) {
-  const { status, liveStatus } = props;
+  const { status, connectionStatus } = props;
 
   if (status === 'Ready') {
-    if (liveStatus === 'online') {
+    if (connectionStatus === 'online') {
       return (
-        <span className="inline-flex items-center gap-1.5 rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
           Online
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 rounded border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
         <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
         Offline
       </span>
@@ -97,7 +98,7 @@ export function NodeStatusBadge(props: NodeStatusBadgeProps) {
 
   if (status === 'SettingUp') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400">
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400">
         <CircleDashed className="size-3 animate-spin" />
         Setting Up
       </span>
@@ -106,7 +107,7 @@ export function NodeStatusBadge(props: NodeStatusBadgeProps) {
 
   if (status === 'Deleting') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
         <CircleDashed className="size-3 animate-spin" />
         Deleting
       </span>
@@ -114,7 +115,7 @@ export function NodeStatusBadge(props: NodeStatusBadgeProps) {
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-400">
       <AlertCircle className="size-3" />
       Error
     </span>

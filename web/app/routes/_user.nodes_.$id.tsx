@@ -84,7 +84,10 @@ export default function NodeDetailLayout() {
               </>
             )}
           </span>
-          <NodeStatusBadge status={node.status} liveStatus={node.live_status} />
+          <NodeStatusBadge
+            status={node.status}
+            connectionStatus={node.connection_status}
+          />
         </div>
       </div>
 

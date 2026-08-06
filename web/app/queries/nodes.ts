@@ -7,8 +7,10 @@ import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
 import type { Node } from '~/models/node';
 import type { NodeMetrics } from '~/models/node-metrics';
 
+export type NodeConnectionStatus = 'online' | 'offline';
+
 export type NodeWithInfo = Node & {
-  live_status: string;
+  connection_status: NodeConnectionStatus;
   os?: string;
 };
 

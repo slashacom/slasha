@@ -5,16 +5,13 @@ use slasha_db::{DbPool, DuckdbPool, repos::github_app_config::GithubAppConfigRep
 use tokio::sync::{Notify, RwLock};
 
 use crate::{
-    connections::GithubClient, docker::DockerRegistry, logs::LogBus,
-    node_connection_manager::NodeConnectionManager, operations::OperationRegistry,
-    proxy::CaddyClient,
+    connections::GithubClient, logs::LogBus, node_registry::NodeRegistry,
+    operations::OperationRegistry, proxy::CaddyClient,
 };
 
 /// Collection of shared external system clients and connections.
 #[derive(Clone)]
 pub struct Clients {
-    pub node_connection_manager: Arc<NodeConnectionManager>,
-    pub docker_registry: DockerRegistry,
     pub caddy_client: CaddyClient,
     pub github: Arc<RwLock<Option<GithubClient>>>,
 }
@@ -25,17 +22,12 @@ impl Clients {
     /// # Arguments
     ///
     /// * `github` - Optional pre-configured GitHub API client ([`GithubClient`]).
-    /// * `nodes_dir` - Directory path storing node SSH keys and configuration.
     ///
     /// # Returns
     ///
     /// A new [`Clients`] instance.
-    pub fn new(github: Option<GithubClient>, nodes_dir: PathBuf) -> Self {
-        let node_connection_manager = Arc::new(NodeConnectionManager::new(nodes_dir));
-
+    pub fn new(github: Option<GithubClient>) -> Self {
         Self {
-            docker_registry: DockerRegistry::new(node_connection_manager.clone()),
-            node_connection_manager,
             caddy_client: CaddyClient::default(),
             github: Arc::new(RwLock::new(github)),
         }
@@ -185,6 +177,7 @@ impl Config {
 /// Top-level application state shared across all HTTP route handlers.
 #[derive(Clone)]
 pub struct AppState {
+    pub node_registry: NodeRegistry,
     pub clients: Clients,
     pub storage: Storage,
     pub runtime: Runtime,
@@ -197,6 +190,7 @@ impl AppState {
     /// # Arguments
     ///
     /// * `config` - Global configuration ([`Config`]).
+    /// * `node_registry` - Node registry ([`NodeRegistry`]).
     /// * `clients` - External clients container ([`Clients`]).
     /// * `storage` - Database storage pools ([`Storage`]).
     /// * `runtime` - Runtime state ([`Runtime`]).
@@ -204,8 +198,15 @@ impl AppState {
     /// # Returns
     ///
     /// A new [`AppState`] instance.
-    pub fn new(config: Config, clients: Clients, storage: Storage, runtime: Runtime) -> Self {
+    pub fn new(
+        config: Config,
+        node_registry: NodeRegistry,
+        clients: Clients,
+        storage: Storage,
+        runtime: Runtime,
+    ) -> Self {
         Self {
+            node_registry,
             clients,
             storage,
             runtime,
@@ -237,6 +238,12 @@ impl AppState {
     /// Clears the active GitHub client instance.
     pub async fn clear_github_client(&self) {
         *self.clients.github.write().await = None;
+    }
+}
+
+impl FromRef<AppState> for NodeRegistry {
+    fn from_ref(state: &AppState) -> Self {
+        state.node_registry.clone()
     }
 }
 

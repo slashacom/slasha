@@ -339,8 +339,7 @@ async fn create_app(
     }
 
     let docker_client = state
-        .clients
-        .docker_registry
+        .node_registry
         .get_client(&node)
         .map_err(|e| HttpError::bad_request(format!("Target node is not available: {e}")))?;
 

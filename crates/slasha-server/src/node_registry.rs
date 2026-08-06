@@ -1,6 +1,14 @@
-use std::{os::unix::fs::PermissionsExt, path::PathBuf, process::Stdio};
+use std::{
+    os::unix::fs::PermissionsExt,
+    path::PathBuf,
+    process::Stdio,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use slasha_db::models::node::Node;
+use bollard::Docker;
+use dashmap::DashMap;
+use slasha_db::models::node::{LOCAL_NODE_ID, Node, NodeStatus};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
@@ -8,27 +16,83 @@ use tokio::{
 
 use crate::logs::LogWriter;
 
-/// Manages SSH connections, key files, and known hosts configurations for remote nodes.
-#[derive(Clone)]
-pub struct NodeConnectionManager {
-    nodes_dir: PathBuf,
-    keys_dir: PathBuf,
+/// Cache entry for node connection status and operating system details.
+#[derive(Clone, Debug)]
+pub struct CachedNodeInfo {
+    pub connection_status: String,
+    pub os: Option<String>,
+    pub last_updated: Instant,
 }
 
-impl NodeConnectionManager {
-    /// Initializes a new [`NodeConnectionManager`] using the provided directory to store SSH configuration and keys.
+/// Registry managing SSH connection credentials, remote execution, Docker API clients, and node status caching.
+#[derive(Clone)]
+pub struct NodeRegistry {
+    nodes_dir: PathBuf,
+    keys_dir: PathBuf,
+    docker_clients: Arc<DashMap<String, Docker>>,
+    status_cache: Arc<DashMap<String, CachedNodeInfo>>,
+}
+
+impl NodeRegistry {
+    /// Initializes a new [`NodeRegistry`] using the provided directory to store SSH configuration and keys,
+    /// and spawns a background health loop to evict dead Docker connections.
     ///
     /// # Arguments
     ///
-    /// * `nodes_dir` - Path to the directory where SSH artifacts will be stored.
+    /// * `nodes_dir` - Directory path storing node SSH keys and configuration.
+    ///
+    /// # Returns
+    ///
+    /// A new [`NodeRegistry`] instance.
     pub fn new(nodes_dir: PathBuf) -> Self {
         let keys_dir = nodes_dir.join("keys");
         let _ = std::fs::create_dir_all(&keys_dir);
 
-        Self {
+        let registry = Self {
             nodes_dir,
             keys_dir,
-        }
+            docker_clients: Arc::new(DashMap::new()),
+            status_cache: Arc::new(DashMap::new()),
+        };
+
+        let docker_clients = registry.docker_clients.clone();
+        let status_cache = registry.status_cache.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+
+                let mut dead_nodes = Vec::new();
+                for docker_client in docker_clients.iter() {
+                    let node_id = docker_client.key();
+                    // do not evict local node client
+                    if node_id == LOCAL_NODE_ID {
+                        continue;
+                    }
+                    if let Ok(Err(_)) | Err(_) =
+                        tokio::time::timeout(Duration::from_secs(5), docker_client.value().ping())
+                            .await
+                    {
+                        dead_nodes.push(node_id.clone());
+                    }
+                }
+
+                for node_id in dead_nodes {
+                    tracing::warn!(
+                        node_id = %node_id,
+                        "docker ssh connection died, evicting from registry cache"
+                    );
+                    docker_clients.remove(&node_id);
+                    if let Some(mut entry) = status_cache.get_mut(&node_id) {
+                        entry.connection_status = "offline".to_string();
+                        entry.os = None;
+                        entry.last_updated = Instant::now();
+                    }
+                }
+            }
+        });
+
+        registry
     }
 
     /// Resolves the file path for the SSH `known_hosts` file.
@@ -58,7 +122,7 @@ impl NodeConnectionManager {
     ///
     /// # Arguments
     ///
-    /// * `node` - Target remote cluster node ([`Node`]).
+    /// * `node` - Target remote node ([`Node`]).
     ///
     /// # Returns
     ///
@@ -76,7 +140,6 @@ impl NodeConnectionManager {
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("node {} has no ssh_private_key", node.id))?;
 
-            // normalize line endings to Unix (LF) and ensure a trailing newline is present
             let mut normalized = raw_key.replace("\r\n", "\n");
             if !normalized.ends_with('\n') {
                 normalized.push('\n');
@@ -93,7 +156,7 @@ impl NodeConnectionManager {
     ///
     /// # Arguments
     ///
-    /// * `node` - Target remote cluster node ([`Node`]).
+    /// * `node` - Target remote node ([`Node`]).
     ///
     /// # Returns
     ///
@@ -123,14 +186,14 @@ impl NodeConnectionManager {
     ///
     /// # Arguments
     ///
-    /// * `node` - Target remote cluster node ([`Node`]).
+    /// * `node` - Target remote node ([`Node`]).
     pub async fn probe_ssh(&self, node: &Node) -> anyhow::Result<()> {
         let output = self.run_ssh_script(node, "echo ok").await?;
 
         if output.status.success() {
             Ok(())
         } else {
-            self.remove_node(node);
+            self.remove_node_files(node);
             anyhow::bail!(
                 "SSH probe failed: {}",
                 String::from_utf8_lossy(&output.stderr)
@@ -142,7 +205,7 @@ impl NodeConnectionManager {
     ///
     /// # Arguments
     ///
-    /// * `node` - Target remote cluster node ([`Node`]).
+    /// * `node` - Target remote node ([`Node`]).
     /// * `script` - The bash script content to execute.
     ///
     /// # Returns
@@ -190,10 +253,9 @@ impl NodeConnectionManager {
             stdin.write_all(script.as_bytes()).await?;
         }
 
-        let output =
-            tokio::time::timeout(std::time::Duration::from_secs(10), child.wait_with_output())
-                .await
-                .map_err(|_| anyhow::anyhow!("SSH execution timed out after 10s"))??;
+        let output = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output())
+            .await
+            .map_err(|_| anyhow::anyhow!("SSH execution timed out after 10s"))??;
 
         Ok(output)
     }
@@ -202,7 +264,7 @@ impl NodeConnectionManager {
     ///
     /// # Arguments
     ///
-    /// * `node` - Target remote cluster node ([`Node`]).
+    /// * `node` - Target remote node ([`Node`]).
     /// * `script` - The bash script content to execute.
     /// * `log` - A [`LogWriter`] instance for streaming the output lines.
     ///
@@ -289,12 +351,116 @@ impl NodeConnectionManager {
         Ok(stdout_buffer)
     }
 
-    /// Deletes local SSH artifacts (private key and `known_hosts` entries) associated with the given [`Node`].
+    /// Returns a Docker API client connected via local socket defaults.
+    ///
+    /// # Returns
+    ///
+    /// An [`anyhow::Result`] containing the [`Docker`] client instance.
+    pub fn get_local_client(&self) -> anyhow::Result<Docker> {
+        if let Some(entry) = self.docker_clients.get(LOCAL_NODE_ID) {
+            return Ok(entry.clone());
+        }
+
+        let docker = Docker::connect_with_local_defaults()?;
+
+        self.docker_clients
+            .insert(LOCAL_NODE_ID.to_string(), docker.clone());
+
+        Ok(docker)
+    }
+
+    /// Obtains or establishes a cached Docker API client connection for a node.
     ///
     /// # Arguments
     ///
-    /// * `node` - Target remote cluster node ([`Node`]).
-    pub fn remove_node(&self, node: &Node) {
+    /// * `node` - Target node model ([`Node`]).
+    ///
+    /// # Returns
+    ///
+    /// An [`anyhow::Result`] containing the [`Docker`] client instance.
+    pub fn get_client(&self, node: &Node) -> anyhow::Result<Docker> {
+        if let Some(entry) = self.docker_clients.get(&node.id) {
+            return Ok(entry.clone());
+        }
+
+        let docker = if node.is_local() {
+            Docker::connect_with_local_defaults()?
+        } else {
+            let key_path = self.key_path(node)?;
+            let known_hosts_file = self.known_hosts_path();
+            let config_file = self.ssh_config_path()?;
+
+            let address = format!(
+                "ssh://{}@{}:{}",
+                node.user.as_deref().unwrap_or("root"),
+                node.host.as_deref().unwrap_or(""),
+                node.port.unwrap_or(22)
+            );
+
+            let options = bollard::SshOptions::new()
+                .with_keypair_path(key_path.to_string_lossy().to_string())
+                .with_user_known_hosts_file(known_hosts_file.to_string_lossy().to_string())
+                .with_config_file(config_file.to_string_lossy().to_string())
+                .with_connect_timeout(Duration::from_secs(10))
+                .with_known_hosts_check(bollard::KnownHosts::Add);
+
+            Docker::connect_with_ssh_options(&address, 120, bollard::API_DEFAULT_VERSION, options)?
+        };
+
+        self.docker_clients.insert(node.id.clone(), docker.clone());
+
+        Ok(docker)
+    }
+
+    /// Resolves connection status and OS details for a node, serving cached results if valid.
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - Target node model ([`Node`]).
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing `(connection_status, os)`.
+    pub async fn resolve_node_info(&self, node: &Node) -> (String, Option<String>) {
+        if !matches!(node.status, NodeStatus::Ready) {
+            return ("offline".to_string(), None);
+        }
+
+        if let Some(entry) = self.status_cache.get(&node.id)
+            && entry.last_updated.elapsed() < Duration::from_secs(15)
+        {
+            return (entry.connection_status.clone(), entry.os.clone());
+        }
+
+        let (status, os) = match self.get_client(node) {
+            Ok(client) => match client.info().await {
+                Ok(info) => ("online".to_string(), info.operating_system),
+                Err(_) => {
+                    self.docker_clients.remove(&node.id);
+                    ("offline".to_string(), None)
+                }
+            },
+            Err(_) => ("offline".to_string(), None),
+        };
+
+        self.status_cache.insert(
+            node.id.clone(),
+            CachedNodeInfo {
+                connection_status: status.clone(),
+                os: os.clone(),
+                last_updated: Instant::now(),
+            },
+        );
+
+        (status, os)
+    }
+
+    /// Deletes SSH key and known host entries from disk for a node.
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - Target node model ([`Node`]).
+    fn remove_node_files(&self, node: &Node) {
         let _ = std::fs::remove_file(self.keys_dir.join(&node.id));
 
         if let Some(host) = &node.host {
@@ -318,5 +484,16 @@ impl NodeConnectionManager {
                 }
             }
         }
+    }
+
+    /// Evicts a node's cached Docker client connection, clears its status cache, and removes SSH key artifacts.
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - Target node model ([`Node`]).
+    pub fn remove(&self, node: &Node) {
+        self.docker_clients.remove(&node.id);
+        self.status_cache.remove(&node.id);
+        self.remove_node_files(node);
     }
 }
