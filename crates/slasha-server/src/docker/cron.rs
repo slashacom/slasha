@@ -24,7 +24,7 @@ use slasha_db::{
 
 use crate::{
     docker::{
-        DockerRegistry, DockerResult,
+        DockerResult,
         app::{deploy::context::MANAGED_DATA_PATH, env::resolve_app_env, image::image_tag},
         labels::cron_container_labels,
         log_driver::default_log_config,
@@ -32,6 +32,7 @@ use crate::{
         utils::{self, stream_container_logs},
     },
     logs::{LogBus, LogWriter},
+    node_registry::NodeRegistry,
     proxy::container::PROXY_NETWORK_NAME,
 };
 
@@ -64,13 +65,13 @@ struct RunCronContainerContext<'a> {
 /// # Arguments
 ///
 /// * `db_pool` - Database connection pool ([`DbPool`]).
-/// * `docker_registry` - Node Docker client registry ([`DockerRegistry`]).
+/// * `node_registry` - Node registry handle ([`NodeRegistry`]).
 /// * `log_bus` - Application event log bus handle ([`LogBus`]).
 /// * `job` - Cron job model ([`CronJob`]).
 /// * `run` - Cron run tracking model ([`CronRun`]).
 pub async fn run_cron_job(
     db_pool: DbPool,
-    docker_registry: DockerRegistry,
+    node_registry: NodeRegistry,
     log_bus: LogBus,
     job: CronJob,
     run: CronRun,
@@ -83,7 +84,7 @@ pub async fn run_cron_job(
     }
 
     let (status, exit_code, error) =
-        match execute(&db_pool, &docker_registry, &log_bus, &job, &run_id).await {
+        match execute(&db_pool, &node_registry, &log_bus, &job, &run_id).await {
             Ok(CronOutcome::Completed { exit_code }) => {
                 let status = if exit_code == 0 {
                     CronRunStatus::Succeeded
@@ -111,7 +112,7 @@ pub async fn run_cron_job(
 /// # Arguments
 ///
 /// * `db_pool` - Database connection pool ([`DbPool`]).
-/// * `docker_registry` - Node Docker client registry ([`DockerRegistry`]).
+/// * `node_registry` - Node registry handle ([`NodeRegistry`]).
 /// * `log_bus` - Application log bus handle ([`LogBus`]).
 /// * `job` - Cron job model ([`CronJob`]).
 /// * `run_id` - Target cron run ID string.
@@ -121,7 +122,7 @@ pub async fn run_cron_job(
 /// An [`anyhow::Result`] containing the [`CronOutcome`].
 async fn execute(
     db_pool: &DbPool,
-    docker_registry: &DockerRegistry,
+    node_registry: &NodeRegistry,
     log_bus: &LogBus,
     job: &CronJob,
     run_id: &str,
@@ -129,7 +130,7 @@ async fn execute(
     let app = AppRepo::find_by_id(db_pool, &job.app_id).await?;
     let node = NodeRepo::get(db_pool, &app.node_id).await?;
 
-    let docker_client = docker_registry.get_client(&node)?;
+    let docker_client = node_registry.get_client(&node)?;
 
     let running_deployment = DeploymentRepo::list_active_for_app(db_pool, &job.app_id)
         .await?

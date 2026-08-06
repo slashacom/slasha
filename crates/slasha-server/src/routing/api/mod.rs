@@ -64,7 +64,7 @@ async fn health_check(
         status = "error";
     }
 
-    let docker_client = match state.clients.docker_registry.get_local_client() {
+    let docker_client = match state.node_registry.get_local_client() {
         Ok(client) => Some(client),
         Err(e) => {
             tracing::error!("Failed to get local docker client: {}", e);

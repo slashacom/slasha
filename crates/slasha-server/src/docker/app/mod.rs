@@ -58,7 +58,7 @@ impl AppDocker {
     /// A [`DockerResult`] containing a new [`AppDocker`] instance.
     pub async fn new(state: AppState, app: App) -> DockerResult<Self> {
         let node = NodeRepo::get(&state.storage.db_pool, &app.node_id).await?;
-        let docker_client = state.clients.docker_registry.get_client(&node)?;
+        let docker_client = state.node_registry.get_client(&node)?;
 
         Ok(Self {
             state,
@@ -313,6 +313,7 @@ impl AppDocker {
         let guard = self.get_guard(AppOperation::Scaling)?;
 
         tokio::spawn({
+            let docker_client = self.docker_client.clone();
             let state = self.state.clone();
             let app = self.app.clone();
             let deployment = deployment.clone();
@@ -320,8 +321,15 @@ impl AppDocker {
             async move {
                 let _guard = guard;
 
-                if let Err(e) =
-                    scale_deployment_process(&state, &app, &deployment, process_type, count).await
+                if let Err(e) = scale_deployment_process(
+                    &docker_client,
+                    &state,
+                    &app,
+                    &deployment,
+                    process_type,
+                    count,
+                )
+                .await
                 {
                     tracing::error!(
                         app_slug = %app.slug,
@@ -494,11 +502,7 @@ impl AppDocker {
 
         let guard = self.get_guard(AppOperation::Migrating)?;
 
-        let target_docker_client = self
-            .state
-            .clients
-            .docker_registry
-            .get_client(&target_node)?;
+        let target_docker_client = self.state.node_registry.get_client(&target_node)?;
 
         tokio::spawn({
             let _guard = guard;

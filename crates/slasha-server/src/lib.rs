@@ -10,7 +10,7 @@ pub mod extractors;
 pub mod logs;
 pub mod metrics;
 pub mod middleware;
-pub mod node_connection_manager;
+pub mod node_registry;
 pub mod operations;
 pub mod proxy;
 
@@ -105,10 +105,10 @@ pub async fn serve() -> anyhow::Result<()> {
         .map(connections::GithubClient::from_config)
         .transpose()?;
 
-    let clients = Clients::new(github_client, nodes_dir);
+    let clients = Clients::new(github_client);
+    let node_registry = node_registry::NodeRegistry::new(nodes_dir);
 
-    let docker_client = clients
-        .docker_registry
+    let docker_client = node_registry
         .get_local_client()
         .expect("Failed to connect to local Docker daemon");
 
@@ -116,13 +116,13 @@ pub async fn serve() -> anyhow::Result<()> {
     metrics::app::AppMetricsCollector::new(
         storage.duckdb_pool.clone(),
         storage.db_pool.clone(),
-        clients.docker_registry.clone(),
+        node_registry.clone(),
     )
     .spawn();
     metrics::node::NodeMetricsCollector::new(
         storage.duckdb_pool.clone(),
         storage.db_pool.clone(),
-        clients.node_connection_manager.clone(),
+        node_registry.clone(),
     )
     .spawn();
     alerts::spawn_alert_worker(
@@ -131,17 +131,22 @@ pub async fn serve() -> anyhow::Result<()> {
         config.clone(),
     );
 
-    let proxy_sync_trigger =
-        proxy::spawn_route_syncer(clients.clone(), storage.db_pool.clone(), config.clone());
+    let proxy_sync_trigger = proxy::spawn_route_syncer(
+        node_registry.clone(),
+        clients.clone(),
+        storage.db_pool.clone(),
+        config.clone(),
+    );
+
     let runtime = Runtime::new(storage.duckdb_pool.clone(), proxy_sync_trigger).await?;
 
     cron::spawn_cron_scheduler(
         storage.db_pool.clone(),
-        clients.docker_registry.clone(),
+        node_registry.clone(),
         runtime.log_bus.clone(),
     );
 
-    let state = AppState::new(config, clients, storage, runtime);
+    let state = AppState::new(config, node_registry, clients, storage, runtime);
 
     docker::sync::startup_container_sync(&state).await?;
 

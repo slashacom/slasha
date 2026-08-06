@@ -251,11 +251,8 @@ impl<'a> DeploymentRunner<'a> {
                                 NodeRepo::get(&self.state.storage.db_pool, &self.app.node_id)
                                     .await?;
 
-                            let (host, ssh_cmd) = self
-                                .state
-                                .clients
-                                .node_connection_manager
-                                .get_docker_ssh_env(&node)?;
+                            let (host, ssh_cmd) =
+                                self.state.node_registry.get_docker_ssh_env(&node)?;
 
                             Some((host, ssh_cmd))
                         } else {

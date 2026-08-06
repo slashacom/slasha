@@ -134,7 +134,7 @@ async fn tunnel(
     }
 
     let node = NodeRepo::get(&state.storage.db_pool, &app.node_id).await?;
-    let docker_client = state.clients.docker_registry.get_client(&node)?;
+    let docker_client = state.node_registry.get_client(&node)?;
 
     Ok(ws.on_upgrade(move |socket| async move {
         tunnel::handle_tunnel(

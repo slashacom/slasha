@@ -9,10 +9,7 @@ use slasha_db::{
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
-use crate::{
-    docker::{DockerRegistry, cron::run_cron_job},
-    logs::LogBus,
-};
+use crate::{docker::cron::run_cron_job, logs::LogBus, node_registry::NodeRegistry};
 
 const TICK_INTERVAL: Duration = Duration::from_secs(30);
 
@@ -21,9 +18,9 @@ const TICK_INTERVAL: Duration = Duration::from_secs(30);
 /// # Arguments
 ///
 /// * `db_pool` - Database connection pool ([`DbPool`]).
-/// * `docker_registry` - Node Docker client registry ([`DockerRegistry`]).
+/// * `node_registry` - Node registry handle ([`NodeRegistry`]).
 /// * `log_bus` - Application event log bus handle ([`LogBus`]).
-pub fn spawn_cron_scheduler(db_pool: DbPool, docker_registry: DockerRegistry, log_bus: LogBus) {
+pub fn spawn_cron_scheduler(db_pool: DbPool, node_registry: NodeRegistry, log_bus: LogBus) {
     tokio::spawn(async move {
         info!(target: "slasha::cron", "cron scheduler started");
         match CronRunRepo::fail_interrupted(&db_pool).await {
@@ -36,7 +33,7 @@ pub fn spawn_cron_scheduler(db_pool: DbPool, docker_registry: DockerRegistry, lo
             }
         }
         loop {
-            if let Err(err) = tick(&db_pool, &docker_registry, &log_bus).await {
+            if let Err(err) = tick(&db_pool, &node_registry, &log_bus).await {
                 error!(target: "slasha::cron", error = ?err, "cron scheduler tick failed");
             }
             sleep(TICK_INTERVAL).await;
@@ -49,7 +46,7 @@ pub fn spawn_cron_scheduler(db_pool: DbPool, docker_registry: DockerRegistry, lo
 /// # Arguments
 ///
 /// * `db_pool` - Database connection pool ([`DbPool`]).
-/// * `docker_registry` - Node Docker client registry ([`DockerRegistry`]).
+/// * `node_registry` - Unified node registry handle ([`NodeRegistry`]).
 /// * `log_bus` - Application log bus handle ([`LogBus`]).
 ///
 /// # Returns
@@ -57,7 +54,7 @@ pub fn spawn_cron_scheduler(db_pool: DbPool, docker_registry: DockerRegistry, lo
 /// An [`anyhow::Result`] indicating tick processing success.
 async fn tick(
     db_pool: &DbPool,
-    docker_registry: &DockerRegistry,
+    node_registry: &NodeRegistry,
     log_bus: &LogBus,
 ) -> anyhow::Result<()> {
     let jobs = CronJobRepo::list_enabled(db_pool).await?;
@@ -104,11 +101,11 @@ async fn tick(
 
         tokio::spawn({
             let db_pool = db_pool.clone();
-            let docker_registry = docker_registry.clone();
+            let node_registry = node_registry.clone();
             let log_bus = log_bus.clone();
 
             async move {
-                run_cron_job(db_pool, docker_registry, log_bus, job, run).await;
+                run_cron_job(db_pool, node_registry, log_bus, job, run).await;
             }
         });
     }

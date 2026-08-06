@@ -18,7 +18,6 @@ use uuid::Uuid;
 
 use crate::{
     HttpError, HttpResult,
-    docker::registry::DockerRegistry,
     extractors::{ValidatedJson, auth::AuthUser},
     logs::LogBus,
     routing::api::{
@@ -43,31 +42,8 @@ pub fn router() -> Router<AppState> {
 pub struct NodeWithInfo {
     #[serde(flatten)]
     pub node: Node,
-    pub live_status: String,
+    pub connection_status: String,
     pub os: Option<String>,
-}
-
-async fn resolve_node_info(registry: &DockerRegistry, node: &Node) -> (String, Option<String>) {
-    if let NodeStatus::Ready = node.status {
-        let docker_client = match registry.get_client(node) {
-            Ok(client) => client,
-            Err(e) => {
-                tracing::error!(
-                    node_id = %node.id,
-                    error = %e,
-                    "failed to get docker client for node"
-                );
-                return ("offline".to_string(), None);
-            }
-        };
-
-        match docker_client.info().await {
-            Ok(info) => ("online".to_string(), info.operating_system),
-            Err(_) => ("offline".to_string(), None),
-        }
-    } else {
-        (node.status.to_string(), None)
-    }
 }
 
 async fn list_nodes(
@@ -78,10 +54,10 @@ async fn list_nodes(
     let mut results = Vec::new();
 
     for node in nodes {
-        let (live_status, os) = resolve_node_info(&state.clients.docker_registry, &node).await;
+        let (connection_status, os) = state.node_registry.resolve_node_info(&node).await;
         results.push(NodeWithInfo {
             node,
-            live_status,
+            connection_status,
             os,
         });
     }
@@ -95,10 +71,10 @@ async fn get_node(
     Path(id): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
     let node = NodeRepo::get(&state.storage.db_pool, &id).await?;
-    let (live_status, os) = resolve_node_info(&state.clients.docker_registry, &node).await;
+    let (connection_status, os) = state.node_registry.resolve_node_info(&node).await;
 
     Ok(Json(serde_json::json!({
-        "node": NodeWithInfo { node, live_status, os }
+        "node": NodeWithInfo { node, connection_status, os }
     })))
 }
 
@@ -138,8 +114,7 @@ async fn create_node(
     };
 
     if let Err(e) = state
-        .clients
-        .node_connection_manager
+        .node_registry
         .probe_ssh(&Node {
             id: new_node.id.clone(),
             name: new_node.name.clone(),
@@ -164,12 +139,12 @@ async fn create_node(
 
     tokio::spawn({
         let db_pool = state.storage.db_pool.clone();
-        let node_connection_manager = state.clients.node_connection_manager.clone();
+        let node_registry = state.node_registry.clone();
         let node = node.clone();
         let log_writer = state.runtime.log_bus.writer(ResourceKind::Node, &node.id);
 
         async move {
-            let result = node_connection_manager
+            let result = node_registry
                 .run_ssh_script_streaming(&node, &setup_script, &log_writer)
                 .await;
 
@@ -202,7 +177,7 @@ async fn create_node(
             if let Err(e) =
                 NodeRepo::set_status_and_ca(&db_pool, &node.id, status, internal_root_ca).await
             {
-                tracing::error!(node_id = %node.id, node_name = %node.name, error = %e, "failed to update node status");
+                tracing::error!(node_id = %node.id, node_name = %node.name, error = %e, "failed to update node status and ca");
             }
         }
     });
@@ -268,15 +243,14 @@ async fn update_node(
         node.ssh_private_key = payload.ssh_private_key.clone().or(node.ssh_private_key);
 
         state
-            .clients
-            .node_connection_manager
+            .node_registry
             .probe_ssh(&node)
             .await
             .map_err(|e| HttpError::bad_request(e.to_string()))?;
     }
 
     let node = NodeRepo::update(&state.storage.db_pool, &id, changeset).await?;
-    state.clients.docker_registry.remove(&node);
+    state.node_registry.remove(&node);
 
     Ok(Json(serde_json::json!({ "node": node })))
 }
@@ -306,27 +280,23 @@ async fn delete_node(
     tokio::spawn({
         let db_pool = state.storage.db_pool;
         let duckdb_pool = state.storage.duckdb_pool;
-        let node_connection_manager = state.clients.node_connection_manager;
-        let docker_registry = state.clients.docker_registry;
+        let node_registry = state.node_registry;
         let log_bus = state.runtime.log_bus;
 
         async move {
-            let result = node_connection_manager
+            match node_registry
                 .run_ssh_script_streaming(&node, TEARDOWN_SCRIPT, &log_writer)
-                .await;
-
-            match result {
+                .await
+            {
                 Ok(_) => {
                     tracing::info!(node_id = %node.id, node_name = %node.name, "node teardown completed");
                     log_writer.stdout("node teardown completed successfully");
 
                     if let Err(e) = NodeRepo::delete(&db_pool, &node.id).await {
                         tracing::error!(node_id = %node.id, error = %e, "failed to delete node from database");
-                    } else {
-                        node_connection_manager.remove_node(&node);
-                        log_bus.remove(&node.id);
-                        let _ = LogsRepo::delete_by_resource_id(&duckdb_pool, &node.id).await;
                     }
+                    log_bus.remove(&node.id);
+                    let _ = LogsRepo::delete_by_resource_id(&duckdb_pool, &node.id).await;
                 }
                 Err(e) => {
                     tracing::error!(node_id = %node.id, error = %e, "node teardown failed");
@@ -340,7 +310,7 @@ async fn delete_node(
                 }
             }
 
-            docker_registry.remove(&node);
+            node_registry.remove(&node);
         }
     });
 

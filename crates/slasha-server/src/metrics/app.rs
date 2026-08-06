@@ -12,8 +12,8 @@ use slasha_db::{
 };
 
 use crate::{
-    docker::registry::DockerRegistry,
     metrics::{COLLECT_INTERVAL, utils::bytes_to_mib},
+    node_registry::NodeRegistry,
 };
 
 struct PrevCounters {
@@ -38,16 +38,16 @@ struct AppAggregate {
 pub struct AppMetricsCollector {
     duckdb_pool: DuckdbPool,
     db_pool: DbPool,
-    registry: DockerRegistry,
+    node_registry: NodeRegistry,
     prev: HashMap<String, PrevCounters>,
 }
 
 impl AppMetricsCollector {
-    pub fn new(duckdb_pool: DuckdbPool, db_pool: DbPool, registry: DockerRegistry) -> Self {
+    pub fn new(duckdb_pool: DuckdbPool, db_pool: DbPool, node_registry: NodeRegistry) -> Self {
         Self {
             duckdb_pool,
             db_pool,
-            registry,
+            node_registry,
             prev: HashMap::new(),
         }
     }
@@ -74,7 +74,7 @@ impl AppMetricsCollector {
         let mut dockers = vec![];
         if let Ok(nodes) = NodeRepo::list(&self.db_pool).await {
             for node in nodes {
-                if let Ok(client) = self.registry.get_client(&node) {
+                if let Ok(client) = self.node_registry.get_client(&node) {
                     dockers.push(client);
                 }
             }

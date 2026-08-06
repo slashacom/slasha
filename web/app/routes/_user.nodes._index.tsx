@@ -91,7 +91,7 @@ export default function NodesPage() {
                   </div>
                   <NodeStatusBadge
                     status={node.status}
-                    liveStatus={node.live_status}
+                    connectionStatus={node.connection_status}
                   />
                 </div>
 

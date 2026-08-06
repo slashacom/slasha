@@ -4,6 +4,7 @@ use bollard::query_parameters::ListContainersOptionsBuilder;
 use slasha_db::{
     DbError, DbPool,
     deployment::DeploymentStatus,
+    models::node::Node,
     repos::{app_domain::AppDomainRepo, deployment::DeploymentRepo, node::NodeRepo},
 };
 use tokio::{
@@ -14,11 +15,14 @@ use tokio::{
 use super::{
     CaddyClient, PROXY_NETWORK_NAME, ProxyError, RouteEntry, Upstream, error::ProxyResult,
 };
-use crate::state::{Clients, Config};
+use crate::{
+    node_registry::NodeRegistry,
+    state::{Clients, Config},
+};
 
 async fn apply_remote_routes_via_ssh(
-    clients: &Clients,
-    node: &slasha_db::models::node::Node,
+    node_registry: &NodeRegistry,
+    node: &Node,
     routes: &[RouteEntry],
     internal_domains: &[String],
     config: &Config,
@@ -45,8 +49,7 @@ fi
         caddy_config
     );
 
-    let output = clients
-        .node_connection_manager
+    let output = node_registry
         .run_ssh_script(node, &script)
         .await
         .map_err(|e| ProxyError::Caddy(format!("remote caddy ssh failed: {e}")))?;
@@ -80,7 +83,12 @@ struct UpstreamConfig {
 /// # Returns
 ///
 /// A [`ProxyResult`] indicating success or failure.
-pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -> ProxyResult<()> {
+pub async fn sync_routes(
+    node_registry: &NodeRegistry,
+    clients: &Clients,
+    db_pool: &DbPool,
+    config: &Config,
+) -> ProxyResult<()> {
     let nodes = NodeRepo::list(db_pool).await?;
 
     // domain -> upstream_config
@@ -110,7 +118,7 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
 
     for node in nodes {
         let is_local = node.is_local();
-        let docker_client = match clients.docker_registry.get_client(&node) {
+        let docker_client = match node_registry.get_client(&node) {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(node_id = %node.id, error = %e, "Failed to get docker client for node, skipping route sync");
@@ -268,9 +276,14 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
 
             let internal_domains = vec![format!("*.{}", config.platform_domain)];
 
-            if let Err(e) =
-                apply_remote_routes_via_ssh(clients, &node, &node_routes, &internal_domains, config)
-                    .await
+            if let Err(e) = apply_remote_routes_via_ssh(
+                node_registry,
+                &node,
+                &node_routes,
+                &internal_domains,
+                config,
+            )
+            .await
             {
                 tracing::error!(
                     node_id = %node.id,
@@ -324,7 +337,12 @@ pub async fn sync_routes(clients: &Clients, db_pool: &DbPool, config: &Config) -
 /// # Returns
 ///
 /// An [`Arc<Notify>`] used to trigger route synchronization.
-pub fn spawn_route_syncer(clients: Clients, db_pool: DbPool, config: Config) -> Arc<Notify> {
+pub fn spawn_route_syncer(
+    node_registry: NodeRegistry,
+    clients: Clients,
+    db_pool: DbPool,
+    config: Config,
+) -> Arc<Notify> {
     let notify = Arc::new(Notify::new());
 
     tokio::spawn({
@@ -335,7 +353,7 @@ pub fn spawn_route_syncer(clients: Clients, db_pool: DbPool, config: Config) -> 
                 loop {
                     tokio::select! {
                         _ = sleep(Duration::from_millis(500)) => {
-                            if let Err(e) = sync_routes(&clients, &db_pool, &config).await {
+                            if let Err(e) = sync_routes(&node_registry, &clients, &db_pool, &config).await {
                                 tracing::error!(
                                     error = ?e,
                                     "Proxy route sync failed"

@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     path::Path,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -13,7 +12,7 @@ use slasha_db::{
 use sysinfo::{Disks, Networks, System};
 use tokio::time::sleep;
 
-use crate::node_connection_manager::NodeConnectionManager;
+use crate::node_registry::NodeRegistry;
 
 const COLLECT_INTERVAL: Duration = Duration::from_secs(15);
 
@@ -41,7 +40,7 @@ pub struct NodeMetricsCollector {
     duckdb_pool: DuckdbPool,
     db_pool: DbPool,
     prev: HashMap<String, PrevCounters>,
-    connection_manager: Arc<NodeConnectionManager>,
+    node_registry: NodeRegistry,
     system: System,
     networks: Networks,
     disks: Disks,
@@ -49,11 +48,7 @@ pub struct NodeMetricsCollector {
 }
 
 impl NodeMetricsCollector {
-    pub fn new(
-        duckdb_pool: DuckdbPool,
-        db_pool: DbPool,
-        connection_manager: Arc<NodeConnectionManager>,
-    ) -> Self {
+    pub fn new(duckdb_pool: DuckdbPool, db_pool: DbPool, node_registry: NodeRegistry) -> Self {
         let mut system = System::new();
         system.refresh_cpu_usage();
         system.refresh_memory();
@@ -62,7 +57,7 @@ impl NodeMetricsCollector {
             duckdb_pool,
             db_pool,
             prev: HashMap::new(),
-            connection_manager,
+            node_registry,
             system,
             networks: Networks::new_with_refreshed_list(),
             disks: Disks::new_with_refreshed_list(),
@@ -200,14 +195,12 @@ impl NodeMetricsCollector {
                             let _ = NodeMetricsRepo::insert(&self.duckdb_pool, metric).await;
                         } else {
                             remote_tasks.push({
-                                let connection_manager = self.connection_manager.clone();
+                                let node_registry = self.node_registry.clone();
                                 let prev_counters = self.prev.get(&node.id).cloned();
                                 let pool = self.duckdb_pool.clone();
 
                                 tokio::spawn(async move {
-                                    match connection_manager
-                                        .run_ssh_script(&node, METRICS_SCRIPT)
-                                        .await
+                                    match node_registry.run_ssh_script(&node, METRICS_SCRIPT).await
                                     {
                                         Ok(out) if out.status.success() => {
                                             let stdout = String::from_utf8_lossy(&out.stdout);

@@ -229,7 +229,7 @@ async fn run_now(
 ) -> HttpResult<impl IntoResponse> {
     let db_pool = app_state.storage.db_pool.clone();
     let log_bus = app_state.runtime.log_bus.clone();
-    let docker_registry = app_state.clients.docker_registry.clone();
+    let node_registry = app_state.node_registry.clone();
 
     let job = CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
 
@@ -248,7 +248,7 @@ async fn run_now(
 
     let dispatched = run.clone();
     tokio::spawn(async move {
-        run_cron_job(db_pool, docker_registry, log_bus, job, dispatched).await;
+        run_cron_job(db_pool, node_registry, log_bus, job, dispatched).await;
     });
 
     Ok(Json(serde_json::json!({ "run": run })))

@@ -7,7 +7,7 @@ use slasha_db::{
     deployment::Deployment,
     logs::ResourceKind,
     models::app_scale::{NewAppScale, ProcessStatus, ProcessType},
-    repos::{app_scale::AppScaleRepo, node::NodeRepo},
+    repos::app_scale::AppScaleRepo,
 };
 
 use super::{
@@ -26,21 +26,20 @@ use crate::{
 ///
 /// # Arguments
 ///
+/// * `docker_client` - Docker API client ([`Docker`]).
 /// * `state` - Application state holding database and runtime handles ([`AppState`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
 /// * `process_type` - Process type enum ([`ProcessType`]).
 /// * `target_count` - Target replica count.
 pub async fn scale_deployment_process(
+    docker_client: &Docker,
     state: &AppState,
     app: &App,
     deployment: &Deployment,
     process_type: ProcessType,
     target_count: u32,
 ) -> DockerResult<()> {
-    let node = NodeRepo::get(&state.storage.db_pool, &app.node_id).await?;
-    let docker_client = state.clients.docker_registry.get_client(&node)?;
-
     let log_writer = state
         .runtime
         .log_bus
@@ -69,7 +68,7 @@ pub async fn scale_deployment_process(
     )
     .await?;
 
-    let existing = existing_process_replicas(&docker_client, &deployment.id, process_type).await?;
+    let existing = existing_process_replicas(docker_client, &deployment.id, process_type).await?;
 
     let all_running =
         (0..target_count).all(|i| matches!(existing.get(&i), Some(ProcessStatus::Running)));
@@ -97,7 +96,7 @@ pub async fn scale_deployment_process(
                 log_writer.stdout(format!("Creating replica {}.{}", process_type, index));
 
                 create_process_container(
-                    &docker_client,
+                    docker_client,
                     app,
                     deployment,
                     CreateContainerContext {
@@ -114,7 +113,7 @@ pub async fn scale_deployment_process(
                 .await?;
 
                 start_process_container(
-                    &docker_client,
+                    docker_client,
                     &log_writer,
                     app,
                     deployment,
@@ -128,7 +127,7 @@ pub async fn scale_deployment_process(
                 log_writer.stdout(format!("Restarting replica {}.{}", process_type, index));
 
                 start_process_container(
-                    &docker_client,
+                    docker_client,
                     &log_writer,
                     app,
                     deployment,

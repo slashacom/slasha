@@ -500,10 +500,6 @@ export function LogStream(props: LogStreamProps) {
         ) : null}
 
         <div className="flex items-center gap-2 ml-auto">
-          {loadingHistory || loadingOlder ? (
-            <CircleDashed className="mr-2 size-3 animate-spin text-text-tertiary" />
-          ) : null}
-
           <div className="relative flex items-center">
             <Search className="absolute left-2.5 size-3.5 text-text-tertiary pointer-events-none" />
             <input
@@ -569,9 +565,19 @@ export function LogStream(props: LogStreamProps) {
       <div className="relative flex-1 overflow-hidden bg-surface border border-border rounded-lg text-[12px] leading-relaxed selection:bg-sky-500/20">
         {state.logs.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 py-16 text-text-tertiary">
-            <p>
-              {emptyMessage || 'No log entries found. Waiting for new logs...'}
-            </p>
+            {loadingHistory ? (
+              <>
+                <CircleDashed className="size-5 animate-spin text-text-tertiary" />
+                <p className="text-sm font-medium text-text-secondary">
+                  Fetching log history...
+                </p>
+              </>
+            ) : (
+              <p>
+                {emptyMessage ||
+                  'No log entries found. Waiting for new logs...'}
+              </p>
+            )}
           </div>
         ) : (
           <Virtuoso
