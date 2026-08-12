@@ -5,6 +5,7 @@ use ts_rs::TS;
 #[ts(export, export_to = "./node-metrics.ts")]
 pub struct NodeMetrics {
     pub id: String,
+    pub node_id: String,
     pub cpu_usage: f64,
     pub memory_used: i64,  // in MiB
     pub memory_total: i64, // in MiB
@@ -15,11 +16,11 @@ pub struct NodeMetrics {
     pub network_rx_bps: f64,
     pub network_tx_bps: f64,
     pub load_average: f64,
-    pub node_id: String,
     pub created_at: chrono::NaiveDateTime,
 }
 
 pub struct NewNodeMetrics {
+    pub node_id: String,
     pub cpu_usage: f64,
     pub memory_used: i64,
     pub memory_total: i64,
@@ -30,5 +31,4 @@ pub struct NewNodeMetrics {
     pub network_rx_bps: f64,
     pub network_tx_bps: f64,
     pub load_average: f64,
-    pub node_id: String,
 }

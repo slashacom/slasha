@@ -40,7 +40,7 @@ pub fn run_migrations(sqlite_db_path: &str, duckdb_path: &str) {
     }
 
     info!("Running DuckDB migrations...");
-    let duckdb_conn =
+    let mut duckdb_conn =
         duckdb::Connection::open(duckdb_path).expect("Failed to connect to DuckDB for migrations");
     duckdb_conn
         .execute(
@@ -78,16 +78,22 @@ pub fn run_migrations(sqlite_db_path: &str, duckdb_path: &str) {
             let file = DuckDbMigrations::get(migration_id).unwrap();
             let sql = std::str::from_utf8(file.data.as_ref()).unwrap();
 
-            duckdb_conn.execute_batch(sql).unwrap_or_else(|e| {
+            let tx = duckdb_conn
+                .transaction()
+                .expect("Failed to start DuckDB transaction for migration");
+
+            tx.execute_batch(sql).unwrap_or_else(|e| {
                 panic!("Failed to execute migration {}: {:?}", migration_id, e)
             });
 
-            duckdb_conn
-                .execute(
-                    "INSERT INTO __duckdb_migrations (id) VALUES (?)",
-                    [migration_id],
-                )
-                .unwrap();
+            tx.execute(
+                "INSERT INTO __duckdb_migrations (id) VALUES (?)",
+                [migration_id],
+            )
+            .unwrap();
+
+            tx.commit()
+                .expect("Failed to commit DuckDB migration transaction");
         }
     }
 
