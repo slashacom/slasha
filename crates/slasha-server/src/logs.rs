@@ -75,11 +75,13 @@ impl LogBus {
     ///
     /// * `record` - The log record to publish.
     pub fn publish(&self, record: LogRecord) {
-        if let Some(tx) = self.channels.get(&record.resource_id) {
-            if tx.receiver_count() == 0 {
-                self.channels.remove(&record.resource_id);
+        if let Some(entry) = self.channels.get(&record.resource_id) {
+            if entry.value().receiver_count() > 0 {
+                let _ = entry.value().send(record.clone());
             } else {
-                let _ = tx.send(record.clone());
+                drop(entry);
+                self.channels
+                    .remove_if(&record.resource_id, |_, tx| tx.receiver_count() == 0);
             }
         }
 
