@@ -1,59 +1,55 @@
 use std::collections::HashMap;
 
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 use serde_json::json;
 
 use crate::{
+    app_env::EnvVarsResponse,
     clap_app::ServiceEnvCommand,
-    output::{cli_error, cli_info, cli_success, output, print_table},
-    state::AppState,
+    context::Context,
+    output::{cli_error, cli_info, cli_success, print_table, spinner},
+    resolve::resolve_service_id,
 };
 
 pub async fn dispatch(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
-    service_id: &str,
+    service_name_or_id: &str,
     cmd: ServiceEnvCommand,
 ) -> Result<()> {
+    let service_id = resolve_service_id(&ctx.api_client, slug, service_name_or_id).await?;
     match cmd {
-        ServiceEnvCommand::List => handle_list(state, slug, service_id).await,
-        ServiceEnvCommand::Set { pairs } => handle_set(state, slug, service_id, &pairs).await,
-        ServiceEnvCommand::Unset { keys } => handle_unset(state, slug, service_id, &keys).await,
+        ServiceEnvCommand::List => handle_list(ctx, slug, &service_id).await,
+        ServiceEnvCommand::Set { pairs } => handle_set(ctx, slug, &service_id, &pairs).await,
+        ServiceEnvCommand::Unset { keys } => handle_unset(ctx, slug, &service_id, &keys).await,
     }
 }
 
-pub async fn handle_list(state: &AppState, slug: &str, service_id: &str) -> Result<()> {
-    let env_data = state
+pub async fn handle_list(ctx: &Context, slug: &str, service_id: &str) -> Result<()> {
+    let res: EnvVarsResponse = ctx
         .api_client
         .get(&format!("/api/apps/{}/services/{}/env", slug, service_id))
         .await?;
 
-    let vars: HashMap<String, String> =
-        serde_json::from_value(env_data["env_vars"].clone()).context("Failed to parse env vars")?;
-
-    output(state.output_mode, &vars, || {
-        if vars.is_empty() {
-            cli_info("No env vars set.");
-        } else {
-            let mut rows: Vec<Vec<String>> = vars
-                .iter()
-                .map(|(k, v)| vec![k.clone(), v.clone()])
-                .collect();
-            rows.sort_by(|a, b| a[0].cmp(&b[0]));
-            print_table(&["KEY", "VALUE"], rows);
-        }
-    })?;
+    if res.env_vars.is_empty() {
+        cli_info("No env vars set.");
+    } else {
+        let mut rows: Vec<Vec<String>> =
+            res.env_vars.into_iter().map(|(k, v)| vec![k, v]).collect();
+        rows.sort_by(|a, b| a[0].cmp(&b[0]));
+        print_table(&["KEY", "VALUE"], rows);
+    }
 
     Ok(())
 }
 
 pub async fn handle_set(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
     service_id: &str,
     pairs: &[String],
 ) -> Result<()> {
-    let mut current = fetch_vars(state, slug, service_id).await?;
+    let mut current = fetch_vars(ctx, slug, service_id).await?;
 
     for pair in pairs {
         let (k, v) = pair
@@ -62,7 +58,8 @@ pub async fn handle_set(
         current.insert(k.to_string(), v.to_string());
     }
 
-    let update_res = state
+    let _spin = spinner("Updating service environment variables...");
+    let _: EnvVarsResponse = ctx
         .api_client
         .put(
             &format!("/api/apps/{}/services/{}/env", slug, service_id),
@@ -70,20 +67,18 @@ pub async fn handle_set(
         )
         .await?;
 
-    output(state.output_mode, &update_res["env_vars"], || {
-        cli_success("Service env vars updated.");
-    })?;
+    cli_success("Service env vars updated.");
 
     Ok(())
 }
 
 pub async fn handle_unset(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
     service_id: &str,
     keys: &[String],
 ) -> Result<()> {
-    let mut current = fetch_vars(state, slug, service_id).await?;
+    let mut current = fetch_vars(ctx, slug, service_id).await?;
 
     for key in keys {
         if current.remove(key).is_none() {
@@ -91,7 +86,8 @@ pub async fn handle_unset(
         }
     }
 
-    let update_res = state
+    let _spin = spinner("Updating service environment variables...");
+    let _: EnvVarsResponse = ctx
         .api_client
         .put(
             &format!("/api/apps/{}/services/{}/env", slug, service_id),
@@ -99,22 +95,31 @@ pub async fn handle_unset(
         )
         .await?;
 
-    output(state.output_mode, &update_res["env_vars"], || {
-        cli_success("Service env vars updated.");
-    })?;
+    cli_success("Service env vars updated.");
 
     Ok(())
 }
 
+/// Fetches environment variables configured for an attached service.
+///
+/// # Arguments
+///
+/// * `ctx` - Execution context ([`Context`]).
+/// * `slug` - Target application slug.
+/// * `service_id` - Target service ID.
+///
+/// # Returns
+///
+/// A key-value map of service environment variables.
 async fn fetch_vars(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
     service_id: &str,
 ) -> Result<HashMap<String, String>> {
-    let env_data = state
+    let res: EnvVarsResponse = ctx
         .api_client
         .get(&format!("/api/apps/{}/services/{}/env", slug, service_id))
         .await?;
 
-    serde_json::from_value(env_data["env_vars"].clone()).context("Failed to parse env vars")
+    Ok(res.env_vars)
 }

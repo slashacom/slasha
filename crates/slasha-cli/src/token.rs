@@ -4,6 +4,11 @@ const SERVICE: &str = "slasha";
 const USER: &str = "auth_token";
 const TOKEN_ENV: &str = "SLASHA_TOKEN";
 
+/// Retrieves the stored authentication token from `SLASHA_TOKEN` env or OS keyring.
+///
+/// # Returns
+///
+/// An optional authentication token string.
 pub fn get_auth_token() -> Result<Option<String>> {
     if let Ok(token) = std::env::var(TOKEN_ENV) {
         let trimmed = token.trim();
@@ -21,6 +26,11 @@ pub fn get_auth_token() -> Result<Option<String>> {
     }
 }
 
+/// Persists an authentication token into the OS keyring.
+///
+/// # Arguments
+///
+/// * `token` - Authentication token string.
 pub fn set_auth_token(token: &str) -> Result<()> {
     let entry = keyring::Entry::new(SERVICE, USER)?;
     entry
@@ -30,6 +40,7 @@ pub fn set_auth_token(token: &str) -> Result<()> {
     Ok(())
 }
 
+/// Removes the stored authentication token from the OS keyring.
 pub fn clear_auth_token() -> Result<()> {
     let entry = keyring::Entry::new(SERVICE, USER)?;
 

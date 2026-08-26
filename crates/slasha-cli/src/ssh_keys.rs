@@ -1,62 +1,69 @@
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use slasha_db::ssh_keys::SshKey;
 
 use crate::{
     clap_app::SshKeysCommand,
-    output::{cli_info, cli_label, cli_success, output, print_table},
-    state::AppState,
+    context::Context,
+    output::{cli_info, cli_label, cli_success, print_table, spinner},
 };
 
-pub async fn dispatch(state: &AppState, cmd: SshKeysCommand) -> Result<()> {
+pub async fn dispatch(ctx: &Context, cmd: SshKeysCommand) -> Result<()> {
     match cmd {
-        SshKeysCommand::List => handle_list(state).await,
+        SshKeysCommand::List => handle_list(ctx).await,
         SshKeysCommand::Add {
             file,
             title,
             pubkey,
-        } => handle_add(state, file, pubkey, title).await,
-        SshKeysCommand::Remove { id } => handle_remove(state, &id).await,
+        } => handle_add(ctx, file, pubkey, title).await,
+        SshKeysCommand::Remove { id } => handle_remove(ctx, &id).await,
     }
 }
 
-pub async fn handle_list(state: &AppState) -> Result<()> {
-    let keys_data = state.api_client.get("/api/ssh-keys").await?;
+#[derive(Deserialize, Serialize)]
+pub struct SshKeysListResponse {
+    pub keys: Vec<SshKey>,
+}
 
-    let keys: Vec<SshKey> =
-        serde_json::from_value(keys_data["keys"].clone()).context("Failed to parse keys")?;
+pub async fn handle_list(ctx: &Context) -> Result<()> {
+    let res: SshKeysListResponse = ctx.api_client.get("/api/ssh-keys").await?;
 
-    output(state.output_mode, &keys, || {
-        if keys.is_empty() {
-            cli_info("No SSH keys added. Run slasha ssh-keys add to add one.");
-        } else {
-            print_table(
-                &["ID", "TITLE", "KEY (truncated)", "ADDED"],
-                keys.iter()
-                    .map(|k| {
-                        let preview = k
-                            .public_key
-                            .split_whitespace()
-                            .nth(1)
-                            .map(|s| format!("{}...", &s[..s.len().min(20)]))
-                            .unwrap_or_else(|| "—".into());
-                        vec![
-                            k.id.to_string(),
-                            k.title.as_deref().unwrap_or("—").to_string(),
-                            preview,
-                            k.created_at.format("%Y-%m-%d").to_string(),
-                        ]
-                    })
-                    .collect(),
-            );
-        }
-    })?;
+    if res.keys.is_empty() {
+        cli_info("No SSH keys added. Run `slasha ssh-keys add` to add one.");
+    } else {
+        print_table(
+            &["ID", "TITLE", "KEY (truncated)", "ADDED"],
+            res.keys
+                .iter()
+                .map(|k| {
+                    let preview = k
+                        .public_key
+                        .split_whitespace()
+                        .nth(1)
+                        .map(|s| format!("{}...", &s[..s.len().min(20)]))
+                        .unwrap_or_else(|| "—".into());
+                    vec![
+                        k.id.to_string(),
+                        k.title.as_deref().unwrap_or("—").to_string(),
+                        preview,
+                        k.created_at.format("%Y-%m-%d").to_string(),
+                    ]
+                })
+                .collect(),
+        );
+    }
 
     Ok(())
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct SshKeyItemResponse {
+    pub key: SshKey,
+}
+
 pub async fn handle_add(
-    state: &AppState,
+    ctx: &Context,
     file: Option<String>,
     pubkey: Option<String>,
     title: Option<String>,
@@ -70,7 +77,8 @@ pub async fn handle_add(
 
     let public_key = raw_key.trim().to_string();
 
-    let add_res = state
+    let _spin = spinner("Adding SSH key...");
+    let res: SshKeyItemResponse = ctx
         .api_client
         .post(
             "/api/ssh-keys",
@@ -78,27 +86,26 @@ pub async fn handle_add(
         )
         .await?;
 
-    let key: SshKey =
-        serde_json::from_value(add_res["key"].clone()).context("Failed to parse key")?;
-
-    output(state.output_mode, &key, || {
-        cli_success("SSH key added.");
-        cli_label("ID", &key.id);
-        cli_label("Title", key.title.as_deref().unwrap_or("—"));
-    })?;
+    cli_success("SSH key added.");
+    cli_label("ID", &res.key.id);
+    cli_label("Title", res.key.title.as_deref().unwrap_or("—"));
 
     Ok(())
 }
 
-pub async fn handle_remove(state: &AppState, id: &str) -> Result<()> {
-    state
+#[derive(Deserialize, Serialize)]
+pub struct OkResponse {
+    pub ok: bool,
+}
+
+pub async fn handle_remove(ctx: &Context, id: &str) -> Result<()> {
+    let _spin = spinner("Removing SSH key...");
+    let _: OkResponse = ctx
         .api_client
         .delete(&format!("/api/ssh-keys/{}", id))
         .await?;
 
-    output(state.output_mode, &json!({ "ok": true }), || {
-        cli_success("SSH key removed.");
-    })?;
+    cli_success("SSH key removed.");
 
     Ok(())
 }

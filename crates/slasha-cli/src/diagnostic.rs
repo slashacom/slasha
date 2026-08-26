@@ -17,11 +17,17 @@ struct DiagnosticSection<'a> {
     entry: DiagnosticEntry,
 }
 
+/// Diagnostic report containing system and build environment telemetry details.
 pub struct DiagnosticReport<'a> {
     sections: Vec<DiagnosticSection<'a>>,
 }
 
 impl<'a> DiagnosticReport<'a> {
+    /// Generates a diagnostic report collecting OS, compiler, and version metadata.
+    ///
+    /// # Returns
+    ///
+    /// A new [`DiagnosticReport`] instance.
     pub fn generate() -> Result<DiagnosticReport<'a>> {
         let mut sections = vec![];
 
@@ -97,6 +103,7 @@ impl<'a> DiagnosticReport<'a> {
         Ok(DiagnosticReport { sections })
     }
 
+    /// Prints the formatted diagnostic report sections in Markdown format to stdout.
     pub fn print(&self) -> Result<()> {
         let mut output = String::new();
 

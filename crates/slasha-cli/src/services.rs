@@ -1,7 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 use colored::Colorize;
-use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use slasha_db::service::{Service, ServiceKind, ServiceStatus};
 use tokio::{
@@ -11,35 +11,21 @@ use tokio::{
 
 use crate::{
     clap_app::ServicesCommand,
-    output::{cli_error, cli_info, cli_label, cli_success, confirm_action, output, print_table},
+    context::Context,
+    output::{cli_info, cli_label, cli_success, confirm_action, print_table, spinner, stream_logs},
+    resolve::{resolve_service_id, resolve_slug},
     service_env,
-    state::AppState,
 };
 
-pub async fn dispatch(state: &AppState, slug: &str, cmd: ServicesCommand) -> Result<()> {
-    match cmd {
-        ServicesCommand::List => handle_list(state, slug).await,
-        ServicesCommand::Restart { service } => handle_restart(state, slug, &service).await,
-        ServicesCommand::Redeploy { service } => handle_redeploy(state, slug, &service).await,
-        ServicesCommand::Stop { service, yes } => handle_stop(state, slug, &service, yes).await,
-        ServicesCommand::Delete { service, yes } => handle_delete(state, slug, &service, yes).await,
-        ServicesCommand::Logs { service, follow } => {
-            handle_logs(state, slug, &service, follow).await
-        }
-        ServicesCommand::Env { service, command } => {
-            service_env::dispatch(state, slug, &service, command).await
-        }
-        ServicesCommand::Backup { service, file } => {
-            handle_backup(state, slug, &service, file).await
-        }
-        ServicesCommand::Proxy {
-            service,
-            port,
-            no_secret,
-        } => crate::proxy::handle_proxy(state, slug, &service, port, no_secret).await,
-    }
-}
-
+/// Formats a service status enum into an ANSI colored string.
+///
+/// # Arguments
+///
+/// * `status` - Service status ([`ServiceStatus`]).
+///
+/// # Returns
+///
+/// Colored status string representation.
 fn format_status(status: ServiceStatus) -> String {
     match status {
         ServiceStatus::Running => status.to_string().green().to_string(),
@@ -49,49 +35,86 @@ fn format_status(status: ServiceStatus) -> String {
     }
 }
 
-pub async fn handle_list(state: &AppState, slug: &str) -> Result<()> {
-    let services_data = state
+pub async fn dispatch(ctx: &Context, slug_arg: Option<String>, cmd: ServicesCommand) -> Result<()> {
+    let slug = resolve_slug(slug_arg)?;
+    match cmd {
+        ServicesCommand::List => handle_list(ctx, &slug).await,
+        ServicesCommand::Provision {
+            kind,
+            name,
+            version,
+        } => handle_create(ctx, &slug, &kind, &name, &version).await,
+        ServicesCommand::Restart { service } => handle_restart(ctx, &slug, &service).await,
+        ServicesCommand::Redeploy { service } => handle_redeploy(ctx, &slug, &service).await,
+        ServicesCommand::Stop { service, yes } => handle_stop(ctx, &slug, &service, yes).await,
+        ServicesCommand::Delete { service, yes } => handle_delete(ctx, &slug, &service, yes).await,
+        ServicesCommand::Logs { service, follow } => {
+            handle_logs(ctx, &slug, &service, follow).await
+        }
+        ServicesCommand::Env { service, command } => {
+            service_env::dispatch(ctx, &slug, &service, command).await
+        }
+        ServicesCommand::Backup { service, file } => {
+            handle_backup(ctx, &slug, &service, file).await
+        }
+        ServicesCommand::Proxy {
+            service,
+            port,
+            no_secret,
+        } => crate::proxy::handle_proxy(ctx, &slug, &service, port, no_secret).await,
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct ServiceListResponse {
+    pub services: Vec<Service>,
+}
+
+pub async fn handle_list(ctx: &Context, slug: &str) -> Result<()> {
+    let res: ServiceListResponse = ctx
         .api_client
         .get(&format!("/api/apps/{}/services", slug))
         .await?;
 
-    let svcs: Vec<Service> = serde_json::from_value(services_data["services"].clone())
-        .context("Failed to parse services")?;
-
-    output(state.output_mode, &svcs, || {
-        if svcs.is_empty() {
-            cli_info("No services attached. Run slasha provision to add one.");
-        } else {
-            print_table(
-                &["ID", "NAME", "KIND", "VERSION", "STATUS"],
-                svcs.iter()
-                    .map(|s| {
-                        vec![
-                            s.id.to_string(),
-                            s.name.clone(),
-                            s.kind.to_string(),
-                            s.version.clone(),
-                            format_status(s.status),
-                        ]
-                    })
-                    .collect(),
-            );
-        }
-    })?;
+    if res.services.is_empty() {
+        cli_info("No services attached. Run `slasha services provision` to add one.");
+    } else {
+        print_table(
+            &["ID", "NAME", "KIND", "VERSION", "STATUS"],
+            res.services
+                .iter()
+                .map(|s| {
+                    vec![
+                        s.id.to_string(),
+                        s.name.clone(),
+                        s.kind.to_string(),
+                        s.version.clone(),
+                        format_status(s.status),
+                    ]
+                })
+                .collect(),
+        );
+    }
 
     Ok(())
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct ServiceItemResponse {
+    pub service: Service,
+}
+
 pub async fn handle_create(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
     kind: &ServiceKind,
     name: &str,
     version: &str,
 ) -> Result<()> {
-    let default_env = fetch_default_env(state, kind).await?;
+    let default_env = fetch_default_env(ctx, kind).await?;
 
-    let provision_res = state
+    let _spin = spinner("Provisioning service...");
+    let res: ServiceItemResponse = ctx
         .api_client
         .post(
             &format!("/api/apps/{}/services", slug),
@@ -104,32 +127,33 @@ pub async fn handle_create(
         )
         .await?;
 
-    let svc: Service = serde_json::from_value(provision_res["service"].clone())
-        .context("Failed to parse service")?;
-
-    output(state.output_mode, &svc, || {
-        cli_success("Service provisioning started.");
-        cli_label("ID", &svc.id);
-        cli_label("Name", &svc.name);
-        cli_label("Kind", svc.kind);
-        cli_label("Version", &svc.version);
-        cli_info(format!(
-            "\nFollow service logs: slasha services logs {} --follow",
-            svc.name
-        ));
-        cli_info(format!(
-            "Connect locally:    slasha proxy --app {} {}",
-            slug, svc.name
-        ));
-    })?;
+    cli_success("Service provisioning started.");
+    cli_label("ID", &res.service.id);
+    cli_label("Name", &res.service.name);
+    cli_label("Kind", res.service.kind);
+    cli_label("Version", &res.service.version);
+    cli_info(format!(
+        "\nFollow service logs: slasha services logs {} --follow",
+        res.service.name
+    ));
+    cli_info(format!(
+        "Connect locally:    slasha services proxy {} {}",
+        slug, res.service.name
+    ));
 
     Ok(())
 }
 
-pub async fn handle_restart(state: &AppState, slug: &str, service: &str) -> Result<()> {
-    let service_id = resolve_service_id(state, slug, service).await?;
+#[derive(Deserialize, Serialize)]
+pub struct OkResponse {
+    pub ok: bool,
+}
 
-    state
+pub async fn handle_restart(ctx: &Context, slug: &str, service: &str) -> Result<()> {
+    let service_id = resolve_service_id(&ctx.api_client, slug, service).await?;
+
+    let _spin = spinner("Restarting service...");
+    let _: OkResponse = ctx
         .api_client
         .post(
             &format!("/api/apps/{}/services/{}/restart", slug, service_id),
@@ -137,17 +161,16 @@ pub async fn handle_restart(state: &AppState, slug: &str, service: &str) -> Resu
         )
         .await?;
 
-    output(state.output_mode, &json!({ "ok": true }), || {
-        cli_success(format!("Service {} restart triggered.", service));
-    })?;
+    cli_success(format!("Service {} restart triggered.", service));
 
     Ok(())
 }
 
-pub async fn handle_redeploy(state: &AppState, slug: &str, service: &str) -> Result<()> {
-    let service_id = resolve_service_id(state, slug, service).await?;
+pub async fn handle_redeploy(ctx: &Context, slug: &str, service: &str) -> Result<()> {
+    let service_id = resolve_service_id(&ctx.api_client, slug, service).await?;
 
-    state
+    let _spin = spinner("Redeploying service...");
+    let _: OkResponse = ctx
         .api_client
         .post(
             &format!("/api/apps/{}/services/{}/redeploy", slug, service_id),
@@ -155,73 +178,55 @@ pub async fn handle_redeploy(state: &AppState, slug: &str, service: &str) -> Res
         )
         .await?;
 
-    output(state.output_mode, &json!({ "ok": true }), || {
-        cli_success(format!("Service {} redeploy triggered.", service));
-    })?;
+    cli_success(format!("Service {} redeploy triggered.", service));
 
     Ok(())
 }
 
-pub async fn handle_stop(state: &AppState, slug: &str, service: &str, yes: bool) -> Result<()> {
-    let service_id = resolve_service_id(state, slug, service).await?;
+pub async fn handle_stop(ctx: &Context, slug: &str, service: &str, yes: bool) -> Result<()> {
+    let service_id = resolve_service_id(&ctx.api_client, slug, service).await?;
 
-    if !confirm_action(
-        state.output_mode,
-        yes,
-        &format!("Stop service {}?", service.red()),
-    )? {
+    if !confirm_action(yes, &format!("Stop service {}?", service.red()))? {
         return Ok(());
     }
 
-    state
+    let _spin = spinner("Stopping service...");
+    let _: OkResponse = ctx
         .api_client
         .post(
             &format!("/api/apps/{}/services/{}/stop", slug, service_id),
-            &serde_json::Value::Null,
+            &json!({}),
         )
         .await?;
 
-    output(state.output_mode, &json!({ "ok": true }), || {
-        cli_success(format!("Service {} stop triggered.", service));
-    })?;
+    cli_success(format!("Service {} stop triggered.", service));
 
     Ok(())
 }
 
-pub async fn handle_delete(state: &AppState, slug: &str, service: &str, yes: bool) -> Result<()> {
-    let service_id = resolve_service_id(state, slug, service).await?;
+pub async fn handle_delete(ctx: &Context, slug: &str, service: &str, yes: bool) -> Result<()> {
+    let service_id = resolve_service_id(&ctx.api_client, slug, service).await?;
 
-    if !confirm_action(
-        state.output_mode,
-        yes,
-        &format!("Delete service {}?", service.red()),
-    )? {
+    if !confirm_action(yes, &format!("Delete service {}?", service.red()))? {
         return Ok(());
     }
 
-    state
+    let _spin = spinner("Deleting service...");
+    let _: OkResponse = ctx
         .api_client
         .delete(&format!("/api/apps/{}/services/{}", slug, service_id))
         .await?;
 
-    output(state.output_mode, &json!({ "ok": true }), || {
-        cli_success(format!("Service {} deleted.", service));
-    })?;
+    cli_success(format!("Service {} deleted.", service));
 
     Ok(())
 }
 
-fn format_log_prefix(val: &serde_json::Value) -> Option<String> {
-    serde_json::from_value::<slasha_db::logs::LogPrefix>(val.clone())
-        .ok()
-        .map(|p| p.to_string())
-}
-
-pub async fn handle_logs(state: &AppState, slug: &str, service: &str, follow: bool) -> Result<()> {
-    let service_id = resolve_service_id(state, slug, service).await?;
+pub async fn handle_logs(ctx: &Context, slug: &str, service: &str, follow: bool) -> Result<()> {
+    let service_id = resolve_service_id(&ctx.api_client, slug, service).await?;
 
     if follow {
-        let res = state
+        let res = ctx
             .api_client
             .get_stream(&format!(
                 "/api/apps/{}/services/{}/stream",
@@ -229,46 +234,9 @@ pub async fn handle_logs(state: &AppState, slug: &str, service: &str, follow: bo
             ))
             .await?;
 
-        let mut stream = res.bytes_stream().eventsource();
-
-        while let Some(event) = stream.next().await {
-            match event {
-                Ok(event) => {
-                    if event.data == "[done]" {
-                        continue;
-                    }
-                    if let Ok(rec) = serde_json::from_str::<serde_json::Value>(&event.data) {
-                        let timestamp = rec["timestamp"].as_str().unwrap_or("").dimmed();
-                        let prefix = format_log_prefix(&rec["prefix"])
-                            .map(|p| format!("[{}]", p).cyan())
-                            .unwrap_or_default();
-                        let msg = rec["message"].as_str().unwrap_or("");
-
-                        output(state.output_mode, &rec, || {
-                            if prefix.is_empty() {
-                                cli_info(format!("{} {}", timestamp, msg));
-                            } else {
-                                cli_info(format!("{} {} {}", timestamp, prefix, msg));
-                            }
-                        })?;
-                    } else {
-                        output(
-                            state.output_mode,
-                            &json!({ "type": "log", "message": event.data }),
-                            || {
-                                cli_info(&event.data);
-                            },
-                        )?;
-                    }
-                }
-                Err(e) => {
-                    cli_error(format!("Stream error: {}", e));
-                    break;
-                }
-            }
-        }
+        stream_logs(res).await?;
     } else {
-        let data = state
+        let data: crate::deployments::DeploymentLogsResponse = ctx
             .api_client
             .get(&format!(
                 "/api/apps/{}/services/{}/logs?limit=2000",
@@ -276,60 +244,52 @@ pub async fn handle_logs(state: &AppState, slug: &str, service: &str, follow: bo
             ))
             .await?;
 
-        if let Some(logs) = data["logs"].as_array() {
-            output(state.output_mode, &data["logs"], || {
-                for rec in logs {
-                    let timestamp = rec["timestamp"].as_str().unwrap_or("").dimmed();
-                    let prefix = format_log_prefix(&rec["prefix"])
-                        .map(|p| format!("[{}]", p).cyan())
-                        .unwrap_or_default();
-                    let msg = rec["message"].as_str().unwrap_or("");
+        for rec in data.logs {
+            let timestamp = rec["timestamp"].as_str().unwrap_or("").dimmed();
+            let prefix = rec["prefix"]
+                .as_str()
+                .map(|p| format!("[{}]", p).cyan())
+                .unwrap_or_default();
+            let msg = rec["message"].as_str().unwrap_or("");
 
-                    if prefix.is_empty() {
-                        cli_info(format!("{} {}", timestamp, msg));
-                    } else {
-                        cli_info(format!("{} {} {}", timestamp, prefix, msg));
-                    }
-                }
-            })?;
+            if prefix.is_empty() {
+                cli_info(format!("{} {}", timestamp, msg));
+            } else {
+                cli_info(format!("{} {} {}", timestamp, prefix, msg));
+            }
         }
     }
 
     Ok(())
 }
 
-pub async fn resolve_service_id(state: &AppState, slug: &str, name_or_id: &str) -> Result<String> {
-    let services_data = state
-        .api_client
-        .get(&format!("/api/apps/{}/services", slug))
-        .await?;
-
-    let svcs: Vec<Service> = serde_json::from_value(services_data["services"].clone())
-        .context("Failed to parse services")?;
-
-    for s in svcs {
-        if s.name == name_or_id || s.id == name_or_id {
-            return Ok(s.id);
-        }
-    }
-
-    anyhow::bail!("Service '{}' not found", name_or_id)
+#[derive(Deserialize, Serialize)]
+pub struct ServiceKindsResponse {
+    pub kinds: Vec<serde_json::Value>,
 }
 
+/// Fetches default environment variables associated with a service kind.
+///
+/// # Arguments
+///
+/// * `ctx` - Execution context ([`Context`]).
+/// * `kind` - Service kind ([`ServiceKind`]).
+///
+/// # Returns
+///
+/// A key-value map of default environment variables for the specified service kind.
 async fn fetch_default_env(
-    state: &AppState,
+    ctx: &Context,
     kind: &ServiceKind,
 ) -> Result<std::collections::HashMap<String, String>> {
-    let kinds_data = state
+    let res: ServiceKindsResponse = ctx
         .api_client
         .get("/api/services/kinds")
         .await
         .context("Failed to fetch supported service kinds")?;
 
-    let kinds = kinds_data["kinds"].as_array().cloned().unwrap_or_default();
-
     let kind_str = kind.to_string();
-    for k in kinds {
+    for k in res.kinds {
         if k["name"].as_str().unwrap_or("") == kind_str {
             return serde_json::from_value(k["default_env_vars"].clone())
                 .context("Failed to parse default env vars for service kind");
@@ -340,14 +300,14 @@ async fn fetch_default_env(
 }
 
 pub async fn handle_backup(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
     service: &str,
     file_path: Option<String>,
 ) -> Result<()> {
-    let service_id = resolve_service_id(state, slug, service).await?;
+    let service_id = resolve_service_id(&ctx.api_client, slug, service).await?;
 
-    let res = state
+    let res = ctx
         .api_client
         .get_stream(&format!(
             "/api/apps/{}/services/{}/backup",
@@ -363,7 +323,7 @@ pub async fn handle_backup(
                 .await
                 .with_context(|| format!("Failed to create file: {}", path))?;
 
-            println!("Writing backup to {}…", path);
+            cli_info(format!("Writing backup to {}…", path));
             let mut total: u64 = 0;
 
             while let Some(chunk) = stream.next().await {
@@ -373,7 +333,7 @@ pub async fn handle_backup(
             }
 
             file.flush().await.context("Flush error")?;
-            println!("Done. {} bytes written.", total);
+            cli_success(format!("Done. {} bytes written.", total));
         }
         None => {
             let mut out = stdout();

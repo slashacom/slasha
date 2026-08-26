@@ -1,43 +1,52 @@
 use std::collections::HashMap;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context as _, Result};
 use colored::Colorize;
 use futures_util::{SinkExt, StreamExt};
-use slasha_db::service::{Service, ServiceKind};
+use slasha_db::service::ServiceKind;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
 };
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{Bytes, Message, client::IntoClientRequest, http::HeaderValue},
+    tungstenite::{client::IntoClientRequest, http::HeaderValue, Bytes, Message},
 };
 
 use crate::{
+    app_env::EnvVarsResponse,
+    context::Context,
     output::{cli_error, cli_info, cli_label, cli_success},
-    state::AppState,
+    services::ServiceListResponse,
     token::get_auth_token,
 };
 
 const WS_CONNECT_TIMEOUT_SECS: u64 = 15;
 const BIND_HOST: &str = "127.0.0.1";
 
+/// Resolved service target metadata.
+struct ResolvedService {
+    id: String,
+    name: String,
+    kind: ServiceKind,
+}
+
 pub async fn handle_proxy(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
     service: &str,
     port: Option<u16>,
     no_secret: bool,
 ) -> Result<()> {
-    let resolved = resolve_service(state, slug, service).await?;
-    let env_vars = fetch_service_env(state, slug, &resolved.id).await?;
+    let resolved = resolve_service(ctx, slug, service).await?;
+    let env_vars = fetch_service_env(ctx, slug, &resolved.id).await?;
 
     let listener = TcpListener::bind((BIND_HOST, port.unwrap_or(0)))
         .await
         .with_context(|| format!("Failed to bind {}:{}", BIND_HOST, port.unwrap_or(0)))?;
     let local_addr = listener.local_addr()?;
 
-    let ws_url = build_ws_url(state.api_client.base_url(), slug, &resolved.id)?;
+    let ws_url = build_ws_url(ctx.api_client.base_url(), slug, &resolved.id)?;
     let token =
         get_auth_token()?.ok_or_else(|| anyhow!("Not authenticated. Run `slasha login`."))?;
 
@@ -64,26 +73,24 @@ pub async fn handle_proxy(
     }
 }
 
-struct ResolvedService {
-    id: String,
-    name: String,
-    kind: ServiceKind,
-}
-
-async fn resolve_service(
-    state: &AppState,
-    slug: &str,
-    name_or_id: &str,
-) -> Result<ResolvedService> {
-    let body = state
+/// Resolves target service metadata by name or ID.
+///
+/// # Arguments
+///
+/// * `ctx` - Execution context ([`Context`]).
+/// * `slug` - Target application slug.
+/// * `name_or_id` - Service name or UUID string.
+///
+/// # Returns
+///
+/// Resolved [`ResolvedService`] struct.
+async fn resolve_service(ctx: &Context, slug: &str, name_or_id: &str) -> Result<ResolvedService> {
+    let res: ServiceListResponse = ctx
         .api_client
         .get(&format!("/api/apps/{}/services", slug))
         .await?;
 
-    let services: Vec<Service> =
-        serde_json::from_value(body["services"].clone()).context("Failed to parse services")?;
-
-    for svc in services {
+    for svc in res.services {
         if svc.name == name_or_id || svc.id == name_or_id {
             return Ok(ResolvedService {
                 id: svc.id,
@@ -96,19 +103,41 @@ async fn resolve_service(
     anyhow::bail!("Service '{}' not found", name_or_id)
 }
 
+/// Fetches environment variables for a service instance.
+///
+/// # Arguments
+///
+/// * `ctx` - Execution context ([`Context`]).
+/// * `slug` - Target application slug.
+/// * `service_id` - Target service ID.
+///
+/// # Returns
+///
+/// Key-value map of service environment variables.
 async fn fetch_service_env(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
     service_id: &str,
 ) -> Result<HashMap<String, String>> {
-    let body = state
+    let res: EnvVarsResponse = ctx
         .api_client
         .get(&format!("/api/apps/{}/services/{}/env", slug, service_id))
         .await?;
 
-    serde_json::from_value(body["env_vars"].clone()).context("Failed to parse service env vars")
+    Ok(res.env_vars)
 }
 
+/// Constructs the WebSocket tunnel URL from the target server base URL.
+///
+/// # Arguments
+///
+/// * `base_url` - Server base URL string.
+/// * `slug` - Target application slug.
+/// * `service_id` - Target service ID.
+///
+/// # Returns
+///
+/// The WebSocket tunnel URL string.
 fn build_ws_url(base_url: &str, slug: &str, service_id: &str) -> Result<String> {
     let url =
         url::Url::parse(base_url).with_context(|| format!("Invalid base URL: {}", base_url))?;
@@ -132,6 +161,13 @@ fn build_ws_url(base_url: &str, slug: &str, service_id: &str) -> Result<String> 
     ))
 }
 
+/// Forwards raw TCP traffic bidirectionally over a WebSocket tunnel.
+///
+/// # Arguments
+///
+/// * `tcp` - Accepted local [`tokio::net::TcpStream`].
+/// * `ws_url` - Remote WebSocket endpoint URL.
+/// * `token` - Bearer authentication token.
 async fn forward_connection(
     mut tcp: tokio::net::TcpStream,
     ws_url: &str,
@@ -190,6 +226,15 @@ async fn forward_connection(
     }
 }
 
+/// Prints local proxy connection banner and formatted database connection string.
+///
+/// # Arguments
+///
+/// * `service` - Reference to resolved service ([`ResolvedService`]).
+/// * `env_vars` - Service environment variable map.
+/// * `bind` - Local bind host string.
+/// * `port` - Local listening port number.
+/// * `no_secret` - Masks passwords in output if `true`.
 fn print_banner(
     service: &ResolvedService,
     env_vars: &HashMap<String, String>,
@@ -209,6 +254,19 @@ fn print_banner(
     cli_info("Each new client opens an independent tunnel. Press Ctrl-C to stop.");
 }
 
+/// Builds a database connection DSN string based on service kind and environment variables.
+///
+/// # Arguments
+///
+/// * `kind` - Service kind ([`ServiceKind`]).
+/// * `env` - Service environment variable map.
+/// * `host` - Host IP or hostname.
+/// * `port` - Port number.
+/// * `no_secret` - Masks password in string if `true`.
+///
+/// # Returns
+///
+/// Formatted DSN string.
 fn build_dsn(
     kind: ServiceKind,
     env: &HashMap<String, String>,

@@ -1,88 +1,25 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::Colorize;
-use eventsource_stream::Eventsource;
-use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use slasha_db::deployment::{Deployment, DeploymentStatus};
 
 use crate::{
     clap_app::DeploymentsCommand,
-    output::{
-        cli_error, cli_info, cli_label, cli_success, confirm_action, output, print_table, spinner,
-    },
-    state::AppState,
+    context::Context,
+    output::{cli_info, cli_label, cli_success, confirm_action, print_table, spinner, stream_logs},
+    resolve::{resolve_deployment_id, resolve_slug},
 };
 
-pub async fn dispatch(state: &AppState, slug: &str, cmd: DeploymentsCommand) -> Result<()> {
-    match cmd {
-        DeploymentsCommand::List => handle_list(state, slug).await,
-        DeploymentsCommand::Stop { deployment_id } => handle_stop(state, slug, deployment_id).await,
-        DeploymentsCommand::Restart { deployment_id } => {
-            handle_restart(state, slug, deployment_id).await
-        }
-        DeploymentsCommand::Redeploy { deployment_id } => {
-            handle_redeploy(state, slug, deployment_id).await
-        }
-        DeploymentsCommand::Rollback { deployment_id } => {
-            handle_rollback(state, slug, deployment_id).await
-        }
-        DeploymentsCommand::Delete { deployment_id, yes } => {
-            handle_delete(state, slug, deployment_id, yes).await
-        }
-        DeploymentsCommand::Logs {
-            deployment_id,
-            follow,
-        } => handle_logs(state, slug, deployment_id, follow).await,
-    }
-}
-
-pub async fn handle_trigger(state: &AppState, slug: &str, commit: Option<String>) -> Result<()> {
-    let payload = match &commit {
-        Some(sha) => json!({ "commit_sha": sha }),
-        None => json!({ "commit_sha": null }),
-    };
-
-    let pb = if !state.output_mode.is_json() {
-        Some(spinner("Triggering deployment..."))
-    } else {
-        None
-    };
-
-    let payload = match state
-        .api_client
-        .post(&format!("/api/apps/{}/deployments", slug), &payload)
-        .await
-    {
-        Ok(b) => {
-            if let Some(pb) = &pb {
-                pb.finish_and_clear();
-            }
-            b
-        }
-        Err(e) => {
-            if let Some(pb) = &pb {
-                pb.finish_and_clear();
-            }
-            return Err(e);
-        }
-    };
-
-    let dep: Deployment = serde_json::from_value(payload["deployment"].clone())
-        .context("Failed to parse deployment")?;
-
-    output(state.output_mode, &dep, || {
-        cli_success("Deployment triggered.");
-        cli_label("ID", &dep.id);
-        cli_label("Commit", &dep.commit_sha);
-        cli_info(format!(
-            "\nFollow logs: slasha logs --app {} --follow",
-            slug
-        ));
-    })?;
-
-    Ok(())
-}
-
+/// Formats a deployment status enum into an ANSI colored string.
+///
+/// # Arguments
+///
+/// * `status` - Deployment status ([`DeploymentStatus`]).
+///
+/// # Returns
+///
+/// Colored status string representation.
 fn format_status(status: DeploymentStatus) -> String {
     match status {
         DeploymentStatus::Running => status.to_string().green().to_string(),
@@ -94,54 +31,109 @@ fn format_status(status: DeploymentStatus) -> String {
     }
 }
 
-pub async fn handle_list(state: &AppState, slug: &str) -> Result<()> {
-    let deployments_data = state
+pub async fn dispatch(
+    ctx: &Context,
+    slug_arg: Option<String>,
+    cmd: DeploymentsCommand,
+) -> Result<()> {
+    let slug = resolve_slug(slug_arg)?;
+    match cmd {
+        DeploymentsCommand::List => handle_list(ctx, &slug).await,
+        DeploymentsCommand::Stop { deployment_id } => handle_stop(ctx, &slug, deployment_id).await,
+        DeploymentsCommand::Restart { deployment_id } => {
+            handle_restart(ctx, &slug, deployment_id).await
+        }
+        DeploymentsCommand::Redeploy { deployment_id } => {
+            handle_redeploy(ctx, &slug, deployment_id).await
+        }
+        DeploymentsCommand::Rollback { deployment_id } => {
+            handle_rollback(ctx, &slug, deployment_id).await
+        }
+        DeploymentsCommand::Delete { deployment_id, yes } => {
+            handle_delete(ctx, &slug, deployment_id, yes).await
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct DeploymentItemResponse {
+    pub deployment: Deployment,
+}
+
+pub async fn handle_trigger(
+    ctx: &Context,
+    slug_arg: Option<String>,
+    commit: Option<String>,
+) -> Result<()> {
+    let slug = resolve_slug(slug_arg)?;
+    let payload = match &commit {
+        Some(sha) => json!({ "commit_sha": sha }),
+        None => json!({ "commit_sha": null }),
+    };
+
+    let _spin = spinner("Triggering deployment...");
+
+    let res: DeploymentItemResponse = ctx
         .api_client
-        .get(&format!("/api/apps/{}/deployments", slug))
+        .post(&format!("/api/apps/{}/deployments", slug), &payload)
         .await?;
 
-    let deps: Vec<Deployment> = serde_json::from_value(deployments_data["deployments"].clone())
-        .context("Failed to parse deployments")?;
-
-    output(state.output_mode, &deps, || {
-        if deps.is_empty() {
-            cli_info(format!("No deployments found for app '{}'.", slug));
-        } else {
-            let mut rows: Vec<Vec<String>> = deps
-                .iter()
-                .map(|d| {
-                    vec![
-                        d.id.to_string(),
-                        d.commit_sha.to_string(),
-                        format_status(d.status),
-                        d.created_at.format("%Y-%m-%d %H:%M").to_string(),
-                    ]
-                })
-                .collect();
-            rows.sort_by(|a, b| b[3].cmp(&a[3]));
-            print_table(&["ID", "COMMIT", "STATUS", "CREATED"], rows);
-        }
-    })?;
+    cli_success("Deployment triggered.");
+    cli_label("ID", &res.deployment.id);
+    cli_label("Commit", &res.deployment.commit_sha);
+    cli_info(format!("\nFollow logs: slasha logs {} --follow", slug));
 
     Ok(())
 }
 
-fn format_log_prefix(val: &serde_json::Value) -> Option<String> {
-    serde_json::from_value::<slasha_db::logs::LogPrefix>(val.clone())
-        .ok()
-        .map(|p| p.to_string())
+#[derive(Deserialize, Serialize)]
+pub struct DeploymentListResponse {
+    pub deployments: Vec<Deployment>,
+}
+
+pub async fn handle_list(ctx: &Context, slug: &str) -> Result<()> {
+    let res: DeploymentListResponse = ctx
+        .api_client
+        .get(&format!("/api/apps/{}/deployments", slug))
+        .await?;
+
+    if res.deployments.is_empty() {
+        cli_info(format!("No deployments found for app '{}'.", slug));
+    } else {
+        let mut rows: Vec<Vec<String>> = res
+            .deployments
+            .iter()
+            .map(|d| {
+                vec![
+                    d.id.to_string(),
+                    d.commit_sha.to_string(),
+                    format_status(d.status),
+                    d.created_at.format("%Y-%m-%d %H:%M").to_string(),
+                ]
+            })
+            .collect();
+        rows.sort_by(|a, b| b[3].cmp(&a[3]));
+        print_table(&["ID", "COMMIT", "STATUS", "CREATED"], rows);
+    }
+
+    Ok(())
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct DeploymentLogsResponse {
+    pub logs: Vec<serde_json::Value>,
 }
 
 pub async fn handle_logs(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
-    deployment_id: Option<String>,
+    deployment_id_arg: Option<String>,
     follow: bool,
 ) -> Result<()> {
-    let deployment_id = resolve_deployment_id(state, slug, deployment_id).await?;
+    let deployment_id = resolve_deployment_id(&ctx.api_client, slug, deployment_id_arg).await?;
 
     if follow {
-        let res = state
+        let res = ctx
             .api_client
             .get_stream(&format!(
                 "/api/apps/{}/deployments/{}/stream",
@@ -149,43 +141,9 @@ pub async fn handle_logs(
             ))
             .await?;
 
-        let mut stream = res.bytes_stream().eventsource();
-
-        while let Some(event) = stream.next().await {
-            match event {
-                Ok(event) => {
-                    if let Ok(rec) = serde_json::from_str::<serde_json::Value>(&event.data) {
-                        let timestamp = rec["timestamp"].as_str().unwrap_or("").dimmed();
-                        let prefix = format_log_prefix(&rec["prefix"])
-                            .map(|p| format!("[{}]", p).cyan())
-                            .unwrap_or_default();
-                        let msg = rec["message"].as_str().unwrap_or("");
-
-                        output(state.output_mode, &rec, || {
-                            if prefix.is_empty() {
-                                cli_info(format!("{} {}", timestamp, msg));
-                            } else {
-                                cli_info(format!("{} {} {}", timestamp, prefix, msg));
-                            }
-                        })?;
-                    } else {
-                        output(
-                            state.output_mode,
-                            &json!({ "type": "log", "message": event.data }),
-                            || {
-                                cli_info(&event.data);
-                            },
-                        )?;
-                    }
-                }
-                Err(e) => {
-                    cli_error(format!("Stream error: {}", e));
-                    break;
-                }
-            }
-        }
+        stream_logs(res).await?;
     } else {
-        let data = state
+        let data: DeploymentLogsResponse = ctx
             .api_client
             .get(&format!(
                 "/api/apps/{}/deployments/{}/logs?limit=2000",
@@ -193,36 +151,39 @@ pub async fn handle_logs(
             ))
             .await?;
 
-        if let Some(logs) = data["logs"].as_array() {
-            output(state.output_mode, &data["logs"], || {
-                for rec in logs {
-                    let timestamp = rec["timestamp"].as_str().unwrap_or("").dimmed();
-                    let prefix = format_log_prefix(&rec["prefix"])
-                        .map(|p| format!("[{}]", p).cyan())
-                        .unwrap_or_default();
-                    let msg = rec["message"].as_str().unwrap_or("");
+        for rec in data.logs {
+            let timestamp = rec["timestamp"].as_str().unwrap_or("").dimmed();
+            let prefix = rec["prefix"]
+                .as_str()
+                .map(|p| format!("[{}]", p).cyan())
+                .unwrap_or_default();
+            let msg = rec["message"].as_str().unwrap_or("");
 
-                    if prefix.is_empty() {
-                        cli_info(format!("{} {}", timestamp, msg));
-                    } else {
-                        cli_info(format!("{} {} {}", timestamp, prefix, msg));
-                    }
-                }
-            })?;
+            if prefix.is_empty() {
+                cli_info(format!("{} {}", timestamp, msg));
+            } else {
+                cli_info(format!("{} {} {}", timestamp, prefix, msg));
+            }
         }
     }
 
     Ok(())
 }
 
-pub async fn handle_stop(
-    state: &AppState,
-    slug: &str,
-    deployment_id: Option<String>,
-) -> Result<()> {
-    let deployment_id = resolve_deployment_id(state, slug, deployment_id).await?;
+#[derive(Deserialize, Serialize)]
+pub struct OkResponse {
+    pub ok: bool,
+}
 
-    state
+pub async fn handle_stop(
+    ctx: &Context,
+    slug: &str,
+    deployment_id_arg: Option<String>,
+) -> Result<()> {
+    let deployment_id = resolve_deployment_id(&ctx.api_client, slug, deployment_id_arg).await?;
+
+    let _spin = spinner("Stopping deployment...");
+    let _: OkResponse = ctx
         .api_client
         .post(
             &format!("/api/apps/{}/deployments/{}/stop", slug, deployment_id),
@@ -230,21 +191,20 @@ pub async fn handle_stop(
         )
         .await?;
 
-    output(state.output_mode, &json!({ "ok": true }), || {
-        cli_success(format!("Deployment {} stop triggered.", deployment_id));
-    })?;
+    cli_success(format!("Deployment {} stop triggered.", deployment_id));
 
     Ok(())
 }
 
 pub async fn handle_restart(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
-    deployment_id: Option<String>,
+    deployment_id_arg: Option<String>,
 ) -> Result<()> {
-    let deployment_id = resolve_deployment_id(state, slug, deployment_id).await?;
+    let deployment_id = resolve_deployment_id(&ctx.api_client, slug, deployment_id_arg).await?;
 
-    state
+    let _spin = spinner("Restarting deployment...");
+    let _: OkResponse = ctx
         .api_client
         .post(
             &format!("/api/apps/{}/deployments/{}/restart", slug, deployment_id),
@@ -252,21 +212,20 @@ pub async fn handle_restart(
         )
         .await?;
 
-    output(state.output_mode, &json!({ "ok": true }), || {
-        cli_success(format!("Deployment {} restart triggered.", deployment_id));
-    })?;
+    cli_success(format!("Deployment {} restart triggered.", deployment_id));
 
     Ok(())
 }
 
 pub async fn handle_redeploy(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
-    deployment_id: Option<String>,
+    deployment_id_arg: Option<String>,
 ) -> Result<()> {
-    let deployment_id = resolve_deployment_id(state, slug, deployment_id).await?;
+    let deployment_id = resolve_deployment_id(&ctx.api_client, slug, deployment_id_arg).await?;
 
-    let payload = state
+    let _spin = spinner("Redeploying...");
+    let res: DeploymentItemResponse = ctx
         .api_client
         .post(
             &format!("/api/apps/{}/deployments/{}/redeploy", slug, deployment_id),
@@ -274,54 +233,45 @@ pub async fn handle_redeploy(
         )
         .await?;
 
-    let dep: Deployment = serde_json::from_value(payload["deployment"].clone())
-        .context("Failed to parse deployment")?;
-
-    output(state.output_mode, &dep, || {
-        cli_success(format!(
-            "Redeploy triggered for deployment {}.",
-            deployment_id
-        ));
-        cli_info(format!(
-            "\nFollow logs: slasha logs --app {} --follow",
-            slug
-        ));
-    })?;
+    cli_success(format!(
+        "Redeploy triggered for deployment {}.",
+        res.deployment.id
+    ));
+    cli_info(format!("\nFollow logs: slasha logs {} --follow", slug));
 
     Ok(())
 }
 
 pub async fn handle_rollback(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
-    deployment_id: Option<String>,
+    deployment_id_arg: Option<String>,
 ) -> Result<()> {
-    let deployments_data = state
+    let res: DeploymentListResponse = ctx
         .api_client
         .get(&format!("/api/apps/{}/deployments", slug))
         .await?;
-    let deployments: Vec<Deployment> =
-        serde_json::from_value(deployments_data["deployments"].clone())
-            .context("Failed to parse deployments")?;
 
-    let deployment_id = if let Some(id) = deployment_id {
-        if deployments
+    let deployment_id = if let Some(id) = deployment_id_arg {
+        if res
+            .deployments
             .iter()
-            .any(|deployment| deployment.id == id && deployment.status == DeploymentStatus::Running)
+            .any(|d| d.id == id && d.status == DeploymentStatus::Running)
         {
             anyhow::bail!("Deployment {} is already running", id);
         }
         id
     } else {
-        deployments
+        res.deployments
             .into_iter()
-            .filter(|deployment| deployment.status == DeploymentStatus::Stopped)
-            .max_by_key(|deployment| deployment.created_at)
-            .map(|deployment| deployment.id)
+            .filter(|d| d.status == DeploymentStatus::Stopped)
+            .max_by_key(|d| d.created_at)
+            .map(|d| d.id)
             .ok_or_else(|| anyhow::anyhow!("No previous deployment available for rollback"))?
     };
 
-    let payload = state
+    let _spin = spinner("Rolling back deployment...");
+    let res: DeploymentItemResponse = ctx
         .api_client
         .post(
             &format!("/api/apps/{}/deployments/{}/rollback", slug, deployment_id),
@@ -329,73 +279,35 @@ pub async fn handle_rollback(
         )
         .await?;
 
-    let deployment: Deployment = serde_json::from_value(payload["deployment"].clone())
-        .context("Failed to parse deployment")?;
-
-    output(state.output_mode, &deployment, || {
-        cli_success(format!(
-            "Rollback triggered to deployment {}.",
-            deployment_id
-        ));
-        cli_label("ID", &deployment.id);
-        cli_label("Commit", &deployment.commit_sha);
-    })?;
+    cli_success(format!(
+        "Rollback triggered to deployment {}.",
+        res.deployment.id
+    ));
+    cli_label("ID", &res.deployment.id);
+    cli_label("Commit", &res.deployment.commit_sha);
 
     Ok(())
 }
 
 pub async fn handle_delete(
-    state: &AppState,
+    ctx: &Context,
     slug: &str,
-    deployment_id: Option<String>,
+    deployment_id_arg: Option<String>,
     yes: bool,
 ) -> Result<()> {
-    let deployment_id = resolve_deployment_id(state, slug, deployment_id).await?;
+    let deployment_id = resolve_deployment_id(&ctx.api_client, slug, deployment_id_arg).await?;
 
-    if !confirm_action(
-        state.output_mode,
-        yes,
-        &format!("Delete deployment {}?", deployment_id.red()),
-    )? {
+    if !confirm_action(yes, &format!("Delete deployment {}?", deployment_id.red()))? {
         return Ok(());
     }
 
-    state
+    let _spin = spinner("Deleting deployment...");
+    let _: OkResponse = ctx
         .api_client
         .delete(&format!("/api/apps/{}/deployments/{}", slug, deployment_id))
         .await?;
 
-    output(state.output_mode, &json!({ "ok": true }), || {
-        cli_success(format!("Deployment {} deleted.", deployment_id));
-    })?;
+    cli_success(format!("Deployment {} deleted.", deployment_id));
 
     Ok(())
-}
-
-// return the latest deployment id if not provided else the provided id
-pub async fn resolve_deployment_id(
-    state: &AppState,
-    slug: &str,
-    deployment_id: Option<String>,
-) -> Result<String> {
-    if let Some(id) = deployment_id {
-        return Ok(id);
-    }
-
-    let deployments_data = state
-        .api_client
-        .get(&format!("/api/apps/{}/deployments", slug))
-        .await?;
-
-    let deps: Vec<Deployment> = serde_json::from_value(deployments_data["deployments"].clone())
-        .context("Failed to parse deployments")?;
-
-    let target_dep = deps.into_iter().max_by_key(|d| d.created_at);
-
-    match target_dep {
-        Some(dep) => Ok(dep.id),
-        None => {
-            anyhow::bail!("No deployments found for app '{}'", slug);
-        }
-    }
 }

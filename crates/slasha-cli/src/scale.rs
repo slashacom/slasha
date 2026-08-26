@@ -1,14 +1,20 @@
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 use serde_json::json;
 
 use crate::{
-    deployments::resolve_deployment_id,
-    output::{cli_success, output, spinner},
-    state::AppState,
+    context::Context,
+    deployments::OkResponse,
+    output::{cli_success, spinner},
+    resolve::{resolve_deployment_id, resolve_slug},
 };
 
-pub async fn handle_scale(state: &AppState, slug: &str, pairs: Vec<String>) -> Result<()> {
-    let deployment_id = resolve_deployment_id(state, slug, None).await?;
+pub async fn handle_scale(
+    ctx: &Context,
+    slug_arg: Option<String>,
+    pairs: Vec<String>,
+) -> Result<()> {
+    let slug = resolve_slug(slug_arg)?;
+    let deployment_id = resolve_deployment_id(&ctx.api_client, &slug, None).await?;
 
     let mut scales = Vec::new();
     for pair in pairs {
@@ -30,16 +36,9 @@ pub async fn handle_scale(state: &AppState, slug: &str, pairs: Vec<String>) -> R
     }
 
     for (process_type, count) in scales {
-        let pb = if !state.output_mode.is_json() {
-            Some(spinner(&format!(
-                "Scaling {} to {}...",
-                process_type, count
-            )))
-        } else {
-            None
-        };
+        let _spin = spinner(&format!("Scaling {} to {}...", process_type, count));
 
-        let res = state
+        let _: OkResponse = ctx
             .api_client
             .post(
                 &format!("/api/apps/{}/deployments/{}/scale", slug, deployment_id),
@@ -48,17 +47,9 @@ pub async fn handle_scale(state: &AppState, slug: &str, pairs: Vec<String>) -> R
                     "count": count
                 }),
             )
-            .await;
+            .await?;
 
-        if let Some(pb) = pb {
-            pb.finish_and_clear();
-        }
-
-        let payload = res?;
-
-        output(state.output_mode, &payload, || {
-            cli_success(format!("Scaled {} to {}.", process_type, count));
-        })?;
+        cli_success(format!("Scaled {} to {}.", process_type, count));
     }
 
     Ok(())
