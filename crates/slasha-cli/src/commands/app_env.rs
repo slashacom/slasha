@@ -1,35 +1,33 @@
 use std::collections::HashMap;
 
 use anyhow::{Context as _, Result};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
     clap_app::AppEnvCommand,
+    commands::responses::EnvVarsResponse,
     context::Context,
+    http::ApiClient,
     output::{cli_error, cli_info, cli_success, print_table, spinner},
-    resolve::resolve_slug,
 };
 
-pub async fn dispatch(ctx: &Context, slug_arg: Option<String>, cmd: AppEnvCommand) -> Result<()> {
-    let slug = resolve_slug(slug_arg)?;
+pub async fn dispatch(
+    cmd: AppEnvCommand,
+    server_override: Option<&str>,
+    app_override: Option<&str>,
+) -> Result<()> {
+    let ctx = Context::new(server_override, app_override)?;
+    let (client, slug) = ctx.require_context()?;
+
     match cmd {
-        AppEnvCommand::List => handle_list(ctx, &slug).await,
-        AppEnvCommand::Set { pairs } => handle_set(ctx, &slug, &pairs).await,
-        AppEnvCommand::Unset { keys } => handle_unset(ctx, &slug, &keys).await,
+        AppEnvCommand::List => handle_list(client, slug).await,
+        AppEnvCommand::Set { pairs } => handle_set(client, slug, &pairs).await,
+        AppEnvCommand::Unset { keys } => handle_unset(client, slug, &keys).await,
     }
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct EnvVarsResponse {
-    pub env_vars: HashMap<String, String>,
-}
-
-pub async fn handle_list(ctx: &Context, slug: &str) -> Result<()> {
-    let res: EnvVarsResponse = ctx
-        .api_client
-        .get(&format!("/api/apps/{}/env", slug))
-        .await?;
+async fn handle_list(client: &ApiClient, slug: &str) -> Result<()> {
+    let res: EnvVarsResponse = client.get(&format!("/api/apps/{}/env", slug)).await?;
 
     if res.env_vars.is_empty() {
         cli_info("No env vars set.");
@@ -43,8 +41,8 @@ pub async fn handle_list(ctx: &Context, slug: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn handle_set(ctx: &Context, slug: &str, pairs: &[String]) -> Result<()> {
-    let mut current = fetch_vars(ctx, slug).await?;
+async fn handle_set(client: &ApiClient, slug: &str, pairs: &[String]) -> Result<()> {
+    let mut current = fetch_vars(client, slug).await?;
 
     for pair in pairs {
         let (k, v) = pair
@@ -54,8 +52,7 @@ pub async fn handle_set(ctx: &Context, slug: &str, pairs: &[String]) -> Result<(
     }
 
     let _spin = spinner("Updating environment variables...");
-    let _: EnvVarsResponse = ctx
-        .api_client
+    let _: EnvVarsResponse = client
         .put(
             &format!("/api/apps/{}/env", slug),
             &json!({ "vars": current }),
@@ -67,8 +64,8 @@ pub async fn handle_set(ctx: &Context, slug: &str, pairs: &[String]) -> Result<(
     Ok(())
 }
 
-pub async fn handle_unset(ctx: &Context, slug: &str, keys: &[String]) -> Result<()> {
-    let mut current = fetch_vars(ctx, slug).await?;
+async fn handle_unset(client: &ApiClient, slug: &str, keys: &[String]) -> Result<()> {
+    let mut current = fetch_vars(client, slug).await?;
 
     for key in keys {
         if current.remove(key).is_none() {
@@ -77,8 +74,7 @@ pub async fn handle_unset(ctx: &Context, slug: &str, keys: &[String]) -> Result<
     }
 
     let _spin = spinner("Updating environment variables...");
-    let _: EnvVarsResponse = ctx
-        .api_client
+    let _: EnvVarsResponse = client
         .put(
             &format!("/api/apps/{}/env", slug),
             &json!({ "vars": current }),
@@ -91,20 +87,7 @@ pub async fn handle_unset(ctx: &Context, slug: &str, keys: &[String]) -> Result<
 }
 
 /// Fetches all environment variables configured for an application slug.
-///
-/// # Arguments
-///
-/// * `ctx` - Execution context ([`Context`]).
-/// * `slug` - Target application slug.
-///
-/// # Returns
-///
-/// A key-value map of environment variables.
-async fn fetch_vars(ctx: &Context, slug: &str) -> Result<HashMap<String, String>> {
-    let res: EnvVarsResponse = ctx
-        .api_client
-        .get(&format!("/api/apps/{}/env", slug))
-        .await?;
-
+async fn fetch_vars(client: &ApiClient, slug: &str) -> Result<HashMap<String, String>> {
+    let res: EnvVarsResponse = client.get(&format!("/api/apps/{}/env", slug)).await?;
     Ok(res.env_vars)
 }

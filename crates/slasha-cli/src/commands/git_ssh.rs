@@ -6,11 +6,6 @@ use slasha_db::{
     repos::{app::AppRepo, user::UserRepo},
 };
 
-/// Handles incoming Git SSH forced command execution (`SSH_ORIGINAL_COMMAND`).
-///
-/// # Arguments
-///
-/// * `user_id` - Authenticated SSH user UUID.
 pub async fn handle(user_id: String) -> Result<()> {
     let db_path = dirs::home_dir()
         .context("Failed to get home directory")?

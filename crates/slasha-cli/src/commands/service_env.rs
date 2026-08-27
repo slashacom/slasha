@@ -4,30 +4,29 @@ use anyhow::{Context as _, Result};
 use serde_json::json;
 
 use crate::{
-    app_env::EnvVarsResponse,
     clap_app::ServiceEnvCommand,
-    context::Context,
+    commands::responses::EnvVarsResponse,
+    http::ApiClient,
     output::{cli_error, cli_info, cli_success, print_table, spinner},
     resolve::resolve_service_id,
 };
 
 pub async fn dispatch(
-    ctx: &Context,
+    client: &ApiClient,
     slug: &str,
-    service_name_or_id: &str,
+    service_name: &str,
     cmd: ServiceEnvCommand,
 ) -> Result<()> {
-    let service_id = resolve_service_id(&ctx.api_client, slug, service_name_or_id).await?;
+    let service_id = resolve_service_id(client, slug, service_name).await?;
     match cmd {
-        ServiceEnvCommand::List => handle_list(ctx, slug, &service_id).await,
-        ServiceEnvCommand::Set { pairs } => handle_set(ctx, slug, &service_id, &pairs).await,
-        ServiceEnvCommand::Unset { keys } => handle_unset(ctx, slug, &service_id, &keys).await,
+        ServiceEnvCommand::List => handle_list(client, slug, &service_id).await,
+        ServiceEnvCommand::Set { pairs } => handle_set(client, slug, &service_id, &pairs).await,
+        ServiceEnvCommand::Unset { keys } => handle_unset(client, slug, &service_id, &keys).await,
     }
 }
 
-pub async fn handle_list(ctx: &Context, slug: &str, service_id: &str) -> Result<()> {
-    let res: EnvVarsResponse = ctx
-        .api_client
+async fn handle_list(client: &ApiClient, slug: &str, service_id: &str) -> Result<()> {
+    let res: EnvVarsResponse = client
         .get(&format!("/api/apps/{}/services/{}/env", slug, service_id))
         .await?;
 
@@ -43,13 +42,13 @@ pub async fn handle_list(ctx: &Context, slug: &str, service_id: &str) -> Result<
     Ok(())
 }
 
-pub async fn handle_set(
-    ctx: &Context,
+async fn handle_set(
+    client: &ApiClient,
     slug: &str,
     service_id: &str,
     pairs: &[String],
 ) -> Result<()> {
-    let mut current = fetch_vars(ctx, slug, service_id).await?;
+    let mut current = fetch_vars(client, slug, service_id).await?;
 
     for pair in pairs {
         let (k, v) = pair
@@ -59,8 +58,7 @@ pub async fn handle_set(
     }
 
     let _spin = spinner("Updating service environment variables...");
-    let _: EnvVarsResponse = ctx
-        .api_client
+    let _: EnvVarsResponse = client
         .put(
             &format!("/api/apps/{}/services/{}/env", slug, service_id),
             &json!({ "vars": current }),
@@ -72,13 +70,13 @@ pub async fn handle_set(
     Ok(())
 }
 
-pub async fn handle_unset(
-    ctx: &Context,
+async fn handle_unset(
+    client: &ApiClient,
     slug: &str,
     service_id: &str,
     keys: &[String],
 ) -> Result<()> {
-    let mut current = fetch_vars(ctx, slug, service_id).await?;
+    let mut current = fetch_vars(client, slug, service_id).await?;
 
     for key in keys {
         if current.remove(key).is_none() {
@@ -87,8 +85,7 @@ pub async fn handle_unset(
     }
 
     let _spin = spinner("Updating service environment variables...");
-    let _: EnvVarsResponse = ctx
-        .api_client
+    let _: EnvVarsResponse = client
         .put(
             &format!("/api/apps/{}/services/{}/env", slug, service_id),
             &json!({ "vars": current }),
@@ -104,7 +101,7 @@ pub async fn handle_unset(
 ///
 /// # Arguments
 ///
-/// * `ctx` - Execution context ([`Context`]).
+/// * `client` - Reference to the API client ([`ApiClient`]).
 /// * `slug` - Target application slug.
 /// * `service_id` - Target service ID.
 ///
@@ -112,12 +109,11 @@ pub async fn handle_unset(
 ///
 /// A key-value map of service environment variables.
 async fn fetch_vars(
-    ctx: &Context,
+    client: &ApiClient,
     slug: &str,
     service_id: &str,
 ) -> Result<HashMap<String, String>> {
-    let res: EnvVarsResponse = ctx
-        .api_client
+    let res: EnvVarsResponse = client
         .get(&format!("/api/apps/{}/services/{}/env", slug, service_id))
         .await?;
 

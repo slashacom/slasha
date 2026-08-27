@@ -1,15 +1,32 @@
 use anyhow::{Context, Result};
 
 const SERVICE: &str = "slasha";
-const USER: &str = "auth_token";
 const TOKEN_ENV: &str = "SLASHA_TOKEN";
 
-/// Retrieves the stored authentication token from `SLASHA_TOKEN` env or OS keyring.
+/// Formats the OS keyring account key for a given server URL.
+///
+/// # Arguments
+///
+/// * `server_url` - Target server base URL slice.
+///
+/// # Returns
+///
+/// A formatted keyring account string.
+pub fn keyring_user_key(server_url: &str) -> String {
+    let normalized = server_url.trim().trim_end_matches('/');
+    format!("auth_token@{}", normalized)
+}
+
+/// Retrieves the stored authentication token from `SLASHA_TOKEN` env var or OS keyring.
+///
+/// # Arguments
+///
+/// * `server_url` - Target server base URL slice.
 ///
 /// # Returns
 ///
 /// An optional authentication token string.
-pub fn get_auth_token() -> Result<Option<String>> {
+pub fn get_auth_token(server_url: &str) -> Result<Option<String>> {
     if let Ok(token) = std::env::var(TOKEN_ENV) {
         let trimmed = token.trim();
         if !trimmed.is_empty() {
@@ -17,7 +34,8 @@ pub fn get_auth_token() -> Result<Option<String>> {
         }
     }
 
-    let entry = keyring::Entry::new(SERVICE, USER)?;
+    let user_key = keyring_user_key(server_url);
+    let entry = keyring::Entry::new(SERVICE, &user_key)?;
 
     match entry.get_password() {
         Ok(token) => Ok(Some(token)),
@@ -26,13 +44,15 @@ pub fn get_auth_token() -> Result<Option<String>> {
     }
 }
 
-/// Persists an authentication token into the OS keyring.
+/// Persists an authentication token into the OS keyring for a target server URL.
 ///
 /// # Arguments
 ///
+/// * `server_url` - Target server base URL slice.
 /// * `token` - Authentication token string.
-pub fn set_auth_token(token: &str) -> Result<()> {
-    let entry = keyring::Entry::new(SERVICE, USER)?;
+pub fn set_auth_token(server_url: &str, token: &str) -> Result<()> {
+    let user_key = keyring_user_key(server_url);
+    let entry = keyring::Entry::new(SERVICE, &user_key)?;
     entry
         .set_password(token)
         .context("Failed to write to keyring")?;
@@ -40,13 +60,35 @@ pub fn set_auth_token(token: &str) -> Result<()> {
     Ok(())
 }
 
-/// Removes the stored authentication token from the OS keyring.
-pub fn clear_auth_token() -> Result<()> {
-    let entry = keyring::Entry::new(SERVICE, USER)?;
+/// Removes the stored authentication token from the OS keyring for a target server URL.
+///
+/// # Arguments
+///
+/// * `server_url` - Target server base URL slice.
+pub fn clear_auth_token(server_url: &str) -> Result<()> {
+    let user_key = keyring_user_key(server_url);
+    let entry = keyring::Entry::new(SERVICE, &user_key)?;
 
     match entry.delete_credential() {
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => anyhow::bail!("Failed to delete keyring: {e}"),
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_keyring_user_key_formatting() {
+        assert_eq!(
+            keyring_user_key("http://localhost:3000/"),
+            "auth_token@http://localhost:3000"
+        );
+        assert_eq!(
+            keyring_user_key("https://slasha.example.com"),
+            "auth_token@https://slasha.example.com"
+        );
     }
 }

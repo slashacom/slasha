@@ -2,19 +2,21 @@ use anyhow::{Context as _, Result};
 use serde_json::json;
 
 use crate::{
+    commands::responses::OkResponse,
     context::Context,
-    deployments::OkResponse,
     output::{cli_success, spinner},
-    resolve::{resolve_deployment_id, resolve_slug},
+    resolve::resolve_deployment_id,
 };
 
 pub async fn handle_scale(
-    ctx: &Context,
-    slug_arg: Option<String>,
     pairs: Vec<String>,
+    server_override: Option<&str>,
+    app_override: Option<&str>,
 ) -> Result<()> {
-    let slug = resolve_slug(slug_arg)?;
-    let deployment_id = resolve_deployment_id(&ctx.api_client, &slug, None).await?;
+    let ctx = Context::new(server_override, app_override)?;
+    let (client, slug) = ctx.require_context()?;
+
+    let deployment_id = resolve_deployment_id(client, slug, None).await?;
 
     let mut scales = Vec::new();
     for pair in pairs {
@@ -38,8 +40,7 @@ pub async fn handle_scale(
     for (process_type, count) in scales {
         let _spin = spinner(&format!("Scaling {} to {}...", process_type, count));
 
-        let _: OkResponse = ctx
-            .api_client
+        let _: OkResponse = client
             .post(
                 &format!("/api/apps/{}/deployments/{}/scale", slug, deployment_id),
                 &json!({

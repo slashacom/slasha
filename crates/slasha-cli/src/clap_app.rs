@@ -1,17 +1,26 @@
-use clap::{builder::PossibleValuesParser, Parser, Subcommand};
+use clap::{Parser, Subcommand, builder::PossibleValuesParser};
 use slasha_db::service::ServiceKind;
 use strum::VariantNames;
 
-/// Command line parser definition for the Slasha PaaS CLI.
 #[derive(Parser)]
-#[command(
-    name = "slasha",
-    author,
-    version
-)]
+#[command(name = "slasha", author, version)]
 pub struct ClapApp {
-    #[arg(long, global = true, value_name = "URL")]
-    pub server_url: Option<String>,
+    #[arg(
+        short = 's',
+        long = "server-url",
+        alias = "server",
+        global = true,
+        help = "Override target Slasha server base URL"
+    )]
+    pub server_override: Option<String>,
+
+    #[arg(
+        short = 'a',
+        long = "app",
+        global = true,
+        help = "Override target application slug"
+    )]
+    pub app_override: Option<String>,
 
     #[command(subcommand)]
     pub command: Command,
@@ -27,10 +36,7 @@ pub enum Command {
     #[command(name = "git-ssh", hide = true)]
     GitSsh { user_id: String },
 
-    #[command(
-        name = "health",
-        about = "Print server health"
-    )]
+    #[command(name = "health", about = "Print server health")]
     Health,
 
     #[command(
@@ -40,30 +46,12 @@ pub enum Command {
     Version,
 
     #[command(
-        name = "login",
-        about = "Authenticate CLI session interactively and store bearer token in local OS keyring"
+        name = "auth",
+        about = "Re-authenticate or display user profile for the linked Slasha server"
     )]
-    Login,
-
-    #[command(
-        name = "logout",
-        about = "Remove stored authentication token from local OS keyring"
-    )]
-    Logout,
-
-    #[command(
-        name = "me",
-        about = "Display profile info and role for the currently authenticated user"
-    )]
-    Me,
-
-    #[command(
-        name = "config",
-        about = "Manage CLI configuration settings"
-    )]
-    Config {
+    Auth {
         #[command(subcommand)]
-        command: ConfigCommand,
+        command: AuthCommand,
     },
 
     #[command(
@@ -72,10 +60,7 @@ pub enum Command {
     )]
     Diagnostic,
 
-    #[command(
-        name = "apps",
-        about = "Manage applications"
-    )]
+    #[command(name = "apps", about = "Manage applications")]
     Apps {
         #[command(subcommand)]
         command: AppsCommand,
@@ -86,8 +71,6 @@ pub enum Command {
         about = "Trigger a build and rolling release for an application"
     )]
     Deploy {
-        #[arg(value_name = "SLUG", help = "App slug (defaults to cwd slasha.toml)")]
-        slug: Option<String>,
         #[arg(long, value_name = "SHA")]
         commit: Option<String>,
     },
@@ -97,8 +80,6 @@ pub enum Command {
         about = "Fetch static logs or stream live stdout/stderr from deployment processes"
     )]
     Logs {
-        #[arg(value_name = "SLUG", help = "App slug (defaults to cwd slasha.toml)")]
-        slug: Option<String>,
         #[arg(
             long = "deployment",
             value_name = "ID",
@@ -114,8 +95,6 @@ pub enum Command {
         about = "Update process container counts for an application (e.g. web=2 worker=1)"
     )]
     Scale {
-        #[arg(value_name = "SLUG", help = "App slug (defaults to cwd slasha.toml)")]
-        slug: Option<String>,
         #[arg(value_name = "TYPE=COUNT", required = true, num_args = 1..)]
         pairs: Vec<String>,
     },
@@ -125,8 +104,6 @@ pub enum Command {
         about = "Manage deployment history, inspect build logs, restart, redeploy, or rollback releases"
     )]
     Deployments {
-        #[arg(value_name = "SLUG", help = "App slug (defaults to cwd slasha.toml)")]
-        slug: Option<String>,
         #[command(subcommand)]
         command: DeploymentsCommand,
     },
@@ -136,8 +113,6 @@ pub enum Command {
         about = "Manage attached datastore services (PostgreSQL, MySQL, Redis, MongoDB), proxies, and backups"
     )]
     Services {
-        #[arg(value_name = "SLUG", help = "App slug (defaults to cwd slasha.toml)")]
-        slug: Option<String>,
         #[command(subcommand)]
         command: ServicesCommand,
     },
@@ -147,8 +122,6 @@ pub enum Command {
         about = "Read, set, or unset environment variables for an application"
     )]
     Env {
-        #[arg(value_name = "SLUG", help = "App slug (defaults to cwd slasha.toml)")]
-        slug: Option<String>,
         #[command(subcommand)]
         command: AppEnvCommand,
     },
@@ -158,8 +131,6 @@ pub enum Command {
         about = "Attach or remove custom HTTP domain names routed to an application"
     )]
     Domains {
-        #[arg(value_name = "SLUG", help = "App slug (defaults to cwd slasha.toml)")]
-        slug: Option<String>,
         #[command(subcommand)]
         command: DomainsCommand,
     },
@@ -171,6 +142,18 @@ pub enum Command {
     SshKeys {
         #[command(subcommand)]
         command: SshKeysCommand,
+    },
+
+    #[command(
+        name = "link",
+        about = "Link current working directory to a Slasha server and application in .slasha/config.toml"
+    )]
+    Link {},
+
+    #[command(name = "config", about = "Manage global CLI configuration")]
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
     },
 }
 
@@ -192,39 +175,16 @@ pub enum AppsCommand {
         name = "info",
         about = "Display detailed application metadata, source config, and Git remote URLs"
     )]
-    Info {
-        #[arg(value_name = "SLUG", help = "App slug (defaults to cwd slasha.toml)")]
-        slug: Option<String>,
-    },
+    Info,
 
     #[command(
         name = "delete",
         about = "Irreversibly delete an application, its deployment history, environment vars, and attached services"
     )]
     Delete {
-        #[arg(value_name = "SLUG", help = "App slug (defaults to cwd slasha.toml)")]
-        slug: Option<String>,
         #[arg(short = 'y', long)]
         yes: bool,
     },
-
-    #[command(
-        name = "link",
-        about = "Link current working directory to an application in slasha.toml"
-    )]
-    Link {
-        #[arg(value_name = "SLUG", help = "App slug")]
-        slug: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum ConfigCommand {
-    #[command(
-        name = "set-url",
-        about = "Persist server HTTP base URL into ~/.config/slasha/config.toml"
-    )]
-    SetUrl { url: String },
 }
 
 #[derive(Subcommand)]
@@ -357,7 +317,7 @@ pub enum ServicesCommand {
         about = "Reboot service container process without modifying persistent volume data"
     )]
     Restart {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME")]
         service: String,
     },
 
@@ -366,7 +326,7 @@ pub enum ServicesCommand {
         about = "Reprovision service container using stored image and env without wiping data volume"
     )]
     Redeploy {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME")]
         service: String,
     },
 
@@ -375,7 +335,7 @@ pub enum ServicesCommand {
         about = "Stop running service container to free compute resources while preserving volume data"
     )]
     Stop {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME")]
         service: String,
         #[arg(short = 'y', long)]
         yes: bool,
@@ -386,7 +346,7 @@ pub enum ServicesCommand {
         about = "Irreversibly delete a service container and erase its persistent database volume"
     )]
     Delete {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME")]
         service: String,
         #[arg(short = 'y', long)]
         yes: bool,
@@ -397,7 +357,7 @@ pub enum ServicesCommand {
         about = "Fetch or stream live logs from a service container process"
     )]
     Logs {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME")]
         service: String,
         #[arg(long)]
         follow: bool,
@@ -408,7 +368,7 @@ pub enum ServicesCommand {
         about = "Read or update environment variables for a service instance"
     )]
     Env {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME")]
         service: String,
         #[command(subcommand)]
         command: ServiceEnvCommand,
@@ -419,7 +379,7 @@ pub enum ServicesCommand {
         about = "Stream database dump from a service container to stdout or save to a file"
     )]
     Backup {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME")]
         service: String,
         #[arg(
             short = 'f',
@@ -435,7 +395,7 @@ pub enum ServicesCommand {
         about = "Open a local TCP listener that tunnels connections over WebSocket to a service container"
     )]
     Proxy {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME")]
         service: String,
         #[arg(short = 'p', long, value_name = "PORT")]
         port: Option<u16>,
@@ -497,4 +457,42 @@ pub enum SshKeysCommand {
         about = "Revoke and delete a registered SSH public key by ID, preventing future Git SSH pushes"
     )]
     Remove { id: String },
+}
+
+#[derive(Subcommand)]
+pub enum ConfigCommand {
+    #[command(name = "set", about = "Set configuration key in global config")]
+    Set {
+        #[arg(value_name = "KEY", help = "Key")]
+        key: String,
+        #[arg(value_name = "VALUE", help = "Value")]
+        value: String,
+    },
+
+    #[command(name = "get", about = "Get configuration value from global config")]
+    Get {
+        #[arg(value_name = "KEY", help = "Key")]
+        key: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AuthCommand {
+    #[command(
+        name = "login",
+        about = "Authenticate CLI session interactively and store bearer token in local OS keyring"
+    )]
+    Login,
+
+    #[command(
+        name = "logout",
+        about = "Clear the stored authentication token for a server from the OS keyring"
+    )]
+    Logout,
+
+    #[command(
+        name = "status",
+        about = "Display profile info and role for the currently authenticated user"
+    )]
+    Status,
 }

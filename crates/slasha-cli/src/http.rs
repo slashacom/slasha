@@ -2,10 +2,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use crate::{
-    config::{DEFAULT_BASE_URL, GlobalConfig},
-    token::get_auth_token,
-};
+use crate::token::get_auth_token;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -18,14 +15,16 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
-    /// Constructs a new [`ApiClient`] using global file configuration.
+    /// Constructs a new [`ApiClient`] targeting the specified base URL.
+    ///
+    /// # Arguments
+    ///
+    /// * `base_url` - Normalized server HTTP base URL string.
     ///
     /// # Returns
     ///
     /// A configured [`ApiClient`] instance.
-    pub fn from_config() -> Result<Self> {
-        let config = GlobalConfig::load()?;
-
+    pub fn new(base_url: &str) -> Result<Self> {
         let client = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(REQUEST_TIMEOUT)
@@ -40,27 +39,8 @@ impl ApiClient {
         Ok(Self {
             client,
             stream_client,
-            base_url: config
-                .base_url
-                .unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
+            base_url: base_url.to_string(),
         })
-    }
-
-    /// Overrides the target base URL if an explicit override string is provided.
-    ///
-    /// # Arguments
-    ///
-    /// * `url` - Optional base URL override string.
-    ///
-    /// # Returns
-    ///
-    /// Updated [`ApiClient`] instance.
-    pub fn with_url_override(mut self, url: Option<String>) -> Self {
-        if let Some(u) = url {
-            self.base_url = u;
-        }
-
-        self
     }
 
     /// Returns the target base URL with trailing slashes trimmed.
@@ -205,7 +185,7 @@ impl ApiClient {
     }
 
     fn apply_auth(&self, req: reqwest::RequestBuilder) -> Result<reqwest::RequestBuilder> {
-        if let Some(token) = get_auth_token()? {
+        if let Some(token) = get_auth_token(&self.base_url)? {
             return Ok(req.bearer_auth(token));
         }
 
@@ -257,7 +237,7 @@ fn format_error(status: reqwest::StatusCode, body: &str) -> String {
     };
 
     if status == reqwest::StatusCode::UNAUTHORIZED {
-        return format!("{} (run `slasha login` to authenticate)", message);
+        return format!("{} (run `slasha auth login` to authenticate)", message);
     }
 
     message
