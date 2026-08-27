@@ -2,6 +2,9 @@
 name = "slasha-cli"
 version = "0.0.0"
 edition = "2024"
+authors = ["slashacom <https://github.com/slashacom/>"]
+license = "MIT"
+repository = "https://github.com/slashacom/slasha"
 
 
 [[bin]]

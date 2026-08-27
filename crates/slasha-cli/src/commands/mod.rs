@@ -1,8 +1,7 @@
-use colored::Colorize;
-
 use crate::{
     clap_app::{ClapApp, Command},
     diagnostic::DiagnosticReport,
+    output::cli_label,
 };
 
 pub mod app_env;
@@ -39,13 +38,11 @@ pub async fn execute(clap_app: ClapApp) -> anyhow::Result<()> {
         Command::Diagnostic => DiagnosticReport::generate()?.print()?,
 
         Command::Version => {
-            println!("{} {}", "Version".green(), env!("CARGO_PKG_VERSION"));
-            println!("{} {}", "Authors".green(), env!("CARGO_PKG_AUTHORS"));
-            println!("{} {}", "License".green(), env!("CARGO_PKG_LICENSE"));
-            println!("{} {}", "Repository".green(), env!("CARGO_PKG_REPOSITORY"));
-            println!("{} {}", "Build Timestamp".green(), env!("BUILD_TIMESTAMP"));
-
-            return Ok(());
+            cli_label("Version", env!("CARGO_PKG_VERSION"));
+            cli_label("Authors", env!("CARGO_PKG_AUTHORS"));
+            cli_label("License", env!("CARGO_PKG_LICENSE"));
+            cli_label("Repository", env!("CARGO_PKG_REPOSITORY"));
+            cli_label("Build Timestamp", env!("BUILD_TIMESTAMP"));
         }
 
         Command::Link {} => link::handle_link(app_override, server_override).await?,

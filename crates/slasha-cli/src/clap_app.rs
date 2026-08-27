@@ -10,7 +10,7 @@ pub struct ClapApp {
         long = "server-url",
         alias = "server",
         global = true,
-        help = "Override target Slasha server base URL"
+        help = "Target server URL"
     )]
     pub server_override: Option<String>,
 
@@ -18,7 +18,7 @@ pub struct ClapApp {
         short = 'a',
         long = "app",
         global = true,
-        help = "Override target application slug"
+        help = "Target application slug"
     )]
     pub app_override: Option<String>,
 
@@ -36,28 +36,19 @@ pub enum Command {
     #[command(name = "git-ssh", hide = true)]
     GitSsh { user_id: String },
 
-    #[command(name = "health", about = "Print server health")]
+    #[command(name = "health", about = "Check server health")]
     Health,
 
-    #[command(
-        name = "version",
-        about = "Print CLI binary build version, git commit, and target platform"
-    )]
+    #[command(name = "version", about = "Display version information")]
     Version,
 
-    #[command(
-        name = "auth",
-        about = "Re-authenticate or display user profile for the linked Slasha server"
-    )]
+    #[command(name = "auth", about = "Manage user authentication")]
     Auth {
         #[command(subcommand)]
         command: AuthCommand,
     },
 
-    #[command(
-        name = "diagnostic",
-        about = "Generate Markdown report of local system, compiler, and CLI telemetry"
-    )]
+    #[command(name = "diagnostic", about = "Generate diagnostic report")]
     Diagnostic,
 
     #[command(name = "apps", about = "Manage applications")]
@@ -66,19 +57,13 @@ pub enum Command {
         command: AppsCommand,
     },
 
-    #[command(
-        name = "deploy",
-        about = "Trigger a build and rolling release for an application"
-    )]
+    #[command(name = "deploy", about = "Deploy an application")]
     Deploy {
-        #[arg(long, value_name = "SHA")]
+        #[arg(long, value_name = "SHA", help = "Git commit SHA (defaults to HEAD)")]
         commit: Option<String>,
     },
 
-    #[command(
-        name = "logs",
-        about = "Fetch static logs or stream live stdout/stderr from deployment processes"
-    )]
+    #[command(name = "logs", about = "View deployment logs")]
     Logs {
         #[arg(
             long = "deployment",
@@ -86,71 +71,55 @@ pub enum Command {
             help = "Deployment ID (defaults to latest)"
         )]
         deployment_id: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Follow log stream")]
         follow: bool,
     },
 
-    #[command(
-        name = "scale",
-        about = "Update process container counts for an application (e.g. web=2 worker=1)"
-    )]
+    #[command(name = "scale", about = "Scale process instances")]
     Scale {
-        #[arg(value_name = "TYPE=COUNT", required = true, num_args = 1..)]
+        #[arg(
+            value_name = "TYPE=COUNT",
+            required = true,
+            num_args = 1..,
+            help = "Process type and count (e.g. web=2 worker=1)"
+        )]
         pairs: Vec<String>,
     },
 
-    #[command(
-        name = "deployments",
-        about = "Manage deployment history, inspect build logs, restart, redeploy, or rollback releases"
-    )]
+    #[command(name = "deployments", about = "Manage deployments")]
     Deployments {
         #[command(subcommand)]
         command: DeploymentsCommand,
     },
 
-    #[command(
-        name = "services",
-        about = "Manage attached datastore services (PostgreSQL, MySQL, Redis, MongoDB), proxies, and backups"
-    )]
+    #[command(name = "services", about = "Manage services")]
     Services {
         #[command(subcommand)]
         command: ServicesCommand,
     },
 
-    #[command(
-        name = "env",
-        about = "Read, set, or unset environment variables for an application"
-    )]
+    #[command(name = "env", about = "Manage environment variables")]
     Env {
         #[command(subcommand)]
         command: AppEnvCommand,
     },
 
-    #[command(
-        name = "domains",
-        about = "Attach or remove custom HTTP domain names routed to an application"
-    )]
+    #[command(name = "domains", about = "Manage custom domains")]
     Domains {
         #[command(subcommand)]
         command: DomainsCommand,
     },
 
-    #[command(
-        name = "ssh-keys",
-        about = "Manage public SSH keys authorized for Git deployment authentication"
-    )]
+    #[command(name = "ssh-keys", about = "Manage SSH keys for Git deployment")]
     SshKeys {
         #[command(subcommand)]
         command: SshKeysCommand,
     },
 
-    #[command(
-        name = "link",
-        about = "Link current working directory to a Slasha server and application in .slasha/config.toml"
-    )]
+    #[command(name = "link", about = "Link local directory to an application")]
     Link {},
 
-    #[command(name = "config", about = "Manage global CLI configuration")]
+    #[command(name = "config", about = "Manage CLI configuration")]
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
@@ -159,340 +128,276 @@ pub enum Command {
 
 #[derive(Subcommand)]
 pub enum AppsCommand {
-    #[command(
-        name = "list",
-        about = "List all applications with runtime status, branch, and source"
-    )]
+    #[command(name = "list", about = "List applications")]
     List,
 
-    #[command(
-        name = "create",
-        about = "Create a new application and initialize HTTP and SSH Git deployment endpoints"
-    )]
-    Create { name: String },
+    #[command(name = "create", about = "Create an application")]
+    Create {
+        #[arg(help = "Application name")]
+        name: String,
+    },
 
-    #[command(
-        name = "info",
-        about = "Display detailed application metadata, source config, and Git remote URLs"
-    )]
+    #[command(name = "info", about = "Display application details")]
     Info,
 
-    #[command(
-        name = "delete",
-        about = "Irreversibly delete an application, its deployment history, environment vars, and attached services"
-    )]
+    #[command(name = "delete", about = "Delete an application")]
     Delete {
-        #[arg(short = 'y', long)]
+        #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
     },
 }
 
 #[derive(Subcommand)]
 pub enum DomainsCommand {
-    #[command(
-        name = "list",
-        about = "List custom domain names attached to an application"
-    )]
+    #[command(name = "list", about = "List custom domains")]
     List,
 
-    #[command(
-        name = "add",
-        about = "Attach a custom domain name to route HTTP traffic to an application"
-    )]
-    Add { domain: String },
+    #[command(name = "add", about = "Add a custom domain")]
+    Add {
+        #[arg(help = "Domain name")]
+        domain: String,
+    },
 
-    #[command(
-        name = "remove",
-        about = "Detach a custom domain name from an application without destroying app compute or data"
-    )]
-    Remove { domain: String },
+    #[command(name = "remove", about = "Remove a custom domain")]
+    Remove {
+        #[arg(help = "Domain name")]
+        domain: String,
+    },
 }
 
 #[derive(Subcommand)]
 pub enum DeploymentsCommand {
-    #[command(
-        name = "list",
-        about = "List deployment history and status for an application"
-    )]
+    #[command(name = "list", about = "List deployments")]
     List,
 
-    #[command(
-        name = "stop",
-        about = "Stop running containers for a deployment without deleting the deployment record"
-    )]
+    #[command(name = "stop", about = "Stop a deployment")]
     Stop {
         #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
         deployment_id: Option<String>,
     },
 
-    #[command(
-        name = "restart",
-        about = "Reboot container processes for a deployment without rebuilding image or code"
-    )]
+    #[command(name = "restart", about = "Restart a deployment")]
     Restart {
         #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
         deployment_id: Option<String>,
     },
 
-    #[command(
-        name = "redeploy",
-        about = "Re-trigger build pipeline for a deployment to recreate containers from stored commit"
-    )]
+    #[command(name = "redeploy", about = "Redeploy previous build")]
     Redeploy {
         #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
         deployment_id: Option<String>,
     },
 
-    #[command(
-        name = "rollback",
-        about = "Revert live application containers to a previously built successful deployment image"
-    )]
+    #[command(name = "rollback", about = "Roll back to a previous deployment")]
     Rollback {
-        #[arg(value_name = "ID", help = "Deployment ID")]
+        #[arg(value_name = "ID", help = "Target deployment ID")]
         deployment_id: Option<String>,
     },
 
-    #[command(
-        name = "delete",
-        about = "Permanently remove a deployment record from history"
-    )]
+    #[command(name = "delete", about = "Delete a deployment record")]
     Delete {
-        #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
+        #[arg(value_name = "ID", help = "Deployment ID")]
         deployment_id: Option<String>,
-        #[arg(short = 'y', long)]
+        #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
     },
 }
 
 #[derive(Subcommand)]
 pub enum AppEnvCommand {
-    #[command(
-        name = "list",
-        about = "List all custom environment variables configured for an application"
-    )]
+    #[command(name = "list", about = "List environment variables")]
     List,
 
-    #[command(
-        name = "set",
-        about = "Set environment variables (KEY=VALUE ...) and restart deployment containers to apply"
-    )]
+    #[command(name = "set", about = "Set environment variables")]
     Set {
-        #[arg(value_name = "KEY=VALUE", required = true, num_args = 1..)]
+        #[arg(
+            value_name = "KEY=VALUE",
+            required = true,
+            num_args = 1..,
+            help = "KEY=VALUE pairs"
+        )]
         pairs: Vec<String>,
     },
 
-    #[command(
-        name = "unset",
-        about = "Remove environment variables and restart deployment containers to apply"
-    )]
+    #[command(name = "unset", about = "Remove environment variables")]
     Unset {
-        #[arg(value_name = "KEY", required = true, num_args = 1..)]
+        #[arg(
+            value_name = "KEY",
+            required = true,
+            num_args = 1..,
+            help = "Environment variable keys"
+        )]
         keys: Vec<String>,
     },
 }
 
 #[derive(Subcommand)]
 pub enum ServicesCommand {
-    #[command(
-        name = "list",
-        about = "List all datastore services attached to an application"
-    )]
+    #[command(name = "list", about = "List services")]
     List,
 
-    #[command(
-        name = "provision",
-        about = "Provision a new managed datastore service (PostgreSQL, MySQL, Redis, MongoDB) for an application"
-    )]
+    #[command(name = "provision", about = "Provision a service")]
     Provision {
-        #[arg(long, value_parser = PossibleValuesParser::new(ServiceKind::VARIANTS))]
+        #[arg(
+            long,
+            value_parser = PossibleValuesParser::new(ServiceKind::VARIANTS),
+            help = "Service type"
+        )]
         kind: ServiceKind,
-        #[arg(long)]
+        #[arg(long, help = "Service name")]
         name: String,
-        #[arg(long)]
+        #[arg(long, help = "Service version or tag")]
         version: String,
     },
 
-    #[command(
-        name = "restart",
-        about = "Reboot service container process without modifying persistent volume data"
-    )]
+    #[command(name = "restart", about = "Restart a service")]
     Restart {
-        #[arg(value_name = "NAME")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
     },
 
-    #[command(
-        name = "redeploy",
-        about = "Reprovision service container using stored image and env without wiping data volume"
-    )]
+    #[command(name = "redeploy", about = "Redeploy a service")]
     Redeploy {
-        #[arg(value_name = "NAME")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
     },
 
-    #[command(
-        name = "stop",
-        about = "Stop running service container to free compute resources while preserving volume data"
-    )]
+    #[command(name = "stop", about = "Stop a service")]
     Stop {
-        #[arg(value_name = "NAME")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
-        #[arg(short = 'y', long)]
+        #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
     },
 
-    #[command(
-        name = "delete",
-        about = "Irreversibly delete a service container and erase its persistent database volume"
-    )]
+    #[command(name = "delete", about = "Delete a service")]
     Delete {
-        #[arg(value_name = "NAME")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
-        #[arg(short = 'y', long)]
+        #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
     },
 
-    #[command(
-        name = "logs",
-        about = "Fetch or stream live logs from a service container process"
-    )]
+    #[command(name = "logs", about = "View service logs")]
     Logs {
-        #[arg(value_name = "NAME")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
-        #[arg(long)]
+        #[arg(long, help = "Follow log stream")]
         follow: bool,
     },
 
-    #[command(
-        name = "env",
-        about = "Read or update environment variables for a service instance"
-    )]
+    #[command(name = "env", about = "Manage service environment variables")]
     Env {
-        #[arg(value_name = "NAME")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
         #[command(subcommand)]
         command: ServiceEnvCommand,
     },
 
-    #[command(
-        name = "backup",
-        about = "Stream database dump from a service container to stdout or save to a file"
-    )]
+    #[command(name = "backup", about = "Backup service database")]
     Backup {
-        #[arg(value_name = "NAME")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
         #[arg(
             short = 'f',
             long = "file",
             value_name = "FILE",
-            help = "Write dump to file instead of stdout"
+            help = "Output file path"
         )]
         file: Option<String>,
     },
 
-    #[command(
-        name = "proxy",
-        about = "Open a local TCP listener that tunnels connections over WebSocket to a service container"
-    )]
+    #[command(name = "proxy", about = "Proxy local port to service")]
     Proxy {
-        #[arg(value_name = "NAME")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
-        #[arg(short = 'p', long, value_name = "PORT")]
+        #[arg(
+            short = 'p',
+            long,
+            value_name = "PORT",
+            help = "Local port to listen on"
+        )]
         port: Option<u16>,
-        #[arg(long, help = "Mask passwords in printed connection string")]
+        #[arg(long, help = "Hide secrets in connection string")]
         no_secret: bool,
     },
 }
 
 #[derive(Subcommand)]
 pub enum ServiceEnvCommand {
-    #[command(
-        name = "list",
-        about = "List custom environment variables configured for a service instance"
-    )]
+    #[command(name = "list", about = "List service environment variables")]
     List,
 
-    #[command(
-        name = "set",
-        about = "Set environment variables (KEY=VALUE ...) for a service and restart its container"
-    )]
+    #[command(name = "set", about = "Set service environment variables")]
     Set {
-        #[arg(value_name = "KEY=VALUE", required = true, num_args = 1..)]
+        #[arg(
+            value_name = "KEY=VALUE",
+            required = true,
+            num_args = 1..,
+            help = "KEY=VALUE pairs"
+        )]
         pairs: Vec<String>,
     },
 
-    #[command(
-        name = "unset",
-        about = "Remove environment variables from a service and restart its container"
-    )]
+    #[command(name = "unset", about = "Remove service environment variables")]
     Unset {
-        #[arg(value_name = "KEY", required = true, num_args = 1..)]
+        #[arg(
+            value_name = "KEY",
+            required = true,
+            num_args = 1..,
+            help = "Environment variable keys"
+        )]
         keys: Vec<String>,
     },
 }
 
 #[derive(Subcommand)]
 pub enum SshKeysCommand {
-    #[command(
-        name = "list",
-        about = "List all SSH public keys registered for the authenticated user"
-    )]
+    #[command(name = "list", about = "List SSH public keys")]
     List,
 
-    #[command(
-        name = "add",
-        about = "Register a new SSH public key from file (--file) or string for Git push authentication"
-    )]
+    #[command(name = "add", about = "Add an SSH key for Git deployment")]
     Add {
-        #[arg(long, value_name = "PATH", help = "Read public key from file")]
+        #[arg(long, value_name = "PATH", help = "Path to public key file")]
         file: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Key title")]
         title: Option<String>,
-        #[arg(help = "Public key string (alternative to --file)")]
+        #[arg(help = "Public key content")]
         pubkey: Option<String>,
     },
 
-    #[command(
-        name = "remove",
-        about = "Revoke and delete a registered SSH public key by ID, preventing future Git SSH pushes"
-    )]
-    Remove { id: String },
+    #[command(name = "remove", about = "Remove an SSH public key")]
+    Remove {
+        #[arg(help = "SSH key ID or title")]
+        id: String,
+    },
 }
 
 #[derive(Subcommand)]
 pub enum ConfigCommand {
-    #[command(name = "set", about = "Set configuration key in global config")]
+    #[command(name = "set", about = "Set CLI configuration")]
     Set {
-        #[arg(value_name = "KEY", help = "Key")]
+        #[arg(value_name = "KEY", help = "Configuration key")]
         key: String,
-        #[arg(value_name = "VALUE", help = "Value")]
+        #[arg(value_name = "VALUE", help = "Configuration value")]
         value: String,
     },
 
-    #[command(name = "get", about = "Get configuration value from global config")]
+    #[command(name = "get", about = "Get CLI configuration")]
     Get {
-        #[arg(value_name = "KEY", help = "Key")]
+        #[arg(value_name = "KEY", help = "Configuration key")]
         key: String,
     },
 }
 
 #[derive(Subcommand)]
 pub enum AuthCommand {
-    #[command(
-        name = "login",
-        about = "Authenticate CLI session interactively and store bearer token in local OS keyring"
-    )]
+    #[command(name = "login", about = "Log in to server")]
     Login,
 
-    #[command(
-        name = "logout",
-        about = "Clear the stored authentication token for a server from the OS keyring"
-    )]
+    #[command(name = "logout", about = "Log out from server")]
     Logout,
 
-    #[command(
-        name = "status",
-        about = "Display profile info and role for the currently authenticated user"
-    )]
+    #[command(name = "status", about = "Show authentication status")]
     Status,
 }
