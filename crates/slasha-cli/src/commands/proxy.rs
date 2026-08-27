@@ -46,7 +46,7 @@ pub async fn handle_proxy(
 
     let ws_url = build_ws_url(client.base_url(), slug, &resolved.id)?;
     let token = get_auth_token(client.base_url())?
-        .ok_or_else(|| anyhow!("Not authenticated. Run `slasha login`."))?;
+        .ok_or_else(|| anyhow!("Not authenticated. Run `slasha auth login`."))?;
 
     print_banner(
         &resolved,

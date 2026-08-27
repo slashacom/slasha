@@ -51,6 +51,12 @@ pub enum Command {
     #[command(name = "diagnostic", about = "Generate diagnostic report")]
     Diagnostic,
 
+    #[command(name = "completion", about = "Generate shell autocompletion script")]
+    Completion {
+        #[arg(value_enum, help = "Target shell")]
+        shell: clap_complete::Shell,
+    },
+
     #[command(name = "apps", about = "Manage applications")]
     Apps {
         #[command(subcommand)]
@@ -65,13 +71,9 @@ pub enum Command {
 
     #[command(name = "logs", about = "View deployment logs")]
     Logs {
-        #[arg(
-            long = "deployment",
-            value_name = "ID",
-            help = "Deployment ID (defaults to latest)"
-        )]
+        #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
         deployment_id: Option<String>,
-        #[arg(long, help = "Follow log stream")]
+        #[arg(short = 'f', long, help = "Follow log stream")]
         follow: bool,
     },
 

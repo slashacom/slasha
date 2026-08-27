@@ -13,13 +13,13 @@ use crate::{
     clap_app::ServicesCommand,
     commands::{
         proxy,
+        resolve::resolve_service_id,
         responses::{LogsResponse, OkResponse},
         service_env,
     },
     context::Context,
     http::ApiClient,
     output::{cli_info, cli_label, cli_success, confirm_action, print_table, spinner, stream_logs},
-    resolve::resolve_service_id,
 };
 
 #[derive(Deserialize, Serialize)]

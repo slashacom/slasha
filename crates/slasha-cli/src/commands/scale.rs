@@ -2,10 +2,9 @@ use anyhow::{Context as _, Result};
 use serde_json::json;
 
 use crate::{
-    commands::responses::OkResponse,
+    commands::{resolve::resolve_deployment_id, responses::OkResponse},
     context::Context,
     output::{cli_success, spinner},
-    resolve::resolve_deployment_id,
 };
 
 pub async fn handle_scale(

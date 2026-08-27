@@ -5,7 +5,6 @@ mod context;
 mod diagnostic;
 mod http;
 mod output;
-mod resolve;
 mod token;
 
 use clap::Parser;

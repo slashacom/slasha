@@ -1,25 +1,28 @@
+use clap::CommandFactory;
+
 use crate::{
     clap_app::{ClapApp, Command},
     diagnostic::DiagnosticReport,
     output::cli_label,
 };
 
-pub mod app_env;
-pub mod apps;
-pub mod auth;
-pub mod config;
-pub mod deployments;
-pub mod domains;
+mod app_env;
+mod apps;
+mod auth;
+mod config;
+mod deployments;
+mod domains;
 #[cfg(feature = "serve")]
-pub mod git_ssh;
-pub mod health;
-pub mod link;
-pub mod proxy;
-pub mod responses;
-pub mod scale;
-pub mod service_env;
-pub mod services;
-pub mod ssh_keys;
+mod git_ssh;
+mod health;
+mod link;
+mod proxy;
+mod resolve;
+mod responses;
+mod scale;
+mod service_env;
+mod services;
+mod ssh_keys;
 
 pub async fn execute(clap_app: ClapApp) -> anyhow::Result<()> {
     let server_override = clap_app.server_override.as_deref();
@@ -36,6 +39,10 @@ pub async fn execute(clap_app: ClapApp) -> anyhow::Result<()> {
         Command::Config { command } => config::dispatch(command).await?,
 
         Command::Diagnostic => DiagnosticReport::generate()?.print()?,
+        Command::Completion { shell } => {
+            let mut cmd = ClapApp::command();
+            clap_complete::generate(shell, &mut cmd, "slasha", &mut std::io::stdout());
+        }
 
         Command::Version => {
             cli_label("Version", env!("CARGO_PKG_VERSION"));

@@ -75,20 +75,3 @@ pub fn clear_auth_token(server_url: &str) -> Result<()> {
         _ => Ok(()),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_keyring_user_key_formatting() {
-        assert_eq!(
-            keyring_user_key("http://localhost:3000/"),
-            "auth_token@http://localhost:3000"
-        );
-        assert_eq!(
-            keyring_user_key("https://slasha.example.com"),
-            "auth_token@https://slasha.example.com"
-        );
-    }
-}

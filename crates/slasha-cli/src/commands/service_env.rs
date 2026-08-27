@@ -5,10 +5,9 @@ use serde_json::json;
 
 use crate::{
     clap_app::ServiceEnvCommand,
-    commands::responses::EnvVarsResponse,
+    commands::{resolve::resolve_service_id, responses::EnvVarsResponse},
     http::ApiClient,
     output::{cli_error, cli_info, cli_success, print_table, spinner},
-    resolve::resolve_service_id,
 };
 
 pub async fn dispatch(

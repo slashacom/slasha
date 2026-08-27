@@ -6,11 +6,13 @@ use slasha_db::deployment::{Deployment, DeploymentStatus};
 
 use crate::{
     clap_app::DeploymentsCommand,
-    commands::responses::{LogsResponse, OkResponse},
+    commands::{
+        resolve::resolve_deployment_id,
+        responses::{LogsResponse, OkResponse},
+    },
     context::Context,
     http::ApiClient,
     output::{cli_info, cli_label, cli_success, confirm_action, print_table, spinner, stream_logs},
-    resolve::resolve_deployment_id,
 };
 
 #[derive(Deserialize, Serialize)]
@@ -72,10 +74,7 @@ pub async fn handle_trigger(
 
     cli_success("Deployment triggered.");
     cli_label("Commit", &res.deployment.commit_sha);
-    cli_info(format!(
-        "\nFollow logs: slasha logs --follow -a {}",
-        app_slug
-    ));
+    cli_info("\nFollow logs: slasha logs --follow");
 
     Ok(())
 }
@@ -218,7 +217,7 @@ async fn handle_redeploy(
         "Redeploy triggered for deployment {}.",
         res.deployment.id
     ));
-    cli_info(format!("\nFollow logs: slasha logs {} --follow", slug));
+    cli_info("\nFollow logs: slasha logs --follow");
 
     Ok(())
 }
