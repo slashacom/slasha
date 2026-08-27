@@ -4890,7 +4890,6 @@ dependencies = [
  "reqwest 0.13.2",
  "serde",
  "serde_json",
- "shell-escape",
  "slasha-db",
  "slasha-server",
  "strum 0.28.0",

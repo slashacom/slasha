@@ -53,7 +53,6 @@ tokio-stream = "0.1.18"
 keyring = { version = "4.1.2", features = ["v1"] }
 toml = "1.1.2"
 sysinfo = "0.38.4"
-shell-escape = "0.1.5"
 git-version = "0.3.9"
 
 [build-dependencies]
