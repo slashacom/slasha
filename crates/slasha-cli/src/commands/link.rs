@@ -42,7 +42,7 @@ pub async fn handle_link(app_override: Option<&str>, server_override: Option<&st
         }
     };
 
-    let global_default = GlobalConfig::load().ok().and_then(|g| g.default_server);
+    let global_default = GlobalConfig::load().ok().and_then(|g| g.server_url);
     let server_differs_from_global = global_default
         .as_deref()
         .map(|d| d.trim_end_matches('/') != server_url.trim_end_matches('/'))
@@ -86,7 +86,7 @@ fn resolve_server_url(server_override: Option<&str>, config: &ProjectConfig) -> 
 
     if let Some(url) = GlobalConfig::load()
         .ok()
-        .and_then(|g| g.default_server)
+        .and_then(|g| g.server_url)
         .filter(|s| !s.trim().is_empty())
     {
         return Ok(url);

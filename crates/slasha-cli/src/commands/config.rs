@@ -16,7 +16,7 @@ fn handle_set(key: &str, value: &str) -> Result<()> {
     match key {
         "server-url" => {
             let mut config = GlobalConfig::load()?;
-            config.default_server = Some(value.to_owned());
+            config.server_url = Some(value.to_owned());
             config.save()?;
 
             cli_success(format!("Set {} to {}", key.cyan(), value.cyan()));
@@ -35,7 +35,7 @@ fn handle_get(key: &str) -> Result<()> {
         "server-url" => {
             cli_success(format!(
                 "{key} = {}",
-                config.default_server.as_deref().unwrap_or("").cyan()
+                config.server_url.as_deref().unwrap_or("").cyan()
             ));
 
             Ok(())

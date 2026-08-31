@@ -34,7 +34,7 @@ impl Context {
         let server_url = first_non_empty([
             server_override.map(str::to_owned),
             project.as_ref().and_then(|c| c.server_url.clone()),
-            global.and_then(|c| c.default_server),
+            global.and_then(|c| c.server_url),
         ]);
 
         let app = first_non_empty([app_override.map(str::to_owned), project.and_then(|c| c.app)]);

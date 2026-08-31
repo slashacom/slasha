@@ -137,7 +137,7 @@ fn resolve_server_url(server_override: Option<&str>) -> Result<String> {
 
     if let Some(url) = GlobalConfig::load()
         .ok()
-        .and_then(|g| g.default_server)
+        .and_then(|g| g.server_url)
         .filter(|s| !s.trim().is_empty())
     {
         return Ok(url);
@@ -158,11 +158,11 @@ fn resolve_server_url(server_override: Option<&str>) -> Result<String> {
 fn save_default_server_if_unset(server_url: &str) -> Result<()> {
     let mut global = GlobalConfig::load().unwrap_or_default();
     if global
-        .default_server
+        .server_url
         .as_ref()
         .is_none_or(|s| s.trim().is_empty())
     {
-        global.default_server = Some(server_url.to_string());
+        global.server_url = Some(server_url.to_string());
         global.save()?;
     }
 

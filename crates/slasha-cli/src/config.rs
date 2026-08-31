@@ -12,8 +12,8 @@ const CONFIG_FILE: &str = "config.toml";
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GlobalConfig {
     /// Default server URL to use when not specified in project config.
-    #[serde(rename = "default-server", skip_serializing_if = "Option::is_none")]
-    pub default_server: Option<String>,
+    #[serde(rename = "server-url", skip_serializing_if = "Option::is_none")]
+    pub server_url: Option<String>,
 }
 
 impl GlobalConfig {
