@@ -26,7 +26,7 @@ pub async fn handle_scale(
                 pair
             );
         }
-        let process_type = parts[0].to_string();
+        let process_type = parts[0].trim().to_lowercase();
         let count: u32 = parts[1].parse().with_context(|| {
             format!(
                 "Invalid count '{}' for process '{}'",

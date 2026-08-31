@@ -1,4 +1,9 @@
-use clap::{Parser, Subcommand, builder::PossibleValuesParser};
+use std::str::FromStr;
+
+use clap::{
+    Parser, Subcommand,
+    builder::{PossibleValuesParser, TypedValueParser},
+};
 use slasha_db::service::ServiceKind;
 use strum::VariantNames;
 
@@ -8,7 +13,6 @@ pub struct ClapApp {
     #[arg(
         short = 's',
         long = "server-url",
-        alias = "server",
         global = true,
         help = "Target server URL"
     )]
@@ -241,7 +245,15 @@ pub enum ServicesCommand {
     #[command(name = "provision", about = "Provision a service")]
     Provision {
         #[arg(
-            value_parser = PossibleValuesParser::new(ServiceKind::VARIANTS),
+            value_parser = PossibleValuesParser::new(ServiceKind::VARIANTS)
+                .map(|s| {
+                    ServiceKind::VARIANTS
+                        .iter()
+                        .find(|v| v.eq_ignore_ascii_case(&s))
+                        .and_then(|v| ServiceKind::from_str(v).ok())
+                        .expect("valid service kind")
+                }),
+            ignore_case = true,
             help = "Service type"
         )]
         kind: ServiceKind,

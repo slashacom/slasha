@@ -51,6 +51,15 @@ async fn handle_list(client: &ApiClient) -> Result<()> {
     Ok(())
 }
 
+fn resolve_path(path: &str) -> std::path::PathBuf {
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(rest);
+    }
+    std::path::PathBuf::from(path)
+}
+
 async fn handle_add(
     client: &ApiClient,
     file: Option<String>,
@@ -62,9 +71,20 @@ async fn handle_add(
     }
 
     let raw_key = match (file, pubkey) {
-        (Some(path), _) => std::fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read file: {}", path))?,
-        (None, Some(k)) => k,
+        (Some(path), _) => {
+            let resolved = resolve_path(&path);
+            std::fs::read_to_string(&resolved)
+                .with_context(|| format!("Failed to read file: {}", resolved.display()))?
+        }
+        (None, Some(k)) => {
+            let resolved = resolve_path(&k);
+            if resolved.is_file() {
+                std::fs::read_to_string(&resolved)
+                    .with_context(|| format!("Failed to read file: {}", resolved.display()))?
+            } else {
+                k
+            }
+        }
         (None, None) => anyhow::bail!("Provide either --file or a public key string"),
     };
 

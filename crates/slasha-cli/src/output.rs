@@ -6,6 +6,7 @@ use comfy_table::{Cell, ContentArrangement, Table, presets::UTF8_FULL_CONDENSED}
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
+use slasha_db::models::logs::LogRecord;
 
 /// Prints a green success message to stdout.
 ///
@@ -153,7 +154,24 @@ pub async fn stream_logs(res: reqwest::Response) -> Result<()> {
     while let Some(event) = stream.next().await {
         match event {
             Ok(event) => {
-                if let Ok(rec) = serde_json::from_str::<serde_json::Value>(&event.data) {
+                if let Ok(rec) = serde_json::from_str::<LogRecord>(&event.data) {
+                    let timestamp = rec
+                        .timestamp
+                        .format("%Y-%m-%d %H:%M:%S")
+                        .to_string()
+                        .dimmed();
+                    let prefix = rec
+                        .prefix
+                        .as_ref()
+                        .map(|p| format!("[{}]", p).cyan())
+                        .unwrap_or_default();
+
+                    if prefix.is_empty() {
+                        cli_info(format!("{} {}", timestamp, rec.message));
+                    } else {
+                        cli_info(format!("{} {} {}", timestamp, prefix, rec.message));
+                    }
+                } else if let Ok(rec) = serde_json::from_str::<serde_json::Value>(&event.data) {
                     let timestamp = rec["timestamp"].as_str().unwrap_or("").dimmed();
                     let prefix = rec["prefix"]
                         .as_str()

@@ -51,9 +51,11 @@ impl Context {
     ///
     /// A reference to [`ApiClient`].
     pub fn api_client(&self) -> Result<&ApiClient> {
-        self.api_client
-            .as_ref()
-            .ok_or_else(|| anyhow!("No server URL configured."))
+        self.api_client.as_ref().ok_or_else(|| {
+            anyhow!(
+                "No server URL configured. Run 'slasha auth login' or specify '--server-url <url>'."
+            )
+        })
     }
 
     /// Resolves the application slug or returns an error prompting the user to link the directory.
@@ -62,9 +64,11 @@ impl Context {
     ///
     /// A string slice referencing the resolved application slug.
     pub fn app(&self) -> Result<&str> {
-        self.app
-            .as_deref()
-            .ok_or_else(|| anyhow!("No app configured."))
+        self.app.as_deref().ok_or_else(|| {
+            anyhow!(
+                "No app configured. Run 'slasha link' in this directory or specify '--app <slug>'."
+            )
+        })
     }
 
     /// Resolves both the API client and application slug or returns an error if either is unconfigured.
