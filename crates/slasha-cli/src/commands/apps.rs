@@ -16,6 +16,7 @@ use crate::{
 pub struct AppItemResponse {
     pub app: App,
     pub runtime_status: String,
+    pub url: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -32,6 +33,7 @@ pub struct AppDetailsResponse {
     pub app: App,
     #[serde(default = "default_idle_status")]
     pub runtime_status: String,
+    pub url: Option<String>,
 }
 
 pub async fn dispatch(
@@ -88,7 +90,7 @@ async fn handle_create(client: &ApiClient, name: &str) -> Result<()> {
         .await?;
 
     cli_success("App created.");
-    print_app(client, &res.app, &res.runtime_status);
+    print_app(client, &res.app, &res.runtime_status, res.url.as_deref());
 
     Ok(())
 }
@@ -96,7 +98,7 @@ async fn handle_create(client: &ApiClient, name: &str) -> Result<()> {
 async fn handle_info(client: &ApiClient, app_slug: &str) -> Result<()> {
     let res: AppDetailsResponse = client.get(&format!("/api/apps/{}", app_slug)).await?;
 
-    print_app(client, &res.app, &res.runtime_status);
+    print_app(client, &res.app, &res.runtime_status, res.url.as_deref());
 
     Ok(())
 }
@@ -130,10 +132,13 @@ fn ssh_git_url(client: &ApiClient, slug: &str) -> String {
     format!("slasha@{}:{}.git", client.git_host(), slug)
 }
 
-fn print_app(client: &ApiClient, app: &App, status: &str) {
+fn print_app(client: &ApiClient, app: &App, status: &str, url: Option<&str>) {
     cli_section(&app.name);
     cli_label("Slug", &app.slug);
     cli_label("Status", status);
+    if let Some(url) = url.filter(|u| !u.trim().is_empty()) {
+        cli_label("URL", url);
+    }
     cli_label("Branch", &app.default_branch);
     if !app.root_dir.is_empty() {
         cli_label("Root Dir", &app.root_dir);
