@@ -16,10 +16,7 @@ pub struct SshKeysListResponse {
     pub keys: Vec<SshKey>,
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct SshKeyItemResponse {
-    pub key: SshKey,
-}
+
 
 pub async fn dispatch(cmd: SshKeysCommand, server_override: Option<&str>) -> Result<()> {
     let ctx = Context::new(server_override, None)?;
@@ -76,7 +73,7 @@ async fn handle_add(
     let public_key = raw_key.trim().to_string();
 
     let _spin = spinner("Adding SSH key...");
-    let res: SshKeyItemResponse = client
+    let key: SshKey = client
         .post(
             "/api/ssh-keys",
             &json!({ "name": name.trim(), "public_key": public_key }),
@@ -84,7 +81,7 @@ async fn handle_add(
         .await?;
 
     cli_success("SSH key added.");
-    cli_label("Name", &res.key.name);
+    cli_label("Name", &key.name);
 
     Ok(())
 }
