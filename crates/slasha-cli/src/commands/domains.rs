@@ -48,7 +48,12 @@ async fn handle_list(client: &ApiClient, app_slug: &str) -> Result<()> {
             &["DOMAIN", "CREATED AT"],
             res.domains
                 .iter()
-                .map(|d| vec![d.domain.clone(), d.created_at.to_string()])
+                .map(|d| {
+                    vec![
+                        d.domain.clone(),
+                        d.created_at.format("%Y-%m-%d %H:%M").to_string(),
+                    ]
+                })
                 .collect(),
         );
     }
