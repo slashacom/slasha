@@ -13,9 +13,7 @@ export function SshKeyRow(props: SshKeyRowProps) {
       <td className="py-4 pr-4 align-top">
         <div className="flex items-center gap-2.5">
           <KeyIcon className="size-3.5 text-text-tertiary" />
-          <span className="font-medium text-text">
-            {sshKey.title || 'Untitled'}
-          </span>
+          <span className="font-medium text-text">{sshKey.name}</span>
         </div>
       </td>
       <td className="py-4 pr-4 align-top">

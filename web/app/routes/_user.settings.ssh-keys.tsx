@@ -77,7 +77,7 @@ export default function SshKeys() {
         onOpenChange={(open) => !open && setPendingDelete(null)}
         title="Delete SSH Key"
         description={`Are you sure you want to delete "${
-          pendingDelete?.title || 'Untitled'
+          pendingDelete?.name ?? ''
         }"? This will immediately revoke access for this key.`}
         confirmLabel="Delete"
         onConfirm={handleConfirmDelete}

@@ -241,15 +241,18 @@ pub enum ServicesCommand {
     #[command(name = "provision", about = "Provision a service")]
     Provision {
         #[arg(
-            long,
             value_parser = PossibleValuesParser::new(ServiceKind::VARIANTS),
             help = "Service type"
         )]
         kind: ServiceKind,
-        #[arg(long, help = "Service name")]
+        #[arg(help = "Service name")]
         name: String,
-        #[arg(long, help = "Service version or tag")]
-        version: String,
+        #[arg(
+            short,
+            long,
+            help = "Service version or tag (defaults to latest supported version)"
+        )]
+        version: Option<String>,
     },
 
     #[command(name = "restart", about = "Restart a service")]
@@ -284,7 +287,7 @@ pub enum ServicesCommand {
     Logs {
         #[arg(value_name = "NAME", help = "Service name")]
         service: String,
-        #[arg(long, help = "Follow log stream")]
+        #[arg(short = 'f', long, help = "Follow log stream")]
         follow: bool,
     },
 
@@ -360,18 +363,18 @@ pub enum SshKeysCommand {
 
     #[command(name = "add", about = "Add an SSH key for Git deployment")]
     Add {
-        #[arg(long, value_name = "PATH", help = "Path to public key file")]
-        file: Option<String>,
-        #[arg(long, help = "Key title")]
-        title: Option<String>,
+        #[arg(help = "Key name")]
+        name: String,
         #[arg(help = "Public key content")]
         pubkey: Option<String>,
+        #[arg(short, long, value_name = "PATH", help = "Path to public key file")]
+        file: Option<String>,
     },
 
     #[command(name = "remove", about = "Remove an SSH public key")]
     Remove {
-        #[arg(help = "SSH key ID or title")]
-        id: String,
+        #[arg(help = "SSH key name")]
+        name: String,
     },
 }
 

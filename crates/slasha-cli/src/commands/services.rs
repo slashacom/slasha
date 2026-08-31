@@ -51,7 +51,7 @@ pub async fn dispatch(
             kind,
             name,
             version,
-        } => handle_create(client, slug, &kind, &name, &version).await,
+        } => handle_create(client, slug, &kind, &name, version.as_deref()).await,
         ServicesCommand::Restart { service } => handle_restart(client, slug, &service).await,
         ServicesCommand::Redeploy { service } => handle_redeploy(client, slug, &service).await,
         ServicesCommand::Stop { service, yes } => handle_stop(client, slug, &service, yes).await,
@@ -105,9 +105,18 @@ async fn handle_create(
     slug: &str,
     kind: &ServiceKind,
     name: &str,
-    version: &str,
+    version: Option<&str>,
 ) -> Result<()> {
     let default_env = fetch_default_env(client, kind).await?;
+
+    let resolved_version = match version {
+        Some(v) if !v.trim().is_empty() => v,
+        _ => kind
+            .supported_versions()
+            .first()
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("No supported versions for {:?}", kind))?,
+    };
 
     let _spin = spinner("Provisioning service...");
     let res: ServiceItemResponse = client
@@ -116,7 +125,7 @@ async fn handle_create(
             &json!({
                 "kind": kind,
                 "name": name,
-                "version": version,
+                "version": resolved_version,
                 "env_vars": default_env,
             }),
         )

@@ -3,7 +3,7 @@
 export type SshKey = {
   id: string;
   user_id: string;
-  title: string | null;
+  name: string;
   public_key: string;
   created_at: string;
 };

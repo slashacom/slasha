@@ -259,7 +259,7 @@ diesel::table! {
     ssh_keys (id) {
         id -> Text,
         user_id -> Text,
-        title -> Nullable<Text>,
+        name -> Text,
         public_key -> Text,
         created_at -> Timestamp,
     }

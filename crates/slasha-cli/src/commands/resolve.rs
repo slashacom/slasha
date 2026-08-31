@@ -48,13 +48,13 @@ struct ServiceListResponse {
     services: Vec<Service>,
 }
 
-/// Resolves a service ID by matching the service name or service ID.
+/// Resolves a service ID by matching the service name.
 ///
 /// # Arguments
 ///
 /// * `client` - Reference to the API client ([`ApiClient`]).
 /// * `slug` - Target application slug.
-/// * `name` - Service name or ID.
+/// * `name` - Service name.
 ///
 /// # Returns
 ///
@@ -63,7 +63,7 @@ pub async fn resolve_service_id(client: &ApiClient, slug: &str, name: &str) -> R
     let res: ServiceListResponse = client.get(&format!("/api/apps/{}/services", slug)).await?;
 
     for service in res.services {
-        if service.name.eq_ignore_ascii_case(name) || service.id.eq_ignore_ascii_case(name) {
+        if service.name.eq_ignore_ascii_case(name) {
             return Ok(service.id);
         }
     }

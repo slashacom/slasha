@@ -42,8 +42,8 @@ async fn list_ssh_keys(
 
 #[derive(Deserialize, Validate)]
 pub struct CreateSshKeyRequest {
-    #[garde(skip)]
-    pub title: Option<String>,
+    #[garde(custom(not_empty))]
+    pub name: String,
     #[garde(custom(not_empty))]
     pub public_key: String,
 }
@@ -55,7 +55,7 @@ async fn create_ssh_key(
 ) -> HttpResult<Json<SshKey>> {
     let new_key = NewSshKey {
         user_id: user.id.clone(),
-        title: payload.title,
+        name: payload.name,
         public_key: payload.public_key,
     };
 

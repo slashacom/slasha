@@ -7,13 +7,13 @@ use serde::{Deserialize, Serialize};
 pub struct SshKey {
     pub id: String,
     pub user_id: String,
-    pub title: Option<String>,
+    pub name: String,
     pub public_key: String,
     pub created_at: chrono::NaiveDateTime,
 }
 
 pub struct NewSshKey {
     pub user_id: String,
-    pub title: Option<String>,
+    pub name: String,
     pub public_key: String,
 }

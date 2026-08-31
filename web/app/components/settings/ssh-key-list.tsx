@@ -36,7 +36,7 @@ export function SshKeyList(props: SshKeyListProps) {
       ) : (
         <Table
           columns={[
-            'Title',
+            'Name',
             'Public Key',
             'Created',
             { label: '', align: 'right' },

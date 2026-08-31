@@ -27,12 +27,8 @@ pub async fn dispatch(cmd: SshKeysCommand, server_override: Option<&str>) -> Res
 
     match cmd {
         SshKeysCommand::List => handle_list(client).await,
-        SshKeysCommand::Add {
-            file,
-            title,
-            pubkey,
-        } => handle_add(client, file, pubkey, title).await,
-        SshKeysCommand::Remove { id } => handle_remove(client, &id).await,
+        SshKeysCommand::Add { name, pubkey, file } => handle_add(client, file, pubkey, name).await,
+        SshKeysCommand::Remove { name } => handle_remove(client, &name).await,
     }
 }
 
@@ -43,13 +39,12 @@ async fn handle_list(client: &ApiClient) -> Result<()> {
         cli_info("No SSH keys added. Run `slasha ssh-keys add` to add one.");
     } else {
         print_table(
-            &["ID", "TITLE", "KEY", "ADDED"],
+            &["NAME", "KEY", "ADDED"],
             res.keys
                 .iter()
                 .map(|k| {
                     vec![
-                        k.id.clone(),
-                        k.title.as_deref().unwrap_or("—").to_string(),
+                        k.name.clone(),
                         k.public_key.clone(),
                         k.created_at.format("%Y-%m-%d").to_string(),
                     ]
@@ -65,8 +60,12 @@ async fn handle_add(
     client: &ApiClient,
     file: Option<String>,
     pubkey: Option<String>,
-    title: Option<String>,
+    name: String,
 ) -> Result<()> {
+    if name.trim().is_empty() {
+        anyhow::bail!("Name cannot be empty");
+    }
+
     let raw_key = match (file, pubkey) {
         (Some(path), _) => std::fs::read_to_string(&path)
             .with_context(|| format!("Failed to read file: {}", path))?,
@@ -80,34 +79,30 @@ async fn handle_add(
     let res: SshKeyItemResponse = client
         .post(
             "/api/ssh-keys",
-            &json!({ "title": title, "public_key": public_key }),
+            &json!({ "name": name.trim(), "public_key": public_key }),
         )
         .await?;
 
     cli_success("SSH key added.");
-    cli_label("Title", res.key.title.as_deref().unwrap_or("—"));
+    cli_label("Name", &res.key.name);
 
     Ok(())
 }
 
-async fn handle_remove(client: &ApiClient, id_or_title: &str) -> Result<()> {
+async fn handle_remove(client: &ApiClient, name: &str) -> Result<()> {
     let res: SshKeysListResponse = client.get("/api/ssh-keys").await?;
-    let target_key = res.keys.iter().find(|k| {
-        k.id == id_or_title
-            || k.title
-                .as_deref()
-                .map(|t| t.eq_ignore_ascii_case(id_or_title))
-                .unwrap_or(false)
-    });
-    let key_id = match target_key {
-        Some(k) => k.id.as_str(),
-        None => id_or_title,
-    };
+    let target_key = res
+        .keys
+        .iter()
+        .find(|k| k.name.eq_ignore_ascii_case(name))
+        .ok_or_else(|| anyhow::anyhow!("SSH key '{}' not found", name))?;
 
     let _spin = spinner("Removing SSH key...");
-    let _: OkResponse = client.delete(&format!("/api/ssh-keys/{}", key_id)).await?;
+    let _: OkResponse = client
+        .delete(&format!("/api/ssh-keys/{}", target_key.id))
+        .await?;
 
-    cli_success("SSH key removed.");
+    cli_success(format!("SSH key '{}' removed.", name));
 
     Ok(())
 }
