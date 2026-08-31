@@ -16,8 +16,6 @@ pub struct SshKeysListResponse {
     pub keys: Vec<SshKey>,
 }
 
-
-
 pub async fn dispatch(cmd: SshKeysCommand, server_override: Option<&str>) -> Result<()> {
     let ctx = Context::new(server_override, None)?;
     let client = ctx.api_client()?;
