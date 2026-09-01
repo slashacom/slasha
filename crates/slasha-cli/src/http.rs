@@ -36,10 +36,17 @@ impl ApiClient {
             .build()
             .context("Failed to build streaming HTTP client")?;
 
+        let trimmed = base_url.trim();
+        let base_url = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            trimmed.to_string()
+        } else {
+            format!("http://{}", trimmed)
+        };
+
         Ok(Self {
             client,
             stream_client,
-            base_url: base_url.to_string(),
+            base_url,
         })
     }
 

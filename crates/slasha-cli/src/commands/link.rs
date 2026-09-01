@@ -103,7 +103,7 @@ fn resolve_server_url(server_override: Option<&str>, config: &ProjectConfig) -> 
 fn require_authenticated(server_url: &str) -> Result<()> {
     if get_auth_token(server_url)?.is_none() {
         anyhow::bail!(
-            "not authenticated for {}\nhint: run `slasha auth login --server {}` first",
+            "not authenticated for {}\nhint: run `slasha auth login --server-url {}` first",
             server_url,
             server_url
         );

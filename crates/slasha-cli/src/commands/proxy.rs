@@ -102,6 +102,16 @@ async fn fetch_service_env(
 }
 
 /// Constructs the WebSocket tunnel URL from the target server base URL.
+///
+/// # Arguments
+///
+/// * `base_url` - Target server base URL string.
+/// * `slug` - Target application slug.
+/// * `service_id` - Target service identifier.
+///
+/// # Returns
+///
+/// A [`Result`] containing the constructed WebSocket URL string.
 fn build_ws_url(base_url: &str, slug: &str, service_id: &str) -> Result<String> {
     let url =
         url::Url::parse(base_url).with_context(|| format!("Invalid base URL: {}", base_url))?;
@@ -115,13 +125,16 @@ fn build_ws_url(base_url: &str, slug: &str, service_id: &str) -> Result<String> 
         .host_str()
         .ok_or_else(|| anyhow!("Base URL has no host"))?;
     let mut origin = format!("{}://{}", ws_scheme, host);
+
     if let Some(p) = url.port() {
         origin.push_str(&format!(":{}", p));
     }
 
+    let path = url.path().trim_end_matches('/');
+
     Ok(format!(
-        "{}/api/apps/{}/services/{}/tunnel",
-        origin, slug, service_id
+        "{}{}/api/apps/{}/services/{}/tunnel",
+        origin, path, slug, service_id
     ))
 }
 
