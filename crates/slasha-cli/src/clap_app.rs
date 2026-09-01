@@ -61,6 +61,9 @@ pub enum Command {
     Deploy {
         #[arg(long, value_name = "SHA", help = "Git commit SHA (defaults to HEAD)")]
         commit: Option<String>,
+
+        #[arg(short = 'f', long, help = "Follow log stream after deployment")]
+        follow: bool,
     },
 
     #[command(name = "logs", about = "View deployment logs")]

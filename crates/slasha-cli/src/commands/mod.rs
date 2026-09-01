@@ -56,8 +56,8 @@ pub async fn execute(clap_app: ClapApp) -> anyhow::Result<()> {
         Command::Link {} => link::handle_link(app_override, server_override).await?,
 
         Command::Apps { command } => apps::dispatch(command, server_override, app_override).await?,
-        Command::Deploy { commit } => {
-            deployments::handle_trigger(commit, server_override, app_override).await?
+        Command::Deploy { commit, follow } => {
+            deployments::handle_trigger(commit, follow, server_override, app_override).await?
         }
         Command::Logs {
             deployment_id,

@@ -52,6 +52,7 @@ pub async fn dispatch(
 
 pub async fn handle_trigger(
     commit: Option<String>,
+    follow: bool,
     server_override: Option<&str>,
     app_override: Option<&str>,
 ) -> Result<()> {
@@ -63,15 +64,33 @@ pub async fn handle_trigger(
         None => json!({ "commit_sha": null }),
     };
 
-    let _spin = spinner("Triggering deployment...");
-
-    let res: DeploymentItemResponse = client
-        .post(&format!("/api/apps/{}/deployments", app_slug), &payload)
-        .await?;
+    let res: DeploymentItemResponse = {
+        let _spin = spinner("Triggering deployment...");
+        client
+            .post(&format!("/api/apps/{}/deployments", app_slug), &payload)
+            .await?
+    };
 
     cli_success("Deployment triggered.");
     cli_label("Commit", &res.deployment.commit_sha);
-    cli_info("\nFollow logs: slasha logs --follow");
+
+    if follow {
+        display_logs(
+            client,
+            &format!("/api/apps/{}/deployments/{}", app_slug, res.deployment.id),
+            app_slug,
+            &LogArgs {
+                follow: true,
+                limit: 0,
+                search: None,
+                prefix: None,
+                stream: None,
+            },
+        )
+        .await?;
+    } else {
+        cli_info("\nFollow logs: slasha logs --follow");
+    }
 
     Ok(())
 }
