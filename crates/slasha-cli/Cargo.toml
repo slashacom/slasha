@@ -55,6 +55,7 @@ toml = "1.1.2"
 sysinfo = "0.38.4"
 git-version = "0.3.9"
 clap_complete = "=4.6.9"
+minus = { version = "5.7.2", features = ["static_output", "search"] }
 
 [build-dependencies]
 clap = { version = "4.6.0", features = ["derive"] }

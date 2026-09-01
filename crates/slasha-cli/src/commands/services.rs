@@ -10,16 +10,13 @@ use tokio::{
 };
 
 use crate::{
-    clap_app::ServicesCommand,
+    clap_app::{LogArgs, ServicesCommand},
     commands::{
-        proxy,
-        resolve::resolve_service_id,
-        responses::{LogsResponse, OkResponse},
-        service_env,
+        logs::display_logs, proxy, resolve::resolve_service_id, responses::OkResponse, service_env,
     },
     context::Context,
     http::ApiClient,
-    output::{cli_info, cli_label, cli_success, confirm_action, print_table, spinner, stream_logs},
+    output::{cli_info, cli_label, cli_success, confirm_action, print_table, spinner},
 };
 
 #[derive(Deserialize, Serialize)]
@@ -58,9 +55,7 @@ pub async fn dispatch(
         ServicesCommand::Delete { service, yes } => {
             handle_delete(client, slug, &service, yes).await
         }
-        ServicesCommand::Logs { service, follow } => {
-            handle_logs(client, slug, &service, follow).await
-        }
+        ServicesCommand::Logs { service, args } => handle_logs(client, slug, &service, args).await,
         ServicesCommand::Env { service, command } => {
             service_env::dispatch(client, slug, &service, command).await
         }
@@ -216,47 +211,16 @@ async fn handle_delete(client: &ApiClient, slug: &str, service: &str, yes: bool)
     Ok(())
 }
 
-async fn handle_logs(client: &ApiClient, slug: &str, service: &str, follow: bool) -> Result<()> {
+async fn handle_logs(client: &ApiClient, slug: &str, service: &str, args: LogArgs) -> Result<()> {
     let service_id = resolve_service_id(client, slug, service).await?;
 
-    if follow {
-        let res = client
-            .get_stream(&format!(
-                "/api/apps/{}/services/{}/stream",
-                slug, service_id
-            ))
-            .await?;
-
-        stream_logs(res).await?;
-    } else {
-        let data: LogsResponse = client
-            .get(&format!(
-                "/api/apps/{}/services/{}/logs?limit=2000",
-                slug, service_id
-            ))
-            .await?;
-
-        for rec in data.logs {
-            let timestamp = rec
-                .timestamp
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string()
-                .dimmed();
-            let prefix = rec
-                .prefix
-                .as_ref()
-                .map(|p| format!("[{}]", p).cyan())
-                .unwrap_or_default();
-
-            if prefix.is_empty() {
-                cli_info(format!("{} {}", timestamp, rec.message));
-            } else {
-                cli_info(format!("{} {} {}", timestamp, prefix, rec.message));
-            }
-        }
-    }
-
-    Ok(())
+    display_logs(
+        client,
+        &format!("/api/apps/{}/services/{}", slug, service_id),
+        &format!("{}/{}", slug, service),
+        &args,
+    )
+    .await
 }
 
 async fn handle_backup(

@@ -4,26 +4,16 @@ use clap::{
     Parser, Subcommand,
     builder::{PossibleValuesParser, TypedValueParser},
 };
-use slasha_db::service::ServiceKind;
+use slasha_db::{models::logs::LogStream, service::ServiceKind};
 use strum::VariantNames;
 
 #[derive(Parser)]
 #[command(name = "slasha", author, version)]
 pub struct ClapApp {
-    #[arg(
-        short = 's',
-        long = "server-url",
-        global = true,
-        help = "Target server URL"
-    )]
+    #[arg(long = "server-url", global = true, help = "Target server URL")]
     pub server_override: Option<String>,
 
-    #[arg(
-        short = 'a',
-        long = "app",
-        global = true,
-        help = "Target application slug"
-    )]
+    #[arg(long = "app", global = true, help = "Target application slug")]
     pub app_override: Option<String>,
 
     #[command(subcommand)]
@@ -77,8 +67,8 @@ pub enum Command {
     Logs {
         #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
         deployment_id: Option<String>,
-        #[arg(short = 'f', long, help = "Follow log stream")]
-        follow: bool,
+        #[command(flatten)]
+        args: LogArgs,
     },
 
     #[command(name = "scale", about = "Scale process instances")]
@@ -299,8 +289,8 @@ pub enum ServicesCommand {
     Logs {
         #[arg(value_name = "NAME", help = "Service name")]
         service: String,
-        #[arg(short = 'f', long, help = "Follow log stream")]
-        follow: bool,
+        #[command(flatten)]
+        args: LogArgs,
     },
 
     #[command(name = "env", about = "Manage service environment variables")]
@@ -417,4 +407,44 @@ pub enum AuthCommand {
 
     #[command(name = "status", about = "Show authentication status")]
     Status,
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct LogArgs {
+    #[arg(short = 'f', long, help = "Follow log stream")]
+    pub follow: bool,
+
+    #[arg(
+        short = 'n',
+        long,
+        default_value = "2000",
+        help = "Number of log lines to fetch"
+    )]
+    pub limit: usize,
+
+    #[arg(long, help = "Search text pattern inside log messages")]
+    pub search: Option<String>,
+
+    #[arg(
+        short = 'p',
+        long,
+        help = "Filter by process or log prefix (e.g. web.0)"
+    )]
+    pub prefix: Option<String>,
+
+    #[arg(
+        short = 's',
+        long,
+        value_parser = PossibleValuesParser::new(LogStream::VARIANTS)
+                .map(|s| {
+                    LogStream::VARIANTS
+                        .iter()
+                        .find(|v| v.eq_ignore_ascii_case(&s))
+                        .and_then(|v| LogStream::from_str(v).ok())
+                        .expect("valid log stream")
+                }),
+        ignore_case = true,
+        help = "Filter by output stream"
+    )]
+    pub stream: Option<LogStream>,
 }

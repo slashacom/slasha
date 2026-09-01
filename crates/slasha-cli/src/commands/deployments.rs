@@ -5,14 +5,11 @@ use serde_json::json;
 use slasha_db::deployment::{Deployment, DeploymentStatus};
 
 use crate::{
-    clap_app::DeploymentsCommand,
-    commands::{
-        resolve::resolve_deployment_id,
-        responses::{LogsResponse, OkResponse},
-    },
+    clap_app::{DeploymentsCommand, LogArgs},
+    commands::{logs::display_logs, resolve::resolve_deployment_id, responses::OkResponse},
     context::Context,
     http::ApiClient,
-    output::{cli_info, cli_label, cli_success, confirm_action, print_table, spinner, stream_logs},
+    output::{cli_info, cli_label, cli_success, confirm_action, print_table, spinner},
 };
 
 #[derive(Deserialize, Serialize)]
@@ -108,7 +105,7 @@ async fn handle_list(client: &ApiClient, slug: &str) -> Result<()> {
 
 pub async fn handle_logs(
     deployment_id_arg: Option<String>,
-    follow: bool,
+    args: LogArgs,
     server_override: Option<&str>,
     app_override: Option<&str>,
 ) -> Result<()> {
@@ -117,45 +114,13 @@ pub async fn handle_logs(
 
     let deployment_id = resolve_deployment_id(client, slug, deployment_id_arg).await?;
 
-    if follow {
-        let res = client
-            .get_stream(&format!(
-                "/api/apps/{}/deployments/{}/stream",
-                slug, deployment_id
-            ))
-            .await?;
-
-        stream_logs(res).await?;
-    } else {
-        let data: LogsResponse = client
-            .get(&format!(
-                "/api/apps/{}/deployments/{}/logs?limit=2000",
-                slug, deployment_id
-            ))
-            .await?;
-
-        for rec in data.logs {
-            let timestamp = rec
-                .timestamp
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string()
-                .dimmed();
-
-            let prefix = rec
-                .prefix
-                .as_ref()
-                .map(|p| format!("[{}]", p).cyan())
-                .unwrap_or_default();
-
-            if prefix.is_empty() {
-                cli_info(format!("{} {}", timestamp, rec.message));
-            } else {
-                cli_info(format!("{} {} {}", timestamp, prefix, rec.message));
-            }
-        }
-    }
-
-    Ok(())
+    display_logs(
+        client,
+        &format!("/api/apps/{}/deployments/{}", slug, deployment_id),
+        slug,
+        &args,
+    )
+    .await
 }
 
 async fn handle_stop(

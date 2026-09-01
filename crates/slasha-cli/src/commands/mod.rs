@@ -16,6 +16,7 @@ mod domains;
 mod git_ssh;
 mod health;
 mod link;
+mod logs;
 mod proxy;
 mod resolve;
 mod responses;
@@ -60,8 +61,8 @@ pub async fn execute(clap_app: ClapApp) -> anyhow::Result<()> {
         }
         Command::Logs {
             deployment_id,
-            follow,
-        } => deployments::handle_logs(deployment_id, follow, server_override, app_override).await?,
+            args,
+        } => deployments::handle_logs(deployment_id, args, server_override, app_override).await?,
         Command::Scale { pairs } => {
             scale::handle_scale(pairs, server_override, app_override).await?
         }
