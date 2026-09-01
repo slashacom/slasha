@@ -187,8 +187,16 @@ async fn stream_logs(res: reqwest::Response, filter: LogFilterOptions<'_>) -> Re
     while let Some(event) = stream.next().await {
         match event {
             Ok(event) => {
-                let rec: LogRecord = serde_json::from_str(&event.data)?;
-                if filter.matches(&rec) {
+                let data = event.data.trim();
+
+                if data.is_empty() {
+                    continue;
+                }
+
+                if let Some(rec) = serde_json::from_str::<LogRecord>(data)
+                    .ok()
+                    .filter(|r| filter.matches(r))
+                {
                     print_log_record(&rec);
                 }
             }
