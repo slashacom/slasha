@@ -56,6 +56,7 @@ async fn handle_login(server_url_flag: Option<&str>) -> Result<()> {
         let password = Password::new("Password:")
             .with_display_mode(PasswordDisplayMode::Masked)
             .with_display_toggle_enabled()
+            .with_custom_confirmation_error_message("Passwords do not match")
             .prompt()?;
 
         let _spin = spinner("Creating admin account...");

@@ -239,8 +239,18 @@ async fn handle_backup(
         .await?;
 
     let mut stream = res.bytes_stream();
+    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
 
-    match file_path {
+    let target_path = match file_path {
+        Some(path) => Some(path),
+        None if is_tty => {
+            let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+            Some(format!("{}-{}.dump", service, timestamp))
+        }
+        None => None,
+    };
+
+    match target_path {
         Some(path) => {
             let mut file = File::create(&path)
                 .await
@@ -256,7 +266,7 @@ async fn handle_backup(
             }
 
             file.flush().await.context("Flush error")?;
-            cli_success(format!("Done. {} bytes written.", total));
+            cli_success(format!("Done. {} bytes written to {}.", total, path));
         }
         None => {
             let mut out = stdout();

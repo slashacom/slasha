@@ -34,16 +34,10 @@ async fn handle_list(client: &ApiClient) -> Result<()> {
         cli_info("No SSH keys added. Run `slasha ssh-keys add` to add one.");
     } else {
         print_table(
-            &["NAME", "KEY", "ADDED"],
+            &["NAME", "ADDED"],
             res.keys
                 .iter()
-                .map(|k| {
-                    vec![
-                        k.name.clone(),
-                        k.public_key.clone(),
-                        k.created_at.format("%Y-%m-%d").to_string(),
-                    ]
-                })
+                .map(|k| vec![k.name.clone(), k.created_at.format("%Y-%m-%d").to_string()])
                 .collect(),
         );
     }
