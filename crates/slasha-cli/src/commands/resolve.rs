@@ -1,12 +1,42 @@
 use anyhow::Result;
 use serde::Deserialize;
-use slasha_db::{deployment::Deployment, service::Service};
+use slasha_db::{
+    deployment::{Deployment, DeploymentStatus},
+    service::Service,
+};
 
 use crate::http::ApiClient;
 
 #[derive(Deserialize)]
 struct DeploymentListResponse {
     deployments: Vec<Deployment>,
+}
+
+/// Resolves the latest running deployment ID for an application.
+///
+/// # Arguments
+///
+/// * `client` - Reference to the API client ([`ApiClient`]).
+/// * `slug` - Target application slug.
+///
+/// # Returns
+///
+/// The resolved running deployment ID string.
+pub async fn resolve_running_deployment_id(client: &ApiClient, slug: &str) -> Result<String> {
+    let res: DeploymentListResponse = client
+        .get(&format!("/api/apps/{}/deployments", slug))
+        .await?;
+
+    let running_dep = res
+        .deployments
+        .into_iter()
+        .filter(|d| d.status == DeploymentStatus::Running)
+        .max_by_key(|d| d.created_at);
+
+    match running_dep {
+        Some(dep) => Ok(dep.id),
+        None => anyhow::bail!("No running deployment found for app '{}'", slug),
+    }
 }
 
 /// Resolves a deployment ID from an explicit argument or defaults to the latest deployment.

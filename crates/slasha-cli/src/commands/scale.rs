@@ -2,7 +2,7 @@ use anyhow::{Context as _, Result};
 use serde_json::json;
 
 use crate::{
-    commands::{resolve::resolve_deployment_id, responses::OkResponse},
+    commands::{resolve::resolve_running_deployment_id, responses::OkResponse},
     context::Context,
     output::{cli_success, spinner},
 };
@@ -15,7 +15,7 @@ pub async fn handle_scale(
     let ctx = Context::new(server_override, app_override)?;
     let (client, slug) = ctx.require_context()?;
 
-    let deployment_id = resolve_deployment_id(client, slug, None).await?;
+    let deployment_id = resolve_running_deployment_id(client, slug).await?;
 
     let mut scales = Vec::new();
     for pair in pairs {
