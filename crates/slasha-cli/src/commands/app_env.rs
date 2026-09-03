@@ -66,11 +66,19 @@ async fn handle_set(client: &ApiClient, slug: &str, pairs: &[String]) -> Result<
 
 async fn handle_unset(client: &ApiClient, slug: &str, keys: &[String]) -> Result<()> {
     let mut current = fetch_vars(client, slug).await?;
+    let mut removed_count = 0;
 
     for key in keys {
-        if current.remove(key).is_none() {
+        if current.remove(key).is_some() {
+            removed_count += 1;
+        } else {
             cli_error(format!("Key '{}' not found — skipping.", key));
         }
+    }
+
+    if removed_count == 0 {
+        cli_info("No environment variables were modified.");
+        return Ok(());
     }
 
     let _spin = spinner("Updating environment variables...");

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     context::Context,
-    output::{cli_label, cli_success},
+    output::{cli_error, cli_label, cli_success},
 };
 
 #[derive(Deserialize, Serialize)]
@@ -24,13 +24,14 @@ pub async fn handle(server_override: Option<&str>) -> Result<()> {
     let ctx = Context::new(server_override, None)?;
     let health: HealthResponse = ctx.api_client()?.get("/api/health").await?;
 
-    let status_colored = if health.status == "ok" {
-        health.status.green()
-    } else {
-        health.status.red()
-    };
+    let is_ok = health.status == "ok";
 
-    cli_success(format!("Server is {}", status_colored));
+    if is_ok {
+        cli_success(format!("Server is {}", health.status.green()));
+    } else {
+        cli_error(format!("Server is {}", health.status.red()));
+    }
+
     cli_label("Version", &health.version);
 
     cli_label(

@@ -78,7 +78,17 @@ async fn handle_add(client: &ApiClient, app_slug: &str, domain: &str) -> Result<
     Ok(())
 }
 
+fn normalize_domain(domain: &str) -> String {
+    let trimmed = domain.trim();
+    let without_scheme = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+        .unwrap_or(trimmed);
+    without_scheme.trim_end_matches('/').to_string()
+}
+
 async fn handle_remove(client: &ApiClient, app_slug: &str, domain: &str) -> Result<()> {
+    let clean_domain = normalize_domain(domain);
     let res: DomainsListResponse = client
         .get(&format!("/api/apps/{}/domains", app_slug))
         .await?;
@@ -86,7 +96,7 @@ async fn handle_remove(client: &ApiClient, app_slug: &str, domain: &str) -> Resu
     let domain_id = res
         .domains
         .iter()
-        .find(|d| d.domain.eq_ignore_ascii_case(domain))
+        .find(|d| d.domain.eq_ignore_ascii_case(&clean_domain))
         .map(|d| d.id.clone())
         .ok_or_else(|| anyhow::anyhow!("Domain {} not found for app {}", domain, app_slug))?;
 
@@ -95,7 +105,10 @@ async fn handle_remove(client: &ApiClient, app_slug: &str, domain: &str) -> Resu
         .delete(&format!("/api/apps/{}/domains/{}", app_slug, domain_id))
         .await?;
 
-    cli_success(format!("Domain {} removed from app {}", domain, app_slug));
+    cli_success(format!(
+        "Domain {} removed from app {}",
+        clean_domain, app_slug
+    ));
 
     Ok(())
 }
