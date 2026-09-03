@@ -1,56 +1,31 @@
 use std::{fs, path::PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_BASE_URL: &str = "http://localhost:3000";
 
-const PROJECT_CONFIG_PATH: &str = "slasha.toml";
-const GLOBAL_CONFIG_FILE: &str = "config.toml";
-const GLOBAL_CONFIG_DIR: &str = "slasha";
+const CONFIG_DIR: &str = ".slasha";
+const CONFIG_FILE: &str = "config.toml";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct ProjectConfig {
-    pub app: Option<String>,
-}
-
-impl ProjectConfig {
-    pub fn load() -> Result<Self> {
-        if !PathBuf::from(PROJECT_CONFIG_PATH).exists() {
-            return Ok(Self::default());
-        }
-
-        let content =
-            fs::read_to_string(PROJECT_CONFIG_PATH).context("Failed to read slasha.toml")?;
-        let config: ProjectConfig =
-            toml::from_str(&content).context("Failed to parse slasha.toml")?;
-
-        Ok(config)
-    }
-
-    pub fn save(&self) -> Result<()> {
-        let content = toml::to_string_pretty(self).context("Failed to serialize slasha.toml")?;
-        fs::write(PROJECT_CONFIG_PATH, content).context("Failed to write slasha.toml")?;
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
+/// Global user configuration stored in the OS config directory.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GlobalConfig {
-    pub base_url: Option<String>,
-    pub git_host: Option<String>,
+    /// Default server URL to use when not specified in project config.
+    #[serde(rename = "server-url", skip_serializing_if = "Option::is_none")]
+    pub server_url: Option<String>,
 }
 
 impl GlobalConfig {
-    pub fn path() -> Result<PathBuf> {
+    /// Returns the path to the global config file.
+    fn path() -> Result<PathBuf> {
         let dir = dirs::config_dir()
-            .context("Failed to resolve user config directory")?
-            .join(GLOBAL_CONFIG_DIR);
-
-        Ok(dir.join(GLOBAL_CONFIG_FILE))
+            .context("Could not find configuration directory")?
+            .join("slasha");
+        Ok(dir.join(CONFIG_FILE))
     }
 
+    /// Loads the global configuration from the OS config directory.
     pub fn load() -> Result<Self> {
         let path = Self::path()?;
         if !path.exists() {
@@ -65,15 +40,72 @@ impl GlobalConfig {
         Ok(config)
     }
 
+    /// Saves the global configuration to the OS config directory.
     pub fn save(&self) -> Result<()> {
         let path = Self::path()?;
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!("Failed to create config directory {}", parent.display())
-            })?;
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create directory {}", parent.display()))?;
         }
 
         let content = toml::to_string_pretty(self).context("Failed to serialize global config")?;
+        fs::write(&path, content).with_context(|| format!("Failed to write {}", path.display()))?;
+
+        Ok(())
+    }
+}
+
+/// Project-level configuration stored in `.slasha/config.toml` in the current working directory.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
+    #[serde(rename = "server-url", skip_serializing_if = "Option::is_none")]
+    pub server_url: Option<String>,
+}
+
+impl ProjectConfig {
+    /// Returns the path to `.slasha/config.toml` relative to the current directory.
+    ///
+    /// # Returns
+    ///
+    /// A [`PathBuf`] representing `.slasha/config.toml`.
+    fn path() -> PathBuf {
+        PathBuf::from(CONFIG_DIR).join(CONFIG_FILE)
+    }
+
+    /// Loads `.slasha/config.toml` configuration from the current working directory.
+    ///
+    /// # Returns
+    ///
+    /// The loaded [`ProjectConfig`] struct, or default if missing.
+    pub fn load() -> Result<Self> {
+        let path = Self::path();
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+
+        let content = fs::read_to_string(&path)
+            .with_context(|| format!("Failed to read {}", path.display()))?;
+        let config: ProjectConfig = toml::from_str(&content)
+            .with_context(|| format!("Failed to parse {}", path.display()))?;
+
+        Ok(config)
+    }
+
+    /// Saves current project configuration to `.slasha/config.toml` in the current working directory.
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) on success.
+    pub fn save(&self) -> Result<()> {
+        let path = Self::path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create directory {}", parent.display()))?;
+        }
+
+        let content = toml::to_string_pretty(self).context("Failed to serialize project config")?;
         fs::write(&path, content).with_context(|| format!("Failed to write {}", path.display()))?;
 
         Ok(())

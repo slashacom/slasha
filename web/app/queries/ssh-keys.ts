@@ -6,7 +6,7 @@ import {
 import { httpGet, httpPost, httpDelete } from '~/utils/http';
 import type { SshKey } from '~/models/ssh-key';
 
-type CreateSshKeyPayload = { title?: string; public_key: string };
+type CreateSshKeyPayload = { name: string; public_key: string };
 
 export function getSshKeysOptions() {
   return queryOptions({

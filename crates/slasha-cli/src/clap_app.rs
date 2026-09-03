@@ -1,185 +1,167 @@
-use clap::{Parser, Subcommand, builder::PossibleValuesParser};
-use slasha_db::{service::ServiceKind, user::UserRole};
+use std::str::FromStr;
+
+use clap::{
+    Parser, Subcommand,
+    builder::{PossibleValuesParser, TypedValueParser},
+};
+use slasha_db::{models::logs::LogStream, service::ServiceKind};
 use strum::VariantNames;
 
-fn parse_user_role(s: &str) -> Result<UserRole, String> {
-    use std::str::FromStr;
-    UserRole::from_str(s).map_err(|_| "invalid role: must be admin or user".to_string())
-}
-
-use crate::output::OutputMode;
-
 #[derive(Parser)]
-#[command(
-    name = "slasha",
-    author,
-    version,
-    about = "Deploy and manage apps on your Slasha PaaS"
-)]
+#[command(name = "slasha", author, version)]
 pub struct ClapApp {
-    #[arg(name = "output", long, global = true, default_value = "human")]
-    pub output_mode: OutputMode,
+    #[arg(long = "server-url", global = true, help = "Target server URL")]
+    pub server_override: Option<String>,
 
-    #[arg(long, global = true, value_name = "URL")]
-    pub url: Option<String>,
-
-    #[arg(
-        long,
-        global = true,
-        help = "Show diagnostic information for bug reports"
-    )]
-    pub diagnostic: bool,
+    #[arg(long = "app", global = true, help = "Target application slug")]
+    pub app_override: Option<String>,
 
     #[command(subcommand)]
-    pub command: Option<Command>,
+    pub command: Command,
 }
 
 #[derive(Subcommand)]
 pub enum Command {
     #[cfg(feature = "serve")]
-    #[command(name = "serve", about = "Run the Slasha server")]
+    #[command(name = "serve", hide = true)]
     Serve,
 
     #[cfg(feature = "serve")]
     #[command(name = "git-ssh", hide = true)]
     GitSsh { user_id: String },
 
-    #[command(name = "status", about = "Check server health")]
-    Status,
+    #[command(name = "health", about = "Check server health")]
+    Health,
 
-    #[command(name = "version", about = "Print version information")]
-    Version {
-        #[arg(
-            long = "verbose",
-            short = 'v',
-            help = "show verbose version information"
-        )]
-        verbose: bool,
+    #[command(name = "version", about = "Display version information")]
+    Version,
+
+    #[command(name = "auth", about = "Manage user authentication")]
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommand,
     },
 
-    #[command(name = "login", about = "Authenticate")]
-    Login,
+    #[command(name = "diagnostic", about = "Generate diagnostic report")]
+    Diagnostic,
 
-    #[command(name = "logout", about = "Remove stored token")]
-    Logout,
+    #[command(name = "completion", about = "Generate shell autocompletion script")]
+    Completion {
+        #[arg(value_enum, help = "Target shell")]
+        shell: clap_complete::Shell,
+    },
 
-    #[command(name = "me", about = "Show current user")]
-    Me,
+    #[command(name = "apps", about = "Manage applications")]
+    Apps {
+        #[command(subcommand)]
+        command: AppsCommand,
+    },
 
-    #[command(name = "ssh-keys", about = "Manage SSH keys")]
+    #[command(name = "deploy", about = "Deploy an application")]
+    Deploy {
+        #[arg(long, value_name = "SHA", help = "Git commit SHA (defaults to HEAD)")]
+        commit: Option<String>,
+
+        #[arg(short = 'f', long, help = "Follow log stream after deployment")]
+        follow: bool,
+    },
+
+    #[command(name = "logs", about = "View deployment logs")]
+    Logs {
+        #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
+        deployment_id: Option<String>,
+        #[command(flatten)]
+        args: LogArgs,
+    },
+
+    #[command(name = "scale", about = "Scale process instances")]
+    Scale {
+        #[arg(
+            value_name = "TYPE=COUNT",
+            required = true,
+            num_args = 1..,
+            help = "Process type and count (e.g. web=2 worker=1)"
+        )]
+        pairs: Vec<String>,
+    },
+
+    #[command(name = "deployments", about = "Manage deployments")]
+    Deployments {
+        #[command(subcommand)]
+        command: DeploymentsCommand,
+    },
+
+    #[command(name = "services", about = "Manage services")]
+    Services {
+        #[command(subcommand)]
+        command: ServicesCommand,
+    },
+
+    #[command(name = "env", about = "Manage environment variables")]
+    Env {
+        #[command(subcommand)]
+        command: AppEnvCommand,
+    },
+
+    #[command(name = "domains", about = "Manage custom domains")]
+    Domains {
+        #[command(subcommand)]
+        command: DomainsCommand,
+    },
+
+    #[command(name = "ssh-keys", about = "Manage SSH keys for Git deployment")]
     SshKeys {
         #[command(subcommand)]
         command: SshKeysCommand,
     },
 
-    #[command(name = "users", about = "Manage users")]
-    Users {
+    #[command(name = "link", about = "Link local directory to an application")]
+    Link {},
+
+    #[command(name = "config", about = "Manage CLI configuration")]
+    Config {
         #[command(subcommand)]
-        command: UsersCommand,
+        command: ConfigCommand,
     },
+}
 
-    #[command(name = "create", about = "Create a new app")]
-    Create { name: String },
-
-    #[command(name = "delete", about = "Delete an app")]
-    Delete {
-        #[arg(long, value_name = "SLUG")]
-        app: Option<String>,
-        #[arg(short = 'y', long)]
-        yes: bool,
-    },
-
-    #[command(name = "info", about = "Show app details")]
-    Info {
-        #[arg(long, value_name = "SLUG")]
-        app: Option<String>,
-    },
-
-    #[command(name = "list", about = "List all apps")]
+#[derive(Subcommand)]
+pub enum AppsCommand {
+    #[command(name = "list", about = "List applications")]
     List,
 
-    #[command(name = "link", about = "Write app context to .slasha in cwd")]
-    Link {
-        #[arg(long, value_name = "SLUG")]
-        app: Option<String>,
-    },
-
-    #[command(name = "set-url", about = "Persist base URL to config")]
-    SetUrl { url: String },
-
-    #[command(name = "deploy", about = "Trigger a deployment")]
-    Deploy {
-        #[arg(long, value_name = "SLUG")]
-        app: Option<String>,
-        #[arg(long, value_name = "SHA")]
-        commit: Option<String>,
-    },
-
-    #[command(name = "deployments", about = "Manage deployments")]
-    Deployments {
-        #[arg(long, value_name = "SLUG")]
-        app: Option<String>,
-        #[command(subcommand)]
-        command: DeploymentsCommand,
-    },
-
-    #[command(
-        name = "provision",
-        about = "Provision a new service (e.g. PostgreSQL, MySQL, MongoDB, Redis)"
-    )]
-    Provision {
-        #[arg(long, value_name = "SLUG")]
-        app: Option<String>,
-        #[arg(long, value_parser = PossibleValuesParser::new(ServiceKind::VARIANTS))]
-        kind: ServiceKind,
-        #[arg(long)]
+    #[command(name = "create", about = "Create an application")]
+    Create {
+        #[arg(help = "Application name")]
         name: String,
-        #[arg(long)]
-        version: String,
     },
 
-    #[command(name = "services", about = "Manage attached services")]
-    Services {
-        #[arg(long, value_name = "SLUG")]
-        app: Option<String>,
-        #[command(subcommand)]
-        command: ServicesCommand,
-    },
+    #[command(name = "info", about = "Display application details")]
+    Info,
 
-    #[command(name = "env", about = "Manage app env vars")]
-    AppEnv {
-        #[arg(long, value_name = "SLUG")]
-        app: Option<String>,
-        #[command(subcommand)]
-        command: AppEnvCommand,
-    },
-
-    #[command(name = "scale", about = "Scale process types (web=2 worker=1 ...)")]
-    Scale {
-        #[arg(long, value_name = "SLUG")]
-        app: Option<String>,
-        #[arg(value_name = "TYPE=COUNT", required = true, num_args = 1..)]
-        pairs: Vec<String>,
-    },
-    #[command(name = "domains", about = "Manage custom domains")]
-    Domains {
-        #[arg(long, value_name = "SLUG")]
-        app: Option<String>,
-        #[command(subcommand)]
-        command: DomainsCommand,
+    #[command(name = "delete", about = "Delete an application")]
+    Delete {
+        #[arg(short = 'y', long, help = "Skip confirmation prompt")]
+        yes: bool,
     },
 }
 
 #[derive(Subcommand)]
 pub enum DomainsCommand {
-    #[command(name = "list", about = "List domains for an app")]
+    #[command(name = "list", about = "List custom domains")]
     List,
 
-    #[command(name = "add", about = "Add a custom domain to an app")]
-    Add { domain: String },
+    #[command(name = "add", about = "Add a custom domain")]
+    Add {
+        #[arg(help = "Domain name")]
+        domain: String,
+    },
 
-    #[command(name = "remove", about = "Remove a custom domain from an app")]
-    Remove { domain: String },
+    #[command(name = "remove", about = "Remove a custom domain")]
+    Remove {
+        #[arg(help = "Domain name")]
+        domain: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -189,155 +171,192 @@ pub enum DeploymentsCommand {
 
     #[command(name = "stop", about = "Stop a deployment")]
     Stop {
-        #[arg(long, value_name = "ID")]
+        #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
         deployment_id: Option<String>,
     },
 
     #[command(name = "restart", about = "Restart a deployment")]
     Restart {
-        #[arg(long, value_name = "ID")]
+        #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
         deployment_id: Option<String>,
     },
 
-    #[command(name = "redeploy", about = "Redeploy a deployment")]
+    #[command(name = "redeploy", about = "Redeploy previous build")]
     Redeploy {
-        #[arg(long, value_name = "ID")]
+        #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
         deployment_id: Option<String>,
     },
 
-    #[command(name = "rollback", about = "Roll back to a deployment image")]
+    #[command(name = "rollback", about = "Roll back to a previous deployment")]
     Rollback {
-        #[arg(long, value_name = "ID")]
+        #[arg(value_name = "ID", help = "Target deployment ID")]
         deployment_id: Option<String>,
     },
 
-    #[command(name = "delete", about = "Delete a deployment")]
+    #[command(name = "delete", about = "Delete a deployment record")]
     Delete {
-        #[arg(long, value_name = "ID")]
+        #[arg(value_name = "ID", help = "Deployment ID")]
         deployment_id: Option<String>,
-        #[arg(short = 'y', long)]
+        #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
-    },
-
-    #[command(name = "logs", about = "Stream deployment logs")]
-    Logs {
-        #[arg(long, value_name = "ID")]
-        deployment_id: Option<String>,
-        #[arg(long)]
-        follow: bool,
     },
 }
 
 #[derive(Subcommand)]
 pub enum AppEnvCommand {
-    #[command(name = "list", about = "List all env vars for an app")]
+    #[command(name = "list", about = "List environment variables")]
     List,
 
-    #[command(name = "set", about = "Set one or more env vars (KEY=VALUE ...)")]
+    #[command(name = "set", about = "Set environment variables")]
     Set {
-        #[arg(value_name = "KEY=VALUE", required = true, num_args = 1..)]
+        #[arg(
+            value_name = "KEY=VALUE",
+            required = true,
+            num_args = 1..,
+            help = "KEY=VALUE pairs"
+        )]
         pairs: Vec<String>,
     },
 
-    #[command(name = "unset", about = "Remove one or more env vars")]
+    #[command(name = "unset", about = "Remove environment variables")]
     Unset {
-        #[arg(value_name = "KEY", required = true, num_args = 1..)]
+        #[arg(
+            value_name = "KEY",
+            required = true,
+            num_args = 1..,
+            help = "Environment variable keys"
+        )]
         keys: Vec<String>,
     },
 }
 
 #[derive(Subcommand)]
 pub enum ServicesCommand {
-    #[command(name = "list", about = "List services attached to an app")]
+    #[command(name = "list", about = "List services")]
     List,
 
-    #[command(name = "restart", about = "Restart a service container")]
+    #[command(name = "provision", about = "Provision a service")]
+    Provision {
+        #[arg(
+            value_parser = PossibleValuesParser::new(ServiceKind::VARIANTS)
+                .map(|s| {
+                    ServiceKind::VARIANTS
+                        .iter()
+                        .find(|v| v.eq_ignore_ascii_case(&s))
+                        .and_then(|v| ServiceKind::from_str(v).ok())
+                        .expect("valid service kind")
+                }),
+            ignore_case = true,
+            help = "Service type"
+        )]
+        kind: ServiceKind,
+        #[arg(help = "Service name")]
+        name: String,
+        #[arg(
+            short,
+            long,
+            help = "Service version or tag (defaults to latest supported version)"
+        )]
+        version: Option<String>,
+    },
+
+    #[command(name = "restart", about = "Restart a service")]
     Restart {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
     },
 
-    #[command(name = "redeploy", about = "Redeploy/reprovision a service container")]
+    #[command(name = "redeploy", about = "Redeploy a service")]
     Redeploy {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
     },
 
-    #[command(name = "stop", about = "Stop a running service")]
+    #[command(name = "stop", about = "Stop a service")]
     Stop {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
-        #[arg(short = 'y', long)]
+        #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
     },
 
-    #[command(name = "delete", about = "Delete a stopped or failed service")]
+    #[command(name = "delete", about = "Delete a service")]
     Delete {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
-        #[arg(short = 'y', long)]
+        #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
     },
 
-    #[command(name = "logs", about = "Stream service logs")]
+    #[command(name = "logs", about = "View service logs")]
     Logs {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
-        #[arg(long)]
-        follow: bool,
+        #[command(flatten)]
+        args: LogArgs,
     },
 
     #[command(name = "env", about = "Manage service environment variables")]
     Env {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
         #[command(subcommand)]
         command: ServiceEnvCommand,
     },
 
-    #[command(
-        name = "backup",
-        about = "Stream a service data dump to stdout or a file"
-    )]
+    #[command(name = "backup", about = "Backup service database")]
     Backup {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
         #[arg(
             short = 'f',
             long = "file",
             value_name = "FILE",
-            help = "Write dump to file instead of stdout"
+            help = "Output file path"
         )]
         file: Option<String>,
     },
-    #[command(
-        name = "proxy",
-        about = "Tunnel a remote service to a local TCP port over HTTPS"
-    )]
+
+    #[command(name = "proxy", about = "Proxy local port to service")]
     Proxy {
-        #[arg(value_name = "NAME_OR_ID")]
+        #[arg(value_name = "NAME", help = "Service name")]
         service: String,
-        #[arg(short = 'p', long, value_name = "PORT")]
+        #[arg(
+            short = 'p',
+            long,
+            value_name = "PORT",
+            help = "Local port to listen on"
+        )]
         port: Option<u16>,
-        #[arg(long, help = "Mask passwords in printed connection string")]
+        #[arg(long, help = "Hide secrets in connection string")]
         no_secret: bool,
     },
 }
 
 #[derive(Subcommand)]
 pub enum ServiceEnvCommand {
-    #[command(name = "list", about = "List env vars for a service")]
+    #[command(name = "list", about = "List service environment variables")]
     List,
 
-    #[command(name = "set", about = "Set env vars for a service (KEY=VALUE ...)")]
+    #[command(name = "set", about = "Set service environment variables")]
     Set {
-        #[arg(value_name = "KEY=VALUE", required = true, num_args = 1..)]
+        #[arg(
+            value_name = "KEY=VALUE",
+            required = true,
+            num_args = 1..,
+            help = "KEY=VALUE pairs"
+        )]
         pairs: Vec<String>,
     },
 
-    #[command(name = "unset", about = "Remove env vars from a service")]
+    #[command(name = "unset", about = "Remove service environment variables")]
     Unset {
-        #[arg(value_name = "KEY", required = true, num_args = 1..)]
+        #[arg(
+            value_name = "KEY",
+            required = true,
+            num_args = 1..,
+            help = "Environment variable keys"
+        )]
         keys: Vec<String>,
     },
 }
@@ -347,57 +366,88 @@ pub enum SshKeysCommand {
     #[command(name = "list", about = "List SSH public keys")]
     List,
 
-    #[command(name = "add", about = "Add an SSH public key")]
+    #[command(name = "add", about = "Add an SSH key for Git deployment")]
     Add {
-        #[arg(long, value_name = "PATH", help = "Read public key from file")]
-        file: Option<String>,
-        #[arg(long)]
-        title: Option<String>,
-        #[arg(help = "Public key string (alternative to --file)")]
+        #[arg(help = "Key name")]
+        name: String,
+        #[arg(help = "Public key content")]
         pubkey: Option<String>,
+        #[arg(short, long, value_name = "PATH", help = "Path to public key file")]
+        file: Option<String>,
     },
 
-    #[command(name = "remove", about = "Remove an SSH public key by ID")]
-    Remove { id: String },
+    #[command(name = "remove", about = "Remove an SSH public key")]
+    Remove {
+        #[arg(help = "SSH key name")]
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
-pub enum UsersCommand {
-    #[command(name = "list", about = "List all users")]
-    List,
-
-    #[command(name = "create", about = "Create a new user")]
-    Create {
-        #[arg(long)]
-        email: String,
-        #[arg(
-            long,
-            help = "Read password from stdin instead of prompting (SLASHA_PASSWORD env is also honored)"
-        )]
-        password_stdin: bool,
-        #[arg(long, value_parser = parse_user_role)]
-        role: UserRole,
-        #[arg(long, value_delimiter = ',')]
-        apps: Option<Vec<String>>,
+pub enum ConfigCommand {
+    #[command(name = "set", about = "Set CLI configuration")]
+    Set {
+        #[arg(value_name = "KEY", help = "Configuration key")]
+        key: String,
+        #[arg(value_name = "VALUE", help = "Configuration value")]
+        value: String,
     },
 
-    #[command(name = "update", about = "Update a user")]
-    Update {
-        id: String,
-        #[arg(long)]
-        email: Option<String>,
-        #[arg(long, value_parser = parse_user_role)]
-        role: Option<UserRole>,
-        #[arg(long)]
-        password: Option<String>,
-        #[arg(long, value_delimiter = ',')]
-        apps: Option<Vec<String>>,
+    #[command(name = "get", about = "Get CLI configuration")]
+    Get {
+        #[arg(value_name = "KEY", help = "Configuration key")]
+        key: String,
     },
+}
 
-    #[command(name = "delete", about = "Delete a user")]
-    Delete {
-        id: String,
-        #[arg(short = 'y', long)]
-        yes: bool,
-    },
+#[derive(Subcommand)]
+pub enum AuthCommand {
+    #[command(name = "login", about = "Log in to server")]
+    Login,
+
+    #[command(name = "logout", about = "Log out from server")]
+    Logout,
+
+    #[command(name = "status", about = "Show authentication status")]
+    Status,
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct LogArgs {
+    #[arg(short = 'f', long, help = "Follow log stream")]
+    pub follow: bool,
+
+    #[arg(
+        short = 'n',
+        long,
+        default_value = "2000",
+        help = "Number of log lines to fetch"
+    )]
+    pub limit: usize,
+
+    #[arg(long, help = "Search text pattern inside log messages")]
+    pub search: Option<String>,
+
+    #[arg(
+        short = 'p',
+        long,
+        help = "Filter by process or log prefix (e.g. web.0)"
+    )]
+    pub prefix: Option<String>,
+
+    #[arg(
+        short = 's',
+        long,
+        value_parser = PossibleValuesParser::new(LogStream::VARIANTS)
+                .map(|s| {
+                    LogStream::VARIANTS
+                        .iter()
+                        .find(|v| v.eq_ignore_ascii_case(&s))
+                        .and_then(|v| LogStream::from_str(v).ok())
+                        .expect("valid log stream")
+                }),
+        ignore_case = true,
+        help = "Filter by output stream"
+    )]
+    pub stream: Option<LogStream>,
 }

@@ -6,7 +6,7 @@ use slasha_db::{
     repos::{app::AppRepo, user::UserRepo},
 };
 
-pub async fn handle(user_id: String) -> Result<i32> {
+pub async fn handle(user_id: String) -> Result<()> {
     let db_path = dirs::home_dir()
         .context("Failed to get home directory")?
         .join(".slasha")
@@ -53,5 +53,10 @@ pub async fn handle(user_id: String) -> Result<i32> {
         .context("Failed to spawn git process")?;
 
     let status = child.wait().context("Failed to wait on git process")?;
-    Ok(status.code().unwrap_or(1))
+
+    if !status.success() {
+        anyhow::bail!("git {} exited with {}", service, status);
+    }
+
+    Ok(())
 }

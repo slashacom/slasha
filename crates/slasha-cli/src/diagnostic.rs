@@ -1,14 +1,8 @@
 use anyhow::Result;
 use git_version::git_version;
 
-struct Code {
-    language: Option<String>,
-    code: String,
-}
-
 enum DiagnosticEntry {
     Text(String),
-    Code(Code),
     List(Vec<DiagnosticEntry>),
 }
 
@@ -17,11 +11,17 @@ struct DiagnosticSection<'a> {
     entry: DiagnosticEntry,
 }
 
+/// Diagnostic report containing system and dependency telemetry details.
 pub struct DiagnosticReport<'a> {
     sections: Vec<DiagnosticSection<'a>>,
 }
 
 impl<'a> DiagnosticReport<'a> {
+    /// Generates a diagnostic report collecting software, OS, dependency, and build environment metadata.
+    ///
+    /// # Returns
+    ///
+    /// A new [`DiagnosticReport`] instance.
     pub fn generate() -> Result<DiagnosticReport<'a>> {
         let mut sections = vec![];
 
@@ -35,6 +35,20 @@ impl<'a> DiagnosticReport<'a> {
                     git_version!(fallback = "")
                 )),
                 DiagnosticEntry::Text(format!("Build timestamp: {}", env!("BUILD_TIMESTAMP"))),
+            ]),
+        });
+
+        sections.push(DiagnosticSection {
+            title: "Dependencies",
+            entry: DiagnosticEntry::List(vec![
+                DiagnosticEntry::Text(format!(
+                    "Docker: {}",
+                    check_command_version("docker", &["--version"])
+                )),
+                DiagnosticEntry::Text(format!(
+                    "Railpack: {}",
+                    check_command_version("railpack", &["--version"])
+                )),
             ]),
         });
 
@@ -63,17 +77,6 @@ impl<'a> DiagnosticReport<'a> {
         }
 
         sections.push(DiagnosticSection {
-            title: "Command line",
-            entry: DiagnosticEntry::Code(Code {
-                language: Some("bash".into()),
-                code: std::env::args_os()
-                    .map(|arg| shell_escape::escape(arg.to_string_lossy()).to_string())
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            }),
-        });
-
-        sections.push(DiagnosticSection {
             title: "Compile time information",
             entry: DiagnosticEntry::List(vec![
                 DiagnosticEntry::Text(format!("Profile: {}", env!("PROFILE"))),
@@ -97,6 +100,7 @@ impl<'a> DiagnosticReport<'a> {
         Ok(DiagnosticReport { sections })
     }
 
+    /// Prints the formatted diagnostic report sections in Markdown format to stdout.
     pub fn print(&self) -> Result<()> {
         let mut output = String::new();
 
@@ -111,6 +115,20 @@ impl<'a> DiagnosticReport<'a> {
     }
 }
 
+fn check_command_version(cmd: &str, args: &[&str]) -> String {
+    match std::process::Command::new(cmd).args(args).output() {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if version.is_empty() {
+                "Installed".to_string()
+            } else {
+                format!("Installed ({version})")
+            }
+        }
+        _ => "Not installed".to_string(),
+    }
+}
+
 fn format_section(title: &str) -> String {
     format!("#### {}\n\n", title)
 }
@@ -118,11 +136,6 @@ fn format_section(title: &str) -> String {
 fn format_entry(entry: &DiagnosticEntry) -> String {
     match entry {
         DiagnosticEntry::Text(content) => format!("{}\n", content),
-        DiagnosticEntry::Code(c) => format!(
-            "```{}\n{}\n```\n",
-            c.language.as_deref().unwrap_or(""),
-            c.code
-        ),
         DiagnosticEntry::List(entries) => {
             entries
                 .iter()

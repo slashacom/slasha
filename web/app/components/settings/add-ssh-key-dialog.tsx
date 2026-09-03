@@ -25,12 +25,12 @@ export function AddSshKeyDialog(props: AddSshKeyDialogProps) {
   const handleAddKey = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const title = formData.get('title') as string;
+    const name = formData.get('name') as string;
     const public_key = formData.get('public_key') as string;
 
     const promise = createKey.mutateAsync({
-      title: title || undefined,
-      public_key,
+      name: name.trim(),
+      public_key: public_key.trim(),
     });
 
     toast.promise(promise, {
@@ -51,17 +51,17 @@ export function AddSshKeyDialog(props: AddSshKeyDialogProps) {
         <DialogHeader>
           <DialogTitle>Add SSH Key</DialogTitle>
           <DialogDescription>
-            Provide a title to identify this key and paste your public key
-            below.
+            Provide a name to identify this key and paste your public key below.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleAddKey}>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
+              <Label htmlFor="name">Name</Label>
               <Input
-                id="title"
-                name="title"
+                id="name"
+                name="name"
+                required
                 placeholder="e.g. My Laptop"
                 autoFocus
               />

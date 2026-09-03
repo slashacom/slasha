@@ -2,6 +2,7 @@
 
 export type NodeMetrics = {
   id: string;
+  node_id: string;
   cpu_usage: number;
   memory_used: bigint;
   memory_total: bigint;
@@ -12,6 +13,5 @@ export type NodeMetrics = {
   network_rx_bps: number;
   network_tx_bps: number;
   load_average: number;
-  node_id: string;
   created_at: string;
 };

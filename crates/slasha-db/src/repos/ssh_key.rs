@@ -43,7 +43,7 @@ impl SshKeyRepo {
                 .values((
                     ssh_keys::id.eq(&id),
                     ssh_keys::user_id.eq(&key.user_id),
-                    ssh_keys::title.eq(&key.title),
+                    ssh_keys::name.eq(&key.name),
                     ssh_keys::public_key.eq(&key.public_key),
                 ))
                 .returning(SshKey::as_returning())

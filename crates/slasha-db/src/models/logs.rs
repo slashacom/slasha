@@ -2,6 +2,7 @@ use std::{fmt, str};
 
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
+use strum::VariantNames;
 use strum_macros::{Display, EnumString};
 use ts_rs::TS;
 
@@ -16,7 +17,9 @@ pub enum ResourceKind {
     Node,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, EnumString, TS)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, EnumString, VariantNames, TS,
+)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 #[ts(export, export_to = "./logs.ts")]

@@ -1028,6 +1028,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3be2ad0423bdbbb0e25bc89add796f3559706d4a95e1bc98e4d9662a957b6a19"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1291,6 +1300,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37c7f1b34284f31889c32438c00025b03600fab466c156d7542114fd5e80b348"
 dependencies = [
  "chrono",
+]
+
+[[package]]
+name = "crossbeam-channel"
+version = "0.5.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d85363c37faeca707aef026efa9f3b34d077bce547e48f770770625c6013679e"
+dependencies = [
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -3246,6 +3264,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "minus"
+version = "5.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1db1df1b8dd701aa57b41283b50b751b3ebc8fe1406955ec90c53b46b475fa56"
+dependencies = [
+ "crossbeam-channel",
+ "crossterm 0.29.0",
+ "parking_lot",
+ "regex",
+ "textwrap",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "mio"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4878,6 +4910,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "clap_complete",
  "colored",
  "comfy-table",
  "dirs",
@@ -4887,10 +4920,10 @@ dependencies = [
  "indicatif",
  "inquire",
  "keyring",
+ "minus",
  "reqwest 0.13.2",
  "serde",
  "serde_json",
- "shell-escape",
  "slasha-db",
  "slasha-server",
  "strum 0.28.0",
@@ -5227,6 +5260,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "textwrap"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c13547615a44dc9c452a8a534638acdf07120d4b6847c8178705da06306a3057"
+dependencies = [
+ "unicode-width",
 ]
 
 [[package]]

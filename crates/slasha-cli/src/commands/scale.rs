@@ -1,14 +1,21 @@
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 use serde_json::json;
 
 use crate::{
-    deployments::resolve_deployment_id,
-    output::{cli_success, output, spinner},
-    state::AppState,
+    commands::{resolve::resolve_running_deployment_id, responses::OkResponse},
+    context::Context,
+    output::{cli_success, spinner},
 };
 
-pub async fn handle_scale(state: &AppState, slug: &str, pairs: Vec<String>) -> Result<()> {
-    let deployment_id = resolve_deployment_id(state, slug, None).await?;
+pub async fn handle_scale(
+    pairs: Vec<String>,
+    server_override: Option<&str>,
+    app_override: Option<&str>,
+) -> Result<()> {
+    let ctx = Context::new(server_override, app_override)?;
+    let (client, slug) = ctx.require_context()?;
+
+    let deployment_id = resolve_running_deployment_id(client, slug).await?;
 
     let mut scales = Vec::new();
     for pair in pairs {
@@ -19,7 +26,7 @@ pub async fn handle_scale(state: &AppState, slug: &str, pairs: Vec<String>) -> R
                 pair
             );
         }
-        let process_type = parts[0].to_string();
+        let process_type = parts[0].trim().to_lowercase();
         let count: u32 = parts[1].parse().with_context(|| {
             format!(
                 "Invalid count '{}' for process '{}'",
@@ -30,17 +37,9 @@ pub async fn handle_scale(state: &AppState, slug: &str, pairs: Vec<String>) -> R
     }
 
     for (process_type, count) in scales {
-        let pb = if !state.output_mode.is_json() {
-            Some(spinner(&format!(
-                "Scaling {} to {}...",
-                process_type, count
-            )))
-        } else {
-            None
-        };
+        let _spin = spinner(&format!("Scaling {} to {}...", process_type, count));
 
-        let res = state
-            .api_client
+        let _: OkResponse = client
             .post(
                 &format!("/api/apps/{}/deployments/{}/scale", slug, deployment_id),
                 &json!({
@@ -48,17 +47,9 @@ pub async fn handle_scale(state: &AppState, slug: &str, pairs: Vec<String>) -> R
                     "count": count
                 }),
             )
-            .await;
+            .await?;
 
-        if let Some(pb) = pb {
-            pb.finish_and_clear();
-        }
-
-        let payload = res?;
-
-        output(state.output_mode, &payload, || {
-            cli_success(format!("Scaled {} to {}.", process_type, count));
-        })?;
+        cli_success(format!("Scaled {} to {}.", process_type, count));
     }
 
     Ok(())

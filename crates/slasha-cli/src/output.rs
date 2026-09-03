@@ -4,40 +4,59 @@ use anyhow::Result;
 use colored::Colorize;
 use comfy_table::{Cell, ContentArrangement, Table, presets::UTF8_FULL_CONDENSED};
 use indicatif::{ProgressBar, ProgressStyle};
-use serde::Serialize;
 
-#[derive(clap::ValueEnum, Clone, Copy, Debug)]
-pub enum OutputMode {
-    Human,
-    Json,
-}
-
-impl OutputMode {
-    pub fn is_json(&self) -> bool {
-        matches!(self, OutputMode::Json)
-    }
-}
-
+/// Prints a green success message to stdout.
+///
+/// # Arguments
+///
+/// * `msg` - Message content to display.
 pub fn cli_success(msg: impl std::fmt::Display) {
     println!("{} {}", "SUCCESS:".green(), msg);
 }
 
+/// Prints a red error message to stderr.
+///
+/// # Arguments
+///
+/// * `msg` - Error message content to display.
 pub fn cli_error(msg: impl std::fmt::Display) {
     eprintln!("{} {}", "ERROR:".red(), msg);
 }
 
+/// Prints a plain informational message line to stdout.
+///
+/// # Arguments
+///
+/// * `msg` - Message content to display.
 pub fn cli_info(msg: impl std::fmt::Display) {
     println!("{}", msg);
 }
 
+/// Prints a bold section header line preceded by a newline.
+///
+/// # Arguments
+///
+/// * `msg` - Header text to display.
 pub fn cli_section(msg: impl std::fmt::Display) {
     println!("\n{}", msg.to_string().bold());
 }
 
+/// Prints an indented key-value pair with a dimmed key label.
+///
+/// # Arguments
+///
+/// * `key` - Property key label.
+/// * `val` - Property value text.
 pub fn cli_label(key: impl std::fmt::Display, val: impl std::fmt::Display) {
     println!("  {} {}", format!("{key}:").dimmed(), val);
 }
 
+/// Renders a dynamic UTF-8 table with column headers to stdout.
+///
+/// # Arguments
+///
+/// * `headers` - Column header labels.
+/// * `rows` - Matrix of table row string cells.
 pub fn print_table(headers: &[&str], rows: Vec<Vec<String>>) {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL_CONDENSED);
@@ -51,36 +70,25 @@ pub fn print_table(headers: &[&str], rows: Vec<Vec<String>>) {
     println!("{table}");
 }
 
-pub fn print_json<T: Serialize>(value: &T) -> Result<()> {
-    match serde_json::to_string_pretty(value) {
-        Ok(s) => {
-            println!("{s}");
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("{} Failed to serialize JSON: {}", "ERROR:".red(), e);
-            Err(e.into())
-        }
-    }
-}
-
-pub fn output<T, F>(output_mode: OutputMode, data: &T, human: F) -> Result<()>
-where
-    T: Serialize,
-    F: FnOnce(),
-{
-    if output_mode.is_json() {
-        print_json(data)?;
-    } else {
-        human();
-    }
-
-    Ok(())
-}
-
-pub fn confirm_action(output_mode: OutputMode, yes: bool, message: &str) -> Result<bool> {
-    if yes || output_mode.is_json() {
+/// Prompts for interactive user confirmation unless pre-confirmed via flag.
+///
+/// # Arguments
+///
+/// * `yes` - Bypasses prompt if `true`.
+/// * `message` - Confirmation question prompt text.
+///
+/// # Returns
+///
+/// `true` if action is confirmed, or `false` if canceled.
+pub fn confirm_action(yes: bool, message: &str) -> Result<bool> {
+    if yes {
         return Ok(true);
+    }
+
+    if !std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+        anyhow::bail!(
+            "Cannot prompt for confirmation in non-interactive environment. Use --yes flag."
+        );
     }
 
     let confirmed = inquire::Confirm::new(message)
@@ -95,7 +103,29 @@ pub fn confirm_action(output_mode: OutputMode, yes: bool, message: &str) -> Resu
     Ok(true)
 }
 
-pub fn spinner(msg: &str) -> ProgressBar {
+/// RAII drop guard that automatically finishes and clears a progress spinner upon drop.
+pub struct SpinnerGuard {
+    pb: Option<ProgressBar>,
+}
+
+impl Drop for SpinnerGuard {
+    fn drop(&mut self) {
+        if let Some(pb) = self.pb.take() {
+            pb.finish_and_clear();
+        }
+    }
+}
+
+/// Spawns a cyan steady-tick spinner guard when attached to an interactive terminal.
+///
+/// # Arguments
+///
+/// * `msg` - Initial spinner status message.
+///
+/// # Returns
+///
+/// A [`SpinnerGuard`] that clears the spinner on drop.
+pub fn spinner(msg: &str) -> SpinnerGuard {
     let pb = ProgressBar::new_spinner();
     pb.enable_steady_tick(Duration::from_millis(80));
 
@@ -107,5 +137,5 @@ pub fn spinner(msg: &str) -> ProgressBar {
     );
 
     pb.set_message(msg.to_string());
-    pb
+    SpinnerGuard { pb: Some(pb) }
 }

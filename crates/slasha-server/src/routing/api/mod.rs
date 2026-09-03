@@ -1,4 +1,4 @@
-use axum::{Json, Router, routing::get};
+use axum::{Json, Router, extract::State, routing::get};
 use serde_json::{Value, json};
 
 use crate::AppState;
@@ -51,9 +51,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
 }
 
-async fn health_check(
-    axum::extract::State(state): axum::extract::State<AppState>,
-) -> HttpResult<Json<Value>> {
+async fn health_check(State(state): State<AppState>) -> HttpResult<Json<Value>> {
     let mut status = "ok";
     let mut db_status = "ok";
     let mut docker_status = "ok";

@@ -2,25 +2,29 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use crate::{
-    config::{DEFAULT_BASE_URL, GlobalConfig},
-    token::get_auth_token,
-};
+use crate::token::{canonicalize_server_url, get_auth_token};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// HTTP API client for communicating with a remote Slasha server instance.
 pub struct ApiClient {
     client: reqwest::Client,
     stream_client: reqwest::Client,
     base_url: String,
-    git_host: Option<String>,
 }
 
 impl ApiClient {
-    pub fn from_config() -> Result<Self> {
-        let config = GlobalConfig::load()?;
-
+    /// Constructs a new [`ApiClient`] targeting the specified base URL.
+    ///
+    /// # Arguments
+    ///
+    /// * `base_url` - Normalized server HTTP base URL string.
+    ///
+    /// # Returns
+    ///
+    /// A configured [`ApiClient`] instance.
+    pub fn new(base_url: &str) -> Result<Self> {
         let client = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(REQUEST_TIMEOUT)
@@ -32,43 +36,58 @@ impl ApiClient {
             .build()
             .context("Failed to build streaming HTTP client")?;
 
+        let base_url = canonicalize_server_url(base_url);
+
         Ok(Self {
             client,
             stream_client,
-            base_url: config
-                .base_url
-                .unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
-            git_host: config.git_host,
+            base_url,
         })
     }
 
-    pub fn with_url_override(mut self, url: Option<String>) -> Self {
-        if let Some(u) = url {
-            self.base_url = u;
-        }
-
-        self
-    }
-
+    /// Returns the target base URL with trailing slashes trimmed.
+    ///
+    /// # Returns
+    ///
+    /// String slice referencing the normalized base URL.
     pub fn base_url(&self) -> &str {
         self.base_url.trim_end_matches('/')
     }
 
+    /// Returns the host string derived from base_url for Git SSH operations.
+    ///
+    /// # Returns
+    ///
+    /// The resolved Git host string.
     pub fn git_host(&self) -> String {
-        if let Some(h) = &self.git_host {
-            return h.clone();
-        }
-
         reqwest::Url::parse(&self.base_url)
             .ok()
             .and_then(|u| u.host_str().map(str::to_owned))
             .unwrap_or_else(|| "localhost".to_string())
     }
 
-    pub async fn get(&self, path: &str) -> Result<serde_json::Value> {
+    /// Executes an HTTP GET request and deserializes the JSON response body.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Relative API endpoint path.
+    ///
+    /// # Returns
+    ///
+    /// Deserialized target response type `T`.
+    pub async fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.send(self.client.get(self.url(path))).await
     }
 
+    /// Executes an HTTP GET request returning a raw streaming response stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Relative API endpoint path.
+    ///
+    /// # Returns
+    ///
+    /// The raw [`reqwest::Response`] stream.
     pub async fn get_stream(&self, path: &str) -> Result<reqwest::Response> {
         let res = self
             .apply_auth(self.stream_client.get(self.url(path)))?
@@ -85,48 +104,100 @@ impl ApiClient {
         Ok(res)
     }
 
-    pub async fn post<B: serde::Serialize>(
+    /// Executes an HTTP POST request sending a JSON body payload.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Relative API endpoint path.
+    /// * `body` - Serializable payload reference.
+    ///
+    /// # Returns
+    ///
+    /// Deserialized target response type `T`.
+    pub async fn post<B: serde::Serialize, T: serde::de::DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<T> {
         self.send(self.client.post(self.url(path)).json(body)).await
     }
 
-    pub async fn put<B: serde::Serialize>(
+    /// Executes an HTTP PUT request sending a JSON body payload.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Relative API endpoint path.
+    /// * `body` - Serializable payload reference.
+    ///
+    /// # Returns
+    ///
+    /// Deserialized target response type `T`.
+    pub async fn put<B: serde::Serialize, T: serde::de::DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<T> {
         self.send(self.client.put(self.url(path)).json(body)).await
     }
 
-    pub async fn patch<B: serde::Serialize>(
+    /// Executes an HTTP PATCH request sending a JSON body payload.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Relative API endpoint path.
+    /// * `body` - Serializable payload reference.
+    ///
+    /// # Returns
+    ///
+    /// Deserialized target response type `T`.
+    #[allow(dead_code)]
+    pub async fn patch<B: serde::Serialize, T: serde::de::DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<T> {
         self.send(self.client.patch(self.url(path)).json(body))
             .await
     }
 
-    pub async fn delete(&self, path: &str) -> Result<serde_json::Value> {
+    /// Executes an HTTP DELETE request.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Relative API endpoint path.
+    ///
+    /// # Returns
+    ///
+    /// Deserialized target response type `T`.
+    pub async fn delete<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.send(self.client.delete(self.url(path))).await
     }
 
+    /// Constructs a fully qualified URL for a relative API endpoint path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Relative endpoint path slice.
+    ///
+    /// # Returns
+    ///
+    /// Fully qualified URL string.
     pub fn url(&self, path: &str) -> String {
         format!("{}/{}", self.base_url(), path.trim_start_matches('/'))
     }
 
     fn apply_auth(&self, req: reqwest::RequestBuilder) -> Result<reqwest::RequestBuilder> {
-        if let Some(token) = get_auth_token()? {
+        if let Some(token) = get_auth_token(&self.base_url)? {
             return Ok(req.bearer_auth(token));
         }
 
         Ok(req)
     }
 
-    async fn send(&self, req: reqwest::RequestBuilder) -> Result<serde_json::Value> {
+    async fn send<T: serde::de::DeserializeOwned>(
+        &self,
+        req: reqwest::RequestBuilder,
+    ) -> Result<T> {
         let res = self
             .apply_auth(req)?
             .send()
@@ -135,14 +206,14 @@ impl ApiClient {
 
         let status = res.status();
         if status == reqwest::StatusCode::NO_CONTENT {
-            return Ok(serde_json::Value::Null);
+            return serde_json::from_str("null").context("Failed to parse null response");
         }
 
         let body_bytes = res.bytes().await.context("Failed to read response body")?;
 
         if status.is_success() {
             if body_bytes.is_empty() {
-                return Ok(serde_json::Value::Null);
+                return serde_json::from_str("null").context("Failed to parse empty response");
             }
             return serde_json::from_slice(&body_bytes).with_context(|| {
                 let preview = String::from_utf8_lossy(&body_bytes);
@@ -168,7 +239,7 @@ fn format_error(status: reqwest::StatusCode, body: &str) -> String {
     };
 
     if status == reqwest::StatusCode::UNAUTHORIZED {
-        return format!("{} (run `slasha login` to authenticate)", message);
+        return format!("{} (run `slasha auth login` to authenticate)", message);
     }
 
     message
