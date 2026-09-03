@@ -3,6 +3,24 @@ use anyhow::{Context, Result};
 const SERVICE: &str = "slasha";
 const TOKEN_ENV: &str = "SLASHA_TOKEN";
 
+/// Canonicalizes a server URL by ensuring a scheme and stripping trailing slashes.
+///
+/// # Arguments
+///
+/// * `server_url` - Raw server URL string slice.
+///
+/// # Returns
+///
+/// A normalized canonical URL string.
+pub fn canonicalize_server_url(server_url: &str) -> String {
+    let trimmed = server_url.trim().trim_end_matches('/');
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{}", trimmed)
+    }
+}
+
 /// Formats the OS keyring account key for a given server URL.
 ///
 /// # Arguments
@@ -13,7 +31,7 @@ const TOKEN_ENV: &str = "SLASHA_TOKEN";
 ///
 /// A formatted keyring account string.
 pub fn keyring_user_key(server_url: &str) -> String {
-    let normalized = server_url.trim().trim_end_matches('/');
+    let normalized = canonicalize_server_url(server_url);
     format!("auth_token@{}", normalized)
 }
 

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use crate::token::get_auth_token;
+use crate::token::{canonicalize_server_url, get_auth_token};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -36,12 +36,7 @@ impl ApiClient {
             .build()
             .context("Failed to build streaming HTTP client")?;
 
-        let trimmed = base_url.trim();
-        let base_url = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-            trimmed.to_string()
-        } else {
-            format!("http://{}", trimmed)
-        };
+        let base_url = canonicalize_server_url(base_url);
 
         Ok(Self {
             client,
