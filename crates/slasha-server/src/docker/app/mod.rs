@@ -184,6 +184,8 @@ impl AppDocker {
             DeploymentRepo::reset_to_pending(&self.state.storage.db_pool, deployment_id, now)
                 .await?;
 
+        LogsRepo::delete_by_resource_id(&self.state.storage.duckdb_pool, deployment_id).await?;
+
         tokio::spawn({
             let state = self.state.clone();
             let app = self.app.clone();

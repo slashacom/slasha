@@ -284,7 +284,7 @@ impl ServiceDocker {
             tracing::warn!(container = %container_name, error = ?e, "Failed to remove service container during redeploy");
         }
 
-        self.state.runtime.log_bus.remove(&service.id);
+        LogsRepo::delete_by_resource_id(&self.state.storage.duckdb_pool, &service.id).await?;
 
         tokio::spawn({
             let state = self.state.clone();
