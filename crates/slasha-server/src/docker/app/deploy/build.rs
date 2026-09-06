@@ -14,6 +14,7 @@ use crate::{
         app::{image::image_tag, parser::repo_file_path},
     },
     logs::LogWriter,
+    node_registry::DockerSshEnv,
 };
 
 /// Builds a Docker image for a deployment using Dockerfile instructions via the Docker CLI.
@@ -23,25 +24,17 @@ use crate::{
 /// * `log` - Log writer for output streaming ([`LogWriter`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
-/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote node build execution.
+/// * `ssh_env` - Optional [`DockerSshEnv`] configuration for remote node build execution.
 pub async fn build_docker(
     log: &LogWriter,
     app: &App,
     deployment: &Deployment,
-    ssh_opts: Option<(&str, &str)>,
+    ssh_env: Option<&DockerSshEnv>,
 ) -> DockerResult<()> {
     let (tmp, image_tag) = prepare_build_context(log, app, deployment).await?;
     let dockerfile_path = tmp.path().join(repo_file_path(&app.root_dir, "Dockerfile"));
 
-    build_image_cli(
-        log,
-        &image_tag,
-        &dockerfile_path,
-        tmp.path(),
-        ssh_opts,
-        None,
-    )
-    .await
+    build_image_cli(log, &image_tag, &dockerfile_path, tmp.path(), ssh_env, None).await
 }
 
 /// Builds a Docker image using the Railpack buildpack engine via the Docker CLI.
@@ -51,12 +44,12 @@ pub async fn build_docker(
 /// * `log` - Log writer for output streaming ([`LogWriter`]).
 /// * `app` - Target application model ([`App`]).
 /// * `deployment` - Target deployment model ([`Deployment`]).
-/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote node build execution.
+/// * `ssh_env` - Optional [`DockerSshEnv`] configuration for remote node build execution.
 pub async fn build_railpack(
     log: &LogWriter,
     app: &App,
     deployment: &Deployment,
-    ssh_opts: Option<(&str, &str)>,
+    ssh_env: Option<&DockerSshEnv>,
 ) -> DockerResult<()> {
     let (tmp, image_tag) = prepare_build_context(log, app, deployment).await?;
     let tmp_path = tmp.path();
@@ -91,7 +84,7 @@ pub async fn build_railpack(
         &image_tag,
         &plan_path,
         tmp_path,
-        ssh_opts,
+        ssh_env,
         Some(&[("BUILDKIT_SYNTAX", "ghcr.io/railwayapp/railpack-frontend")]),
     )
     .await
@@ -238,21 +231,29 @@ async fn stream_command_output(
 /// * `image_tag` - Target image repository tag string.
 /// * `build_file` - Path to the Dockerfile or build specification file ([`Path`]).
 /// * `context_dir` - Path to the build context directory ([`Path`]).
-/// * `ssh_opts` - Optional `(DOCKER_HOST, SSH_COMMAND)` tuple for remote node build execution.
+/// * `ssh_env` - Optional [`DockerSshEnv`] configuration for remote node build execution.
 /// * `build_args` - Optional slice of key-value build argument pairs.
 async fn build_image_cli(
     log: &LogWriter,
     image_tag: &str,
     build_file: &Path,
     context_dir: &Path,
-    ssh_opts: Option<(&str, &str)>,
+    ssh_env: Option<&DockerSshEnv>,
     build_args: Option<&[(&str, &str)]>,
 ) -> DockerResult<()> {
     let mut cmd = TokioCommand::new("docker");
 
-    if let Some((docker_host, ssh_command)) = ssh_opts {
-        cmd.env("DOCKER_HOST", docker_host);
-        cmd.env("SSH_COMMAND", ssh_command);
+    if let Some(env) = ssh_env {
+        cmd.env("DOCKER_HOST", &env.docker_host);
+        cmd.env("SLASHA_SSH_KEY", &env.key_path);
+        cmd.env("SLASHA_SSH_CONFIG", &env.config_path);
+        cmd.env("SLASHA_KNOWN_HOSTS", &env.known_hosts_path);
+
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        cmd.env(
+            "PATH",
+            format!("{}:{}", env.bin_dir.display(), current_path),
+        );
     }
 
     cmd.arg("buildx")

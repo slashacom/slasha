@@ -246,27 +246,29 @@ impl<'a> DeploymentRunner<'a> {
                             self.app.slug, self.deployment.id, build_label
                         ));
 
-                        let ssh_opts = if self.app.node_id != LOCAL_NODE_ID {
+                        let ssh_env = if self.app.node_id != LOCAL_NODE_ID {
                             let node =
                                 NodeRepo::get(&self.state.storage.db_pool, &self.app.node_id)
                                     .await?;
 
-                            let (host, ssh_cmd) =
-                                self.state.node_registry.get_docker_ssh_env(&node)?;
-
-                            Some((host, ssh_cmd))
+                            Some(self.state.node_registry.get_docker_ssh_env(&node)?)
                         } else {
                             None
                         };
 
-                        let ssh_ref = ssh_opts.as_ref().map(|(h, s)| (h.as_str(), s.as_str()));
-
                         match &self.context.strategy {
                             BuildStrategy::Dockerfile { .. } => {
-                                build_docker(self.log, self.app, self.deployment, ssh_ref).await?
+                                build_docker(self.log, self.app, self.deployment, ssh_env.as_ref())
+                                    .await?
                             }
                             BuildStrategy::Railpack => {
-                                build_railpack(self.log, self.app, self.deployment, ssh_ref).await?
+                                build_railpack(
+                                    self.log,
+                                    self.app,
+                                    self.deployment,
+                                    ssh_env.as_ref(),
+                                )
+                                .await?
                             }
                         }
                     }

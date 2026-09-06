@@ -32,7 +32,7 @@ impl CaddyClient {
     /// # Arguments
     ///
     /// * `routes` - List of route entries to configure ([`RouteEntry`]).
-    /// * `internal_tls_domains` - List of internal domains requiring TLS.
+    /// * `self_signed_domains` - List of domains requiring self-signed TLS.
     /// * `env` - Current application environment ([`Env`]).
     ///
     /// # Returns
@@ -40,7 +40,7 @@ impl CaddyClient {
     /// The generated Caddy configuration JSON.
     pub fn build_routes_config(
         routes: &[RouteEntry],
-        internal_tls_domains: &[String],
+        self_signed_domains: &[String],
         env: Env,
     ) -> Value {
         let security_headers = Self::security_headers(env);
@@ -119,16 +119,18 @@ impl CaddyClient {
             }
         });
 
-        // forces self-signed certs for remote nodes (platform domain only)
-        // main server proxies to them and trusts their ca
-        // hitting the remote node directly on the platform domain causes a cert error
-        if !env.is_production() || !internal_tls_domains.is_empty() {
+        // forces self-signed certs for remote nodes on the platform domain.
+        // the main server proxies requests to them and trusts their CA.
+        //
+        // note: public browsers accessing the remote node directly via the platform
+        // domain will see an untrusted CA warning.
+        if !env.is_production() || !self_signed_domains.is_empty() {
             let mut policies = Vec::new();
             if !env.is_production() {
                 policies.push(json!({ "issuers": [{ "module": "internal" }] }));
-            } else if !internal_tls_domains.is_empty() {
+            } else if !self_signed_domains.is_empty() {
                 policies.push(json!({
-                    "subjects": internal_tls_domains,
+                    "subjects": self_signed_domains,
                     "issuers": [{ "module": "internal" }]
                 }));
             }
@@ -151,7 +153,7 @@ impl CaddyClient {
     /// # Arguments
     ///
     /// * `routes` - List of route entries to configure ([`RouteEntry`]).
-    /// * `internal_tls_domains` - List of internal domains requiring TLS.
+    /// * `self_signed_domains` - List of domains requiring self-signed TLS.
     /// * `env` - Current application environment ([`Env`]).
     /// * `base_url` - The base URL of the Caddy admin API.
     ///
@@ -161,11 +163,11 @@ impl CaddyClient {
     pub async fn apply_routes(
         &self,
         routes: &[RouteEntry],
-        internal_tls_domains: &[String],
+        self_signed_domains: &[String],
         env: Env,
         base_url: &str,
     ) -> ProxyResult<()> {
-        let config = Self::build_routes_config(routes, internal_tls_domains, env);
+        let config = Self::build_routes_config(routes, self_signed_domains, env);
         self.apply_config(&config, base_url).await
     }
 
@@ -179,8 +181,10 @@ impl CaddyClient {
         );
         headers.insert("Permissions-Policy".into(), json!(["interest-cohort=()"]));
 
-        // hsts forces browsers to only use https. if sent during local dev,
-        // a broken self-signed cert will permanently lock you out of localhost.
+        // hsts forces browsers to only use https.
+        //
+        // note: if sent during local dev, a broken self-signed cert
+        // will permanently lock you out of localhost, that is why we only send it in production.
         if env.is_production() {
             headers.insert(
                 "Strict-Transport-Security".into(),

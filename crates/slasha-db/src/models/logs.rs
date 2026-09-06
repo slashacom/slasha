@@ -2,8 +2,7 @@ use std::{fmt, str};
 
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use strum::VariantNames;
-use strum_macros::{Display, EnumString};
+use strum_macros::{Display, EnumString, VariantNames};
 use ts_rs::TS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display, EnumString, TS)]

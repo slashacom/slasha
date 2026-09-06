@@ -76,6 +76,20 @@ impl DeploymentRepo {
         .await?
     }
 
+    pub async fn find_by_ids(pool: &DbPool, ids: Vec<String>) -> DbResult<Vec<Deployment>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let pool = pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(deployments::table
+                .filter(deployments::id.eq_any(&ids))
+                .load::<Deployment>(&mut conn)?)
+        })
+        .await?
+    }
+
     pub async fn create(pool: &DbPool, deployment: NewDeployment) -> DbResult<Deployment> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {

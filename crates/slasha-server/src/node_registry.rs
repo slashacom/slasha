@@ -24,11 +24,22 @@ pub struct CachedNodeInfo {
     pub last_updated: Instant,
 }
 
+/// Environment configuration for executing `docker` CLI commands over SSH against a remote cluster [`Node`].
+#[derive(Clone, Debug)]
+pub struct DockerSshEnv {
+    pub docker_host: String,
+    pub bin_dir: PathBuf,
+    pub key_path: PathBuf,
+    pub known_hosts_path: PathBuf,
+    pub config_path: PathBuf,
+}
+
 /// Registry managing SSH connection credentials, remote execution, Docker API clients, and node status caching.
 #[derive(Clone)]
 pub struct NodeRegistry {
     nodes_dir: PathBuf,
     keys_dir: PathBuf,
+    bin_dir: PathBuf,
     docker_clients: Arc<DashMap<String, Docker>>,
     status_cache: Arc<DashMap<String, CachedNodeInfo>>,
 }
@@ -48,12 +59,18 @@ impl NodeRegistry {
         let keys_dir = nodes_dir.join("keys");
         let _ = std::fs::create_dir_all(&keys_dir);
 
+        let bin_dir = nodes_dir.join("bin");
+        let _ = std::fs::create_dir_all(&bin_dir);
+
         let registry = Self {
             nodes_dir,
             keys_dir,
+            bin_dir,
             docker_clients: Arc::new(DashMap::new()),
             status_cache: Arc::new(DashMap::new()),
         };
+
+        let _ = registry.init_ssh_wrapper();
 
         let docker_clients = registry.docker_clients.clone();
         let status_cache = registry.status_cache.clone();
@@ -100,7 +117,7 @@ impl NodeRegistry {
     /// # Returns
     ///
     /// The absolute path to the `known_hosts` file.
-    pub fn known_hosts_path(&self) -> PathBuf {
+    fn known_hosts_path(&self) -> PathBuf {
         self.nodes_dir.join("known_hosts")
     }
 
@@ -109,7 +126,7 @@ impl NodeRegistry {
     /// # Returns
     ///
     /// The absolute path to the SSH config file.
-    pub fn ssh_config_path(&self) -> anyhow::Result<PathBuf> {
+    fn ssh_config_path(&self) -> anyhow::Result<PathBuf> {
         let path = self.nodes_dir.join("config");
         if !path.exists() {
             std::fs::File::create(&path)?;
@@ -127,7 +144,7 @@ impl NodeRegistry {
     /// # Returns
     ///
     /// The absolute path to the node's SSH private key file.
-    pub fn key_path(&self, node: &Node) -> anyhow::Result<PathBuf> {
+    fn key_path(&self, node: &Node) -> anyhow::Result<PathBuf> {
         if node.is_local() {
             return Err(anyhow::anyhow!("local node does not use SSH"));
         }
@@ -152,7 +169,39 @@ impl NodeRegistry {
         Ok(key_path)
     }
 
-    /// Constructs `DOCKER_HOST` and `SSH_COMMAND` environment variables for executing `docker` CLI commands over SSH against a remote cluster [`Node`].
+    /// Initializes the shared `ssh` wrapper script in `<nodes_dir>/bin/ssh`.
+    ///
+    /// # Returns
+    ///
+    /// An [`anyhow::Result`] indicating success.
+    fn init_ssh_wrapper(&self) -> anyhow::Result<()> {
+        let wrapper_script_path = self.bin_dir.join("ssh");
+        let script_content = r#"#!/bin/sh
+REAL_SSH="/usr/bin/ssh"
+if [ ! -x "$REAL_SSH" ]; then
+    REAL_SSH="/bin/ssh"
+fi
+
+if [ -n "$SLASHA_SSH_KEY" ]; then
+    exec "$REAL_SSH" \
+        -i "$SLASHA_SSH_KEY" \
+        -F "$SLASHA_SSH_CONFIG" \
+        -o UserKnownHostsFile="$SLASHA_KNOWN_HOSTS" \
+        -o StrictHostKeyChecking=accept-new \
+        -o BatchMode=yes \
+        "$@"
+else
+    exec "$REAL_SSH" "$@"
+fi
+"#;
+
+        std::fs::write(&wrapper_script_path, script_content)?;
+        std::fs::set_permissions(&wrapper_script_path, std::fs::Permissions::from_mode(0o755))?;
+
+        Ok(())
+    }
+
+    /// Constructs the [`DockerSshEnv`] configuration for executing `docker` CLI commands over SSH against a remote cluster [`Node`].
     ///
     /// # Arguments
     ///
@@ -160,26 +209,24 @@ impl NodeRegistry {
     ///
     /// # Returns
     ///
-    /// A tuple containing `(DOCKER_HOST, SSH_COMMAND)` environment variable strings.
-    pub fn get_docker_ssh_env(&self, node: &Node) -> anyhow::Result<(String, String)> {
+    /// An [`anyhow::Result`] containing the [`DockerSshEnv`] configuration.
+    pub fn get_docker_ssh_env(&self, node: &Node) -> anyhow::Result<DockerSshEnv> {
         let key_path = self.key_path(node)?;
+        let known_hosts_path = self.known_hosts_path();
+        let config_path = self.ssh_config_path()?;
         let host = node.host.as_deref().unwrap_or("");
         let user = node.user.as_deref().unwrap_or("root");
         let port = node.port.unwrap_or(22);
 
-        let known_hosts_file = self.known_hosts_path();
-        let config_file = self.ssh_config_path()?;
-
         let docker_host = format!("ssh://{user}@{host}:{port}");
-        let ssh_cmd = format!(
-            "ssh -i {} -p {} -F {} -o UserKnownHostsFile={} -o StrictHostKeyChecking=accept-new -o BatchMode=yes",
-            key_path.display(),
-            port,
-            config_file.display(),
-            known_hosts_file.display()
-        );
 
-        Ok((docker_host, ssh_cmd))
+        Ok(DockerSshEnv {
+            docker_host,
+            bin_dir: self.bin_dir.clone(),
+            key_path,
+            known_hosts_path,
+            config_path,
+        })
     }
 
     /// Verifies the SSH connection to the [`Node`] by running a simple echo command, removing the node's local files on failure.
