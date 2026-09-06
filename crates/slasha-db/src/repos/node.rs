@@ -2,6 +2,7 @@ use diesel::prelude::*;
 
 use crate::{
     connection::DbPool,
+    crypto,
     error::{DbError, DbResult},
     models::{
         node::{LOCAL_NODE_ID, NewNode, Node, NodeChangeset, NodeStatus},
@@ -19,12 +20,18 @@ impl NodeRepo {
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
 
-            nodes::table
+            let mut node = nodes::table
                 .filter(nodes::id.eq(&id))
                 .filter(nodes::deleted_at.is_null())
                 .first::<Node>(&mut conn)
                 .optional()?
-                .ok_or_else(|| DbError::NotFound(format!("node '{}' not found", id)))
+                .ok_or_else(|| DbError::NotFound(format!("node '{}' not found", id)))?;
+
+            if let Some(ref key) = node.ssh_private_key {
+                node.ssh_private_key = Some(crypto::decrypt(key)?);
+            }
+
+            Ok(node)
         })
         .await?
     }
@@ -33,23 +40,39 @@ impl NodeRepo {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            let results = nodes::table
+            let mut results = nodes::table
                 .filter(nodes::deleted_at.is_null())
                 .order(nodes::created_at.desc())
                 .load::<Node>(&mut conn)?;
+
+            for node in &mut results {
+                if let Some(ref key) = node.ssh_private_key {
+                    node.ssh_private_key = Some(crypto::decrypt(key)?);
+                }
+            }
+
             Ok(results)
         })
         .await?
     }
 
-    pub async fn create(pool: &DbPool, node: NewNode) -> DbResult<Node> {
+    pub async fn create(pool: &DbPool, mut node: NewNode) -> DbResult<Node> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            let inserted = diesel::insert_into(nodes::table)
+
+            if let Some(ref key) = node.ssh_private_key {
+                node.ssh_private_key = Some(crypto::encrypt(key)?);
+            }
+
+            let mut inserted: Node = diesel::insert_into(nodes::table)
                 .values(&node)
                 .returning(Node::as_returning())
                 .get_result(&mut conn)?;
+
+            if let Some(ref key) = inserted.ssh_private_key {
+                inserted.ssh_private_key = Some(crypto::decrypt(key)?);
+            }
 
             Ok(inserted)
         })
@@ -91,20 +114,29 @@ impl NodeRepo {
         .await?
     }
 
-    pub async fn update(pool: &DbPool, id: &str, changeset: NodeChangeset) -> DbResult<Node> {
+    pub async fn update(pool: &DbPool, id: &str, mut changeset: NodeChangeset) -> DbResult<Node> {
         let pool = pool.clone();
         let id = id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
 
-            diesel::update(nodes::table.filter(nodes::id.eq(&id)))
+            if let Some(Some(ref key)) = changeset.ssh_private_key {
+                changeset.ssh_private_key = Some(Some(crypto::encrypt(key)?));
+            }
+
+            let mut updated: Node = diesel::update(nodes::table.filter(nodes::id.eq(&id)))
                 .set((
                     &changeset,
                     nodes::updated_at.eq(chrono::Utc::now().naive_utc()),
                 ))
                 .returning(Node::as_returning())
-                .get_result(&mut conn)
-                .map_err(Into::into)
+                .get_result(&mut conn)?;
+
+            if let Some(ref key) = updated.ssh_private_key {
+                updated.ssh_private_key = Some(crypto::decrypt(key)?);
+            }
+
+            Ok(updated)
         })
         .await?
     }

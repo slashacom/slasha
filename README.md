@@ -190,7 +190,8 @@ Configuration is read from `.env` (see `.env.example`):
 | `SLASHA_ENV`              | Runtime environment                          | `development`       |
 | `SLASHA_PLATFORM_DOMAIN`  | Base domain for the dashboard and apps       | `slasha.localhost`  |
 | `SLASHA_PORT`             | Port the server listens on                   | `3000`              |
-| `JWT_SECRET`              | Secret used to sign auth tokens              | a long random value |
+| `SLASHA_JWT_SECRET`       | Secret used to sign auth tokens              | a long random value |
+| `SLASHA_KEY`              | Secret used to encrypt credentials stored in the database    | a long random value |
 
 
 ## Contributing
@@ -201,8 +202,8 @@ please open an issue first to discuss the approach.
 
 ## Security
 
-Slasha signs API tokens with `JWT_SECRET` and stores user passwords hashed with Argon2. Keep your
-`.env` and `JWT_SECRET` out of version control.
+Slasha signs API tokens with `SLASHA_JWT_SECRET` (falling back to legacy `JWT_SECRET`), encrypts sensitive credentials stored in the database with `SLASHA_KEY`, and stores user passwords hashed with Argon2. Keep your
+`.env`, `SLASHA_JWT_SECRET`, and `SLASHA_KEY` out of version control.
 
 The setup script downloads and runs code from the network as root, review it before piping it to `bash` if you prefer. To report a security issue, please email security@slasha.com rather than opening a public issue.
 

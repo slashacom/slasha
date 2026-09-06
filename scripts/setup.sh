@@ -340,11 +340,18 @@ while true; do
 done
 
 auto_secret="$(set +o pipefail; LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 64)"
-echo -e "\n  ${COLOR_DIM}auto-generated jwt secret:${COLOR_OFF}"
+echo -e "\n  ${COLOR_DIM}auto-generated jwt secret (SLASHA_JWT_SECRET):${COLOR_OFF}"
 echo -e "  ${COLOR_DIM}$auto_secret${COLOR_OFF}\n"
-ask "press enter to use it, or paste a custom 64-char hex secret: " custom_secret
+ask "press enter to use it, or enter your own jwt secret: " custom_secret
 jwt_secret="${custom_secret:-$auto_secret}"
-[[ ${#jwt_secret} -ge 32 ]] || err "jwt secret must be at least 32 characters."
+[[ -n "$jwt_secret" ]] || err "jwt secret cannot be empty."
+
+auto_key="$(set +o pipefail; LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 64)"
+echo -e "\n  ${COLOR_DIM}auto-generated encryption key (SLASHA_KEY):${COLOR_OFF}"
+echo -e "  ${COLOR_DIM}$auto_key${COLOR_OFF}\n"
+ask "press enter to use it, or enter your own encryption key: " custom_key
+slasha_key="${custom_key:-$auto_key}"
+[[ -n "$slasha_key" ]] || err "encryption key cannot be empty."
 
 # write env file
 header "writing configuration"
@@ -353,7 +360,8 @@ $SUDO mkdir -p "$CONF_DIR"
 $SUDO tee "$CONF_DIR/.env" >/dev/null <<EOF
 SLASHA_ENV=production
 SLASHA_PLATFORM_DOMAIN=$domain
-JWT_SECRET=$jwt_secret
+SLASHA_JWT_SECRET=$jwt_secret
+SLASHA_KEY=$slasha_key
 EOF
 $SUDO chmod 600 "$CONF_DIR/.env"
 $SUDO chown slasha:slasha "$CONF_DIR/.env"

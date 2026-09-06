@@ -2,6 +2,7 @@ use diesel::prelude::*;
 
 use crate::{
     connection::DbPool,
+    crypto,
     error::{DbError, DbResult},
     models::{
         app::App,
@@ -72,17 +73,16 @@ impl ServiceRepo {
                     .get_result(tx)?;
 
                 if !vars.is_empty() {
-                    let inserts: Vec<_> = vars
-                        .into_iter()
-                        .map(|v| {
-                            (
-                                service_env_vars::id.eq(uuid::Uuid::new_v4().to_string()),
-                                service_env_vars::service_id.eq(v.service_id),
-                                service_env_vars::key.eq(v.key),
-                                service_env_vars::value.eq(v.value),
-                            )
-                        })
-                        .collect();
+                    let mut inserts = Vec::with_capacity(vars.len());
+                    for v in vars {
+                        let encrypted_value = crypto::encrypt(&v.value)?;
+                        inserts.push((
+                            service_env_vars::id.eq(uuid::Uuid::new_v4().to_string()),
+                            service_env_vars::service_id.eq(v.service_id),
+                            service_env_vars::key.eq(v.key),
+                            service_env_vars::value.eq(encrypted_value),
+                        ));
+                    }
                     diesel::insert_into(service_env_vars::table)
                         .values(&inserts)
                         .execute(tx)?;
@@ -149,10 +149,16 @@ impl ServiceRepo {
         let service_id = service_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            Ok(service_env_vars::table
+            let mut vars = service_env_vars::table
                 .filter(service_env_vars::service_id.eq(&service_id))
                 .order(service_env_vars::key.asc())
-                .load::<ServiceEnvVar>(&mut conn)?)
+                .load::<ServiceEnvVar>(&mut conn)?;
+
+            for var in &mut vars {
+                var.value = crypto::decrypt(&var.value)?;
+            }
+
+            Ok(vars)
         })
         .await?
     }
@@ -173,26 +179,31 @@ impl ServiceRepo {
                 )
                 .execute(tx)?;
                 if !vars.is_empty() {
-                    let inserts: Vec<_> = vars
-                        .into_iter()
-                        .map(|v| {
-                            (
-                                service_env_vars::id.eq(uuid::Uuid::new_v4().to_string()),
-                                service_env_vars::service_id.eq(v.service_id),
-                                service_env_vars::key.eq(v.key),
-                                service_env_vars::value.eq(v.value),
-                            )
-                        })
-                        .collect();
+                    let mut inserts = Vec::with_capacity(vars.len());
+                    for v in vars {
+                        let encrypted_value = crypto::encrypt(&v.value)?;
+                        inserts.push((
+                            service_env_vars::id.eq(uuid::Uuid::new_v4().to_string()),
+                            service_env_vars::service_id.eq(v.service_id),
+                            service_env_vars::key.eq(v.key),
+                            service_env_vars::value.eq(encrypted_value),
+                        ));
+                    }
                     diesel::insert_into(service_env_vars::table)
                         .values(&inserts)
                         .execute(tx)?;
                 }
 
-                Ok(service_env_vars::table
+                let mut vars = service_env_vars::table
                     .filter(service_env_vars::service_id.eq(&service_id_str))
                     .order(service_env_vars::key.asc())
-                    .load::<ServiceEnvVar>(tx)?)
+                    .load::<ServiceEnvVar>(tx)?;
+
+                for var in &mut vars {
+                    var.value = crypto::decrypt(&var.value)?;
+                }
+
+                Ok(vars)
             })
         })
         .await?
@@ -208,12 +219,17 @@ impl ServiceRepo {
         let key = key.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            Ok(service_env_vars::table
+            let val: Option<String> = service_env_vars::table
                 .filter(service_env_vars::service_id.eq(&service_id))
                 .filter(service_env_vars::key.eq(&key))
                 .select(service_env_vars::value)
                 .first::<String>(&mut conn)
-                .optional()?)
+                .optional()?;
+
+            match val {
+                Some(v) => Ok(Some(crypto::decrypt(&v)?)),
+                None => Ok(None),
+            }
         })
         .await?
     }

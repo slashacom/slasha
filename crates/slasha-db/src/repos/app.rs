@@ -2,6 +2,7 @@ use diesel::prelude::*;
 
 use crate::{
     connection::DbPool,
+    crypto,
     error::{DbError, DbResult},
     models::{
         app::{App, AppEnvVar, AppMember, AppMemberRole, AppSource, NewApp, NewAppEnvVar},
@@ -255,10 +256,16 @@ impl AppRepo {
         let app_id = app_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            Ok(app_env_vars::table
+            let mut vars = app_env_vars::table
                 .filter(app_env_vars::app_id.eq(&app_id))
                 .order(app_env_vars::key.asc())
-                .load::<AppEnvVar>(&mut conn)?)
+                .load::<AppEnvVar>(&mut conn)?;
+
+            for var in &mut vars {
+                var.value = crypto::decrypt(&var.value)?;
+            }
+
+            Ok(vars)
         })
         .await?
     }
@@ -276,26 +283,31 @@ impl AppRepo {
                 diesel::delete(app_env_vars::table.filter(app_env_vars::app_id.eq(&app_id_str)))
                     .execute(tx)?;
                 if !vars.is_empty() {
-                    let inserts: Vec<_> = vars
-                        .into_iter()
-                        .map(|v| {
-                            (
-                                app_env_vars::id.eq(uuid::Uuid::new_v4().to_string()),
-                                app_env_vars::app_id.eq(v.app_id),
-                                app_env_vars::key.eq(v.key),
-                                app_env_vars::value.eq(v.value),
-                            )
-                        })
-                        .collect();
+                    let mut inserts = Vec::with_capacity(vars.len());
+                    for v in vars {
+                        let encrypted_value = crypto::encrypt(&v.value)?;
+                        inserts.push((
+                            app_env_vars::id.eq(uuid::Uuid::new_v4().to_string()),
+                            app_env_vars::app_id.eq(v.app_id),
+                            app_env_vars::key.eq(v.key),
+                            app_env_vars::value.eq(encrypted_value),
+                        ));
+                    }
                     diesel::insert_into(app_env_vars::table)
                         .values(&inserts)
                         .execute(tx)?;
                 }
 
-                Ok(app_env_vars::table
+                let mut vars = app_env_vars::table
                     .filter(app_env_vars::app_id.eq(&app_id_str))
                     .order(app_env_vars::key.asc())
-                    .load::<AppEnvVar>(tx)?)
+                    .load::<AppEnvVar>(tx)?;
+
+                for var in &mut vars {
+                    var.value = crypto::decrypt(&var.value)?;
+                }
+
+                Ok(vars)
             })
         })
         .await?

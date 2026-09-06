@@ -2,6 +2,7 @@ use diesel::{prelude::*, upsert::excluded};
 
 use crate::{
     connection::DbPool,
+    crypto,
     error::DbResult,
     models::{
         app_backup::{AppBackup, NewAppBackup},
@@ -17,10 +18,16 @@ impl AppBackupRepo {
         let app_id = app_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            Ok(app_backups::table
+            let mut backup: Option<AppBackup> = app_backups::table
                 .filter(app_backups::app_id.eq(&app_id))
                 .first::<AppBackup>(&mut conn)
-                .optional()?)
+                .optional()?;
+
+            if let Some(ref mut b) = backup {
+                b.secret_access_key = crypto::decrypt(&b.secret_access_key)?;
+            }
+
+            Ok(backup)
         })
         .await?
     }
@@ -30,7 +37,9 @@ impl AppBackupRepo {
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
             let id = uuid::Uuid::new_v4().to_string();
-            let upserted_backup: AppBackup = diesel::insert_into(app_backups::table)
+            let enc_secret_key = crypto::encrypt(&backup.secret_access_key)?;
+
+            let mut upserted_backup: AppBackup = diesel::insert_into(app_backups::table)
                 .values((
                     app_backups::id.eq(&id),
                     app_backups::app_id.eq(&backup.app_id),
@@ -40,7 +49,7 @@ impl AppBackupRepo {
                     app_backups::endpoint.eq(&backup.endpoint),
                     app_backups::path_prefix.eq(&backup.path_prefix),
                     app_backups::access_key_id.eq(&backup.access_key_id),
-                    app_backups::secret_access_key.eq(&backup.secret_access_key),
+                    app_backups::secret_access_key.eq(&enc_secret_key),
                 ))
                 .on_conflict(app_backups::app_id)
                 .do_update()
@@ -56,6 +65,9 @@ impl AppBackupRepo {
                 ))
                 .returning(AppBackup::as_returning())
                 .get_result(&mut conn)?;
+
+            upserted_backup.secret_access_key =
+                crypto::decrypt(&upserted_backup.secret_access_key)?;
 
             Ok(upserted_backup)
         })

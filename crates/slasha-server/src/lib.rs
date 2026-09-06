@@ -28,7 +28,7 @@ pub use routing::api::{HttpError, HttpResult};
 use slasha_db::repos::github_app_config::GithubAppConfigRepo;
 pub use state::AppState;
 use tokio::net::TcpListener;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::state::{Clients, Config, Env, Runtime, Storage};
 
@@ -82,7 +82,10 @@ pub async fn serve() -> anyhow::Result<()> {
         &std::env::var("SLASHA_ENV").unwrap_or_else(|_| "development".to_string()),
     );
 
-    let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    // fallback to legacy jwt_secret if slasha_jwt_secret is not set
+    let jwt_secret = std::env::var("SLASHA_JWT_SECRET")
+        .or_else(|_| std::env::var("JWT_SECRET"))
+        .expect("SLASHA_JWT_SECRET must be set");
     let platform_domain =
         std::env::var("SLASHA_PLATFORM_DOMAIN").expect("SLASHA_PLATFORM_DOMAIN must be set");
     let port = std::env::var("SLASHA_PORT")
@@ -92,9 +95,17 @@ pub async fn serve() -> anyhow::Result<()> {
 
     let config = Config::new(slasha_env, jwt_secret, platform_domain, port);
 
-    slasha_db::migrations::run_migrations(
+    let slasha_key = std::env::var("SLASHA_KEY").ok();
+    if slasha_key.is_none() {
+        warn!(
+            "SLASHA_KEY is not set. Sensitive credentials will be stored unencrypted in the database. This is dangerous! Set SLASHA_KEY and restart the server."
+        );
+    }
+
+    slasha_db::init(
         db_path.to_str().expect("Invalid DB path"),
         duckdb_path.to_str().expect("Invalid DuckDB path"),
+        slasha_key.as_deref(),
     );
 
     let storage = Storage::new(&db_path, &duckdb_path, repos_dir)?;

@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::crypto;
+
 #[derive(Debug, Error)]
 pub enum DbError {
     #[error("not found: {0}")]
@@ -22,6 +24,9 @@ pub enum DbError {
 
     #[error("duckdb error: {0}")]
     Duckdb(#[from] duckdb::Error),
+
+    #[error("crypto error: {0}")]
+    Crypto(#[from] crypto::CryptoError),
 
     #[error("task panicked")]
     Join(#[from] tokio::task::JoinError),
