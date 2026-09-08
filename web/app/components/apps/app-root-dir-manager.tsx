@@ -6,7 +6,8 @@ import { useUpdateAppSettings, getAppDirectoriesOptions } from '~/queries/apps';
 import type { App } from '~/models/app';
 import { Button } from '~/components/interface/button';
 import { Select } from '~/components/interface/select';
-import { HStack, VStack } from '~/components/interface/stacks';
+import { HStack } from '~/components/interface/stacks';
+import { SettingsCard } from '~/components/interface/settings-card';
 
 type AppRootDirManagerProps = {
   app: App;
@@ -47,51 +48,35 @@ export function AppRootDirManager(props: AppRootDirManagerProps) {
   const allDirectories = [''].concat(directories.filter((d) => d !== ''));
 
   return (
-    <VStack space={6}>
-      <div className="overflow-hidden rounded-xl border border-border bg-surface/50 shadow-sm backdrop-blur-sm">
-        <div className="px-6 py-5">
-          <HStack justifyContent="between" alignItems="start">
-            <HStack space={3}>
-              <div className="rounded-lg bg-white/5 p-2 text-text-secondary">
-                <Folder className="size-5" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-[15px] font-semibold text-text">
-                  Root Directory
-                </h3>
-                <p className="mt-0.5 text-[13px] text-text-tertiary">
-                  The directory within your repository where the application
-                  code resides.
-                </p>
-                <div className="mt-4 flex items-center gap-3">
-                  <Select
-                    value={rootDir}
-                    onChange={(event) => setRootDir(event.target.value)}
-                    disabled={isLoading}
-                    className="w-64"
-                  >
-                    {allDirectories.map((dir) => (
-                      <option key={dir} value={dir}>
-                        {dir === '' ? '/' : dir}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button
-                    label="Save"
-                    size="sm"
-                    onClick={handleSave}
-                    disabled={
-                      updateSettings.isPending ||
-                      isLoading ||
-                      rootDir === (app.root_dir || '')
-                    }
-                  />
-                </div>
-              </div>
-            </HStack>
-          </HStack>
-        </div>
-      </div>
-    </VStack>
+    <SettingsCard
+      icon={Folder}
+      title="Root Directory"
+      description="The directory within your repository where the application code resides."
+    >
+      <HStack space={3}>
+        <Select
+          value={rootDir}
+          onChange={(event) => setRootDir(event.target.value)}
+          disabled={isLoading}
+          className="w-64"
+        >
+          {allDirectories.map((dir) => (
+            <option key={dir} value={dir}>
+              {dir === '' ? '/' : dir}
+            </option>
+          ))}
+        </Select>
+        <Button
+          label="Save"
+          size="sm"
+          onClick={handleSave}
+          disabled={
+            updateSettings.isPending ||
+            isLoading ||
+            rootDir === (app.root_dir || '')
+          }
+        />
+      </HStack>
+    </SettingsCard>
   );
 }

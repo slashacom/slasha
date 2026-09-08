@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Bell, Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -21,6 +21,7 @@ import {
 } from '~/queries/alerts';
 import { queryClient } from '~/utils/query-client';
 import { PageHeader } from '~/components/interface/page-header';
+import { TableRowActions } from '~/components/interface/table-row-actions';
 
 export async function clientLoader() {
   await Promise.all([
@@ -106,23 +107,21 @@ export default function AlertsRulesPage() {
                       </AlertStatusBadge>
                     </td>
                     <td className="py-3 text-right">
-                      <div className="flex items-center justify-end gap-3">
-                        <Link
-                          to={`/alerts/rules/${rule.id}/edit`}
-                          className="text-text-secondary transition-colors hover:text-text"
-                          title="Edit rule"
-                        >
-                          <Pencil className="size-4" />
-                        </Link>
-                        <button
-                          type="button"
-                          title="Delete rule"
-                          onClick={() => setRuleToDelete(rule)}
-                          className="text-red-400/80 transition-colors hover:text-red-400"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </div>
+                      <TableRowActions
+                        actions={[
+                          {
+                            label: 'Edit rule',
+                            icon: Pencil,
+                            to: `/alerts/rules/${rule.id}/edit`,
+                          },
+                          {
+                            label: 'Delete rule',
+                            icon: Trash2,
+                            isDestructive: true,
+                            onClick: () => setRuleToDelete(rule),
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}

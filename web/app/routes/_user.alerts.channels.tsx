@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Plus, Webhook, Send, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -18,6 +18,7 @@ import { channelSummary } from '~/components/alerts/alert-definitions';
 import { formatDateTime } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
 import { PageHeader } from '~/components/interface/page-header';
+import { TableRowActions } from '~/components/interface/table-row-actions';
 
 export async function clientLoader() {
   await queryClient.ensureQueryData(getAlertChannelsOptions());
@@ -94,40 +95,38 @@ export default function AlertsChannelsPage() {
                       {formatDateTime(channel.updated_at)}
                     </td>
                     <td className="py-3 text-right">
-                      <div className="flex items-center justify-end gap-3">
-                        <button
-                          type="button"
-                          title="Test channel"
-                          disabled={testChannel.isPending}
-                          onClick={async () => {
-                            const promise = testChannel.mutateAsync(channel.id);
-                            toast.promise(promise, {
-                              loading: 'Sending test message...',
-                              success: 'Test message sent.',
-                              error: (error) =>
-                                error.message || 'Failed to send test message.',
-                            });
-                          }}
-                          className="text-text-secondary transition-colors hover:text-text disabled:opacity-50"
-                        >
-                          <Send className="size-4" />
-                        </button>
-                        <Link
-                          to={`/alerts/channels/${channel.id}/edit`}
-                          className="text-text-secondary transition-colors hover:text-text"
-                          title="Edit channel"
-                        >
-                          <Pencil className="size-4" />
-                        </Link>
-                        <button
-                          type="button"
-                          title="Delete channel"
-                          onClick={() => setChannelToDelete(channel)}
-                          className="text-red-400/80 transition-colors hover:text-red-400"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </div>
+                      <TableRowActions
+                        actions={[
+                          {
+                            label: 'Test channel',
+                            icon: Send,
+                            isDisabled: testChannel.isPending,
+                            onClick: () => {
+                              toast.promise(
+                                testChannel.mutateAsync(channel.id),
+                                {
+                                  loading: 'Sending test message...',
+                                  success: 'Test message sent.',
+                                  error: (error) =>
+                                    error.message ||
+                                    'Failed to send test message.',
+                                }
+                              );
+                            },
+                          },
+                          {
+                            label: 'Edit channel',
+                            icon: Pencil,
+                            to: `/alerts/channels/${channel.id}/edit`,
+                          },
+                          {
+                            label: 'Delete channel',
+                            icon: Trash2,
+                            isDestructive: true,
+                            onClick: () => setChannelToDelete(channel),
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}

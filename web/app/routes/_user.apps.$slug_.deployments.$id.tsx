@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams } from 'react-router';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
-import { ArrowLeft, Check, ChevronRight, Copy, Terminal } from 'lucide-react';
+import { Check, ChevronRight, Copy, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 import { getDeploymentOptions } from '~/queries/deployments';
 import { getAppOptions } from '~/queries/apps';
@@ -10,6 +10,7 @@ import { StatusBadge } from '~/components/interface/status-badge';
 import { LogStream } from '~/components/global/log-stream';
 import { formatRelativeTime, parseUTC } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
+import { BackButton } from '~/components/interface/back-button';
 
 type CommitButtonProps = {
   sha: string;
@@ -88,7 +89,6 @@ function MetaItem(props: MetaItemProps) {
 
 export default function DeploymentDetailPage() {
   const { slug, id } = useParams();
-  const navigate = useNavigate();
 
   const { data: appData } = useSuspenseQuery(getAppOptions(slug!));
   const { data: deploymentData } = useQuery({
@@ -117,12 +117,7 @@ export default function DeploymentDetailPage() {
         className="shrink-0 gap-4 border-b border-border bg-surface/30 px-8 py-3"
       >
         <HStack space={3} alignItems="center">
-          <button
-            onClick={() => navigate(`/apps/${slug}/deployments`)}
-            className="group flex size-7 items-center justify-center rounded border border-border bg-surface transition-all hover:bg-white/[0.06]"
-          >
-            <ArrowLeft className="size-3.5 text-text-tertiary group-hover:text-text" />
-          </button>
+          <BackButton to={`/apps/${slug}/deployments`} />
           <HStack space={2} alignItems="center">
             <span className="text-[13px] font-medium text-text">
               {app.name}

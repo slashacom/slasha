@@ -23,12 +23,12 @@ import { GitConnectionManager } from '~/components/apps/git-connection-manager';
 import { BackupManager } from '~/components/apps/backup-manager';
 import { DomainManager } from '~/components/apps/domain-manager';
 import { StorageManager } from '~/components/apps/storage-manager';
-import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { SectionHeader } from '~/components/interface/section-header';
 import { getBackupOptions, getVolumesOptions } from '~/queries/storage';
 import { queryClient } from '~/utils/query-client';
 import { getGithubStatusOptions } from '~/queries/connections';
+import { DangerZone } from '~/components/global/danger-zone';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
@@ -65,26 +65,14 @@ export default function AppSettingsPage() {
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <SectionHeader icon={SettingsIcon} title="Settings" />
       <div className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-3xl mb-8">
+        <div className="max-w-3xl space-y-8">
           <AppNameManager app={app} />
-        </div>
-        <div className="max-w-3xl mb-8">
           <AppRootDirManager app={app} />
-        </div>
-        <div className="max-w-3xl mb-8">
           <AppNodeManager app={app} />
-        </div>
-        <div className="max-w-3xl mb-8">
           <AutoDeployManager app={app} />
-        </div>
-        <div className="max-w-3xl mb-8">
           <HealthCheckManager appSlug={slug!} />
-        </div>
-        <div className="max-w-3xl mb-8">
           <AppEnvEditor appSlug={slug!} />
-        </div>
-        {app.source === 'github' && (
-          <div className="max-w-3xl mb-8">
+          {app.source === 'github' && (
             <GithubConnectionManager
               app={app}
               connection={
@@ -94,10 +82,8 @@ export default function AppSettingsPage() {
                   : undefined
               }
             />
-          </div>
-        )}
-        {app.source === 'git' && (
-          <div className="max-w-3xl mb-8">
+          )}
+          {app.source === 'git' && (
             <GitConnectionManager
               app={app}
               connection={
@@ -107,43 +93,17 @@ export default function AppSettingsPage() {
                   : undefined
               }
             />
-          </div>
-        )}
-        <div className="max-w-3xl mb-8">
+          )}
           <DomainManager appSlug={slug!} />
-        </div>
-        <div className="max-w-3xl mb-8">
           <StorageManager appSlug={slug!} />
-        </div>
-        <div className="max-w-3xl mb-12">
           <BackupManager appSlug={slug!} />
-        </div>
-        <div className="max-w-3xl">
-          <h3 className="text-[14px] font-semibold text-text">Danger Zone</h3>
-          <p className="mt-1 text-[13px] text-text-tertiary">
-            Destructive actions for your application.
-          </p>
-
-          <div className="mt-6 rounded-lg border border-red-500/20 bg-red-500/5 p-6">
-            <div className="flex items-center justify-between gap-6">
-              <div>
-                <h4 className="text-[13px] font-medium text-red-500">
-                  Delete this application
-                </h4>
-                <p className="mt-1 text-[12px] text-red-500/70">
-                  Once you delete an application, there is no going back. Please
-                  be certain.
-                </p>
-              </div>
-              <Button
-                label="Delete App"
-                color="error"
-                size="sm"
-                className="shrink-0"
-                onClick={() => setShowDeleteConfirm(true)}
-              />
-            </div>
-          </div>
+          <DangerZone
+            description="Destructive actions for your application."
+            actionTitle="Delete this application"
+            actionDescription="Once you delete an application, there is no going back. Please be certain."
+            actionLabel="Delete App"
+            onAction={() => setShowDeleteConfirm(true)}
+          />
         </div>
 
         <ConfirmationDialog

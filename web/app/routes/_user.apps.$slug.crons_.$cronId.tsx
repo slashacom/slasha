@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from 'react-router';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
-import { ArrowLeft, Clock, Pencil, Play } from 'lucide-react';
+import { Clock, Pencil, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { Button } from '~/components/interface/button';
@@ -84,17 +84,12 @@ export default function CronDetailPage() {
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
       <SectionHeader
+        backTo={`/apps/${slug}/crons`}
         icon={Clock}
         title={cron.name}
         description={cron.schedule}
         actions={
           <>
-            <Button
-              to={`/apps/${slug}/crons`}
-              label="Back"
-              variant="ghost"
-              icon={<ArrowLeft className="size-4" />}
-            />
             <Button
               to={`/apps/${slug}/crons/${cron.id}/edit`}
               label="Edit"

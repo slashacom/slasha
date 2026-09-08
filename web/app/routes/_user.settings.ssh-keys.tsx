@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router';
 import { PlusIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
+import { PageHeader } from '~/components/interface/page-header';
 import { getSshKeysOptions, useDeleteSshKey } from '~/queries/ssh-keys';
 import { queryClient } from '~/utils/query-client';
 import type { SshKey } from '~/models/ssh-key';
 import { SshKeyList } from '~/components/settings/ssh-key-list';
-import { AddSshKeyDialog } from '~/components/settings/add-ssh-key-dialog';
-import { PageHeader } from '~/components/interface/page-header';
 
 export function meta() {
   return [{ title: 'SSH Keys' }];
@@ -20,10 +20,10 @@ export async function clientLoader() {
 }
 
 export default function SshKeys() {
+  const navigate = useNavigate();
   const { data } = useSuspenseQuery(getSshKeysOptions());
   const deleteKey = useDeleteSshKey();
 
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<SshKey | null>(null);
 
   const handleConfirmDelete = async () => {
@@ -54,21 +54,15 @@ export default function SshKeys() {
           <Button
             label="Add key"
             icon={<PlusIcon className="size-4" />}
-            onClick={() => setIsAddDialogOpen(true)}
+            onClick={() => navigate('/settings/ssh-keys/new')}
           />
         }
       />
 
       <SshKeyList
         keys={data.keys ?? []}
-        isLoading={false}
         onDelete={setPendingDelete}
-        onAddFirst={() => setIsAddDialogOpen(true)}
-      />
-
-      <AddSshKeyDialog
-        isOpen={isAddDialogOpen}
-        onOpenChange={setIsAddDialogOpen}
+        onAddFirst={() => navigate('/settings/ssh-keys/new')}
       />
 
       <ConfirmationDialog

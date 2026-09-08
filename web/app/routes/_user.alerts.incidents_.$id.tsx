@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { ArrowLeft, ShieldAlert } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
 import { useParams } from 'react-router';
 import { AlertCard } from '~/components/alerts/alert-card';
 import { AlertDetailStat } from '~/components/alerts/alert-detail-stat';
@@ -57,19 +57,12 @@ export default function AlertIncidentDetailPage() {
   return (
     <div className="space-y-8 p-8">
       <SectionHeader
+        backTo="/alerts"
         icon={ShieldAlert}
         title={ruleName}
         description={ruleCondition ?? undefined}
         actions={
-          <>
-            <Button
-              to="/alerts"
-              label="Back to alerts"
-              variant="ghost"
-              icon={<ArrowLeft className="size-4" />}
-            />
-            <Button label="Refresh" variant="ghost" onClick={() => refetch()} />
-          </>
+          <Button label="Refresh" variant="ghost" onClick={() => refetch()} />
         }
         className="h-auto border-0 px-0"
       />
@@ -104,16 +97,10 @@ export default function AlertIncidentDetailPage() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <AlertCard>
-          <div className="mb-4">
-            <h3 className="text-xs font-medium text-text-tertiary">
-              Incident details
-            </h3>
-            <p className="mt-1 text-[11px] text-text-tertiary">
-              Threshold and routing metadata for this alert entry.
-            </p>
-          </div>
-
+        <AlertCard
+          title="Incident details"
+          description="Threshold and routing metadata for this alert entry."
+        >
           <div className="grid gap-3 sm:grid-cols-2">
             <AlertDetailStat label="Rule" value={ruleName} />
             {ruleCondition ? (
@@ -129,17 +116,10 @@ export default function AlertIncidentDetailPage() {
           </div>
         </AlertCard>
 
-        <AlertCard>
-          <div className="mb-4">
-            <h3 className="text-xs font-medium text-text-tertiary">
-              Trigger summary
-            </h3>
-            <p className="mt-1 text-[11px] text-text-tertiary">
-              Every recorded trigger, re-notify, and resolution event for this
-              incident.
-            </p>
-          </div>
-
+        <AlertCard
+          title="Trigger summary"
+          description="Every recorded trigger, re-notify, and resolution event for this incident."
+        >
           <div className="grid gap-3 sm:grid-cols-2">
             <AlertDetailStat
               label="Trigger count"
@@ -165,14 +145,10 @@ export default function AlertIncidentDetailPage() {
         </AlertCard>
       </div>
 
-      <AlertCard>
-        <div className="mb-5">
-          <h3 className="text-xs font-medium text-text-tertiary">Triggers</h3>
-          <p className="mt-1 text-[11px] text-text-tertiary">
-            Click a trigger entry to inspect the full message and payload.
-          </p>
-        </div>
-
+      <AlertCard
+        title="Triggers"
+        description="Click a trigger entry to inspect the full message and payload."
+      >
         {notifications.length === 0 ? (
           <AlertEmptyState type="notifications" />
         ) : (

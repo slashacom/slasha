@@ -32,13 +32,15 @@ import { queryClient } from '~/utils/query-client';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { RepositorySelect } from './repository-select';
 import { BranchSelect } from './branch-select';
+import { SettingsCard } from '~/components/interface/settings-card';
 
 interface Props {
   app: App;
   connection?: GithubAppConnection;
 }
 
-export function GithubConnectionManager({ app, connection }: Props) {
+export function GithubConnectionManager(props: Props) {
+  const { app, connection } = props;
   const [isEditing, setIsEditing] = useState(false);
   const [selectedRepository, setSelectedRepository] = useState<string>('');
   const [isDisconnectDialogOpen, setIsDisconnectDialogOpen] = useState(false);
@@ -163,197 +165,197 @@ export function GithubConnectionManager({ app, connection }: Props) {
 
   const repositories = reposData?.repositories || [];
 
-  return (
-    <div>
-      <h3 className="text-[14px] font-semibold text-text">GitHub Connection</h3>
-      <p className="mt-1 text-[13px] text-text-tertiary">
-        Manage the GitHub repository connected to this application.
-      </p>
-
-      <div className="mt-6 rounded-lg border border-border bg-surface p-6">
-        {!isEditing ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Github className="size-5 text-text" />
-              <div>
-                {isConnected ? (
-                  <>
-                    <a
-                      href={repository.html_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1.5 text-[13px] font-medium text-text hover:underline"
-                    >
-                      {repository.full_name}
-                      <ExternalLink className="size-3.5 text-text-tertiary" />
-                    </a>
-                    <div className="text-[12px] text-text-secondary mt-1">
-                      <div className="flex items-center gap-2">
-                        <span>Branch:</span>
-                        {isEditingBranch ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-48">
-                              {githubBranches || branchesLoading ? (
-                                <BranchSelect
-                                  branches={githubBranches?.branches || []}
-                                  value={branchValue}
-                                  onChange={setBranchValue}
-                                  isLoading={branchesLoading}
-                                />
-                              ) : (
-                                <Input
-                                  value={branchValue}
-                                  onChange={(e) =>
-                                    setBranchValue(e.target.value)
-                                  }
-                                  className="h-7 text-[12px]"
-                                />
-                              )}
-                            </div>
-                            <Button
-                              color="primary"
-                              size="sm"
-                              variant="ghost"
-                              icon={<Check className="size-3.5" />}
-                              onClick={handleSaveBranch}
-                              isLoading={updateBranch.isPending}
-                            />
-                            <Button
-                              color="neutral"
-                              size="sm"
-                              variant="ghost"
-                              icon={<X className="size-3.5" />}
-                              onClick={() => {
-                                setIsEditingBranch(false);
-                                setBranchValue(app.default_branch);
-                              }}
-                              isDisabled={updateBranch.isPending}
-                            />
-                          </div>
-                        ) : (
-                          <>
-                            <span className="font-mono text-text font-medium">
-                              {app.default_branch}
-                            </span>
-                            <Button
-                              color="neutral"
-                              size="sm"
-                              variant="ghost"
-                              icon={<Pencil className="size-3.5" />}
-                              onClick={() => setIsEditingBranch(true)}
-                              title="Edit Branch"
-                            />
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-[13px] font-medium text-amber-500">
-                    Not connected or repository not found
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              {isConnected && (
-                <>
-                  <Button
-                    variant="ghost"
-                    icon={<RefreshCw className="size-4" />}
-                    onClick={handleSync}
-                    isDisabled={syncApp.isPending}
-                    title="Sync"
-                  />
-                  <Button
-                    variant="ghost"
-                    icon={<Trash2 className="size-4" />}
-                    onClick={() => setIsDisconnectDialogOpen(true)}
-                    isDisabled={disconnectGithub.isPending}
-                    className="text-red-500 hover:text-red-500"
-                    title="Disconnect"
-                  />
-                </>
-              )}
+  const body = (
+    <div className="p-6">
+      {!isEditing ? (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Github className="size-5 text-text" />
+            <div>
               {isConnected ? (
+                <>
+                  <a
+                    href={repository.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 text-[13px] font-medium text-text hover:underline"
+                  >
+                    {repository.full_name}
+                    <ExternalLink className="size-3.5 text-text-tertiary" />
+                  </a>
+                  <div className="text-[12px] text-text-secondary mt-1">
+                    <div className="flex items-center gap-2">
+                      <span>Branch:</span>
+                      {isEditingBranch ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-48">
+                            {githubBranches || branchesLoading ? (
+                              <BranchSelect
+                                branches={githubBranches?.branches || []}
+                                value={branchValue}
+                                onChange={setBranchValue}
+                                isLoading={branchesLoading}
+                              />
+                            ) : (
+                              <Input
+                                value={branchValue}
+                                onChange={(e) => setBranchValue(e.target.value)}
+                                className="h-7 text-[12px]"
+                              />
+                            )}
+                          </div>
+                          <Button
+                            color="primary"
+                            size="sm"
+                            variant="ghost"
+                            icon={<Check className="size-3.5" />}
+                            onClick={handleSaveBranch}
+                            isLoading={updateBranch.isPending}
+                          />
+                          <Button
+                            color="neutral"
+                            size="sm"
+                            variant="ghost"
+                            icon={<X className="size-3.5" />}
+                            onClick={() => {
+                              setIsEditingBranch(false);
+                              setBranchValue(app.default_branch);
+                            }}
+                            isDisabled={updateBranch.isPending}
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <span className="font-mono text-text font-medium">
+                            {app.default_branch}
+                          </span>
+                          <Button
+                            color="neutral"
+                            size="sm"
+                            variant="ghost"
+                            icon={<Pencil className="size-3.5" />}
+                            onClick={() => setIsEditingBranch(true)}
+                            title="Edit Branch"
+                          />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="text-[13px] font-medium text-amber-500">
+                  Not connected or repository not found
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            {isConnected && (
+              <>
                 <Button
                   variant="ghost"
-                  icon={<ArrowRightLeft className="size-4" />}
-                  onClick={() => setIsEditing(true)}
-                  title="Change Repository"
+                  icon={<RefreshCw className="size-4" />}
+                  onClick={handleSync}
+                  isDisabled={syncApp.isPending}
+                  title="Sync"
                 />
-              ) : (
                 <Button
-                  color="neutral"
-                  label="Connect Repository"
-                  onClick={() => setIsEditing(true)}
+                  variant="ghost"
+                  icon={<Trash2 className="size-4" />}
+                  onClick={() => setIsDisconnectDialogOpen(true)}
+                  isDisabled={disconnectGithub.isPending}
+                  className="text-red-500 hover:text-red-500"
+                  title="Disconnect"
                 />
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {reposLoading ? (
-              <p className="text-sm text-text-tertiary">
-                Loading repositories...
-              </p>
-            ) : repositories.length === 0 ? (
-              <div className="text-center py-4">
-                <p className="mb-4 text-sm text-text-secondary">
-                  You haven't connected any GitHub accounts yet.
-                </p>
-                <Button
-                  type="button"
-                  color="neutral"
-                  label="Connect GitHub Account"
-                  onClick={handleConnectGithub}
-                  isLoading={installGithub.isPending}
-                />
-              </div>
+              </>
+            )}
+            {isConnected ? (
+              <Button
+                variant="ghost"
+                icon={<ArrowRightLeft className="size-4" />}
+                onClick={() => setIsEditing(true)}
+                title="Change Repository"
+              />
             ) : (
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-[12px] font-medium text-text-tertiary">
-                      Repository
-                    </Label>
-                    <button
-                      type="button"
-                      onClick={handleConnectGithub}
-                      className="text-[12px] font-medium text-text-secondary hover:text-text hover:underline"
-                      disabled={installGithub.isPending}
-                    >
-                      Connect another account
-                    </button>
-                  </div>
-                  <RepositorySelect
-                    repositories={repositories}
-                    value={selectedRepository}
-                    onChange={setSelectedRepository}
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button
-                    variant="ghost"
-                    label="Cancel"
-                    onClick={() => setIsEditing(false)}
-                    isDisabled={reconnectGithub.isPending}
-                  />
-                  <Button
-                    label="Save Connection"
-                    onClick={handleReconnect}
-                    isLoading={reconnectGithub.isPending}
-                    isDisabled={
-                      !selectedRepository || reconnectGithub.isPending
-                    }
-                  />
-                </div>
-              </div>
+              <Button
+                color="neutral"
+                label="Connect Repository"
+                onClick={() => setIsEditing(true)}
+              />
             )}
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {reposLoading ? (
+            <p className="text-sm text-text-tertiary">
+              Loading repositories...
+            </p>
+          ) : repositories.length === 0 ? (
+            <div className="text-center py-4">
+              <p className="mb-4 text-sm text-text-secondary">
+                You haven't connected any GitHub accounts yet.
+              </p>
+              <Button
+                type="button"
+                color="neutral"
+                label="Connect GitHub Account"
+                onClick={handleConnectGithub}
+                isLoading={installGithub.isPending}
+              />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[12px] font-medium text-text-tertiary">
+                    Repository
+                  </Label>
+                  <button
+                    type="button"
+                    onClick={handleConnectGithub}
+                    className="text-[12px] font-medium text-text-secondary hover:text-text hover:underline"
+                    disabled={installGithub.isPending}
+                  >
+                    Connect another account
+                  </button>
+                </div>
+                <RepositorySelect
+                  repositories={repositories}
+                  value={selectedRepository}
+                  onChange={setSelectedRepository}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="ghost"
+                  label="Cancel"
+                  onClick={() => setIsEditing(false)}
+                  isDisabled={reconnectGithub.isPending}
+                />
+                <Button
+                  label="Save Connection"
+                  onClick={handleReconnect}
+                  isLoading={reconnectGithub.isPending}
+                  isDisabled={!selectedRepository || reconnectGithub.isPending}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      <SettingsCard
+        icon={Github}
+        title="GitHub Connection"
+        description="Manage the GitHub repository connected to this application."
+        body={body}
+      />
 
       <ConfirmationDialog
         open={isDisconnectDialogOpen}
@@ -363,6 +365,6 @@ export function GithubConnectionManager({ app, connection }: Props) {
         confirmLabel="Disconnect"
         onConfirm={handleDisconnect}
       />
-    </div>
+    </>
   );
 }

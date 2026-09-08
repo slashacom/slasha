@@ -9,6 +9,7 @@ import { NodeForm } from '~/components/nodes/node-form';
 import { SectionHeader } from '~/components/interface/section-header';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
+import { DangerZone } from '~/components/global/danger-zone';
 
 export default function NodeSettingsTab() {
   const { id } = useParams<{ id: string }>();
@@ -53,34 +54,13 @@ export default function NodeSettingsTab() {
         {!isLocalNode && node.status !== 'Deleting' && (
           <>
             <div className="max-w-3xl">
-              <h3 className="text-[14px] font-semibold text-text">
-                Danger Zone
-              </h3>
-              <p className="mt-1 text-[13px] text-text-tertiary">
-                Destructive actions for this node.
-              </p>
-
-              <div className="mt-6 rounded-lg border border-red-500/20 bg-red-500/5 p-6">
-                <div className="flex items-center justify-between gap-6">
-                  <div>
-                    <h4 className="text-[13px] font-medium text-red-500">
-                      Delete this node
-                    </h4>
-                    <p className="mt-1 text-[12px] text-red-500/70">
-                      Once you delete a node, there is no going back. This will
-                      delete the node and run a teardown script. Please be
-                      certain.
-                    </p>
-                  </div>
-                  <Button
-                    label="Delete Node"
-                    color="error"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => setShowDeleteConfirm(true)}
-                  />
-                </div>
-              </div>
+              <DangerZone
+                description="Destructive actions for this node."
+                actionTitle="Delete this node"
+                actionDescription="Once you delete a node, there is no going back. This will delete the node and run a teardown script. Please be certain."
+                actionLabel="Delete Node"
+                onAction={() => setShowDeleteConfirm(true)}
+              />
             </div>
 
             <ConfirmationDialog

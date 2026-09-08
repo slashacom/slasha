@@ -7,7 +7,7 @@ import {
 } from '~/components/interface/dialog';
 import type { AlertNotification } from '~/models/alerts';
 import { formatDateTime } from '~/utils/date';
-import { AlertDetailField } from './alert-detail-field';
+import { AlertDetailStat } from './alert-detail-stat';
 import { AlertMessage } from './alert-message';
 import { formatNotificationKind } from './notification-kind';
 
@@ -41,17 +41,17 @@ export function AlertNotificationDialog(props: AlertNotificationDialogProps) {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <AlertDetailField
+              <AlertDetailStat
                 label="Kind"
                 value={formatNotificationKind(notification.kind)}
               />
-              <AlertDetailField
+              <AlertDetailStat
                 label="Delivered"
                 value={formatDateTime(notification.created_at)}
               />
             </div>
 
-            <AlertDetailField
+            <AlertDetailStat
               label="Raw payload"
               value={notification.message}
               valueClassName="whitespace-pre-wrap break-words font-mono text-xs font-medium tracking-normal text-text-secondary"

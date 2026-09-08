@@ -1,8 +1,10 @@
 import type { LucideIcon } from 'lucide-react';
+import { BackButton } from '~/components/interface/back-button';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
 
 type SectionHeaderProps = {
+  backTo?: string;
   icon?: LucideIcon;
   title?: string;
   description?: string;
@@ -11,7 +13,7 @@ type SectionHeaderProps = {
 };
 
 export function SectionHeader(props: SectionHeaderProps) {
-  const { icon: Icon, title, description, actions, className } = props;
+  const { backTo, icon: Icon, title, description, actions, className } = props;
   return (
     <HStack
       justifyContent="between"
@@ -21,18 +23,30 @@ export function SectionHeader(props: SectionHeaderProps) {
         className
       )}
     >
-      <HStack space={2} alignItems={description ? 'start' : 'center'}>
+      <HStack
+        space={2}
+        alignItems={description ? 'start' : 'center'}
+        className="min-w-0"
+      >
+        {backTo ? <BackButton to={backTo} /> : null}
         {Icon ? (
           <Icon
             className={cn('size-4 text-text-tertiary', description && 'mt-0.5')}
           />
         ) : null}
-        <VStack space={0.5}>
+        <VStack space={0.5} className="min-w-0">
           {title ? (
-            <h2 className="text-sm font-semibold text-text">{title}</h2>
+            <h2 className="truncate text-sm font-semibold text-text">
+              {title}
+            </h2>
           ) : null}
           {description ? (
-            <p className="text-[12px] text-text-tertiary">{description}</p>
+            <p
+              className="truncate text-[12px] text-text-tertiary"
+              title={description}
+            >
+              {description}
+            </p>
           ) : null}
         </VStack>
       </HStack>

@@ -42,9 +42,11 @@ export function EmptyPage(props: EmptyPageProps) {
         <Icon className="size-8 text-text-tertiary" />
       </div>
       <VStack alignItems="center" space={1}>
-        <p className="text-sm font-medium text-text">{title}</p>
+        <p className="text-balance text-sm font-medium text-text">{title}</p>
         {subtitle && (
-          <p className="max-w-[280px] text-xs text-text-tertiary">{subtitle}</p>
+          <p className="max-w-[280px] text-pretty text-xs text-text-tertiary">
+            {subtitle}
+          </p>
         )}
       </VStack>
       {onAction && actionLabel && (

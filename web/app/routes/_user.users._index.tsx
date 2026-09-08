@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { PlusIcon, Users } from 'lucide-react';
+import { Pencil, PlusIcon, Trash2, Users } from 'lucide-react';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
@@ -14,6 +14,7 @@ import { getUsersOptions, useDeleteUser } from '~/queries/users';
 import type { User } from '~/models/user';
 import { PageHeader } from '~/components/interface/page-header';
 import { formatDate } from '~/utils/date';
+import { TableRowActions } from '~/components/interface/table-row-actions';
 
 export async function clientLoader() {
   const me = await queryClient.ensureQueryData(getAuthMeOptions());
@@ -88,21 +89,22 @@ export default function UsersPage() {
                   {formatDate(user.created_at)}
                 </td>
                 <td className="py-3 text-right">
-                  <div className="flex items-center justify-end gap-3">
-                    <Link
-                      to={`/users/${user.id}/edit`}
-                      className="text-xs !text-text-secondary !no-underline hover:!text-text"
-                    >
-                      Edit
-                    </Link>
-                    <button
-                      onClick={() => setPendingDelete(user)}
-                      disabled={deleteUser.isPending}
-                      className="text-xs text-red-500 hover:underline disabled:opacity-50"
-                    >
-                      Delete
-                    </button>
-                  </div>
+                  <TableRowActions
+                    actions={[
+                      {
+                        label: 'Edit user',
+                        icon: Pencil,
+                        to: `/users/${user.id}/edit`,
+                      },
+                      {
+                        label: 'Delete user',
+                        icon: Trash2,
+                        isDestructive: true,
+                        isDisabled: deleteUser.isPending,
+                        onClick: () => setPendingDelete(user),
+                      },
+                    ]}
+                  />
                 </td>
               </tr>
             ))}
