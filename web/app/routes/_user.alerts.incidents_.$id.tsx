@@ -20,8 +20,8 @@ import {
   getAlertIncidentNotificationsOptions,
   getAlertRulesOptions,
 } from '~/queries/alerts';
-import { formatMetric } from '~/utils/format';
-import { formatDateTime } from '~/utils/date';
+import { formatDateTime, formatDuration } from '~/utils/date';
+import { incidentValues } from '~/components/alerts/incident-values';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader(args: { params: { id: string } }) {
@@ -50,6 +50,9 @@ export default function AlertIncidentDetailPage() {
   const apps = appsData.apps.map((item) => item.app);
   const ruleName = rule?.name ?? 'Unknown rule';
   const ruleCondition = rule ? configSummary(rule, apps) : null;
+  const values = incidentValues(incident);
+  const firstNotification = notifications[0];
+  const latestNotification = notifications[notifications.length - 1];
 
   return (
     <div className="space-y-8 p-8">
@@ -89,8 +92,8 @@ export default function AlertIncidentDetailPage() {
           mono={false}
         />
         <AlertStat
-          label="Last seen"
-          value={formatDateTime(incident.last_notified_at)}
+          label={incident.status === 'open' ? 'Ongoing for' : 'Duration'}
+          value={formatDuration(incident.opened_at, incident.resolved_at)}
           mono={false}
         />
         <AlertStat
@@ -116,22 +119,13 @@ export default function AlertIncidentDetailPage() {
             {ruleCondition ? (
               <AlertDetailStat label="Condition" value={ruleCondition} />
             ) : null}
-            <AlertDetailStat
-              label="Trigger value"
-              value={formatMetric(incident.trigger_value)}
-            />
-            <AlertDetailStat
-              label="Current value"
-              value={formatMetric(incident.current_value)}
-            />
-            <AlertDetailStat
-              label="Recovery value"
-              value={formatMetric(incident.recovery_value)}
-            />
-            <AlertDetailStat
-              label="Threshold value"
-              value={formatMetric(incident.threshold_value)}
-            />
+            {values.map((entry) => (
+              <AlertDetailStat
+                key={entry.label}
+                label={entry.label}
+                value={entry.value}
+              />
+            ))}
           </div>
         </AlertCard>
 
@@ -154,20 +148,18 @@ export default function AlertIncidentDetailPage() {
             <AlertDetailStat
               label="Latest event"
               value={
-                notifications[notifications.length - 1]
-                  ? formatNotificationKind(
-                      notifications[notifications.length - 1].kind
-                    )
+                latestNotification
+                  ? formatNotificationKind(latestNotification.kind)
                   : '—'
               }
             />
             <AlertDetailStat
-              label="Opened"
-              value={formatDateTime(incident.opened_at)}
+              label="First trigger"
+              value={formatDateTime(firstNotification?.created_at)}
             />
             <AlertDetailStat
-              label="Resolved"
-              value={formatDateTime(incident.resolved_at)}
+              label="Last trigger"
+              value={formatDateTime(latestNotification?.created_at)}
             />
           </div>
         </AlertCard>

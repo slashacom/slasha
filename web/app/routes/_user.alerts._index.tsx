@@ -10,8 +10,8 @@ import {
   getAlertIncidentsOptions,
   getAlertRulesOptions,
 } from '~/queries/alerts';
-import { formatMetric } from '~/utils/format';
-import { formatDateTime } from '~/utils/date';
+import { formatDateTime, formatDuration } from '~/utils/date';
+import { incidentValueSummary } from '~/components/alerts/incident-values';
 import { queryClient } from '~/utils/query-client';
 import { PageHeader } from '~/components/interface/page-header';
 
@@ -51,10 +51,9 @@ export default function AlertsPage() {
               <Table
                 columns={[
                   'Rule',
-                  'Values',
                   'Status',
                   'Opened',
-                  'Last seen',
+                  'Duration',
                   'Resolved',
                   { label: '', align: 'right' },
                 ]}
@@ -66,17 +65,11 @@ export default function AlertsPage() {
                         {rulesById.get(incident.rule_id)?.name ??
                           'Unknown rule'}
                       </div>
-                    </td>
-                    <td className="py-4 pr-4 text-text-secondary">
-                      <div className="space-y-1">
-                        <div>
-                          Trigger {formatMetric(incident.trigger_value)} ·
-                          Current {formatMetric(incident.current_value)}
+                      {incidentValueSummary(incident) ? (
+                        <div className="mt-1 text-xs text-text-tertiary">
+                          {incidentValueSummary(incident)}
                         </div>
-                        <div className="text-xs text-text-tertiary">
-                          Threshold {formatMetric(incident.threshold_value)}
-                        </div>
-                      </div>
+                      ) : null}
                     </td>
                     <td className="py-4 pr-4">
                       <AlertStatusBadge
@@ -89,7 +82,7 @@ export default function AlertsPage() {
                       {formatDateTime(incident.opened_at)}
                     </td>
                     <td className="py-4 pr-4 text-text-secondary">
-                      {formatDateTime(incident.last_notified_at)}
+                      {formatDuration(incident.opened_at, incident.resolved_at)}
                     </td>
                     <td className="py-4 text-text-secondary">
                       {formatDateTime(incident.resolved_at)}
