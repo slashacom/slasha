@@ -1,24 +1,19 @@
-.PHONY: dev dev-cli dev-bundle format lint test gen-models docker-up docker-logs clean
+.PHONY: dev dev-cli format lint test gen-models docker-up docker-logs clean
 
 .DEFAULT_GOAL := dev
+
+FEATURES ?= serve
 
 dev:
 	@cd web && bun install
 	@test -f .env || cp .env.example .env
 	@trap 'kill $$(jobs -p)' EXIT; \
-	cargo run -p slasha-cli --no-default-features --features serve,vendored -- serve & \
+	cargo run -p slasha-cli --no-default-features --features $(FEATURES) -- serve & \
 	cd web && bun run dev & \
 	wait
 
 dev-cli:
-	cargo run -p slasha-cli --no-default-features --features serve,vendored -- $(ARGS)
-
-dev-bundle:
-	@cd web && bun install
-	@echo "Building frontend..."
-	@cd web && bun run build
-	@echo "Running bundled server..."
-	cargo run -p slasha-cli -- serve
+	cargo run -p slasha-cli --no-default-features --features $(FEATURES) -- $(ARGS)
 
 format:
 	@cargo +nightly fmt --all

@@ -12,21 +12,21 @@ name = "slasha"
 path = "src/main.rs"
 
 [features]
-default = ["bundle", "vendored"]
+# The fully self contained CLI, with the PaaS server, frontend, and all
+# required libraries bundled.
+default = ["serve", "embed-web", "vendored"]
 
-# Build only the backend server. The frontend must be served separately
-# (useful during frontend development).
-serve = ["slasha-server"]
+# Enables the `serve` command in the CLI to run the PaaS server.
+# The frontend must be served separately (useful during frontend development)
+# enable `embed-web` to bundle the entire frontend into the binary.
+serve = ["dep:slasha-server"]
 
-# Embed the frontend assets into the backend binary, producing a single
-# self-contained executable.
-bundle = ["serve", "slasha-server/bundle"]
+# Embed the frontend into the binary.
+embed-web = ["serve", "slasha-server/embed-web"]
 
-# Statically link native dependencies instead of relying on host-installed
-# libraries.
+# Statically link native dependencies instead of relying on host installed libraries.
 vendored = [
-    "slasha-db/bundled-sqlite",
-    "slasha-db/bundled-duckdb",
+    "slasha-db/vendored",
     "slasha-server?/vendored",
 ]
 

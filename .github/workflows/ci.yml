@@ -33,7 +33,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            pkg-config libdbus-1-dev cmake perl
+            pkg-config cmake perl g++
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2

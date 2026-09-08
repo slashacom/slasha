@@ -1,5 +1,5 @@
 pub mod alerts;
-#[cfg(feature = "bundle")]
+#[cfg(feature = "embed-web")]
 pub mod assets;
 pub mod auth;
 pub mod connections;

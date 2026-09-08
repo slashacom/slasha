@@ -3,6 +3,10 @@ name = "slasha-server"
 version = "0.0.0"
 edition = "2024"
 
+[features]
+embed-web = ["rust-embed", "mime_guess"]
+vendored = ["git2/vendored-openssl", "slasha-db/vendored"]
+
 [dependencies]
 anyhow = "1.0.102"
 axum = { version = "0.8.8", features = ["ws"] }
@@ -62,7 +66,3 @@ lettre = { version = "0.11.22", features = ["tokio1", "tokio1-native-tls"] }
 garde = { version = "0.23.0", features = ["full"] }
 sysinfo = "0.39.6"
 cron-parser = "0.11.2"
-
-[features]
-bundle = ["rust-embed", "mime_guess"]
-vendored = ["git2/vendored-openssl", "slasha-db/bundled-sqlite", "slasha-db/bundled-duckdb"]

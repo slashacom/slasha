@@ -165,7 +165,7 @@ pub async fn sync_routes(
 
     let mut local_routes: Vec<RouteEntry> = Vec::new();
 
-    #[cfg(feature = "bundle")]
+    #[cfg(feature = "embed-web")]
     local_routes.push(RouteEntry {
         domain: config.platform_domain.clone(),
         upstreams: vec![Upstream {

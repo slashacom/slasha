@@ -4,12 +4,9 @@ version = "0.0.0"
 edition = "2024"
 
 [features]
-# Statically link the embedded database libraries into the binary instead of
-# relying on the host's installed versions. These features are intended for
-# release builds so the published binary runs on any server regardless of the
-# installed libraries.
-bundled-sqlite = ["libsqlite3-sys/bundled"]
-bundled-duckdb = ["duckdb/bundled"]
+# Statically link embedded database libraries into the binary
+# instead of relying on host installed versions.
+vendored = ["libsqlite3-sys/bundled", "duckdb/bundled"]
 
 [dependencies]
 diesel = { version = "2.2.0", features = ["sqlite", "returning_clauses_for_sqlite_3_35", "r2d2", "chrono"] }

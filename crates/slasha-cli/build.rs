@@ -1,6 +1,22 @@
 use std::env;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let features: Vec<String> = env::vars()
+        .filter_map(|(key, _)| {
+            key.strip_prefix("CARGO_FEATURE_")
+                .map(|feature| feature.to_lowercase().replace('_', "-"))
+        })
+        .collect();
+
+    println!(
+        "cargo:warning=compiling with features: {}",
+        if features.is_empty() {
+            "none".to_string()
+        } else {
+            features.join(", ")
+        }
+    );
+
     let vars = [
         "PROFILE",
         "TARGET",

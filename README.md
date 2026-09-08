@@ -176,11 +176,11 @@ make dev            # copies .env.example to .env, then runs server + web
 Other common tasks:
 
 ```bash
-make dev-cli ARGS="status"   # run the CLI from source
-make dev-bundle              # build the web UI and serve it from the binary
-make docker-up               # run the full stack with docker compose
-make format                  # cargo fmt (nightly) + biome
-make lint                    # cargo clippy + biome
+make dev-cli ARGS="status"    # run the CLI
+make dev FEATURES="embed-web" # run dev server with custom cargo features
+make docker-up                # run the full stack with docker compose
+make format                   # cargo fmt (nightly) + biome
+make lint                     # cargo clippy + biome
 ```
 
 Configuration is read from `.env` (see `.env.example`):

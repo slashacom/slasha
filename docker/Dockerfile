@@ -7,7 +7,7 @@ RUN NODE_ENV=production bun run build
 
 FROM lukemathwalker/cargo-chef:latest-rust-slim-bookworm AS chef
 RUN apt-get update && \
-    apt-get install -y pkg-config libssl-dev libsqlite3-dev libdbus-1-dev perl make g++ && \
+    apt-get install -y pkg-config perl make g++ cmake ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
@@ -26,7 +26,7 @@ RUN cargo build --release -p slasha-cli
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && \
-    apt-get install -y openssh-server git libssl3 ca-certificates libsqlite3-0 curl gnupg && \
+    apt-get install -y openssh-server git ca-certificates curl gnupg && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     chmod a+r /etc/apt/keyrings/docker.gpg && \
