@@ -5,6 +5,7 @@ import { Button } from '~/components/interface/button';
 import { AppList } from '~/components/apps/app-list';
 import { getAppsOptions } from '~/queries/apps';
 import { queryClient } from '~/utils/query-client';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
   await queryClient.ensureQueryData(getAppsOptions());
@@ -16,19 +17,17 @@ export default function AppsIndex() {
 
   return (
     <div>
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="font-semibold text-text">Apps</h3>
-          <p className="mt-2 text-sm text-text-secondary">
-            Manage and browse the applications running on this instance.
-          </p>
-        </div>
-        <Button
-          label="New app"
-          icon={<PlusIcon className="size-4" />}
-          onClick={() => navigate('/apps/new')}
-        />
-      </div>
+      <PageHeader
+        title="Apps"
+        description="Manage and browse the applications running on this instance."
+        actions={
+          <Button
+            label="New app"
+            icon={<PlusIcon className="size-4" />}
+            onClick={() => navigate('/apps/new')}
+          />
+        }
+      />
 
       <div className="mt-6">
         <AppList apps={data.apps ?? []} />

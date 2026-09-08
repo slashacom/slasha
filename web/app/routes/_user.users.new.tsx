@@ -6,6 +6,7 @@ import { getAuthMeOptions } from '~/queries/auth';
 import { useCreateUser } from '~/queries/users';
 import { getAppsOptions } from '~/queries/apps';
 import { UserForm } from '~/components/users/user-form';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
   const me = await queryClient.ensureQueryData(getAuthMeOptions());
@@ -50,12 +51,10 @@ export default function NewUser() {
 
   return (
     <div>
-      <div>
-        <h3 className="font-semibold text-text">Add user</h3>
-        <p className="mt-2 text-sm text-text-secondary">
-          Create a new account for someone on your team.
-        </p>
-      </div>
+      <PageHeader
+        title="Add user"
+        description="Create a new account for someone on your team."
+      />
 
       <div className="mt-6">
         <UserForm

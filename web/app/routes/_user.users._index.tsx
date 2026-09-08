@@ -12,6 +12,7 @@ import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getUsersOptions, useDeleteUser } from '~/queries/users';
 import type { User } from '~/models/user';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
   const me = await queryClient.ensureQueryData(getAuthMeOptions());
@@ -50,19 +51,17 @@ export default function UsersPage() {
 
   return (
     <div>
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="font-semibold text-text">Users</h3>
-          <p className="mt-2 text-sm text-text-secondary">
-            Manage who has access to this instance.
-          </p>
-        </div>
-        <Button
-          label="Add user"
-          icon={<PlusIcon className="size-4" />}
-          onClick={() => navigate('/users/new')}
-        />
-      </div>
+      <PageHeader
+        title="Users"
+        description="Manage who has access to this instance."
+        actions={
+          <Button
+            label="Add user"
+            icon={<PlusIcon className="size-4" />}
+            onClick={() => navigate('/users/new')}
+          />
+        }
+      />
 
       <div className="mt-6 overflow-x-auto">
         {usersData.users.length === 0 ? (

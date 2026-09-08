@@ -9,6 +9,7 @@ import { TabNav } from '~/components/interface/tab-nav';
 import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
 import { cn } from '~/utils/classname';
 import { queryClient } from '~/utils/query-client';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
@@ -160,10 +161,10 @@ export default function AppLayout() {
   if (!app) {
     return (
       <div className="p-8">
-        <h3 className="font-semibold text-text">App not found</h3>
-        <p className="mt-2 text-sm text-text-secondary">
-          The application you're looking for doesn't exist.
-        </p>
+        <PageHeader
+          title="App not found"
+          description="The application you're looking for doesn't exist."
+        />
       </div>
     );
   }

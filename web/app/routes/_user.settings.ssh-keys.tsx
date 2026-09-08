@@ -9,6 +9,7 @@ import { queryClient } from '~/utils/query-client';
 import type { SshKey } from '~/models/ssh-key';
 import { SshKeyList } from '~/components/settings/ssh-key-list';
 import { AddSshKeyDialog } from '~/components/settings/add-ssh-key-dialog';
+import { PageHeader } from '~/components/interface/page-header';
 
 export function meta() {
   return [{ title: 'SSH Keys' }];
@@ -46,19 +47,17 @@ export default function SshKeys() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="font-semibold text-text">SSH Keys</h3>
-          <p className="mt-2 text-sm text-text-secondary">
-            Manage public SSH keys to access your applications via Git over SSH.
-          </p>
-        </div>
-        <Button
-          label="Add key"
-          icon={<PlusIcon className="size-4" />}
-          onClick={() => setIsAddDialogOpen(true)}
-        />
-      </div>
+      <PageHeader
+        title="SSH Keys"
+        description="Manage public SSH keys to access your applications via Git over SSH."
+        actions={
+          <Button
+            label="Add key"
+            icon={<PlusIcon className="size-4" />}
+            onClick={() => setIsAddDialogOpen(true)}
+          />
+        }
+      />
 
       <SshKeyList
         keys={data.keys ?? []}

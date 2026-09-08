@@ -6,6 +6,7 @@ import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getNodesOptions } from '~/queries/nodes';
 import { NodeStatusBadge } from '~/components/interface/status-badge';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
   const me = await queryClient.ensureQueryData(getAuthMeOptions());
@@ -25,19 +26,17 @@ export default function NodesPage() {
 
   return (
     <div>
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="font-semibold text-text">Nodes</h3>
-          <p className="mt-2 text-sm text-text-secondary">
-            Manage the server nodes running Slasha apps.
-          </p>
-        </div>
-        <Button
-          label="Add Node"
-          icon={<PlusIcon className="size-4" />}
-          onClick={() => navigate('/nodes/new')}
-        />
-      </div>
+      <PageHeader
+        title="Nodes"
+        description="Manage the server nodes running Slasha apps."
+        actions={
+          <Button
+            label="Add Node"
+            icon={<PlusIcon className="size-4" />}
+            onClick={() => navigate('/nodes/new')}
+          />
+        }
+      />
 
       {nodesData.nodes.length === 0 ? (
         <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-border border-dashed p-12 text-center bg-surface/5">

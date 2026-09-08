@@ -7,6 +7,7 @@ import { Label } from '~/components/interface/label';
 import { VStack } from '~/components/interface/stacks';
 import { getAuthMeOptions, useUpdateProfile } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
+import { PageHeader } from '~/components/interface/page-header';
 
 export function meta() {
   return [{ title: 'Account Settings · slasha' }];
@@ -64,12 +65,10 @@ export default function AccountSettings() {
 
   return (
     <div className="space-y-6 max-w-xl">
-      <div>
-        <h3 className="font-semibold text-text">Account Settings</h3>
-        <p className="mt-2 text-sm text-text-secondary">
-          Manage your account profile and security settings.
-        </p>
-      </div>
+      <PageHeader
+        title="Account Settings"
+        description="Manage your account profile and security settings."
+      />
 
       <form onSubmit={handleSubmit} className="space-y-6 max-w-md">
         <VStack space={4}>

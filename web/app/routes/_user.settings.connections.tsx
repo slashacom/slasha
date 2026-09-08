@@ -28,6 +28,7 @@ import {
 } from '~/queries/connections';
 import { getAuthMeOptions } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
+import { PageHeader } from '~/components/interface/page-header';
 
 export function meta() {
   return [{ title: 'Connections · slasha' }];
@@ -402,12 +403,10 @@ export default function ConnectionsSettings() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div>
-        <h3 className="font-semibold text-text">Connected Accounts</h3>
-        <p className="mt-2 text-[13px] text-text-secondary">
-          Manage integrations with external services like GitHub.
-        </p>
-      </div>
+      <PageHeader
+        title="Connected Accounts"
+        description="Manage integrations with external services like GitHub."
+      />
 
       {status.enabled ? (
         <EnabledGithubConnections />

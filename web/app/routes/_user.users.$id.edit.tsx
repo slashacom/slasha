@@ -6,6 +6,7 @@ import { getAuthMeOptions } from '~/queries/auth';
 import { getUserOptions, useUpdateUser } from '~/queries/users';
 import { getAppsOptions } from '~/queries/apps';
 import { UserForm } from '~/components/users/user-form';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader(args: { params: { id: string } }) {
   const { params } = args;
@@ -67,12 +68,14 @@ export default function EditUser() {
 
   return (
     <div>
-      <div>
-        <h3 className="font-semibold text-text">Edit user</h3>
-        <p className="mt-2 text-sm text-text-secondary">
-          Update details for <span className="text-text">{user.email}</span>.
-        </p>
-      </div>
+      <PageHeader
+        title="Edit user"
+        description={
+          <>
+            Update details for <span className="text-text">{user.email}</span>.
+          </>
+        }
+      />
 
       <div className="mt-6">
         <UserForm

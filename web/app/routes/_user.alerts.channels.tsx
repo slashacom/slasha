@@ -7,7 +7,6 @@ import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
-import { SectionHeader } from '~/components/interface/section-header';
 import { Table } from '~/components/interface/table';
 import type { AlertChannel } from '~/models/alerts';
 import {
@@ -18,6 +17,7 @@ import {
 import { channelSummary } from '~/components/alerts/alert-definitions';
 import { formatDate } from '~/utils/format';
 import { queryClient } from '~/utils/query-client';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
   await queryClient.ensureQueryData(getAlertChannelsOptions());
@@ -35,8 +35,7 @@ export default function AlertsChannelsPage() {
 
   return (
     <div className="p-8">
-      <SectionHeader
-        icon={Webhook}
+      <PageHeader
         title="Channels"
         description="Manage reusable destinations for alert delivery."
         actions={
@@ -46,7 +45,6 @@ export default function AlertsChannelsPage() {
             icon={<Plus className="size-4" />}
           />
         }
-        className="h-auto border-0 px-0"
       />
 
       <div className="mt-8">

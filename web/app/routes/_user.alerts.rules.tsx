@@ -11,7 +11,6 @@ import {
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
-import { SectionHeader } from '~/components/interface/section-header';
 import { Table } from '~/components/interface/table';
 import type { AlertRule } from '~/models/alerts';
 import { getAppsOptions } from '~/queries/apps';
@@ -21,6 +20,7 @@ import {
   useDeleteAlertRule,
 } from '~/queries/alerts';
 import { queryClient } from '~/utils/query-client';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
   await Promise.all([
@@ -47,8 +47,7 @@ export default function AlertsRulesPage() {
 
   return (
     <div className="p-8">
-      <SectionHeader
-        icon={Bell}
+      <PageHeader
         title="Rules"
         description="Manage alert conditions and their delivery behavior."
         actions={
@@ -58,7 +57,6 @@ export default function AlertsRulesPage() {
             icon={<Plus className="size-4" />}
           />
         }
-        className="h-auto border-0 px-0"
       />
 
       <div className="mt-8">

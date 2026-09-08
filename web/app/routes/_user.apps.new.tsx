@@ -22,6 +22,7 @@ import {
 import { queryClient } from '~/utils/query-client';
 import { useDebounce } from '~/hooks/use-debounce';
 import type { AppSource } from '~/models/app';
+import { PageHeader } from '~/components/interface/page-header';
 
 export function meta() {
   return [{ title: 'New app · slasha' }];
@@ -157,12 +158,10 @@ export default function NewApp() {
 
   return (
     <div>
-      <div>
-        <h3 className="font-semibold text-text">New app</h3>
-        <p className="mt-2 text-sm text-text-secondary">
-          Give your application a name and choose how to deploy it.
-        </p>
-      </div>
+      <PageHeader
+        title="New app"
+        description="Give your application a name and choose how to deploy it."
+      />
 
       <div className="mt-6">
         <form onSubmit={handleSubmit} className="w-full max-w-md space-y-6">

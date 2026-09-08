@@ -1,10 +1,8 @@
 import { useMemo } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { ShieldAlert } from 'lucide-react';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { AlertEmptyState } from '~/components/alerts/alert-empty-state';
 import { Button } from '~/components/interface/button';
-import { SectionHeader } from '~/components/interface/section-header';
 import { Table } from '~/components/interface/table';
 import { TablePagination } from '~/components/interface/table-pagination';
 import { usePagination } from '~/hooks/use-pagination';
@@ -14,6 +12,7 @@ import {
 } from '~/queries/alerts';
 import { formatDate, formatMetric } from '~/utils/format';
 import { queryClient } from '~/utils/query-client';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
   await Promise.all([
@@ -34,14 +33,12 @@ export default function AlertsPage() {
 
   return (
     <div className="p-8">
-      <SectionHeader
-        icon={ShieldAlert}
+      <PageHeader
         title="Alerts"
         description="Each alert entry groups its incident details and trigger history."
         actions={
           <Button label="Refresh" variant="ghost" onClick={() => refetch()} />
         }
-        className="h-auto border-0 px-0"
       />
 
       <div className="mt-8 space-y-4">
