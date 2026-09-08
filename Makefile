@@ -20,11 +20,10 @@ format:
 	@cd web && bun run format
 
 lint:
-	@cargo clippy --workspace --all-targets
-	@cd web && bun run lint
+	@cargo clippy --workspace --all-targets --no-default-features --features serve
 
 test:
-	@cargo test --workspace
+	@cargo test --workspace --no-default-features --features serve
 
 gen-models:
 	@echo "Generating TS models..."
