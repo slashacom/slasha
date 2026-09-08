@@ -36,6 +36,7 @@
     "jose": "^6.2.2",
     "js-cookie": "^3.0.5",
     "lucide-react": "^1.7.0",
+    "node-emoji": "^2.2.0",
     "nprogress": "^0.2.0",
     "radix-ui": "^1.4.3",
     "react": "^19.2.4",
