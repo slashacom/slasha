@@ -7,6 +7,7 @@ import { getAuthMeOptions } from '~/queries/auth';
 import { getNodesOptions } from '~/queries/nodes';
 import { NodeStatusBadge } from '~/components/interface/status-badge';
 import { PageHeader } from '~/components/interface/page-header';
+import { formatDate } from '~/utils/date';
 
 export async function clientLoader() {
   const me = await queryClient.ensureQueryData(getAuthMeOptions());
@@ -108,7 +109,7 @@ export default function NodesPage() {
                     <div className="flex items-center justify-between">
                       <span className="text-text-tertiary">Added On</span>
                       <span className="text-text-secondary">
-                        {new Date(node.created_at).toLocaleDateString()}
+                        {formatDate(node.created_at)}
                       </span>
                     </div>
                   </div>

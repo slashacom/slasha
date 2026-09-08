@@ -10,7 +10,8 @@ import {
   getAlertIncidentsOptions,
   getAlertRulesOptions,
 } from '~/queries/alerts';
-import { formatDate, formatMetric } from '~/utils/format';
+import { formatMetric } from '~/utils/format';
+import { formatDateTime } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
 import { PageHeader } from '~/components/interface/page-header';
 
@@ -85,13 +86,13 @@ export default function AlertsPage() {
                       </AlertStatusBadge>
                     </td>
                     <td className="py-4 pr-4 text-text-secondary">
-                      {formatDate(incident.opened_at)}
+                      {formatDateTime(incident.opened_at)}
                     </td>
                     <td className="py-4 pr-4 text-text-secondary">
-                      {formatDate(incident.last_notified_at)}
+                      {formatDateTime(incident.last_notified_at)}
                     </td>
                     <td className="py-4 text-text-secondary">
-                      {formatDate(incident.resolved_at)}
+                      {formatDateTime(incident.resolved_at)}
                     </td>
                     <td className="py-4 text-right">
                       <Button

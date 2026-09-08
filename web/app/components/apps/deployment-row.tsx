@@ -29,7 +29,7 @@ import {
 } from '~/components/interface/dropdown-menu';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
-import { formatRelativeTime } from '~/utils/format';
+import { formatRelativeTime } from '~/utils/date';
 import { toast } from 'sonner';
 
 type DeploymentRowProps = {

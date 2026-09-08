@@ -20,7 +20,8 @@ import {
   getAlertIncidentNotificationsOptions,
   getAlertRulesOptions,
 } from '~/queries/alerts';
-import { formatDate, formatMetric } from '~/utils/format';
+import { formatMetric } from '~/utils/format';
+import { formatDateTime } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader(args: { params: { id: string } }) {
@@ -84,17 +85,17 @@ export default function AlertIncidentDetailPage() {
         />
         <AlertStat
           label="Opened"
-          value={formatDate(incident.opened_at)}
+          value={formatDateTime(incident.opened_at)}
           mono={false}
         />
         <AlertStat
           label="Last seen"
-          value={formatDate(incident.last_notified_at)}
+          value={formatDateTime(incident.last_notified_at)}
           mono={false}
         />
         <AlertStat
           label="Resolved"
-          value={formatDate(incident.resolved_at)}
+          value={formatDateTime(incident.resolved_at)}
           mono={false}
         />
       </div>
@@ -162,11 +163,11 @@ export default function AlertIncidentDetailPage() {
             />
             <AlertDetailStat
               label="Opened"
-              value={formatDate(incident.opened_at)}
+              value={formatDateTime(incident.opened_at)}
             />
             <AlertDetailStat
               label="Resolved"
-              value={formatDate(incident.resolved_at)}
+              value={formatDateTime(incident.resolved_at)}
             />
           </div>
         </AlertCard>
@@ -206,7 +207,7 @@ export default function AlertIncidentDetailPage() {
                     />
                   </td>
                   <td className="py-4 text-text-secondary">
-                    {formatDate(notification.created_at)}
+                    {formatDateTime(notification.created_at)}
                   </td>
                   <td className="py-4 text-right">
                     <Button

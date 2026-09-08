@@ -10,7 +10,7 @@ import { ServiceStatsBar } from '~/components/apps/service-stats-bar';
 import { ServiceConfigCard } from '~/components/apps/service-config-card';
 import { ServiceActionsMenu } from '~/components/apps/service-actions-menu';
 import { ServiceKindBadge } from '~/components/apps/service-kind-badge';
-import { formatRelativeTime } from '~/utils/format';
+import { formatRelativeTime } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader(args: {

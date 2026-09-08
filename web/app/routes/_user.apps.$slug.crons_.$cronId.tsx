@@ -13,7 +13,7 @@ import {
   useRunCron,
 } from '~/queries/crons';
 import { queryClient } from '~/utils/query-client';
-import { formatDate } from '~/utils/format';
+import { formatDateTime } from '~/utils/date';
 
 export async function clientLoader(args: {
   params: { slug: string; cronId: string };
@@ -63,7 +63,7 @@ export default function CronDetailPage() {
     },
     {
       label: 'Next run',
-      value: cron.enabled ? formatDate(cron.next_run_at) : '—',
+      value: cron.enabled ? formatDateTime(cron.next_run_at) : '—',
     },
     {
       label: 'Last run',
@@ -71,7 +71,7 @@ export default function CronDetailPage() {
         <div className="flex items-center gap-2">
           <CronRunStatusBadge status={latestRun.status} />
           <span className="text-xs font-normal text-text-tertiary">
-            {formatDate(latestRun.started_at ?? latestRun.created_at)}
+            {formatDateTime(latestRun.started_at ?? latestRun.created_at)}
           </span>
         </div>
       ) : (

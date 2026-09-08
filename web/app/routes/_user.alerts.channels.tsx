@@ -15,7 +15,7 @@ import {
   useTestAlertChannel,
 } from '~/queries/alerts';
 import { channelSummary } from '~/components/alerts/alert-definitions';
-import { formatDate } from '~/utils/format';
+import { formatDateTime } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
 import { PageHeader } from '~/components/interface/page-header';
 
@@ -91,7 +91,7 @@ export default function AlertsChannelsPage() {
                       </AlertStatusBadge>
                     </td>
                     <td className="py-3 pr-4 text-text-secondary">
-                      {formatDate(channel.updated_at)}
+                      {formatDateTime(channel.updated_at)}
                     </td>
                     <td className="py-3 text-right">
                       <div className="flex items-center justify-end gap-3">

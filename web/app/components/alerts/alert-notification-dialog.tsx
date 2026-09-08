@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from '~/components/interface/dialog';
 import type { AlertNotification } from '~/models/alerts';
-import { formatDate } from '~/utils/format';
+import { formatDateTime } from '~/utils/date';
 import { AlertDetailField } from './alert-detail-field';
 import { formatNotificationKind } from './notification-kind';
 
@@ -42,7 +42,7 @@ export function AlertNotificationDialog(props: AlertNotificationDialogProps) {
               />
               <AlertDetailField
                 label="Created"
-                value={formatDate(notification.created_at)}
+                value={formatDateTime(notification.created_at)}
               />
             </div>
 

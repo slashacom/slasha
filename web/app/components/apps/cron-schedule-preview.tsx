@@ -1,4 +1,4 @@
-import { formatDate } from '~/utils/format';
+import { formatDateTime } from '~/utils/date';
 
 type CronSchedulePreviewProps = {
   loading: boolean;
@@ -29,7 +29,7 @@ export function CronSchedulePreview(props: CronSchedulePreviewProps) {
       <div className="mt-1 space-y-0.5">
         {nextRuns.map((run) => (
           <div key={run} className="text-[11px] text-text-secondary">
-            {formatDate(run)}
+            {formatDateTime(run)}
           </div>
         ))}
       </div>

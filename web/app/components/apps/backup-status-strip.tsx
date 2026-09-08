@@ -9,7 +9,7 @@ import {
 } from '~/queries/storage';
 import { HStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
-import { formatRelativeTime } from '~/utils/format';
+import { formatRelativeTime } from '~/utils/date';
 
 type BackupStatusStripProps = {
   appSlug: string;

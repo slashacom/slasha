@@ -13,7 +13,7 @@ import { Table } from '~/components/interface/table';
 import { CronRunStatusBadge } from '~/components/apps/cron-run-status-badge';
 import { LogStream } from '~/components/global/log-stream';
 import type { CronRun } from '~/models/cron';
-import { formatDate } from '~/utils/format';
+import { formatDateTime } from '~/utils/date';
 
 type CronRunHistoryProps = {
   appSlug: string;
@@ -77,7 +77,7 @@ export function CronRunHistory(props: CronRunHistoryProps) {
                 {run.trigger_kind}
               </td>
               <td className="py-3 pr-4 text-text-secondary">
-                {formatDate(run.started_at)}
+                {formatDateTime(run.started_at)}
               </td>
               <td className="py-3 pr-4 text-text-secondary">
                 {formatDuration(run)}
@@ -106,7 +106,7 @@ export function CronRunHistory(props: CronRunHistoryProps) {
           <DialogHeader>
             <DialogTitle>Run logs</DialogTitle>
             <DialogDescription>
-              {selectedRun ? formatDate(selectedRun.started_at) : ''}
+              {selectedRun ? formatDateTime(selectedRun.started_at) : ''}
             </DialogDescription>
           </DialogHeader>
 

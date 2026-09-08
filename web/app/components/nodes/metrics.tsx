@@ -19,7 +19,7 @@ import {
 import { SectionHeader } from '~/components/interface/section-header';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
-import { parseUTC } from '~/utils/format';
+import { parseUTC } from '~/utils/date';
 import {
   type TimeRange,
   TIME_RANGES,

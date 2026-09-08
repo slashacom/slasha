@@ -13,6 +13,7 @@ import { getAuthMeOptions } from '~/queries/auth';
 import { getUsersOptions, useDeleteUser } from '~/queries/users';
 import type { User } from '~/models/user';
 import { PageHeader } from '~/components/interface/page-header';
+import { formatDate } from '~/utils/date';
 
 export async function clientLoader() {
   const me = await queryClient.ensureQueryData(getAuthMeOptions());
@@ -84,7 +85,7 @@ export default function UsersPage() {
                   {user.role}
                 </td>
                 <td className="py-3 pr-4 text-text-secondary">
-                  {new Date(user.created_at).toLocaleDateString()}
+                  {formatDate(user.created_at)}
                 </td>
                 <td className="py-3 text-right">
                   <div className="flex items-center justify-end gap-3">

@@ -2,7 +2,8 @@ import { Clock, Cpu, HardDrive, MemoryStick } from 'lucide-react';
 import type { Service } from '~/models/service';
 import type { ServiceStats } from '~/queries/services';
 import { HStack } from '~/components/interface/stacks';
-import { formatFileSize, formatUptime } from '~/utils/format';
+import { formatFileSize } from '~/utils/format';
+import { formatUptime } from '~/utils/date';
 import { cn } from '~/utils/classname';
 
 type StatTileProps = {

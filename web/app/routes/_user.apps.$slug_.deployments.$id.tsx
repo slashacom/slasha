@@ -8,7 +8,7 @@ import { getAppOptions } from '~/queries/apps';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
 import { LogStream } from '~/components/global/log-stream';
-import { formatRelativeTime, parseUTC } from '~/utils/format';
+import { formatRelativeTime, parseUTC } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
 
 type CommitButtonProps = {

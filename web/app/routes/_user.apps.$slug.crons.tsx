@@ -13,7 +13,7 @@ import { Table } from '~/components/interface/table';
 import type { CronJob } from '~/models/cron';
 import { getCronsOptions, useDeleteCron, useRunCron } from '~/queries/crons';
 import { queryClient } from '~/utils/query-client';
-import { formatDate } from '~/utils/format';
+import { formatDateTime } from '~/utils/date';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
@@ -104,7 +104,7 @@ export default function AppCronsPage() {
                       )}
                     </td>
                     <td className="py-3 pr-4 text-text-secondary">
-                      {cron.enabled ? formatDate(cron.next_run_at) : '—'}
+                      {cron.enabled ? formatDateTime(cron.next_run_at) : '—'}
                     </td>
                     <td className="py-3 text-right">
                       <div className="flex items-center justify-end gap-3">

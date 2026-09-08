@@ -18,7 +18,7 @@ import {
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { getAuthToken } from '~/utils/jwt';
 import { cn } from '~/utils/classname';
-import { parseUTC } from '~/utils/format';
+import { parseUTC } from '~/utils/date';
 import { Terminal } from 'lucide-react';
 import type {
   LogRecord,

@@ -29,6 +29,7 @@ import {
 import { getAuthMeOptions } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
 import { PageHeader } from '~/components/interface/page-header';
+import { formatDate } from '~/utils/date';
 
 export function meta() {
   return [{ title: 'Connections · slasha' }];
@@ -362,8 +363,7 @@ function GithubAppSetupManager() {
               App Configured (ID: {setupStatus.app_id})
             </p>
             <p className="text-[13px] text-text-secondary mt-1">
-              Configured on{' '}
-              {new Date(setupStatus.created_at!).toLocaleDateString()}
+              Configured on {formatDate(setupStatus.created_at)}
             </p>
           </div>
           <div className="flex items-center gap-1">
