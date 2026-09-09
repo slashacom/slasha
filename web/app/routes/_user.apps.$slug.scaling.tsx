@@ -9,7 +9,6 @@ import { getScalesOptions } from '~/queries/apps';
 import type { ProcessType } from '~/models/app-scale';
 import { EmptyPage } from '~/components/global/empty-page';
 import { VStack } from '~/components/interface/stacks';
-import { SectionHeader } from '~/components/interface/section-header';
 import { ScaleCard } from '~/components/apps/scale-card';
 import { ProcessExplorer } from '~/components/apps/process-explorer';
 import { queryClient } from '~/utils/query-client';
@@ -48,7 +47,7 @@ export default function AppScalingPage() {
   if (!runningDeployment) {
     return (
       <EmptyPage
-        className="m-8 flex-1"
+        className="mx-8 my-6 flex-1"
         icon={Layers}
         size="lg"
         title="App is not running."
@@ -80,9 +79,7 @@ export default function AppScalingPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
-      <SectionHeader icon={Layers} title="Scaling" />
-
-      <div className="p-8">
+      <div className="px-8 py-6">
         <VStack space={6}>
           <VStack space={3}>
             <VStack space={1}>

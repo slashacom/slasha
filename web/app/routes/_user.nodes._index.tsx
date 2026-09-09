@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Link, useNavigate, redirect } from 'react-router';
 import { PlusIcon, Server, HardDrive, Network } from 'lucide-react';
+import { Page } from '~/components/global/page';
 import { Button } from '~/components/interface/button';
 import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
@@ -27,7 +28,7 @@ export default function NodesPage() {
   });
 
   return (
-    <div>
+    <Page>
       <PageHeader
         title="Nodes"
         description="Manage the server nodes running Slasha apps."
@@ -123,6 +124,6 @@ export default function NodesPage() {
             ))}
         </div>
       )}
-    </div>
+    </Page>
   );
 }

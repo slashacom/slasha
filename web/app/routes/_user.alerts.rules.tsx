@@ -10,7 +10,7 @@ import {
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
-import { Table } from '~/components/interface/table';
+import { Table, TableRow } from '~/components/interface/table';
 import type { AlertRule } from '~/models/alerts';
 import { getAppsOptions } from '~/queries/apps';
 import {
@@ -19,7 +19,8 @@ import {
   useDeleteAlertRule,
 } from '~/queries/alerts';
 import { queryClient } from '~/utils/query-client';
-import { PageHeader } from '~/components/interface/page-header';
+import { Page } from '~/components/global/page';
+import { TabActions } from '~/components/interface/tab-actions';
 import { TableRowActions } from '~/components/interface/table-row-actions';
 
 export async function clientLoader() {
@@ -45,20 +46,21 @@ export default function AlertsRulesPage() {
   );
 
   return (
-    <div className="p-8">
-      <PageHeader
-        title="Rules"
-        description="Manage alert conditions and their delivery behavior."
-        actions={
-          <Button
-            to="/alerts/rules/new"
-            label="New rule"
-            icon={<Plus className="size-4" />}
-          />
-        }
-      />
+    <Page>
+      <TabActions>
+        <Button
+          to="/alerts/rules/new"
+          label="New rule"
+          size="sm"
+          icon={<Plus className="size-3.5" />}
+        />
+      </TabActions>
 
-      <div className="mt-8">
+      <p className="max-w-prose text-pretty text-sm text-text-secondary">
+        Conditions Slasha watches, and how each one notifies you.
+      </p>
+
+      <div className="mt-6">
         {rulesData.rules.length === 0 ? (
           <EmptyPage
             icon={Gauge}
@@ -91,7 +93,7 @@ export default function AlertsRulesPage() {
                 ]}
               >
                 {rulesData.rules.map((rule) => (
-                  <tr key={rule.id}>
+                  <TableRow key={rule.id} to={`/alerts/rules/${rule.id}/edit`}>
                     <td className="py-3 pr-4">
                       <div className="font-medium text-text">{rule.name}</div>
                       <div className="mt-1 text-xs text-text-tertiary">
@@ -129,7 +131,7 @@ export default function AlertsRulesPage() {
                         ]}
                       />
                     </td>
-                  </tr>
+                  </TableRow>
                 ))}
               </Table>
             </div>
@@ -166,6 +168,6 @@ export default function AlertsRulesPage() {
           }
         }}
       />
-    </div>
+    </Page>
   );
 }

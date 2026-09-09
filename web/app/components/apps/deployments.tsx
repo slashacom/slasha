@@ -17,7 +17,7 @@ import {
   useTriggerDeploy,
 } from '~/queries/deployments';
 import { EmptyPage } from '~/components/global/empty-page';
-import { SectionHeader } from '~/components/interface/section-header';
+import { TabActions } from '~/components/interface/tab-actions';
 import { VStack } from '~/components/interface/stacks';
 import { toast } from 'sonner';
 import { CommitSelector } from '~/components/apps/commit-selector';
@@ -128,7 +128,7 @@ export function DeploymentsView(props: DeploymentsViewProps) {
 
   if (isLoading) {
     return (
-      <VStack className="p-8" space={4}>
+      <VStack className="px-8 py-6" space={4}>
         <div className="h-4 w-32 animate-pulse rounded bg-white/[0.06]" />
         <VStack space={2}>
           {[1, 2, 3].map((i) => (
@@ -144,33 +144,27 @@ export function DeploymentsView(props: DeploymentsViewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <SectionHeader
-        icon={History}
-        title="Deployments"
-        actions={
-          <>
-            <Button
-              label="Deploy Commit"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowCommitSelector(true)}
-              isDisabled={!hasCode || triggerDeploy.isPending}
-            />
-            <Button
-              label="Deploy Latest"
-              icon={<Play className="size-3.5" />}
-              size="sm"
-              onClick={handleDeploy}
-              isLoading={triggerDeploy.isPending}
-              isDisabled={!hasCode || triggerDeploy.isPending}
-            />
-          </>
-        }
-      />
+      <TabActions>
+        <Button
+          label="Deploy commit"
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowCommitSelector(true)}
+          isDisabled={!hasCode || triggerDeploy.isPending}
+        />
+        <Button
+          label="Deploy latest"
+          icon={<Play className="size-3.5" />}
+          size="sm"
+          onClick={handleDeploy}
+          isLoading={triggerDeploy.isPending}
+          isDisabled={!hasCode || triggerDeploy.isPending}
+        />
+      </TabActions>
 
       {deployments.length === 0 ? (
         <EmptyPage
-          className="m-6 flex-1"
+          className="mx-8 my-6 flex-1"
           icon={RotateCcw}
           size="lg"
           title="No deployments yet."

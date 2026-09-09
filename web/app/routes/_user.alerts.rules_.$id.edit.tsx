@@ -34,14 +34,14 @@ export default function EditAlertRulePage() {
 
   if (!rule) {
     return (
-      <div className="p-8 text-sm text-text-secondary">
+      <div className="px-8 py-6 text-sm text-text-secondary">
         Alert rule not found.
       </div>
     );
   }
 
   return (
-    <div className="p-8">
+    <div className="px-8 py-6">
       <PageHeader
         className="mb-8"
         title="Edit rule"

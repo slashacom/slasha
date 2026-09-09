@@ -2,11 +2,9 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Settings } from 'lucide-react';
 import { queryClient } from '~/utils/query-client';
 import { getNodeOptions, useUpdateNode, useDeleteNode } from '~/queries/nodes';
 import { NodeForm } from '~/components/nodes/node-form';
-import { SectionHeader } from '~/components/interface/section-header';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { DangerZone } from '~/components/global/danger-zone';
@@ -38,8 +36,7 @@ export default function NodeSettingsTab() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <SectionHeader icon={Settings} title="Settings" />
-      <div className="flex-1 overflow-y-auto p-8">
+      <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="max-w-3xl mb-12">
           <NodeForm
             initialData={node}

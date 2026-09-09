@@ -6,7 +6,7 @@ export default function NewAlertChannelPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="p-8">
+    <div className="px-8 py-6">
       <PageHeader
         className="mb-8"
         title="New channel"

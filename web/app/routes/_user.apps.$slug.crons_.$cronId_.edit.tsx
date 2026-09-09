@@ -20,7 +20,9 @@ export default function EditCronPage() {
 
   if (!cron) {
     return (
-      <div className="p-8 text-sm text-text-secondary">Cron job not found.</div>
+      <div className="px-8 py-6 text-sm text-text-secondary">
+        Cron job not found.
+      </div>
     );
   }
 
@@ -32,7 +34,7 @@ export default function EditCronPage() {
         title={`Edit ${cron.name}`}
       />
 
-      <div className="p-8">
+      <div className="px-8 py-6">
         <CronForm
           appSlug={slug!}
           cron={cron}

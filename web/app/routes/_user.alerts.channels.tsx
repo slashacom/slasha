@@ -6,7 +6,7 @@ import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
-import { Table } from '~/components/interface/table';
+import { Table, TableRow } from '~/components/interface/table';
 import type { AlertChannel } from '~/models/alerts';
 import {
   getAlertChannelsOptions,
@@ -16,7 +16,8 @@ import {
 import { channelSummary } from '~/components/alerts/alert-definitions';
 import { formatDateTime } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
-import { PageHeader } from '~/components/interface/page-header';
+import { Page } from '~/components/global/page';
+import { TabActions } from '~/components/interface/tab-actions';
 import { TableRowActions } from '~/components/interface/table-row-actions';
 
 export async function clientLoader() {
@@ -33,20 +34,21 @@ export default function AlertsChannelsPage() {
   );
 
   return (
-    <div className="p-8">
-      <PageHeader
-        title="Channels"
-        description="Manage reusable destinations for alert delivery."
-        actions={
-          <Button
-            to="/alerts/channels/new"
-            label="New channel"
-            icon={<Plus className="size-4" />}
-          />
-        }
-      />
+    <Page>
+      <TabActions>
+        <Button
+          to="/alerts/channels/new"
+          label="New channel"
+          size="sm"
+          icon={<Plus className="size-3.5" />}
+        />
+      </TabActions>
 
-      <div className="mt-8">
+      <p className="max-w-prose text-pretty text-sm text-text-secondary">
+        Reusable destinations that alert rules deliver to.
+      </p>
+
+      <div className="mt-6">
         {data.channels.length === 0 ? (
           <EmptyPage
             icon={Webhook}
@@ -70,7 +72,10 @@ export default function AlertsChannelsPage() {
                 ]}
               >
                 {data.channels.map((channel) => (
-                  <tr key={channel.id}>
+                  <TableRow
+                    key={channel.id}
+                    to={`/alerts/channels/${channel.id}/edit`}
+                  >
                     <td className="py-3 pr-4">
                       <div className="font-medium text-text">
                         {channel.name}
@@ -126,7 +131,7 @@ export default function AlertsChannelsPage() {
                         ]}
                       />
                     </td>
-                  </tr>
+                  </TableRow>
                 ))}
               </Table>
             </div>
@@ -163,6 +168,6 @@ export default function AlertsChannelsPage() {
           }
         }}
       />
-    </div>
+    </Page>
   );
 }

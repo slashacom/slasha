@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router';
 import { EmptyPage } from '~/components/global/empty-page';
+import { Page } from '~/components/global/page';
 import { Github } from '~/components/icons/github';
 import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
@@ -29,7 +30,6 @@ import {
 } from '~/queries/connections';
 import { getAuthMeOptions } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
-import { PageHeader } from '~/components/interface/page-header';
 import { formatDate } from '~/utils/date';
 
 export function meta() {
@@ -402,11 +402,10 @@ export default function ConnectionsSettings() {
   }, [searchParams, setSearchParams]);
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <PageHeader
-        title="Connected Accounts"
-        description="Manage integrations with external services like GitHub."
-      />
+    <Page className="max-w-2xl space-y-6">
+      <p className="max-w-prose text-pretty text-sm text-text-secondary">
+        Integrations with external services like GitHub.
+      </p>
 
       {status.enabled ? (
         <EnabledGithubConnections />
@@ -425,6 +424,6 @@ export default function ConnectionsSettings() {
       )}
 
       {authMe.user.role === 'Admin' && <GithubAppSetupManager />}
-    </div>
+    </Page>
   );
 }

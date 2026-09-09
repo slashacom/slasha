@@ -55,7 +55,7 @@ export default function AlertIncidentDetailPage() {
   const latestNotification = notifications[notifications.length - 1];
 
   return (
-    <div className="space-y-8 p-8">
+    <div className="space-y-8 px-8 py-6">
       <SectionHeader
         backTo="/alerts"
         icon={ShieldAlert}

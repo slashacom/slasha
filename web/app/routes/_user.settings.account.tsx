@@ -1,13 +1,13 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { MailIcon, KeyRoundIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { Page } from '~/components/global/page';
 import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
 import { VStack } from '~/components/interface/stacks';
 import { getAuthMeOptions, useUpdateProfile } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
-import { PageHeader } from '~/components/interface/page-header';
 
 export function meta() {
   return [{ title: 'Account Settings · slasha' }];
@@ -64,11 +64,10 @@ export default function AccountSettings() {
   };
 
   return (
-    <div className="space-y-6 max-w-xl">
-      <PageHeader
-        title="Account Settings"
-        description="Manage your account profile and security settings."
-      />
+    <Page className="max-w-xl space-y-6">
+      <p className="max-w-prose text-pretty text-sm text-text-secondary">
+        Your profile and sign-in credentials.
+      </p>
 
       <form onSubmit={handleSubmit} className="space-y-6 max-w-md">
         <VStack space={4}>
@@ -174,6 +173,6 @@ export default function AccountSettings() {
           </div>
         </VStack>
       </form>
-    </div>
+    </Page>
   );
 }

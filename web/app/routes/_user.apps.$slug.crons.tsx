@@ -1,15 +1,16 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { Clock, Play, Plus } from 'lucide-react';
+import { Clock, Pencil, Play, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { CronRunStatusBadge } from '~/components/apps/cron-run-status-badge';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
-import { SectionHeader } from '~/components/interface/section-header';
-import { Table } from '~/components/interface/table';
+import { TabActions } from '~/components/interface/tab-actions';
+import { Table, TableRow } from '~/components/interface/table';
+import { TableRowActions } from '~/components/interface/table-row-actions';
 import type { CronJob } from '~/models/cron';
 import { getCronsOptions, useDeleteCron, useRunCron } from '~/queries/crons';
 import { queryClient } from '~/utils/query-client';
@@ -38,19 +39,16 @@ export default function AppCronsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
-      <SectionHeader
-        icon={Clock}
-        title="Cron Jobs"
-        actions={
-          <Button
-            to={`/apps/${slug}/crons/new`}
-            label="New job"
-            icon={<Plus className="size-4" />}
-          />
-        }
-      />
+      <TabActions>
+        <Button
+          to={`/apps/${slug}/crons/new`}
+          label="New job"
+          size="sm"
+          icon={<Plus className="size-3.5" />}
+        />
+      </TabActions>
 
-      <div className="p-8">
+      <div className="px-8 py-6">
         {data.crons.length === 0 ? (
           <EmptyPage
             icon={Clock}
@@ -75,14 +73,9 @@ export default function AppCronsPage() {
                 ]}
               >
                 {data.crons.map((cron) => (
-                  <tr key={cron.id}>
+                  <TableRow key={cron.id} to={`/apps/${slug}/crons/${cron.id}`}>
                     <td className="py-3 pr-4">
-                      <Link
-                        to={`/apps/${slug}/crons/${cron.id}`}
-                        className="font-medium text-text !no-underline hover:!underline"
-                      >
-                        {cron.name}
-                      </Link>
+                      <div className="font-medium text-text">{cron.name}</div>
                       <div className="mt-1 max-w-[280px] truncate font-mono text-xs text-text-tertiary">
                         {cron.command}
                       </div>
@@ -106,31 +99,28 @@ export default function AppCronsPage() {
                       {cron.enabled ? formatDateTime(cron.next_run_at) : '—'}
                     </td>
                     <td className="py-3 text-right">
-                      <div className="flex items-center justify-end gap-3">
-                        <button
-                          type="button"
-                          onClick={() => handleRun(cron)}
-                          className="inline-flex items-center gap-1 text-xs text-text-secondary transition-colors hover:text-text"
-                        >
-                          <Play className="size-3" />
-                          Run
-                        </button>
-                        <Link
-                          to={`/apps/${slug}/crons/${cron.id}/edit`}
-                          className="text-xs !text-text-secondary !no-underline hover:!text-text"
-                        >
-                          Edit
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => setCronToDelete(cron)}
-                          className="text-xs text-red-400 transition-colors hover:text-red-300"
-                        >
-                          Delete
-                        </button>
-                      </div>
+                      <TableRowActions
+                        actions={[
+                          {
+                            label: 'Run now',
+                            icon: Play,
+                            onClick: () => handleRun(cron),
+                          },
+                          {
+                            label: 'Edit job',
+                            icon: Pencil,
+                            to: `/apps/${slug}/crons/${cron.id}/edit`,
+                          },
+                          {
+                            label: 'Delete job',
+                            icon: Trash2,
+                            isDestructive: true,
+                            onClick: () => setCronToDelete(cron),
+                          },
+                        ]}
+                      />
                     </td>
-                  </tr>
+                  </TableRow>
                 ))}
               </Table>
             </div>

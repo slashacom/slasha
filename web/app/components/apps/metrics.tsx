@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { Activity, Cpu, Database, Globe, HardDrive } from 'lucide-react';
+import { Cpu, Database, Globe, HardDrive } from 'lucide-react';
 import {
   getAppMetricsOptions,
   getLatestAppMetricOptions,
 } from '~/queries/apps';
-import { SectionHeader } from '~/components/interface/section-header';
+import { TabActions } from '~/components/interface/tab-actions';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { CHART_COLORS } from '~/components/metrics/chart-theme';
 import { MetricChart } from '~/components/metrics/metric-chart';
@@ -46,23 +46,16 @@ export function AppMetricsView(props: AppMetricsViewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <SectionHeader
-        className="shrink-0"
-        icon={Activity}
-        title="System Metrics"
-        actions={
-          <>
-            <MetricsLiveBadge />
-            <MetricsTimeRange
-              value={selectedRange}
-              onChange={setSelectedRange}
-              isLoading={isLoading}
-            />
-          </>
-        }
-      />
+      <TabActions>
+        <MetricsLiveBadge />
+        <MetricsTimeRange
+          value={selectedRange}
+          onChange={setSelectedRange}
+          isLoading={isLoading}
+        />
+      </TabActions>
 
-      <div className="custom-scrollbar flex-1 overflow-y-auto p-8">
+      <div className="custom-scrollbar flex-1 overflow-y-auto px-8 py-6">
         {metrics.length === 0 ? (
           <MetricsEmptyState description="System metrics are collected every 10 seconds. Graphs will begin appearing shortly." />
         ) : (

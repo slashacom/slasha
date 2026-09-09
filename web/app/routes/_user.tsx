@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { Outlet, redirect, useLocation, useParams } from 'react-router';
 import { Sidebar } from '~/components/global/sidebar';
+import { TopBar } from '~/components/global/top-bar';
 import { getAuthMeOptions } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
 import { isLoggedIn } from '~/utils/jwt';
@@ -18,71 +19,41 @@ export async function clientLoader() {
   return null;
 }
 
-function usePageTitle() {
+// Detail screens (file tree, log stream, deployment list) fill the viewport and
+// scroll their own panes, so the shell must not add a scroll container of its own.
+function useOwnsScroll() {
   const location = useLocation();
   const params = useParams();
-  const path = location.pathname;
 
-  if (path === '/apps' || path === '/apps/') {
-    return 'Apps';
+  if (location.pathname.startsWith('/apps/') && params.slug) {
+    return true;
   }
-  if (path.startsWith('/apps/') && params.slug) {
-    return 'Apps';
+  if (location.pathname.startsWith('/nodes/') && params.id) {
+    return true;
   }
-
-  if (path === '/alerts' || path.startsWith('/alerts/')) {
-    return 'Alerts';
-  }
-  if (path === '/users' || path === '/users/') {
-    return 'Users';
-  }
-  if (path === '/users/new') {
-    return 'Users';
-  }
-  if (path.startsWith('/users/')) {
-    return 'Users';
-  }
-  if (path.startsWith('/settings/')) {
-    return 'Settings';
-  }
-  if (path === '/nodes' || path === '/nodes/' || path.startsWith('/nodes/')) {
-    return 'Nodes';
-  }
-  return '';
+  return location.pathname.startsWith('/alerts');
 }
 
 export default function UserLayout() {
-  const title = usePageTitle();
-  const location = useLocation();
-  const params = useParams();
-  const isFullWidth =
-    (!!params.slug && location.pathname.startsWith('/apps/')) ||
-    location.pathname.startsWith('/alerts') ||
-    (location.pathname.startsWith('/nodes/') && !!params.id);
+  const ownsScroll = useOwnsScroll();
 
   return (
     <div className="flex h-screen bg-bg">
       <Sidebar />
 
       <div className="ml-[240px] flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-12 shrink-0 items-center border-b border-border px-8">
-          <span className="text-[13px] text-text-tertiary">{title}</span>
-        </header>
-        {isFullWidth ? (
-          <main className="flex flex-1 flex-col overflow-hidden">
-            <Suspense fallback={null}>
-              <Outlet />
-            </Suspense>
-          </main>
-        ) : (
-          <main className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-4xl">
-              <Suspense fallback={null}>
-                <Outlet />
-              </Suspense>
-            </div>
-          </main>
-        )}
+        <TopBar />
+        <main
+          className={
+            ownsScroll
+              ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
+              : 'min-h-0 flex-1 overflow-y-auto'
+          }
+        >
+          <Suspense fallback={null}>
+            <Outlet />
+          </Suspense>
+        </main>
       </div>
     </div>
   );

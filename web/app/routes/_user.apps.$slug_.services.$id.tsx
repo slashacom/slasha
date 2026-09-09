@@ -81,7 +81,7 @@ export default function ServiceDetailPage() {
         </HStack>
       </HStack>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto p-8">
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto px-8 py-6">
         <ServiceStatsBar service={service} stats={stats} />
         <ServiceConfigCard appSlug={slug!} service={service} />
 

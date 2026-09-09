@@ -11,7 +11,6 @@ import {
   getAppDirectoriesOptions,
 } from '~/queries/apps';
 import { getNodesOptions } from '~/queries/nodes';
-import { Settings as SettingsIcon } from 'lucide-react';
 import { AppEnvEditor } from '~/components/apps/app-env-editor';
 import { AppNameManager } from '~/components/apps/app-name-manager';
 import { AppRootDirManager } from '~/components/apps/app-root-dir-manager';
@@ -24,7 +23,6 @@ import { BackupManager } from '~/components/apps/backup-manager';
 import { DomainManager } from '~/components/apps/domain-manager';
 import { StorageManager } from '~/components/apps/storage-manager';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
-import { SectionHeader } from '~/components/interface/section-header';
 import { getBackupOptions, getVolumesOptions } from '~/queries/storage';
 import { queryClient } from '~/utils/query-client';
 import { getGithubStatusOptions } from '~/queries/connections';
@@ -63,8 +61,7 @@ export default function AppSettingsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <SectionHeader icon={SettingsIcon} title="Settings" />
-      <div className="flex-1 overflow-y-auto p-8">
+      <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="max-w-3xl space-y-8">
           <AppNameManager app={app} />
           <AppRootDirManager app={app} />

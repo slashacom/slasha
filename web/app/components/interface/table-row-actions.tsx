@@ -1,5 +1,11 @@
-import { Link } from 'react-router';
-import { cn } from '~/utils/classname';
+import { MoreHorizontal } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '~/components/interface/dropdown-menu';
 
 export type TableRowAction = {
   label: string;
@@ -16,54 +22,54 @@ type TableRowActionsProps = {
 
 export function TableRowActions(props: TableRowActionsProps) {
   const { actions } = props;
+  const navigate = useNavigate();
 
   return (
-    <div className="flex items-center justify-end gap-3">
-      {actions.map((action) => {
-        const {
-          label,
-          icon: Icon,
-          to,
-          onClick,
-          isDestructive,
-          isDisabled,
-        } = action;
-        const className = cn(
-          'transition-colors',
-          isDestructive
-            ? 'text-red-400/80 hover:text-red-400'
-            : 'text-text-secondary hover:text-text',
-          isDisabled && 'pointer-events-none opacity-50'
-        );
-
-        if (to) {
-          return (
-            <Link
-              key={label}
-              to={to}
-              title={label}
-              aria-label={label}
-              className={cn(className, '!no-underline')}
-            >
-              <Icon className="size-4" />
-            </Link>
-          );
-        }
-
-        return (
+    <div
+      className="flex justify-end"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <button
-            key={label}
             type="button"
-            title={label}
-            aria-label={label}
-            onClick={onClick}
-            disabled={isDisabled}
-            className={className}
+            aria-label="Row actions"
+            className="flex size-7 items-center justify-center rounded-md text-text-tertiary opacity-60 transition-all hover:bg-white/5 hover:text-text group-hover:opacity-100 data-[state=open]:bg-white/5 data-[state=open]:text-text data-[state=open]:opacity-100"
           >
-            <Icon className="size-4" />
+            <MoreHorizontal className="size-4" />
           </button>
-        );
-      })}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {actions.map((action) => {
+            const {
+              label,
+              icon: Icon,
+              to,
+              onClick,
+              isDestructive,
+              isDisabled,
+            } = action;
+
+            return (
+              <DropdownMenuItem
+                key={label}
+                disabled={isDisabled}
+                variant={isDestructive ? 'destructive' : 'default'}
+                onClick={() => {
+                  if (to) {
+                    navigate(to);
+                    return;
+                  }
+                  onClick?.();
+                }}
+              >
+                <Icon className="size-3.5" />
+                {label}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

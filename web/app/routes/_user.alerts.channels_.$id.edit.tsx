@@ -18,14 +18,14 @@ export default function EditAlertChannelPage() {
 
   if (!channel) {
     return (
-      <div className="p-8 text-sm text-text-secondary">
+      <div className="px-8 py-6 text-sm text-text-secondary">
         Alert channel not found.
       </div>
     );
   }
 
   return (
-    <div className="p-8">
+    <div className="px-8 py-6">
       <PageHeader
         className="mb-8"
         title="Edit channel"

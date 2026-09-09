@@ -39,7 +39,9 @@ export default function CronDetailPage() {
 
   if (!cron) {
     return (
-      <div className="p-8 text-sm text-text-secondary">Cron job not found.</div>
+      <div className="px-8 py-6 text-sm text-text-secondary">
+        Cron job not found.
+      </div>
     );
   }
 
@@ -106,7 +108,7 @@ export default function CronDetailPage() {
         }
       />
 
-      <div className="space-y-8 p-8">
+      <div className="space-y-8 px-8 py-6">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {stats.map((stat) => (
             <div

@@ -5,6 +5,7 @@ import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { useCreateUser } from '~/queries/users';
 import { getAppsOptions } from '~/queries/apps';
+import { Page } from '~/components/global/page';
 import { UserForm } from '~/components/users/user-form';
 import { PageHeader } from '~/components/interface/page-header';
 
@@ -50,7 +51,7 @@ export default function NewUser() {
   };
 
   return (
-    <div>
+    <Page>
       <PageHeader
         title="Add user"
         description="Create a new account for someone on your team."
@@ -65,6 +66,6 @@ export default function NewUser() {
           submitLabel="Create user"
         />
       </div>
-    </div>
+    </Page>
   );
 }

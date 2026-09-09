@@ -2,7 +2,7 @@ import { VStack } from '~/components/interface/stacks';
 
 export function MetricsSkeleton() {
   return (
-    <VStack className="p-8" space={4}>
+    <VStack className="px-8 py-6" space={4}>
       <div className="h-4 w-32 animate-pulse rounded bg-white/[0.06]" />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         {[1, 2, 3, 4].map((item) => (

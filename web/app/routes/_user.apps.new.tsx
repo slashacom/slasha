@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { GitBranch, Link as LinkIcon } from 'lucide-react';
+import { Page } from '~/components/global/page';
 import { Github } from '~/components/icons/github';
 import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
@@ -157,7 +158,7 @@ export default function NewApp() {
   const repositories = reposData?.repositories || [];
 
   return (
-    <div>
+    <Page>
       <PageHeader
         title="New app"
         description="Give your application a name and choose how to deploy it."
@@ -439,6 +440,6 @@ export default function NewApp() {
           </div>
         </form>
       </div>
-    </div>
+    </Page>
   );
 }

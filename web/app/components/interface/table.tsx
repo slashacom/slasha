@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router';
 import { cn } from '~/utils/classname';
 
 export type TableColumn = {
@@ -38,5 +39,40 @@ export function Table(props: TableProps) {
       </thead>
       <tbody className="divide-y divide-border">{children}</tbody>
     </table>
+  );
+}
+
+type TableRowProps = {
+  to?: string;
+  children: React.ReactNode;
+  className?: string;
+};
+
+export function TableRow(props: TableRowProps) {
+  const { to, children, className } = props;
+  const navigate = useNavigate();
+
+  if (!to) {
+    return <tr className={className}>{children}</tr>;
+  }
+
+  return (
+    <tr
+      role="link"
+      tabIndex={0}
+      onClick={() => navigate(to)}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter') {
+          return;
+        }
+        navigate(to);
+      }}
+      className={cn(
+        'group cursor-pointer transition-colors hover:bg-white/[0.02] focus-visible:bg-white/[0.02] focus-visible:outline-none',
+        className
+      )}
+    >
+      {children}
+    </tr>
   );
 }

@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { TabNav } from '~/components/interface/tab-nav';
+import { TabActionsProvider } from '~/components/interface/tab-actions';
 import { getAuthMeOptions } from '~/queries/auth';
 
 export default function SettingsLayout() {
@@ -13,11 +14,22 @@ export default function SettingsLayout() {
   ];
 
   return (
-    <div className="flex flex-1 flex-col space-y-8">
-      <TabNav items={tabs} />
-      <div className="flex-1">
-        <Outlet />
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <TabActionsProvider>
+        {(slot) => (
+          <>
+            <TabNav
+              className="shrink-0 bg-surface/30 px-8"
+              actions={slot}
+              items={tabs}
+            />
+
+            <div className="min-h-0 flex-1">
+              <Outlet />
+            </div>
+          </>
+        )}
+      </TabActionsProvider>
     </div>
   );
 }

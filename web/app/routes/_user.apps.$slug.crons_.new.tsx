@@ -23,7 +23,7 @@ export default function NewCronPage() {
         }
       />
 
-      <div className="p-8">
+      <div className="px-8 py-6">
         <CronForm
           appSlug={slug!}
           onCancel={() => navigate(`/apps/${slug}/crons`)}

@@ -3,10 +3,11 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { Pencil, PlusIcon, Trash2, Users } from 'lucide-react';
+import { Page } from '~/components/global/page';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
-import { Table } from '~/components/interface/table';
+import { Table, TableRow } from '~/components/interface/table';
 import { redirect } from 'react-router';
 import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
@@ -52,7 +53,7 @@ export default function UsersPage() {
   };
 
   return (
-    <div>
+    <Page>
       <PageHeader
         title="Users"
         description="Manage who has access to this instance."
@@ -85,7 +86,7 @@ export default function UsersPage() {
             ]}
           >
             {usersData.users.map((user: User) => (
-              <tr key={user.id}>
+              <TableRow key={user.id} to={`/users/${user.id}/edit`}>
                 <td className="py-3 pr-4 font-medium text-text">
                   {user.email}
                 </td>
@@ -113,7 +114,7 @@ export default function UsersPage() {
                     ]}
                   />
                 </td>
-              </tr>
+              </TableRow>
             ))}
           </Table>
         )}
@@ -131,6 +132,6 @@ export default function UsersPage() {
         confirmLabel="Delete"
         onConfirm={handleConfirmDelete}
       />
-    </div>
+    </Page>
   );
 }

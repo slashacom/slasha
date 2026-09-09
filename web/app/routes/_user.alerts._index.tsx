@@ -3,7 +3,7 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { AlertEmptyState } from '~/components/alerts/alert-empty-state';
 import { Button } from '~/components/interface/button';
-import { Table } from '~/components/interface/table';
+import { Table, TableRow } from '~/components/interface/table';
 import { TablePagination } from '~/components/interface/table-pagination';
 import { usePagination } from '~/hooks/use-pagination';
 import {
@@ -13,7 +13,8 @@ import {
 import { formatDateTime, formatDuration } from '~/utils/date';
 import { incidentValueSummary } from '~/components/alerts/incident-values';
 import { queryClient } from '~/utils/query-client';
-import { PageHeader } from '~/components/interface/page-header';
+import { Page } from '~/components/global/page';
+import { TabActions } from '~/components/interface/tab-actions';
 
 export async function clientLoader() {
   await Promise.all([
@@ -33,16 +34,21 @@ export default function AlertsPage() {
   );
 
   return (
-    <div className="p-8">
-      <PageHeader
-        title="Alerts"
-        description="Each alert entry groups its incident details and trigger history."
-        actions={
-          <Button label="Refresh" variant="ghost" onClick={() => refetch()} />
-        }
-      />
+    <Page>
+      <TabActions>
+        <Button
+          label="Refresh"
+          variant="ghost"
+          size="sm"
+          onClick={() => refetch()}
+        />
+      </TabActions>
 
-      <div className="mt-8 space-y-4">
+      <p className="max-w-prose text-pretty text-sm text-text-secondary">
+        Every incident groups its details and full trigger history.
+      </p>
+
+      <div className="mt-6 space-y-4">
         {data.incidents.length === 0 ? (
           <AlertEmptyState
             type="incidents"
@@ -52,17 +58,13 @@ export default function AlertsPage() {
           <div className="rounded-lg border border-border bg-surface p-6">
             <div className="overflow-x-auto">
               <Table
-                columns={[
-                  'Rule',
-                  'Status',
-                  'Opened',
-                  'Duration',
-                  'Resolved',
-                  { label: '', align: 'right' },
-                ]}
+                columns={['Rule', 'Status', 'Opened', 'Duration', 'Resolved']}
               >
                 {pagination.rows.map((incident) => (
-                  <tr key={incident.id}>
+                  <TableRow
+                    key={incident.id}
+                    to={`/alerts/incidents/${incident.id}`}
+                  >
                     <td className="py-4 pr-4">
                       <div className="font-medium text-text">
                         {rulesById.get(incident.rule_id)?.name ??
@@ -90,15 +92,7 @@ export default function AlertsPage() {
                     <td className="py-4 text-text-secondary">
                       {formatDateTime(incident.resolved_at)}
                     </td>
-                    <td className="py-4 text-right">
-                      <Button
-                        to={`/alerts/incidents/${incident.id}`}
-                        label="View"
-                        variant="ghost"
-                        size="sm"
-                      />
-                    </td>
-                  </tr>
+                  </TableRow>
                 ))}
               </Table>
             </div>
@@ -120,6 +114,6 @@ export default function AlertsPage() {
           </div>
         )}
       </div>
-    </div>
+    </Page>
   );
 }

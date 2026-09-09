@@ -25,7 +25,7 @@ export default function NewAlertRulePage() {
   const { data: nodesData } = useSuspenseQuery(getNodesOptions());
 
   return (
-    <div className="p-8">
+    <div className="px-8 py-6">
       <PageHeader
         className="mb-8"
         title="New rule"

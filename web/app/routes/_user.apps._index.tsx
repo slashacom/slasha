@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { PlusIcon } from 'lucide-react';
+import { Page } from '~/components/global/page';
 import { Button } from '~/components/interface/button';
 import { AppList } from '~/components/apps/app-list';
 import { getAppsOptions } from '~/queries/apps';
@@ -16,7 +17,7 @@ export default function AppsIndex() {
   const { data } = useSuspenseQuery(getAppsOptions());
 
   return (
-    <div>
+    <Page>
       <PageHeader
         title="Apps"
         description="Manage and browse the applications running on this instance."
@@ -32,6 +33,6 @@ export default function AppsIndex() {
       <div className="mt-6">
         <AppList apps={data.apps ?? []} />
       </div>
-    </div>
+    </Page>
   );
 }

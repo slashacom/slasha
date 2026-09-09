@@ -3,9 +3,10 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { PlusIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { Page } from '~/components/global/page';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
-import { PageHeader } from '~/components/interface/page-header';
+import { TabActions } from '~/components/interface/tab-actions';
 import { getSshKeysOptions, useDeleteSshKey } from '~/queries/ssh-keys';
 import { queryClient } from '~/utils/query-client';
 import type { SshKey } from '~/models/ssh-key';
@@ -46,18 +47,19 @@ export default function SshKeys() {
   };
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="SSH Keys"
-        description="Manage public SSH keys to access your applications via Git over SSH."
-        actions={
-          <Button
-            label="Add key"
-            icon={<PlusIcon className="size-4" />}
-            onClick={() => navigate('/settings/ssh-keys/new')}
-          />
-        }
-      />
+    <Page className="space-y-6">
+      <TabActions>
+        <Button
+          label="Add key"
+          size="sm"
+          icon={<PlusIcon className="size-3.5" />}
+          onClick={() => navigate('/settings/ssh-keys/new')}
+        />
+      </TabActions>
+
+      <p className="max-w-prose text-pretty text-sm text-text-secondary">
+        Public keys that can reach your applications over Git via SSH.
+      </p>
 
       <SshKeyList
         keys={data.keys ?? []}
@@ -75,6 +77,6 @@ export default function SshKeys() {
         confirmLabel="Delete"
         onConfirm={handleConfirmDelete}
       />
-    </div>
+    </Page>
   );
 }

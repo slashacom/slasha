@@ -1,12 +1,11 @@
 import { Suspense, useEffect } from 'react';
 import { Outlet, useParams, useNavigate, redirect } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Server, HardDrive, Network } from 'lucide-react';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getNodeOptions } from '~/queries/nodes';
 import { TabNav } from '~/components/interface/tab-nav';
+import { TabActionsProvider } from '~/components/interface/tab-actions';
 import { queryClient } from '~/utils/query-client';
-import { NodeStatusBadge } from '~/components/interface/status-badge';
 import { toast } from 'sonner';
 
 export async function clientLoader(args: { params: { id: string } }) {
@@ -58,53 +57,28 @@ export default function NodeDetailLayout() {
   if (!node) return null;
 
   return (
-    <div className="flex flex-1 flex-col min-h-0">
-      <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-8 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <Server className="size-4 shrink-0 text-text-tertiary" />
-          <span className="truncate text-[13px] font-medium text-text">
-            {node.name}
-          </span>
-          <span className="inline-flex items-center gap-1 rounded border border-border bg-surface px-1.5 py-0.5 text-[11px] font-medium text-text-secondary">
-            {node.id === 'local' ? (
-              <>
-                <HardDrive className="size-3" />
-                <span>Local</span>
-              </>
-            ) : (
-              <>
-                <Network className="size-3" />
-                <span className="font-mono">
-                  {node.user}
-                  <span className="font-sans text-text-tertiary">@</span>
-                  {node.host}
-                  <span className="font-sans text-text-tertiary">:</span>
-                  {node.port}
-                </span>
-              </>
-            )}
-          </span>
-          <NodeStatusBadge
-            status={node.status}
-            connectionStatus={node.connection_status}
-          />
-        </div>
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <TabActionsProvider>
+        {(slot) => (
+          <>
+            <TabNav
+              className="shrink-0 bg-surface/30 px-8"
+              actions={slot}
+              items={[
+                { label: 'Metrics', to: `/nodes/${id}`, end: true },
+                ...(node.id !== 'local'
+                  ? [{ label: 'Logs', to: `/nodes/${id}/logs` }]
+                  : []),
+                { label: 'Settings', to: `/nodes/${id}/settings` },
+              ]}
+            />
 
-      <TabNav
-        className="shrink-0 bg-surface/30 px-8"
-        items={[
-          { label: 'Metrics', to: `/nodes/${id}`, end: true },
-          ...(node.id !== 'local'
-            ? [{ label: 'Logs', to: `/nodes/${id}/logs` }]
-            : []),
-          { label: 'Settings', to: `/nodes/${id}/settings` },
-        ]}
-      />
-
-      <Suspense fallback={null}>
-        <Outlet />
-      </Suspense>
+            <Suspense fallback={null}>
+              <Outlet />
+            </Suspense>
+          </>
+        )}
+      </TabActionsProvider>
     </div>
   );
 }

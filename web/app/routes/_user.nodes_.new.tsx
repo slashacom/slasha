@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { useCreateNode } from '~/queries/nodes';
+import { Page } from '~/components/global/page';
 import { NodeForm } from '~/components/nodes/node-form';
 import { PageHeader } from '~/components/interface/page-header';
 
@@ -35,7 +36,7 @@ export default function NewNodePage() {
   };
 
   return (
-    <div>
+    <Page>
       <PageHeader
         title="Connect Node"
         description="Connect a remote node to use as a server for app deployments. Slasha will connect via SSH and automatically provision it."
@@ -50,6 +51,6 @@ export default function NewNodePage() {
           isLocalNode={false}
         />
       </div>
-    </div>
+    </Page>
   );
 }
