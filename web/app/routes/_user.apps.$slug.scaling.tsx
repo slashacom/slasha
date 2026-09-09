@@ -75,7 +75,10 @@ export default function AppScalingPage() {
     processGroups.web = 0;
   }
 
-  const scalableTypes = Object.keys(processGroups) as ProcessType[];
+  const typeOrder: Record<string, number> = { web: 0, worker: 1, release: 2 };
+  const scalableTypes = (Object.keys(processGroups) as ProcessType[]).sort(
+    (a, b) => (typeOrder[a] ?? 99) - (typeOrder[b] ?? 99)
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
@@ -107,11 +110,9 @@ export default function AppScalingPage() {
 
           <VStack space={3}>
             <VStack space={1}>
-              <h3 className="text-sm font-semibold text-text">
-                Process Explorer
-              </h3>
+              <h3 className="text-sm font-semibold text-text">Processes</h3>
               <p className="text-[12px] text-text-tertiary">
-                Live containers for the running deployment.
+                Containers running for the current deployment.
               </p>
             </VStack>
             <ProcessExplorer

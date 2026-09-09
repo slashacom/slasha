@@ -23,8 +23,19 @@ function emptySubtitle(deploymentStatus: DeploymentStatus) {
   return 'Containers appear here as soon as the deployment starts them.';
 }
 
+const TYPE_ORDER: Record<string, number> = { web: 0, worker: 1, release: 2 };
+
 export function ProcessExplorer(props: ProcessExplorerProps) {
   const { processes, deploymentStatus } = props;
+  const ordered = [...processes].sort((a, b) => {
+    const byType =
+      (TYPE_ORDER[a.process_type] ?? 99) - (TYPE_ORDER[b.process_type] ?? 99);
+    if (byType !== 0) {
+      return byType;
+    }
+
+    return a.instance_index - b.instance_index;
+  });
   const isProvisioning =
     deploymentStatus === 'Pending' || deploymentStatus === 'Building';
 
@@ -63,7 +74,7 @@ export function ProcessExplorer(props: ProcessExplorerProps) {
           { label: 'Status', align: 'right' },
         ]}
       >
-        {processes.map((process) => (
+        {ordered.map((process) => (
           <tr key={process.name}>
             <td className="py-3 pr-4 text-[13px] font-medium text-text">
               {process.process_type}

@@ -65,7 +65,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       !isInteractable && 'pointer-events-none',
       !label && 'p-1.5',
       size === 'sm' && 'h-7 rounded px-2 text-[12px]',
-      size === 'md' && 'h-8',
+      size === 'md' && 'h-9',
       size === 'lg' && 'h-10 px-4 text-[14px]',
       noOutline && 'focus:ring-0 focus:ring-offset-0',
       className

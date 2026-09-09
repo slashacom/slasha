@@ -85,7 +85,6 @@ export function ServiceStatsBar(props: ServiceStatsBarProps) {
     memUsed != null ||
     stats?.disk_bytes != null;
 
-  // Four tall tiles of em-dashes read as breakage; one line reads as "not yet".
   if (!hasStats) {
     return (
       <HStack

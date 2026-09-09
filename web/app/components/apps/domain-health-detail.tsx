@@ -122,12 +122,14 @@ function HealthLine(props: { line: Line }) {
 
   return (
     <HStack space={2} alignItems="start">
-      <span
-        className={cn(
-          'mt-1.5 size-1.5 shrink-0 rounded-full',
-          DOT_STYLES[line.tone]
-        )}
-      />
+      <span className="flex h-6 shrink-0 items-center">
+        <span
+          className={cn(
+            'size-1.5 translate-y-[1.5px] rounded-full',
+            DOT_STYLES[line.tone]
+          )}
+        />
+      </span>
       <div className="min-w-0">
         <span className="text-[12px] font-medium text-text-secondary">
           {line.label}

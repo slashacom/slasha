@@ -66,7 +66,6 @@ export function AppNodeManager(props: AppNodeManagerProps) {
         </Select>
         <Button
           label="Move App"
-          size="sm"
           onClick={handleMove}
           disabled={
             moveAppNode.isPending ||

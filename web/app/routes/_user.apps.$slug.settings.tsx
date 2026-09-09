@@ -30,8 +30,6 @@ import { DangerZone } from '~/components/global/danger-zone';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
-  // Only the two queries this route reads block the navigation; the section
-  // cards below fetch their own data and suspend into the page skeleton.
   void queryClient.prefetchQuery(getGithubStatusOptions());
   void queryClient.prefetchQuery(getAppEnvVarsOptions(params.slug));
   void queryClient.prefetchQuery(getAppEnvSuggestionsOptions(params.slug));

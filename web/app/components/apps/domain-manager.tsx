@@ -106,7 +106,6 @@ export function DomainManager(props: DomainManagerProps) {
             label="Add Domain"
             icon={<Plus className="size-3.5" />}
             isLoading={addDomain.isPending}
-            size="sm"
           />
         </HStack>
         <p className="mt-2 text-[11px] text-text-tertiary">

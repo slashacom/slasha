@@ -200,9 +200,6 @@ export function TopBar() {
   const app = isAppRoute ? appData?.app : undefined;
   const node = isNodeRoute ? nodeData?.node : undefined;
   const crumbs = useCrumbs(app?.name, node?.name);
-  // Branch, runtime and clone URL describe the app. On a nested entity (a service,
-  // a deployment, a job) that entity carries its own status, so showing the app's
-  // too reads as if it were the entity's.
   const isAppItself = crumbs.length <= 2;
 
   return (

@@ -116,7 +116,6 @@ export function HealthCheckManager(props: HealthCheckManagerProps) {
         </VStack>
         <Button
           label="Save"
-          size="sm"
           className="mb-0.5"
           onClick={handleSave}
           disabled={updateEnvVars.isPending || !isDirty}

@@ -21,8 +21,6 @@ export async function clientLoader() {
   return null;
 }
 
-// Detail screens (file tree, log stream, deployment list) fill the viewport and
-// scroll their own panes, so the shell must not add a scroll container of its own.
 function useOwnsScroll() {
   const location = useLocation();
   const params = useParams();

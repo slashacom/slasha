@@ -83,7 +83,6 @@ export function ErrorBoundary(props: Route.ErrorBoundaryProps) {
 }
 
 export function HydrateFallback() {
-  // The auth screens have no shell, so a spinner is the honest placeholder there.
   const path = typeof window === 'undefined' ? '' : window.location.pathname;
   if (path === '/login' || path === '/signup' || path === '/') {
     return <FullPageSpinner />;

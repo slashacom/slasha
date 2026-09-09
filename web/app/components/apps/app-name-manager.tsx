@@ -56,7 +56,6 @@ export function AppNameManager(props: AppNameManagerProps) {
         />
         <Button
           label="Save"
-          size="sm"
           onClick={handleSave}
           disabled={
             updateSettings.isPending || name.trim() === app.name || !name.trim()

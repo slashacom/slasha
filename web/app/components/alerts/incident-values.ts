@@ -17,8 +17,6 @@ const VALUE_LABELS = [
   ['threshold_value', 'Threshold'],
 ] as const;
 
-// The same numeric columns mean different things per rule kind, so the unit has
-// to come from the rule rather than the incident.
 function unitFor(config: AlertRuleConfig | undefined) {
   if (!config) {
     return '';

@@ -68,7 +68,6 @@ export function AppRootDirManager(props: AppRootDirManagerProps) {
         </Select>
         <Button
           label="Save"
-          size="sm"
           onClick={handleSave}
           disabled={
             updateSettings.isPending ||

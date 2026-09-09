@@ -13,8 +13,6 @@ export function serviceProxyCommand(
   return `slasha proxy --app ${appSlug} ${serviceName}`;
 }
 
-// Mirrors `ServiceKind::secret_env_keys` in slasha-db, which decides which
-// variables the backend generates a random password for.
 const SERVICE_SECRET_KEYS: Record<ServiceKind, readonly string[]> = {
   PostgreSQL: ['POSTGRES_PASSWORD'],
   MySQL: ['MYSQL_ROOT_PASSWORD', 'MYSQL_PASSWORD'],
