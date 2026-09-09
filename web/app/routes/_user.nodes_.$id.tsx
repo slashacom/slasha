@@ -95,6 +95,7 @@ export default function NodeDetailLayout() {
         className="shrink-0 bg-surface/30 px-8"
         items={[
           { label: 'Metrics', to: `/nodes/${id}`, end: true },
+          { label: 'Console', to: `/nodes/${id}/console` },
           ...(node.id !== 'local'
             ? [{ label: 'Logs', to: `/nodes/${id}/logs` }]
             : []),

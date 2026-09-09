@@ -66,3 +66,5 @@ lettre = { version = "0.11.22", features = ["tokio1", "tokio1-native-tls"] }
 garde = { version = "0.23.0", features = ["full"] }
 sysinfo = "0.39.6"
 cron-parser = "0.11.2"
+portable-pty = "0.9.0"
+encoding_rs = "0.8.41"

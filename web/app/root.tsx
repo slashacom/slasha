@@ -23,6 +23,10 @@ export const links: Route.LinksFunction = () => [
     rel: 'stylesheet',
     href: 'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap',
   },
+  {
+    rel: 'stylesheet',
+    href: 'https://cdn.jsdelivr.net/gh/mshaugh/nerdfont-webfonts@v3.3.0/build/symbols-nerd-font-mono.css',
+  },
 ];
 
 type LayoutProps = {
