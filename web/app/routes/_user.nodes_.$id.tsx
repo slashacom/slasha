@@ -67,13 +67,13 @@ export default function NodeDetailLayout() {
               actions={slot}
               items={[
                 { label: 'Metrics', to: `/nodes/${id}`, end: true },
+                { label: 'Console', to: `/nodes/${id}/console` },
                 ...(node.id !== 'local'
                   ? [{ label: 'Logs', to: `/nodes/${id}/logs` }]
                   : []),
                 { label: 'Settings', to: `/nodes/${id}/settings` },
               ]}
             />
-
             <Suspense fallback={<PageSkeleton />}>
               <Outlet />
             </Suspense>

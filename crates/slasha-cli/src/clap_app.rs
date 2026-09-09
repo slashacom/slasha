@@ -118,10 +118,31 @@ pub enum Command {
     #[command(name = "link", about = "Link local directory to an application")]
     Link {},
 
+    #[command(name = "nodes", about = "Manage nodes")]
+    Nodes {
+        #[command(subcommand)]
+        command: NodesCommand,
+    },
+
     #[command(name = "config", about = "Manage CLI configuration")]
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum NodesCommand {
+    #[command(name = "list", about = "List nodes")]
+    List,
+
+    #[command(
+        name = "console",
+        about = "Open an interactive console session on a node"
+    )]
+    Console {
+        #[arg(value_name = "NODE", help = "Target node name")]
+        node: String,
     },
 }
 

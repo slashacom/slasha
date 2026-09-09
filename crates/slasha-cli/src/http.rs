@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 
 use crate::token::{canonicalize_server_url, get_auth_token};
 
@@ -64,6 +64,43 @@ impl ApiClient {
             .ok()
             .and_then(|u| u.host_str().map(str::to_owned))
             .unwrap_or_else(|| "localhost".to_string())
+    }
+
+    /// Converts a relative path into a full WebSocket URL targeting the server instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Relative API endpoint path string slice.
+    ///
+    /// # Returns
+    ///
+    /// A [`Result`] containing the constructed WebSocket URL string.
+    pub fn ws_url(&self, path: &str) -> Result<String> {
+        let url = url::Url::parse(&self.base_url)
+            .with_context(|| format!("invalid base URL: {}", self.base_url))?;
+        let ws_scheme = match url.scheme() {
+            "https" => "wss",
+            "http" => "ws",
+            other => anyhow::bail!("unsupported base URL scheme: {}", other),
+        };
+
+        let host = url
+            .host_str()
+            .ok_or_else(|| anyhow!("base URL has no host"))?;
+        let mut origin = format!("{}://{}", ws_scheme, host);
+
+        if let Some(p) = url.port() {
+            origin.push_str(&format!(":{}", p));
+        }
+
+        let base_path = url.path().trim_end_matches('/');
+        let rel_path = if path.starts_with('/') {
+            path.to_string()
+        } else {
+            format!("/{}", path)
+        };
+
+        Ok(format!("{}{}{}", origin, base_path, rel_path))
     }
 
     /// Executes an HTTP GET request and deserializes the JSON response body.
