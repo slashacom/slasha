@@ -4,6 +4,11 @@
 
 FEATURES ?= serve
 
+BREW_PREFIX := $(shell brew --prefix 2>/dev/null)
+ifneq ($(BREW_PREFIX),)
+export LIBRARY_PATH := $(BREW_PREFIX)/lib:$(LIBRARY_PATH)
+endif
+
 dev:
 	@cd web && bun install
 	@test -f .env || cp .env.example .env
