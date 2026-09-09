@@ -117,7 +117,7 @@ impl NodeRegistry {
     /// # Returns
     ///
     /// The absolute path to the `known_hosts` file.
-    fn known_hosts_path(&self) -> PathBuf {
+    pub fn known_hosts_path(&self) -> PathBuf {
         self.nodes_dir.join("known_hosts")
     }
 
@@ -126,7 +126,7 @@ impl NodeRegistry {
     /// # Returns
     ///
     /// The absolute path to the SSH config file.
-    fn ssh_config_path(&self) -> anyhow::Result<PathBuf> {
+    pub fn ssh_config_path(&self) -> anyhow::Result<PathBuf> {
         let path = self.nodes_dir.join("config");
         if !path.exists() {
             std::fs::File::create(&path)?;
@@ -144,7 +144,7 @@ impl NodeRegistry {
     /// # Returns
     ///
     /// The absolute path to the node's SSH private key file.
-    fn key_path(&self, node: &Node) -> anyhow::Result<PathBuf> {
+    pub fn key_path(&self, node: &Node) -> anyhow::Result<PathBuf> {
         if node.is_local() {
             return Err(anyhow::anyhow!("local node does not use SSH"));
         }

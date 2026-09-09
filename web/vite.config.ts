@@ -14,12 +14,16 @@ export default defineConfig(({ mode, command }) => {
         '/api': {
           target: `http://localhost:${port}`,
           changeOrigin: true,
+          ws: true,
         },
         '/git': {
           target: `http://localhost:${port}`,
           changeOrigin: true,
         },
       },
+    },
+    optimizeDeps: {
+      include: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
     },
     resolve: {
       alias: {

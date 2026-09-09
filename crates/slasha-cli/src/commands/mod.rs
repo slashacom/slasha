@@ -17,6 +17,7 @@ mod git_ssh;
 mod health;
 mod link;
 mod logs;
+mod nodes;
 mod proxy;
 mod resolve;
 mod responses;
@@ -79,6 +80,7 @@ pub async fn execute(clap_app: ClapApp) -> anyhow::Result<()> {
             domains::dispatch(command, server_override, app_override).await?
         }
         Command::SshKeys { command } => ssh_keys::dispatch(command, server_override).await?,
+        Command::Nodes { command } => nodes::dispatch(command, server_override).await?,
     }
 
     Ok(())

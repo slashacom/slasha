@@ -100,3 +100,36 @@ pub async fn resolve_service_id(client: &ApiClient, slug: &str, name: &str) -> R
 
     anyhow::bail!("Service '{}' not found for app '{}'", name, slug)
 }
+
+#[derive(Deserialize)]
+struct NodeListItem {
+    id: String,
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct NodeListResponse {
+    nodes: Vec<NodeListItem>,
+}
+
+/// Resolves a node ID by matching the node name.
+///
+/// # Arguments
+///
+/// * `client` - Reference to the API client ([`ApiClient`]).
+/// * `name` - Target node name string slice.
+///
+/// # Returns
+///
+/// The resolved node ID string.
+pub async fn resolve_node_id(client: &ApiClient, name: &str) -> Result<String> {
+    let res: NodeListResponse = client.get("/api/nodes").await?;
+
+    for node in res.nodes {
+        if node.name.eq_ignore_ascii_case(name) {
+            return Ok(node.id);
+        }
+    }
+
+    anyhow::bail!("Node '{}' not found", name)
+}

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use colored::Colorize;
-use comfy_table::{Cell, ContentArrangement, Table, presets::UTF8_FULL_CONDENSED};
+use comfy_table::{Cell, ContentArrangement, Table, presets::UTF8_FULL};
 use indicatif::{ProgressBar, ProgressStyle};
 
 /// Prints a green success message to stdout.
@@ -59,7 +59,7 @@ pub fn cli_label(key: impl std::fmt::Display, val: impl std::fmt::Display) {
 /// * `rows` - Matrix of table row string cells.
 pub fn print_table(headers: &[&str], rows: Vec<Vec<String>>) {
     let mut table = Table::new();
-    table.load_preset(UTF8_FULL_CONDENSED);
+    table.load_preset(UTF8_FULL);
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(headers.iter().map(Cell::new));
 
