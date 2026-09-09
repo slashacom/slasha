@@ -2,7 +2,7 @@ import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
 
 type PageHeaderProps = {
-  title: string;
+  title: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
   className?: string;

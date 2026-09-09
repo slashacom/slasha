@@ -1,18 +1,23 @@
 import { useState } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { ShieldAlert } from 'lucide-react';
+import { Bell, Clock, Gauge } from 'lucide-react';
 import { useParams } from 'react-router';
 import { AlertCard } from '~/components/alerts/alert-card';
-import { AlertDetailStat } from '~/components/alerts/alert-detail-stat';
+import {
+  IncidentCard,
+  IncidentMeta,
+  IncidentRow,
+  IncidentTimeline,
+} from '~/components/alerts/incident-meta';
 import { AlertEmptyState } from '~/components/alerts/alert-empty-state';
 import { AlertNotificationDialog } from '~/components/alerts/alert-notification-dialog';
 import { AlertNotificationPreview } from '~/components/alerts/alert-notification-preview';
-import { AlertStat } from '~/components/alerts/alert-stat';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { configSummary } from '~/components/alerts/alert-definitions';
 import { formatNotificationKind } from '~/components/alerts/notification-kind';
 import { Button } from '~/components/interface/button';
-import { SectionHeader } from '~/components/interface/section-header';
+import { PageHeader } from '~/components/interface/page-header';
+import { HStack, VStack } from '~/components/interface/stacks';
 import { Table } from '~/components/interface/table';
 import type { AlertNotification } from '~/models/alerts';
 import { getAppsOptions } from '~/queries/apps';
@@ -21,6 +26,7 @@ import {
   getAlertRulesOptions,
 } from '~/queries/alerts';
 import { formatDateTime, formatDuration } from '~/utils/date';
+import { titleCase } from '~/utils/format';
 import { incidentValues } from '~/components/alerts/incident-values';
 import { queryClient } from '~/utils/query-client';
 
@@ -50,100 +56,68 @@ export default function AlertIncidentDetailPage() {
   const apps = appsData.apps.map((item) => item.app);
   const ruleName = rule?.name ?? 'Unknown rule';
   const ruleCondition = rule ? configSummary(rule, apps) : null;
-  const values = incidentValues(incident);
-  const firstNotification = notifications[0];
+  const values = incidentValues(incident, rule);
   const latestNotification = notifications[notifications.length - 1];
 
   return (
-    <div className="space-y-8 px-8 py-6">
-      <SectionHeader
-        backTo="/alerts"
-        icon={ShieldAlert}
-        title={ruleName}
-        description={ruleCondition ?? undefined}
-        actions={
-          <Button label="Refresh" variant="ghost" onClick={() => refetch()} />
-        }
-        className="h-auto border-0 px-0"
-      />
-
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-        <AlertStat
-          label="Status"
-          value={
+    <div className="space-y-6 px-8 py-6">
+      <PageHeader
+        title={
+          <HStack space={3}>
+            <span>{ruleName}</span>
             <AlertStatusBadge
               state={incident.status === 'open' ? 'warn' : 'ok'}
             >
-              {incident.status}
+              {titleCase(incident.status)}
             </AlertStatusBadge>
-          }
-          valueClassName="mt-2"
-        />
-        <AlertStat
-          label="Opened"
-          value={formatDateTime(incident.opened_at)}
-          mono={false}
-        />
-        <AlertStat
-          label={incident.status === 'open' ? 'Ongoing for' : 'Duration'}
-          value={formatDuration(incident.opened_at, incident.resolved_at)}
-          mono={false}
-        />
-        <AlertStat
-          label="Resolved"
-          value={formatDateTime(incident.resolved_at)}
-          mono={false}
-        />
-      </div>
+          </HStack>
+        }
+        description={ruleCondition ?? undefined}
+        actions={
+          <Button
+            label="Refresh"
+            variant="ghost"
+            size="sm"
+            onClick={() => refetch()}
+          />
+        }
+      />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <AlertCard
-          title="Incident details"
-          description="Threshold and routing metadata for this alert entry."
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <AlertDetailStat label="Rule" value={ruleName} />
-            {ruleCondition ? (
-              <AlertDetailStat label="Condition" value={ruleCondition} />
-            ) : null}
+      <IncidentMeta>
+        <IncidentCard icon={Clock} title="Timeline">
+          <IncidentTimeline
+            openedAt={formatDateTime(incident.opened_at)}
+            resolvedAt={
+              incident.resolved_at ? formatDateTime(incident.resolved_at) : null
+            }
+            duration={formatDuration(incident.opened_at, incident.resolved_at)}
+          />
+        </IncidentCard>
+
+        <IncidentCard icon={Gauge} title="Measurements">
+          <VStack space={2}>
             {values.map((entry) => (
-              <AlertDetailStat
-                key={entry.label}
-                label={entry.label}
-                value={entry.value}
-              />
+              <IncidentRow key={entry.label} label={entry.label}>
+                {entry.value}
+              </IncidentRow>
             ))}
-          </div>
-        </AlertCard>
+          </VStack>
+        </IncidentCard>
 
-        <AlertCard
-          title="Trigger summary"
-          description="Every recorded trigger, re-notify, and resolution event for this incident."
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <AlertDetailStat
-              label="Trigger count"
-              value={String(notifications.length)}
-            />
-            <AlertDetailStat
-              label="Latest event"
-              value={
-                latestNotification
-                  ? formatNotificationKind(latestNotification.kind)
-                  : '—'
-              }
-            />
-            <AlertDetailStat
-              label="First trigger"
-              value={formatDateTime(firstNotification?.created_at)}
-            />
-            <AlertDetailStat
-              label="Last trigger"
-              value={formatDateTime(latestNotification?.created_at)}
-            />
-          </div>
-        </AlertCard>
-      </div>
+        <IncidentCard icon={Bell} title="Notifications">
+          <VStack space={2}>
+            <IncidentRow label="Sent">{notifications.length}</IncidentRow>
+            <IncidentRow label="Latest">
+              {latestNotification
+                ? formatNotificationKind(latestNotification.kind)
+                : 'None'}
+            </IncidentRow>
+            <IncidentRow label="Last sent">
+              {formatDateTime(latestNotification?.created_at)}
+            </IncidentRow>
+          </VStack>
+        </IncidentCard>
+      </IncidentMeta>
 
       <AlertCard
         title="Triggers"

@@ -27,7 +27,7 @@ export default function AlertsLayout() {
               className="shrink-0 bg-surface/30 px-8"
               actions={slot}
               items={[
-                { label: 'Incidents', to: '/alerts', end: true },
+                { label: 'Alerts', to: '/alerts', end: true },
                 { label: 'Channels', to: '/alerts/channels' },
                 { label: 'Rules', to: '/alerts/rules' },
               ]}

@@ -12,6 +12,7 @@ import {
   History,
   KeyRound,
   Layers,
+  LayoutGrid,
   LogOut,
   Plus,
   Server,
@@ -20,7 +21,6 @@ import {
   Users,
   Webhook,
 } from 'lucide-react';
-import { LayoutGrid } from '~/components/icons/layout';
 import {
   CommandDialog,
   CommandEmpty,

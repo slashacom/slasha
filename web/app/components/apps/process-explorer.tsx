@@ -1,7 +1,9 @@
-import { CircleDashed } from 'lucide-react';
+import { Boxes, CircleDashed } from 'lucide-react';
 import type { ProcessContainer } from '~/models/app-scale';
 import type { DeploymentStatus } from '~/models/deployment';
-import { VStack } from '~/components/interface/stacks';
+import { EmptyPage } from '~/components/global/empty-page';
+import { HStack, VStack } from '~/components/interface/stacks';
+import { Table } from '~/components/interface/table';
 import { cn } from '~/utils/classname';
 
 type ProcessExplorerProps = {
@@ -9,98 +11,87 @@ type ProcessExplorerProps = {
   deploymentStatus: DeploymentStatus;
 };
 
+function emptySubtitle(deploymentStatus: DeploymentStatus) {
+  if (deploymentStatus === 'Failed') {
+    return 'This deployment failed, so nothing is running. Check the deployment logs, then deploy again.';
+  }
+
+  if (deploymentStatus === 'Stopped') {
+    return 'This deployment is stopped. Start it again to bring its containers back.';
+  }
+
+  return 'Containers appear here as soon as the deployment starts them.';
+}
+
 export function ProcessExplorer(props: ProcessExplorerProps) {
   const { processes, deploymentStatus } = props;
   const isProvisioning =
     deploymentStatus === 'Pending' || deploymentStatus === 'Building';
 
+  if (isProvisioning) {
+    return (
+      <VStack
+        space={2}
+        alignItems="center"
+        className="rounded-lg border border-dashed border-border bg-surface/30 px-6 py-14"
+      >
+        <CircleDashed className="size-5 animate-spin text-text-tertiary" />
+        <p className="text-[13px] text-text-tertiary">
+          Starting containers for this deployment.
+        </p>
+      </VStack>
+    );
+  }
+
+  if (processes.length === 0) {
+    return (
+      <EmptyPage
+        icon={Boxes}
+        title="No processes running."
+        subtitle={emptySubtitle(deploymentStatus)}
+      />
+    );
+  }
+
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-surface/20">
-      <table className="w-full text-left">
-        <thead>
-          <tr className="border-b border-border bg-surface/50">
-            <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-              Process Type
-            </th>
-            <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-              Instance
-            </th>
-            <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-              Container Identifier
-            </th>
-            <th className="px-6 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-              Status
-            </th>
+    <div className="-mx-8 overflow-x-auto">
+      <Table
+        columns={[
+          'Process',
+          'Instance',
+          'Container',
+          { label: 'Status', align: 'right' },
+        ]}
+      >
+        {processes.map((process) => (
+          <tr key={process.name}>
+            <td className="py-3 pr-4 text-[13px] font-medium text-text">
+              {process.process_type}
+            </td>
+            <td className="py-3 pr-4 font-mono text-[12px] text-text-secondary">
+              #{process.instance_index}
+            </td>
+            <td className="py-3 pr-4 font-mono text-[12px] text-text-tertiary">
+              {process.name}
+            </td>
+            <td className="py-3 text-right">
+              <HStack space={1.5} justifyContent="end">
+                <span
+                  className={cn(
+                    'size-1.5 rounded-full',
+                    process.status === 'Running'
+                      ? 'bg-emerald-400'
+                      : 'bg-text-tertiary'
+                  )}
+                />
+                <span className="text-[12px] text-text-secondary">
+                  {process.status}
+                </span>
+              </HStack>
+            </td>
           </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {processes.length === 0 ? (
-            <tr>
-              <td colSpan={4} className="px-6 py-12 text-center">
-                {isProvisioning ? (
-                  <VStack space={2} alignItems="center">
-                    <CircleDashed className="size-5 animate-spin text-text-tertiary" />
-                    <p className="text-xs text-text-tertiary">
-                      Initializing processes...
-                    </p>
-                  </VStack>
-                ) : (
-                  <p className="text-balance text-xs text-text-tertiary">
-                    {deploymentStatus === 'Failed'
-                      ? 'This deployment failed. No processes are running.'
-                      : deploymentStatus === 'Stopped'
-                        ? 'This deployment is stopped.'
-                        : 'No processes are running.'}
-                  </p>
-                )}
-              </td>
-            </tr>
-          ) : (
-            processes.map((p) => (
-              <tr
-                key={p.name}
-                className="transition-colors hover:bg-white/[0.01]"
-              >
-                <td className="px-6 py-3.5">
-                  <span className="text-[13px] font-medium text-text">
-                    {p.process_type}
-                  </span>
-                </td>
-                <td className="px-6 py-3.5">
-                  <span className="font-mono text-[12px] text-text-secondary">
-                    #{p.instance_index}
-                  </span>
-                </td>
-                <td className="px-6 py-3.5">
-                  <span className="font-mono text-[12px] text-text-tertiary">
-                    {p.name}
-                  </span>
-                </td>
-                <td className="px-6 py-3.5 text-right">
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium',
-                      p.status === 'Running'
-                        ? 'bg-emerald-500/10 text-emerald-400'
-                        : 'bg-white/5 text-text-tertiary'
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        'size-1 rounded-full',
-                        p.status === 'Running'
-                          ? 'bg-emerald-500'
-                          : 'bg-text-tertiary'
-                      )}
-                    />
-                    {p.status}
-                  </span>
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+        ))}
+      </Table>
     </div>
   );
 }

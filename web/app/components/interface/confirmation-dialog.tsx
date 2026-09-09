@@ -1,6 +1,6 @@
+import { LoaderCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
-import { Loader } from '~/components/icons/loader';
 import { Input } from '~/components/interface/input';
 import { cn } from '~/utils/classname';
 
@@ -89,7 +89,9 @@ export function ConfirmationDialog(props: ConfirmationDialogProps) {
                   : 'bg-white text-bg hover:bg-white/90'
               )}
             >
-              {isPending ? <Loader className="size-3.5 animate-spin" /> : null}
+              {isPending ? (
+                <LoaderCircle className="size-3.5 animate-spin" />
+              ) : null}
               {confirmLabel}
             </button>
           </div>

@@ -17,7 +17,7 @@ export function AlertEmptyState(props: AlertEmptyStateProps) {
         size="sm"
         bordered={false}
         title="No triggers recorded."
-        subtitle="Every delivery attempt for this incident will be listed here."
+        subtitle="Every delivery attempt for this alert will be listed here."
         className={className}
       />
     );
@@ -29,7 +29,7 @@ export function AlertEmptyState(props: AlertEmptyStateProps) {
         icon={Bell}
         size="lg"
         title="Nothing is being watched yet."
-        subtitle="Alert rules keep an eye on CPU, memory, disk, and app health. Create your first rule and incidents will show up here."
+        subtitle="Alert rules keep an eye on CPU, memory, disk, and app health. Create your first rule and alerts will show up here."
         actionLabel="Create rule"
         actionIcon={<Plus className="size-3.5" />}
         actionTo="/alerts/rules/new"
@@ -44,8 +44,8 @@ export function AlertEmptyState(props: AlertEmptyStateProps) {
     <EmptyPage
       icon={ShieldCheck}
       size="lg"
-      title="All clear. No incidents."
-      subtitle="Your rules are running. The moment one trips, the incident and its trigger history land here."
+      title="All clear. No alerts."
+      subtitle="Your rules are running. The moment one trips, the alert and its trigger history land here."
       secondaryLabel="View rules"
       secondaryTo="/alerts/rules"
       className={className}

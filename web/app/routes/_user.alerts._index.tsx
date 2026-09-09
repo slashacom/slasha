@@ -16,6 +16,7 @@ import {
   formatRelativeTime,
 } from '~/utils/date';
 import { incidentValueSummary } from '~/components/alerts/incident-values';
+import { titleCase } from '~/utils/format';
 import { queryClient } from '~/utils/query-client';
 import { Page } from '~/components/global/page';
 import { TabActions } from '~/components/interface/tab-actions';
@@ -55,7 +56,7 @@ export default function AlertsPage() {
       </TabActions>
 
       <p className="max-w-prose text-pretty text-sm text-text-secondary">
-        Every incident groups its details and full trigger history.
+        Every alert groups its details and full trigger history.
       </p>
 
       <div className="mt-6 space-y-4">
@@ -80,9 +81,15 @@ export default function AlertsPage() {
                         {rulesById.get(incident.rule_id)?.name ??
                           'Unknown rule'}
                       </div>
-                      {incidentValueSummary(incident) ? (
+                      {incidentValueSummary(
+                        incident,
+                        rulesById.get(incident.rule_id)
+                      ) ? (
                         <div className="mt-1 text-xs text-text-tertiary">
-                          {incidentValueSummary(incident)}
+                          {incidentValueSummary(
+                            incident,
+                            rulesById.get(incident.rule_id)
+                          )}
                         </div>
                       ) : null}
                     </td>
@@ -90,7 +97,7 @@ export default function AlertsPage() {
                       <AlertStatusBadge
                         state={incident.status === 'open' ? 'warn' : 'ok'}
                       >
-                        {incident.status}
+                        {titleCase(incident.status)}
                       </AlertStatusBadge>
                     </td>
                     <td className="py-4 pr-4 text-text-secondary">

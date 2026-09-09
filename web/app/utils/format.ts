@@ -72,3 +72,11 @@ export function formatMetric(value: number | null | undefined) {
 
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
+
+export function titleCase(value: string) {
+  if (!value) {
+    return value;
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}

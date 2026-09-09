@@ -82,7 +82,7 @@ function useCrumbs(appName?: string, nodeName?: string): Crumb[] {
       crumbs.push({ label: 'Rules', to: '/alerts/rules' });
     }
     if (second === 'incidents') {
-      crumbs.push({ label: 'Incident' });
+      crumbs.push({ label: 'Alert' });
     }
     if (third === 'new') {
       crumbs.push({ label: second === 'rules' ? 'New rule' : 'New channel' });

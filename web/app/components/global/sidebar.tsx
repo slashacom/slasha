@@ -1,8 +1,13 @@
 import { NavLink, useNavigate, useLocation } from 'react-router';
 
-import { Users, Settings, Bell, Search, Server } from 'lucide-react';
-
-import { LayoutGrid } from '../icons/layout';
+import {
+  Bell,
+  LayoutGrid,
+  Search,
+  Server,
+  Settings,
+  Users,
+} from 'lucide-react';
 
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { cn } from '~/utils/classname';
