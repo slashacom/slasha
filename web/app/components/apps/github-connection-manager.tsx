@@ -293,7 +293,7 @@ export function GithubConnectionManager(props: Props) {
             </p>
           ) : repositories.length === 0 ? (
             <div className="text-center py-4">
-              <p className="mb-4 text-sm text-text-secondary">
+              <p className="mb-4 text-balance text-sm text-text-secondary">
                 You haven't connected any GitHub accounts yet.
               </p>
               <Button

@@ -44,7 +44,10 @@ export default function AlertsPage() {
 
       <div className="mt-8 space-y-4">
         {data.incidents.length === 0 ? (
-          <AlertEmptyState type="incidents" />
+          <AlertEmptyState
+            type="incidents"
+            hasRules={rulesData.rules.length > 0}
+          />
         ) : (
           <div className="rounded-lg border border-border bg-surface p-6">
             <div className="overflow-x-auto">

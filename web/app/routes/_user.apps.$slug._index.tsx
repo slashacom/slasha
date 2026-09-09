@@ -74,13 +74,13 @@ export default function AppFilesPage() {
       <div className="flex h-full min-h-0 flex-1 flex-col">
         <SectionHeader icon={FileText} title="Files" />
         <EmptyPage
-          className="flex-1"
+          className="m-6 flex-1"
           icon={GitBranch}
-          title="No commits yet"
+          title="No commits yet."
           subtitle={
             appData.app.source === 'local'
-              ? 'Push code to this repository to see the file tree.'
-              : 'Deploy the connected repository to see its file tree.'
+              ? 'Push code to this repository and its file tree will appear here.'
+              : 'Deploy the connected repository and its file tree will appear here.'
           }
         />
       </div>

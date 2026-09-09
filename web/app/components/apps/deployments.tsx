@@ -16,6 +16,7 @@ import {
   getDeploymentsOptions,
   useTriggerDeploy,
 } from '~/queries/deployments';
+import { EmptyPage } from '~/components/global/empty-page';
 import { SectionHeader } from '~/components/interface/section-header';
 import { VStack } from '~/components/interface/stacks';
 import { toast } from 'sonner';
@@ -168,28 +169,26 @@ export function DeploymentsView(props: DeploymentsViewProps) {
       />
 
       {deployments.length === 0 ? (
-        <VStack className="flex-1 items-center justify-center" space={5}>
-          <div className="rounded-full border border-border p-4">
-            <RotateCcw className="size-8 text-text-tertiary" />
-          </div>
-          <VStack alignItems="center" space={1}>
-            <p className="text-sm font-medium text-text">No deployments yet</p>
-            <p className="max-w-[340px] text-center text-xs text-text-tertiary">
-              {app.source === 'local'
-                ? 'Add the remote and push to deploy your default branch.'
-                : app.source === 'github'
-                  ? 'Push to the connected GitHub repository for automatic deployments, or deploy the latest commit now.'
-                  : 'Deploy the latest commit from the configured Git repository.'}
-            </p>
-          </VStack>
-
+        <EmptyPage
+          className="m-6 flex-1"
+          icon={RotateCcw}
+          size="lg"
+          title="No deployments yet."
+          subtitle={
+            app.source === 'local'
+              ? 'Add the remote below and push your default branch — the first deployment starts automatically.'
+              : app.source === 'github'
+                ? 'Push to the connected GitHub repository to deploy automatically, or deploy the latest commit now.'
+                : 'Deploy the latest commit from the configured Git repository.'
+          }
+        >
           {app.source === 'local' && (
             <GitSetupInstructions
               cloneUrl={cloneUrl}
               defaultBranch={app.default_branch}
             />
           )}
-        </VStack>
+        </EmptyPage>
       ) : (
         <div className="flex-1 overflow-auto">
           <div className="divide-y divide-border">

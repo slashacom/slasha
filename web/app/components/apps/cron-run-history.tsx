@@ -48,9 +48,10 @@ export function CronRunHistory(props: CronRunHistoryProps) {
     return (
       <EmptyPage
         icon={History}
+        size="sm"
+        bordered={false}
         title="No runs yet."
-        subtitle="Runs appear here once the job fires or you trigger it manually."
-        className="min-h-[240px]"
+        subtitle="Runs appear here once the schedule fires or you trigger the job manually."
       />
     );
   }

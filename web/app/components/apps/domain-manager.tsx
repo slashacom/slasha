@@ -128,7 +128,12 @@ export function DomainManager(props: DomainManagerProps) {
       </form>
 
       {domains.length === 0 ? (
-        <EmptyPage dashed icon={Globe} title="No custom domains added yet." />
+        <EmptyPage
+          icon={Globe}
+          size="sm"
+          title="No custom domains yet."
+          subtitle="Add a domain above and it will be served over HTTPS automatically."
+        />
       ) : (
         <div className="divide-y divide-border rounded-lg border border-border bg-surface/20">
           {domains.map((domain) => {

@@ -606,7 +606,7 @@ export function LogStream(props: LogStreamProps) {
             type="button"
             onClick={scrollToBottom}
             title="Scroll to latest"
-            className="absolute bottom-6 right-8 flex size-8 items-center justify-center rounded-full border border-border bg-surface text-text-tertiary shadow-xl backdrop-blur transition-all hover:bg-white/[0.06] hover:text-text z-10"
+            className="absolute bottom-6 right-8 z-10 flex size-8 items-center justify-center rounded-full border border-border bg-surface text-text-tertiary shadow-none backdrop-blur transition-all hover:bg-white/[0.06] hover:text-text"
           >
             <ArrowDown className="size-4" />
           </button>

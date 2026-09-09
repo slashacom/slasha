@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Clock, Play, Plus } from 'lucide-react';
 import { toast } from 'sonner';
@@ -22,7 +22,6 @@ export async function clientLoader(args: { params: { slug: string } }) {
 
 export default function AppCronsPage() {
   const { slug } = useParams();
-  const navigate = useNavigate();
   const { data } = useSuspenseQuery(getCronsOptions(slug!));
   const deleteCron = useDeleteCron(slug!);
   const runCron = useRunCron(slug!);
@@ -55,12 +54,12 @@ export default function AppCronsPage() {
         {data.crons.length === 0 ? (
           <EmptyPage
             icon={Clock}
-            title="No cron jobs yet."
-            subtitle="Schedule a command to run on a recurring basis against this app."
+            size="lg"
+            title="No scheduled jobs yet."
+            subtitle="Cron jobs run a command against this app on a recurring schedule — backups, digests, cleanups."
             actionLabel="Create job"
-            actionIcon={<Plus className="size-4" />}
-            onAction={() => navigate(`/apps/${slug}/crons/new`)}
-            className="min-h-[320px]"
+            actionIcon={<Plus className="size-3.5" />}
+            actionTo={`/apps/${slug}/crons/new`}
           />
         ) : (
           <div className="rounded-lg border border-border bg-surface p-6">

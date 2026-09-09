@@ -67,7 +67,14 @@ export default function UsersPage() {
 
       <div className="mt-6 overflow-x-auto">
         {usersData.users.length === 0 ? (
-          <EmptyPage icon={Users} title="No users yet." />
+          <EmptyPage
+            icon={Users}
+            title="No users yet."
+            subtitle="Invite teammates so they can deploy apps and respond to alerts alongside you."
+            actionLabel="Add user"
+            actionIcon={<PlusIcon className="size-3.5" />}
+            actionTo="/users/new"
+          />
         ) : (
           <Table
             columns={[

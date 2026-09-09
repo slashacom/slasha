@@ -6,6 +6,7 @@ import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getNodesOptions } from '~/queries/nodes';
 import { NodeStatusBadge } from '~/components/interface/status-badge';
+import { EmptyPage } from '~/components/global/empty-page';
 import { PageHeader } from '~/components/interface/page-header';
 import { formatDate } from '~/utils/date';
 
@@ -40,12 +41,16 @@ export default function NodesPage() {
       />
 
       {nodesData.nodes.length === 0 ? (
-        <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-border border-dashed p-12 text-center bg-surface/5">
-          <Server className="size-10 text-text-tertiary mb-3 animate-pulse" />
-          <p className="text-sm font-medium text-text-secondary">
-            No nodes configured
-          </p>
-        </div>
+        <EmptyPage
+          className="mt-8"
+          icon={Server}
+          size="lg"
+          title="No nodes configured."
+          subtitle="Nodes are the servers your apps run on. Add one to start scheduling deployments onto it."
+          actionLabel="Add node"
+          actionIcon={<PlusIcon className="size-3.5" />}
+          actionTo="/nodes/new"
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mt-6">
           {[...nodesData.nodes]

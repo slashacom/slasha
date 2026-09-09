@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { Bell, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Gauge, Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import {
@@ -33,7 +32,6 @@ export async function clientLoader() {
 }
 
 export default function AlertsRulesPage() {
-  const navigate = useNavigate();
   const { data: rulesData } = useSuspenseQuery(getAlertRulesOptions());
   const { data: channelsData } = useSuspenseQuery(getAlertChannelsOptions());
   const { data: appsData } = useSuspenseQuery(getAppsOptions());
@@ -63,13 +61,21 @@ export default function AlertsRulesPage() {
       <div className="mt-8">
         {rulesData.rules.length === 0 ? (
           <EmptyPage
-            icon={Bell}
-            title="No rules yet."
-            subtitle="Create a rule to start monitoring your server and apps."
+            icon={Gauge}
+            size="lg"
+            title="No alert rules yet."
+            subtitle="A rule watches one signal — CPU, memory, disk, or app health — and notifies a channel when it crosses your threshold."
             actionLabel="Create rule"
-            actionIcon={<Plus className="size-4" />}
-            onAction={() => navigate('/alerts/rules/new')}
-            className="min-h-[320px]"
+            actionIcon={<Plus className="size-3.5" />}
+            actionTo="/alerts/rules/new"
+            secondaryLabel={
+              channelsData.channels.length === 0 ? 'Add a channel' : undefined
+            }
+            secondaryTo={
+              channelsData.channels.length === 0
+                ? '/alerts/channels/new'
+                : undefined
+            }
           />
         ) : (
           <div className="rounded-lg border border-border bg-surface p-6">

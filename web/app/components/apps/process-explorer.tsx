@@ -45,7 +45,7 @@ export function ProcessExplorer(props: ProcessExplorerProps) {
                     </p>
                   </VStack>
                 ) : (
-                  <p className="text-xs text-text-tertiary">
+                  <p className="text-balance text-xs text-text-tertiary">
                     {deploymentStatus === 'Failed'
                       ? 'This deployment failed — no processes are running.'
                       : deploymentStatus === 'Stopped'

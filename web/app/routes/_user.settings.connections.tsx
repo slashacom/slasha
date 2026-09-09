@@ -3,6 +3,7 @@ import { Trash2Icon, PencilIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router';
+import { EmptyPage } from '~/components/global/empty-page';
 import { Github } from '~/components/icons/github';
 import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
@@ -108,17 +109,16 @@ function EnabledGithubConnections() {
 
       <div className="p-0">
         {data.installations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 px-6 text-center">
-            <p className="text-[13px] text-text-secondary mb-4">
-              No GitHub accounts connected yet.
-            </p>
-            <Button
-              color="neutral"
-              label="Connect GitHub Account"
-              onClick={handleConnect}
-              isLoading={installGithub.isPending}
-            />
-          </div>
+          <EmptyPage
+            icon={Github}
+            size="sm"
+            bordered={false}
+            title="No GitHub accounts connected yet."
+            subtitle="Connect an account to deploy straight from your repositories."
+            actionLabel="Connect GitHub account"
+            actionColor="neutral"
+            onAction={handleConnect}
+          />
         ) : (
           <div className="divide-y divide-border">
             {data.installations.map((installation) => (
@@ -319,10 +319,10 @@ function GithubAppSetupManager() {
     return (
       <div className="rounded-lg border border-border bg-surface p-8 text-center">
         <Github className="size-8 text-text-tertiary mx-auto mb-3" />
-        <p className="text-sm font-medium text-text">
+        <p className="text-balance text-sm font-medium text-text">
           GitHub Integration Disabled
         </p>
-        <p className="text-[13px] text-text-secondary mt-1 mb-6">
+        <p className="mt-1 mb-6 text-balance text-[13px] text-text-secondary">
           No GitHub App configured. Start the auto-setup or configure manually.
         </p>
         <div className="flex items-center justify-center gap-3">
@@ -414,10 +414,10 @@ export default function ConnectionsSettings() {
         authMe.user.role !== 'Admin' && (
           <div className="rounded-lg border border-border bg-surface p-6 text-center">
             <Github className="size-8 text-text-tertiary mx-auto mb-3" />
-            <p className="text-sm font-medium text-text">
+            <p className="text-balance text-sm font-medium text-text">
               GitHub Integration Disabled
             </p>
-            <p className="text-[13px] text-text-secondary mt-1">
+            <p className="mt-1 text-balance text-[13px] text-text-secondary">
               GitHub integration is not enabled on this Slasha instance.
             </p>
           </div>

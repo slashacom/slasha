@@ -62,11 +62,12 @@ export function ServicesView(props: ServicesViewProps) {
 
       {services.length === 0 ? (
         <EmptyPage
-          className="flex-1"
+          className="m-6 flex-1"
           icon={Database}
-          title="No services running"
-          subtitle="Provision databases and auxiliary services to attach them to your application."
-          actionLabel="Provision First Service"
+          title="No services running."
+          subtitle="Provision a database, cache, or queue and attach it to this app with its credentials wired in."
+          actionLabel="Provision service"
+          actionIcon={<Plus className="size-3.5" />}
           onAction={() => setProvisionModalOpen(true)}
         />
       ) : (

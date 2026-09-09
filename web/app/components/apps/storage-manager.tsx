@@ -25,9 +25,10 @@ export function StorageManager(props: StorageManagerProps) {
         </div>
       ) : volumes.length === 0 ? (
         <EmptyPage
-          dashed
           icon={HardDrive}
-          title="No persistent storage on this app."
+          size="sm"
+          title="No persistent storage."
+          subtitle="Mount a volume to keep files on disk across deployments and restarts."
         />
       ) : (
         <div className="divide-y divide-border rounded-lg border border-border bg-surface/20">

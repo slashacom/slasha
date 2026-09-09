@@ -48,10 +48,14 @@ export default function AppScalingPage() {
   if (!runningDeployment) {
     return (
       <EmptyPage
-        className="flex-1"
+        className="m-8 flex-1"
         icon={Layers}
-        title="App is not running"
-        subtitle="Scaling controls become available once a deployment is running. Deploy your app to manage process replicas."
+        size="lg"
+        title="App is not running."
+        subtitle="Scaling controls unlock once a deployment is live. Deploy the app to manage process replicas."
+        actionLabel="View deployments"
+        actionColor="neutral"
+        actionTo={`/apps/${slug}/deployments`}
       />
     );
   }

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Plus, Webhook, Send, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -26,7 +25,6 @@ export async function clientLoader() {
 }
 
 export default function AlertsChannelsPage() {
-  const navigate = useNavigate();
   const { data } = useSuspenseQuery(getAlertChannelsOptions());
   const deleteChannel = useDeleteAlertChannel();
   const testChannel = useTestAlertChannel();
@@ -52,12 +50,12 @@ export default function AlertsChannelsPage() {
         {data.channels.length === 0 ? (
           <EmptyPage
             icon={Webhook}
-            title="No channels yet."
-            subtitle="Create a delivery channel, then attach it to an alert rule."
+            size="lg"
+            title="No delivery channels yet."
+            subtitle="A channel is where alerts land — a Slack workspace, a webhook, an inbox. Create one, then attach it to a rule."
             actionLabel="Create channel"
-            actionIcon={<Plus className="size-4" />}
-            onAction={() => navigate('/alerts/channels/new')}
-            className="min-h-[320px]"
+            actionIcon={<Plus className="size-3.5" />}
+            actionTo="/alerts/channels/new"
           />
         ) : (
           <div className="rounded-lg border border-border bg-surface p-6">

@@ -16,10 +16,9 @@ export function SshKeyList(props: SshKeyListProps) {
     <div className="mt-2 min-w-0 flex-1 overflow-x-auto">
       {keys.length === 0 ? (
         <EmptyPage
-          dashed
           icon={KeyIcon}
-          title="No SSH keys found"
-          subtitle="Add a public key to access your applications via Git over SSH."
+          title="No SSH keys yet."
+          subtitle="Add a public key to push code and reach your applications over Git via SSH."
           actionLabel="Add your first key"
           onAction={onAddFirst}
         />
