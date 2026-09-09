@@ -1,5 +1,6 @@
-import { Suspense } from 'react';
+import { Suspense, useState } from 'react';
 import { Outlet, redirect, useLocation, useParams } from 'react-router';
+import { CommandMenu } from '~/components/global/command-menu';
 import { Sidebar } from '~/components/global/sidebar';
 import { TopBar } from '~/components/global/top-bar';
 import { getAuthMeOptions } from '~/queries/auth';
@@ -36,10 +37,11 @@ function useOwnsScroll() {
 
 export default function UserLayout() {
   const ownsScroll = useOwnsScroll();
+  const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
 
   return (
     <div className="flex h-screen bg-bg">
-      <Sidebar />
+      <Sidebar onSearch={() => setIsCommandMenuOpen(true)} />
 
       <div className="ml-[240px] flex flex-1 flex-col overflow-hidden">
         <TopBar />
@@ -55,6 +57,11 @@ export default function UserLayout() {
           </Suspense>
         </main>
       </div>
+
+      <CommandMenu
+        open={isCommandMenuOpen}
+        onOpenChange={setIsCommandMenuOpen}
+      />
     </div>
   );
 }
