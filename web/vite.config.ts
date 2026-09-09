@@ -22,6 +22,9 @@ export default defineConfig(({ mode, command }) => {
         },
       },
     },
+    optimizeDeps: {
+      include: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
+    },
     resolve: {
       alias: {
         ...(command === 'build'

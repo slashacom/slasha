@@ -44,7 +44,10 @@ pub async fn handle_proxy(
         .with_context(|| format!("Failed to bind {}:{}", BIND_HOST, port.unwrap_or(0)))?;
     let local_addr = listener.local_addr()?;
 
-    let ws_url = build_ws_url(client.base_url(), slug, &resolved.id)?;
+    let ws_url = client.ws_url(&format!(
+        "/api/apps/{}/services/{}/tunnel",
+        slug, resolved.id
+    ))?;
     let token = get_auth_token(client.base_url())?
         .ok_or_else(|| anyhow!("Not authenticated. Run `slasha auth login`."))?;
 
@@ -99,43 +102,6 @@ async fn fetch_service_env(
         .await?;
 
     Ok(res.env_vars)
-}
-
-/// Constructs the WebSocket tunnel URL from the target server base URL.
-///
-/// # Arguments
-///
-/// * `base_url` - Target server base URL string.
-/// * `slug` - Target application slug.
-/// * `service_id` - Target service identifier.
-///
-/// # Returns
-///
-/// A [`Result`] containing the constructed WebSocket URL string.
-fn build_ws_url(base_url: &str, slug: &str, service_id: &str) -> Result<String> {
-    let url =
-        url::Url::parse(base_url).with_context(|| format!("Invalid base URL: {}", base_url))?;
-    let ws_scheme = match url.scheme() {
-        "https" => "wss",
-        "http" => "ws",
-        other => anyhow::bail!("Unsupported base URL scheme: {}", other),
-    };
-
-    let host = url
-        .host_str()
-        .ok_or_else(|| anyhow!("Base URL has no host"))?;
-    let mut origin = format!("{}://{}", ws_scheme, host);
-
-    if let Some(p) = url.port() {
-        origin.push_str(&format!(":{}", p));
-    }
-
-    let path = url.path().trim_end_matches('/');
-
-    Ok(format!(
-        "{}{}/api/apps/{}/services/{}/tunnel",
-        origin, path, slug, service_id
-    ))
 }
 
 /// Forwards raw TCP traffic bidirectionally over a WebSocket tunnel.

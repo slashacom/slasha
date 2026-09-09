@@ -41,7 +41,7 @@ pub enum ClientConsoleMessage {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerConsoleMessage {
     Output { data: String },
-    Exit { code: Option<u32> },
+    Exit { code: Option<i32> },
     Error { message: String },
 }
 
@@ -386,7 +386,7 @@ async fn run_node_console(
                 child
                     .wait()
                     .ok()
-                    .map(|status| status.exit_code())
+                    .map(|status| status.exit_code() as i32)
             })
             .await
             .unwrap_or(None);
