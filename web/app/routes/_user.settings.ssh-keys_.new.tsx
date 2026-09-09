@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
+import { Page } from '~/components/global/page';
 import { PageHeader } from '~/components/interface/page-header';
 import { SshKeyForm } from '~/components/settings/ssh-key-form';
 import { useCreateSshKey } from '~/queries/ssh-keys';
@@ -31,7 +32,7 @@ export default function NewSshKey() {
   };
 
   return (
-    <div>
+    <Page className="max-w-xl">
       <PageHeader
         title="Add SSH key"
         description="Paste a public key to grant it access to your applications over Git."
@@ -45,6 +46,6 @@ export default function NewSshKey() {
           submitLabel="Add key"
         />
       </div>
-    </div>
+    </Page>
   );
 }
