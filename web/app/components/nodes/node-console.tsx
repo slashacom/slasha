@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
+import type { Terminal } from '@xterm/xterm';
+import type { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import {
   Maximize2,
@@ -12,6 +11,12 @@ import {
 } from 'lucide-react';
 import { Button } from '~/components/interface/button';
 import { HStack } from '~/components/interface/stacks';
+import { TabActions } from '~/components/interface/tab-actions';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '~/components/interface/tooltip';
 import { cn } from '~/utils/classname';
 import { getAuthToken } from '~/utils/jwt';
 import type { NodeWithInfo } from '~/queries/nodes';
@@ -167,121 +172,148 @@ export function NodeConsole({ node }: NodeConsoleProps) {
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const term = new Terminal({
-      cursorBlink: true,
-      cursorStyle: 'block',
-      fontFamily:
-        "'Geist Mono', 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'MesloLGS NF', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-      fontSize: 13,
-      lineHeight: 1.35,
-      letterSpacing: 0,
-      scrollback: 10000,
-      convertEol: true,
-      theme: {
-        background: '#111111',
-        foreground: '#e5e5e5',
-        cursor: '#ffffff',
-        cursorAccent: '#111111',
-        selectionBackground: 'rgba(255, 255, 255, 0.2)',
-        selectionForeground: '#ffffff',
-        black: '#1a1a1a',
-        red: '#f87171',
-        green: '#4ade80',
-        yellow: '#facc15',
-        blue: '#60a5fa',
-        magenta: '#c084fc',
-        cyan: '#38bdf8',
-        white: '#f3f4f6',
-        brightBlack: '#6b7280',
-        brightRed: '#ef4444',
-        brightGreen: '#22c55e',
-        brightYellow: '#eab308',
-        brightBlue: '#3b82f6',
-        brightMagenta: '#a855f7',
-        brightCyan: '#06b6d4',
-        brightWhite: '#ffffff',
-      },
-    });
+    let isMounted = true;
+    let termInstance: Terminal | null = null;
+    let resizeObserverInstance: ResizeObserver | null = null;
+    let dataDisposableInstance: { dispose: () => void } | null = null;
 
-    const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
+    async function initTerminal() {
+      const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all(
+        [
+          import('@xterm/xterm'),
+          import('@xterm/addon-fit'),
+          import('@xterm/addon-web-links'),
+        ]
+      );
 
-    term.loadAddon(fitAddon);
-    term.loadAddon(webLinksAddon);
+      if (!isMounted || !containerRef.current) return;
 
-    containerRef.current.innerHTML = '';
-    term.open(containerRef.current);
-    terminalRef.current = term;
-    fitAddonRef.current = fitAddon;
+      const term = new Terminal({
+        cursorBlink: true,
+        cursorStyle: 'block',
+        fontFamily:
+          "'Geist Mono', 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'MesloLGS NF', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        fontSize: 13,
+        lineHeight: 1.35,
+        letterSpacing: 0,
+        scrollback: 10000,
+        convertEol: true,
+        theme: {
+          background: '#0d0d0d',
+          foreground: '#e5e5e5',
+          cursor: '#ffffff',
+          cursorAccent: '#111111',
+          selectionBackground: 'rgba(255, 255, 255, 0.15)',
+          selectionForeground: '#ffffff',
+          black: '#1a1a1a',
+          red: '#f87171',
+          green: '#4ade80',
+          yellow: '#facc15',
+          blue: '#60a5fa',
+          magenta: '#c084fc',
+          cyan: '#38bdf8',
+          white: '#f3f4f6',
+          brightBlack: '#6b7280',
+          brightRed: '#ef4444',
+          brightGreen: '#22c55e',
+          brightYellow: '#eab308',
+          brightBlue: '#3b82f6',
+          brightMagenta: '#a855f7',
+          brightCyan: '#06b6d4',
+          brightWhite: '#ffffff',
+        },
+      });
 
-    term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
-      if (
-        event.type === 'keydown' &&
-        (event.ctrlKey || event.metaKey) &&
-        event.key.toLowerCase() === 'c' &&
-        term.hasSelection()
-      ) {
-        navigator.clipboard?.writeText(term.getSelection());
-        return false;
-      }
-      if (
-        event.type === 'keydown' &&
-        (event.ctrlKey || event.metaKey) &&
-        event.key.toLowerCase() === 'v'
-      ) {
-        navigator.clipboard
-          ?.readText()
-          .then((clipText) => {
-            if (clipText && wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(
-                JSON.stringify({ type: 'input', data: clipText })
-              );
-            }
-          })
-          .catch(() => {});
-        return false;
-      }
-      return true;
-    });
+      const fitAddon = new FitAddon();
+      const webLinksAddon = new WebLinksAddon();
 
-    const dataDisposable = term.onData((data: string) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'input', data }));
-      }
-    });
+      term.loadAddon(fitAddon);
+      term.loadAddon(webLinksAddon);
 
-    const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        try {
-          if (!containerRef.current) return;
-          fitAddon.fit();
-          if (
-            wsRef.current?.readyState === WebSocket.OPEN &&
-            (term.cols !== lastDimensions.current.cols ||
-              term.rows !== lastDimensions.current.rows)
-          ) {
-            lastDimensions.current = { cols: term.cols, rows: term.rows };
-            wsRef.current.send(
-              JSON.stringify({
-                type: 'resize',
-                cols: term.cols,
-                rows: term.rows,
-              })
-            );
-          }
-        } catch {
-          // ignore layout calculations
+      containerRef.current.innerHTML = '';
+      term.open(containerRef.current);
+      terminalRef.current = term;
+      fitAddonRef.current = fitAddon;
+      termInstance = term;
+
+      term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+        if (
+          event.type === 'keydown' &&
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === 'c' &&
+          term.hasSelection()
+        ) {
+          navigator.clipboard?.writeText(term.getSelection());
+          return false;
+        }
+        if (
+          event.type === 'keydown' &&
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === 'v'
+        ) {
+          navigator.clipboard
+            ?.readText()
+            .then((clipText) => {
+              if (clipText && wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(
+                  JSON.stringify({ type: 'input', data: clipText })
+                );
+              }
+            })
+            .catch(() => {});
+          return false;
+        }
+        return true;
+      });
+
+      const dataDisposable = term.onData((data: string) => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'input', data }));
         }
       });
-    });
+      dataDisposableInstance = dataDisposable;
 
-    resizeObserver.observe(containerRef.current);
+      const resizeObserver = new ResizeObserver(() => {
+        requestAnimationFrame(() => {
+          try {
+            if (!containerRef.current) return;
+            fitAddon.fit();
+            if (
+              wsRef.current?.readyState === WebSocket.OPEN &&
+              (term.cols !== lastDimensions.current.cols ||
+                term.rows !== lastDimensions.current.rows)
+            ) {
+              lastDimensions.current = { cols: term.cols, rows: term.rows };
+              wsRef.current.send(
+                JSON.stringify({
+                  type: 'resize',
+                  cols: term.cols,
+                  rows: term.rows,
+                })
+              );
+            }
+          } catch {
+            // ignore layout calculations
+          }
+        });
+      });
 
-    connect();
+      resizeObserver.observe(containerRef.current);
+      resizeObserverInstance = resizeObserver;
+
+      connect();
+    }
+
+    initTerminal();
 
     return () => {
-      resizeObserver.disconnect();
-      dataDisposable.dispose();
+      isMounted = false;
+      if (resizeObserverInstance) {
+        resizeObserverInstance.disconnect();
+      }
+      if (dataDisposableInstance) {
+        dataDisposableInstance.dispose();
+      }
       if (wsRef.current) {
         wsRef.current.onopen = null;
         wsRef.current.onmessage = null;
@@ -290,7 +322,9 @@ export function NodeConsole({ node }: NodeConsoleProps) {
         wsRef.current.close();
         wsRef.current = null;
       }
-      term.dispose();
+      if (termInstance) {
+        termInstance.dispose();
+      }
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
@@ -307,6 +341,33 @@ export function NodeConsole({ node }: NodeConsoleProps) {
     return () => cancelAnimationFrame(handle);
   }, [isFullscreen]);
 
+  const statusBadge = (
+    <div className="flex items-center gap-1.5 rounded-full border border-border bg-bg/50 px-2 py-0.5 text-[11px] font-medium">
+      <span
+        className={cn(
+          'size-1.5 rounded-full',
+          status === 'connected' && 'bg-emerald-500 animate-pulse',
+          status === 'connecting' && 'bg-amber-500 animate-pulse',
+          status === 'disconnected' && 'bg-text-tertiary',
+          status === 'error' && 'bg-red-500'
+        )}
+      />
+      <span
+        className={cn(
+          status === 'connected' && 'text-emerald-400',
+          status === 'connecting' && 'text-amber-400',
+          status === 'disconnected' && 'text-text-tertiary',
+          status === 'error' && 'text-red-400'
+        )}
+      >
+        {status === 'connected' && 'Connected'}
+        {status === 'connecting' && 'Connecting...'}
+        {status === 'disconnected' && 'Disconnected'}
+        {status === 'error' && 'Error'}
+      </span>
+    </div>
+  );
+
   return (
     <div
       className={cn(
@@ -316,49 +377,10 @@ export function NodeConsole({ node }: NodeConsoleProps) {
           : 'h-full min-h-0 flex-1 p-8'
       )}
     >
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-code-bg shadow-2xl">
-        <HStack
-          justifyContent="between"
-          alignItems="center"
-          className="h-11 shrink-0 border-b border-border bg-surface/50 px-4 select-none"
-        >
-          <HStack space={3} alignItems="center">
-            <SquareTerminal className="size-4 text-text-tertiary" />
-            <span className="text-[12px] font-medium text-text">
-              {node.name}
-            </span>
-            <span className="text-[11px] font-mono text-text-tertiary">
-              {node.id === 'local'
-                ? 'local'
-                : `${node.user || 'root'}@${node.host}:${node.port || 22}`}
-            </span>
-            <div className="flex items-center gap-1.5 rounded-full border border-border bg-bg/50 px-2 py-0.5 text-[11px] font-medium">
-              <span
-                className={cn(
-                  'size-1.5 rounded-full',
-                  status === 'connected' && 'bg-emerald-500 animate-pulse',
-                  status === 'connecting' && 'bg-amber-500 animate-pulse',
-                  status === 'disconnected' && 'bg-text-tertiary',
-                  status === 'error' && 'bg-red-500'
-                )}
-              />
-              <span
-                className={cn(
-                  status === 'connected' && 'text-emerald-400',
-                  status === 'connecting' && 'text-amber-400',
-                  status === 'disconnected' && 'text-text-tertiary',
-                  status === 'error' && 'text-red-400'
-                )}
-              >
-                {status === 'connected' && 'Connected'}
-                {status === 'connecting' && 'Connecting...'}
-                {status === 'disconnected' && 'Disconnected'}
-                {status === 'error' && 'Error'}
-              </span>
-            </div>
-          </HStack>
-
-          <HStack space={1.5} alignItems="center">
+      {!isFullscreen && (
+        <TabActions>
+          <HStack space={2} alignItems="center">
+            {statusBadge}
             {status !== 'connected' && (
               <Button
                 size="sm"
@@ -381,22 +403,83 @@ export function NodeConsole({ node }: NodeConsoleProps) {
               variant="ghost"
               color="neutral"
               onClick={toggleFullscreen}
-              icon={
-                isFullscreen ? (
-                  <Minimize2 className="size-3.5" />
-                ) : (
-                  <Maximize2 className="size-3.5" />
-                )
-              }
-              label={isFullscreen ? 'Restore' : 'Fullscreen'}
+              icon={<Maximize2 className="size-3.5" />}
+              label="Fullscreen"
             />
+          </HStack>
+        </TabActions>
+      )}
+
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-[#0d0d0d] shadow-2xl">
+        <HStack
+          justifyContent="between"
+          alignItems="center"
+          className="h-11 shrink-0 border-b border-border bg-surface/50 px-4 select-none"
+        >
+          <HStack space={3} alignItems="center">
+            <SquareTerminal className="size-4 text-text-tertiary" />
+            <span className="text-[12px] font-medium text-text">
+              {node.name}
+            </span>
+            <span className="text-[11px] font-mono text-text-tertiary">
+              {nodeTarget}
+            </span>
+            {isFullscreen && statusBadge}
+          </HStack>
+
+          <HStack space={1.5} alignItems="center">
+            {status !== 'connected' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    color="neutral"
+                    onClick={handleReconnect}
+                    icon={<RotateCcw className="size-3.5" />}
+                  />
+                </TooltipTrigger>
+                <TooltipContent>Reconnect console</TooltipContent>
+              </Tooltip>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  color="neutral"
+                  onClick={handleClear}
+                  icon={<Trash2 className="size-3.5" />}
+                />
+              </TooltipTrigger>
+              <TooltipContent>Clear console output</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  color="neutral"
+                  onClick={toggleFullscreen}
+                  icon={
+                    isFullscreen ? (
+                      <Minimize2 className="size-3.5" />
+                    ) : (
+                      <Maximize2 className="size-3.5" />
+                    )
+                  }
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                {isFullscreen ? 'Exit Fullscreen (Esc)' : 'Toggle Fullscreen'}
+              </TooltipContent>
+            </Tooltip>
           </HStack>
         </HStack>
 
         <div
           ref={containerRef}
           onClick={() => terminalRef.current?.focus()}
-          className="relative flex-1 min-h-0 w-full overflow-hidden p-2.5 outline-none cursor-text"
+          className="relative flex-1 min-h-0 w-full overflow-hidden p-2.5 outline-none cursor-text custom-scrollbar"
         />
       </div>
     </div>
