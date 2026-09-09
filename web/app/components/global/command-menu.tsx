@@ -108,13 +108,6 @@ export function CommandMenu(props: CommandMenuProps) {
         {appSlug ? (
           <CommandGroup heading="This app">
             <CommandItem
-              value={`Files ${appSlug}`}
-              onSelect={() => go(`/apps/${appSlug}`)}
-            >
-              <FileText />
-              Files
-            </CommandItem>
-            <CommandItem
               value={`Deployments ${appSlug}`}
               onSelect={() => go(`/apps/${appSlug}/deployments`)}
             >
@@ -148,6 +141,13 @@ export function CommandMenu(props: CommandMenuProps) {
             >
               <Activity />
               Metrics
+            </CommandItem>
+            <CommandItem
+              value={`Files ${appSlug}`}
+              onSelect={() => go(`/apps/${appSlug}/files`)}
+            >
+              <FileText />
+              Files
             </CommandItem>
             <CommandItem
               value={`App settings ${appSlug}`}

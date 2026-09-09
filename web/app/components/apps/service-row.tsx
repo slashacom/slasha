@@ -1,107 +1,105 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Eye, MoreHorizontal, Trash2 } from 'lucide-react';
 import type { Service } from '~/models/service';
-import { useDeleteService } from '~/queries/services';
-import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '~/components/interface/dropdown-menu';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
-import { ServiceKindBadge } from '~/components/apps/service-kind-badge';
+import { CopyButton } from '~/components/interface/copy-button';
+import { ServiceActionsMenu } from '~/components/apps/service-actions-menu';
+import {
+  ServiceKindBadge,
+  ServiceKindIcon,
+} from '~/components/apps/service-kind-badge';
+import { describeResources } from '~/components/apps/service-resources';
 import { formatRelativeTime } from '~/utils/date';
-import { toast } from 'sonner';
+import { serviceEnvReference } from '~/utils/service-env';
 
 type ServiceRowProps = {
   service: Service;
   appSlug: string;
 };
 
+function ServiceRowDetail(props: ServiceRowProps) {
+  const { service } = props;
+
+  if (service.status === 'Provisioning') {
+    return (
+      <span className="text-[11px] text-text-tertiary">
+        Pulling the {service.kind} {service.version} image and starting the
+        container.
+      </span>
+    );
+  }
+
+  if (service.status === 'Failed') {
+    return (
+      <span className="text-[11px] text-red-400/90">
+        The container did not start. Open the service to read its logs, then
+        redeploy.
+      </span>
+    );
+  }
+
+  if (service.status === 'Stopped') {
+    return (
+      <span className="text-[11px] text-text-tertiary">
+        Stopped — apps referencing its variables cannot connect until it is
+        restarted.
+      </span>
+    );
+  }
+
+  const reference = serviceEnvReference(service.name, 'DATABASE_URL');
+
+  return (
+    <HStack space={1.5} className="min-w-0">
+      <code className="truncate font-mono text-[11px] text-text-secondary">
+        {reference}
+      </code>
+      <CopyButton
+        value={reference}
+        label={`Copy ${service.name} connection reference`}
+        className="size-5"
+      />
+    </HStack>
+  );
+}
+
 export function ServiceRow(props: ServiceRowProps) {
   const { service, appSlug } = props;
   const navigate = useNavigate();
-  const deleteService = useDeleteService();
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const goToDetail = () => {
-    navigate(`/apps/${appSlug}/services/${service.id}`);
-  };
-
-  const handleDelete = async () => {
-    try {
-      await deleteService.mutateAsync({ appSlug, serviceId: service.id });
-      setShowDeleteConfirm(false);
-    } catch (e) {
-      toast.error('Failed to delete service: ' + e);
-    }
-  };
+  const limits = describeResources(service.resources).slice(0, 2).join(' · ');
 
   return (
-    <>
-      <div
-        onClick={goToDetail}
-        className="group grid cursor-pointer grid-cols-[1fr_auto] items-center gap-4 px-8 py-4 transition-colors hover:bg-white/[0.02]"
-      >
-        <VStack space={1.5}>
-          <HStack space={3}>
-            <span className="font-mono text-[13px] font-semibold text-text transition-colors group-hover:text-primary">
-              {service.name}
-            </span>
-            <ServiceKindBadge service={service} />
-            <StatusBadge status={service.status} />
-          </HStack>
-          <HStack space={3}>
-            <span className="text-[11px] text-text-tertiary">
-              slasha-svc-{service.id.slice(0, 8)}
-            </span>
-            <span className="text-[11px] text-text-tertiary">
-              Created {formatRelativeTime(service.created_at)}
-            </span>
-          </HStack>
-        </VStack>
+    <div
+      onClick={() => navigate(`/apps/${appSlug}/services/${service.id}`)}
+      className="group grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-4 px-8 py-4 transition-colors hover:bg-white/[0.02]"
+    >
+      {/* Optically anchored to the name, not the two-line block. */}
+      <ServiceKindIcon kind={service.kind} className="-mt-1 self-start" />
 
-        <div onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label="Service actions"
-                className="flex size-7 items-center justify-center rounded-md text-text-tertiary opacity-60 transition-all hover:bg-white/5 hover:text-text group-hover:opacity-100 data-[state=open]:bg-white/5 data-[state=open]:text-text data-[state=open]:opacity-100"
-              >
-                <MoreHorizontal className="size-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={goToDetail}>
-                <Eye className="size-3.5" />
-                View service
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => setShowDeleteConfirm(true)}
-              >
-                <Trash2 className="size-3.5" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+      <VStack space={1.5} className="min-w-0">
+        <HStack space={3} className="min-w-0">
+          <span className="truncate font-mono text-[13px] font-semibold text-text transition-colors group-hover:text-primary">
+            {service.name}
+          </span>
+          <ServiceKindBadge service={service} />
+          <StatusBadge status={service.status} />
+        </HStack>
+        <ServiceRowDetail service={service} appSlug={appSlug} />
+      </VStack>
 
-      <ConfirmationDialog
-        open={showDeleteConfirm}
-        onOpenChange={setShowDeleteConfirm}
-        title="Delete Service"
-        description={`Are you sure you want to delete ${service.name}? All underlying data will be permanently destroyed.`}
-        confirmLabel="Delete Service"
-        onConfirm={handleDelete}
-      />
-    </>
+      <VStack space={1} className="hidden shrink-0 items-end lg:flex">
+        <span className="whitespace-nowrap text-[11px] text-text-tertiary">
+          Updated {formatRelativeTime(service.updated_at)}
+        </span>
+        {limits ? (
+          <span className="whitespace-nowrap text-[11px] text-text-tertiary/70">
+            {limits}
+          </span>
+        ) : null}
+      </VStack>
+
+      <ServiceActionsMenu appSlug={appSlug} service={service} variant="row" />
+    </div>
   );
 }

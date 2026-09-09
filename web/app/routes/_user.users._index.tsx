@@ -7,6 +7,7 @@ import { Page } from '~/components/global/page';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
+import { HStack } from '~/components/interface/stacks';
 import { Table, TableRow } from '~/components/interface/table';
 import { redirect } from 'react-router';
 import { queryClient } from '~/utils/query-client';
@@ -29,6 +30,7 @@ export async function clientLoader() {
 export default function UsersPage() {
   const navigate = useNavigate();
   const { data: usersData } = useSuspenseQuery(getUsersOptions());
+  const { data: me } = useSuspenseQuery(getAuthMeOptions());
   const deleteUser = useDeleteUser();
   const [pendingDelete, setPendingDelete] = useState<User | null>(null);
 
@@ -88,7 +90,14 @@ export default function UsersPage() {
             {usersData.users.map((user: User) => (
               <TableRow key={user.id} to={`/users/${user.id}/edit`}>
                 <td className="py-3 pr-4 font-medium text-text">
-                  {user.email}
+                  <HStack space={2}>
+                    <span>{user.email}</span>
+                    {user.id === me.user?.id ? (
+                      <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[11px] font-medium text-text-tertiary">
+                        You
+                      </span>
+                    ) : null}
+                  </HStack>
                 </td>
                 <td className="py-3 pr-4 text-text-secondary capitalize">
                   {user.role}
@@ -104,13 +113,17 @@ export default function UsersPage() {
                         icon: Pencil,
                         to: `/users/${user.id}/edit`,
                       },
-                      {
-                        label: 'Delete user',
-                        icon: Trash2,
-                        isDestructive: true,
-                        isDisabled: deleteUser.isPending,
-                        onClick: () => setPendingDelete(user),
-                      },
+                      ...(user.id === me.user?.id
+                        ? []
+                        : [
+                            {
+                              label: 'Delete user',
+                              icon: Trash2,
+                              isDestructive: true,
+                              isDisabled: deleteUser.isPending,
+                              onClick: () => setPendingDelete(user),
+                            },
+                          ]),
                     ]}
                   />
                 </td>

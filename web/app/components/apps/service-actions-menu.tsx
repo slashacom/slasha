@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
+  Eye,
   MoreHorizontal,
   Plug,
   RefreshCw,
@@ -29,10 +30,11 @@ import {
 type ServiceActionsMenuProps = {
   appSlug: string;
   service: Service;
+  variant?: 'panel' | 'row';
 };
 
 export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
-  const { appSlug, service } = props;
+  const { appSlug, service, variant = 'panel' } = props;
   const navigate = useNavigate();
   const restartService = useRestartService();
   const redeployService = useRedeployService();
@@ -76,6 +78,7 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
   const handleDelete = async () => {
     try {
       await deleteService.mutateAsync({ appSlug, serviceId: service.id });
+      setShowDeleteConfirm(false);
       navigate(`/apps/${appSlug}/services`);
     } catch (err) {
       toast.error('Failed to delete service: ' + err);
@@ -87,19 +90,34 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
   const canRedeploy =
     isRunning || service.status === 'Stopped' || service.status === 'Failed';
 
+  const triggerClasses =
+    variant === 'row'
+      ? 'flex size-7 items-center justify-center rounded-md text-text-tertiary opacity-60 transition-all hover:bg-white/5 hover:text-text group-hover:opacity-100 data-[state=open]:bg-white/5 data-[state=open]:text-text data-[state=open]:opacity-100'
+      : 'flex size-7 items-center justify-center rounded-md border border-border bg-surface text-text-tertiary transition-all hover:bg-white/[0.06] hover:text-text data-[state=open]:bg-white/[0.06] data-[state=open]:text-text';
+
   return (
-    <>
+    <div onClick={(event) => event.stopPropagation()}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
             aria-label="Service actions"
-            className="flex size-7 items-center justify-center rounded-md border border-border bg-surface text-text-tertiary transition-all hover:bg-white/[0.06] hover:text-text data-[state=open]:bg-white/[0.06] data-[state=open]:text-text"
+            className={triggerClasses}
           >
             <MoreHorizontal className="size-4" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {variant === 'row' ? (
+            <DropdownMenuItem
+              onClick={() =>
+                navigate(`/apps/${appSlug}/services/${service.id}`)
+              }
+            >
+              <Eye className="size-3.5" />
+              View service
+            </DropdownMenuItem>
+          ) : null}
           {isRunning ? (
             <DropdownMenuItem onClick={() => setShowConnect(true)}>
               <Plug className="size-3.5" />
@@ -178,6 +196,6 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
         confirmLabel="Delete Service"
         onConfirm={handleDelete}
       />
-    </>
+    </div>
   );
 }

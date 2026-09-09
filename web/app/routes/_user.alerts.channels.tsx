@@ -60,81 +60,71 @@ export default function AlertsChannelsPage() {
             actionTo="/alerts/channels/new"
           />
         ) : (
-          <div className="rounded-lg border border-border bg-surface p-6">
-            <div className="overflow-x-auto">
-              <Table
-                columns={[
-                  'Name',
-                  'Kind',
-                  'Status',
-                  'Updated',
-                  { label: '', align: 'right' },
-                ]}
-              >
-                {data.channels.map((channel) => (
-                  <TableRow
-                    key={channel.id}
-                    to={`/alerts/channels/${channel.id}/edit`}
-                  >
-                    <td className="py-3 pr-4">
-                      <div className="font-medium text-text">
-                        {channel.name}
-                      </div>
-                      <div className="mt-1 text-xs text-text-tertiary">
-                        {channelSummary(channel)}
-                      </div>
-                    </td>
-                    <td className="py-3 pr-4 capitalize text-text-secondary">
-                      {channel.config.kind}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <AlertStatusBadge
-                        state={channel.enabled ? 'ok' : 'muted'}
-                      >
-                        {channel.enabled ? 'Enabled' : 'Disabled'}
-                      </AlertStatusBadge>
-                    </td>
-                    <td className="py-3 pr-4 text-text-secondary">
-                      {formatDateTime(channel.updated_at)}
-                    </td>
-                    <td className="py-3 text-right">
-                      <TableRowActions
-                        actions={[
-                          {
-                            label: 'Test channel',
-                            icon: Send,
-                            isDisabled: testChannel.isPending,
-                            onClick: () => {
-                              toast.promise(
-                                testChannel.mutateAsync(channel.id),
-                                {
-                                  loading: 'Sending test message...',
-                                  success: 'Test message sent.',
-                                  error: (error) =>
-                                    error.message ||
-                                    'Failed to send test message.',
-                                }
-                              );
-                            },
+          <div className="overflow-x-auto">
+            <Table
+              columns={[
+                'Name',
+                'Kind',
+                'Status',
+                'Updated',
+                { label: '', align: 'right' },
+              ]}
+            >
+              {data.channels.map((channel) => (
+                <TableRow
+                  key={channel.id}
+                  to={`/alerts/channels/${channel.id}/edit`}
+                >
+                  <td className="py-3 pr-4">
+                    <div className="font-medium text-text">{channel.name}</div>
+                    <div className="mt-1 text-xs text-text-tertiary">
+                      {channelSummary(channel)}
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4 capitalize text-text-secondary">
+                    {channel.config.kind}
+                  </td>
+                  <td className="py-3 pr-4">
+                    <AlertStatusBadge state={channel.enabled ? 'ok' : 'muted'}>
+                      {channel.enabled ? 'Enabled' : 'Disabled'}
+                    </AlertStatusBadge>
+                  </td>
+                  <td className="py-3 pr-4 text-text-secondary">
+                    {formatDateTime(channel.updated_at)}
+                  </td>
+                  <td className="py-3 text-right">
+                    <TableRowActions
+                      actions={[
+                        {
+                          label: 'Test channel',
+                          icon: Send,
+                          isDisabled: testChannel.isPending,
+                          onClick: () => {
+                            toast.promise(testChannel.mutateAsync(channel.id), {
+                              loading: 'Sending test message...',
+                              success: 'Test message sent.',
+                              error: (error) =>
+                                error.message || 'Failed to send test message.',
+                            });
                           },
-                          {
-                            label: 'Edit channel',
-                            icon: Pencil,
-                            to: `/alerts/channels/${channel.id}/edit`,
-                          },
-                          {
-                            label: 'Delete channel',
-                            icon: Trash2,
-                            isDestructive: true,
-                            onClick: () => setChannelToDelete(channel),
-                          },
-                        ]}
-                      />
-                    </td>
-                  </TableRow>
-                ))}
-              </Table>
-            </div>
+                        },
+                        {
+                          label: 'Edit channel',
+                          icon: Pencil,
+                          to: `/alerts/channels/${channel.id}/edit`,
+                        },
+                        {
+                          label: 'Delete channel',
+                          icon: Trash2,
+                          isDestructive: true,
+                          onClick: () => setChannelToDelete(channel),
+                        },
+                      ]}
+                    />
+                  </td>
+                </TableRow>
+              ))}
+            </Table>
           </div>
         )}
       </div>

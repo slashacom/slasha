@@ -59,12 +59,12 @@ export default function AppLayout() {
               className="shrink-0 bg-surface/30 px-8"
               actions={slot}
               items={[
-                { label: 'Files', to: `/apps/${slug}`, end: true },
                 { label: 'Deployments', to: `/apps/${slug}/deployments` },
                 { label: 'Scaling', to: `/apps/${slug}/scaling` },
                 { label: 'Services', to: `/apps/${slug}/services` },
                 { label: 'Crons', to: `/apps/${slug}/crons` },
                 { label: 'Metrics', to: `/apps/${slug}/metrics` },
+                { label: 'Files', to: `/apps/${slug}/files` },
                 { label: 'Settings', to: `/apps/${slug}/settings` },
               ]}
             />

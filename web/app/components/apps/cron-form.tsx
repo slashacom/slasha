@@ -8,6 +8,7 @@ import { Select } from '~/components/interface/select';
 import { Switch } from '~/components/interface/switch';
 import { Textarea } from '~/components/interface/textarea';
 import { useDebounce } from '~/hooks/use-debounce';
+import { formatSeconds } from '~/utils/date';
 import type { CronJob, CronRuntime } from '~/models/cron';
 import {
   getCronPreviewOptions,
@@ -140,6 +141,7 @@ export function CronForm(props: CronFormProps) {
           />
         ) : null}
         <CronSchedulePreview
+          schedule={debouncedSchedule}
           loading={preview.isFetching}
           error={preview.isError ? (preview.error as Error).message : null}
           nextRuns={preview.data?.next_runs ?? []}
@@ -187,7 +189,10 @@ export function CronForm(props: CronFormProps) {
             ))}
           </Select>
         </FormField>
-        <FormField label="Timeout (seconds)">
+        <FormField
+          label="Timeout (seconds)"
+          help={`a run is killed after ${formatSeconds(Number(timeoutSecs))}`}
+        >
           <Input
             type="number"
             min={1}

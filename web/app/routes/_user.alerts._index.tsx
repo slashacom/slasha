@@ -55,7 +55,7 @@ export default function AlertsPage() {
             hasRules={rulesData.rules.length > 0}
           />
         ) : (
-          <div className="rounded-lg border border-border bg-surface p-6">
+          <>
             <div className="overflow-x-auto">
               <Table
                 columns={['Rule', 'Status', 'Opened', 'Duration', 'Resolved']}
@@ -111,7 +111,7 @@ export default function AlertsPage() {
                 onLimitChange={pagination.setLimit}
               />
             </div>
-          </div>
+          </>
         )}
       </div>
     </Page>

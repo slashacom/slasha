@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams } from 'react-router';
-import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
-import { Check, ChevronRight, Copy, Terminal } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Check, Copy, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 import { getDeploymentOptions } from '~/queries/deployments';
 import { getAppOptions } from '~/queries/apps';
@@ -10,7 +10,6 @@ import { StatusBadge } from '~/components/interface/status-badge';
 import { LogStream } from '~/components/global/log-stream';
 import { formatRelativeTime, parseUTC } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
-import { BackButton } from '~/components/interface/back-button';
 
 type CommitButtonProps = {
   sha: string;
@@ -90,7 +89,6 @@ function MetaItem(props: MetaItemProps) {
 export default function DeploymentDetailPage() {
   const { slug, id } = useParams();
 
-  const { data: appData } = useSuspenseQuery(getAppOptions(slug!));
   const { data: deploymentData } = useQuery({
     ...getDeploymentOptions(slug!, id!),
     refetchInterval: (query) => {
@@ -99,7 +97,6 @@ export default function DeploymentDetailPage() {
     },
   });
 
-  const app = appData.app;
   const deployment = deploymentData?.deployment;
   if (!deployment) {
     return null;
@@ -111,30 +108,6 @@ export default function DeploymentDetailPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
-      <HStack
-        justifyContent="between"
-        alignItems="center"
-        className="shrink-0 gap-4 border-b border-border bg-surface/30 px-8 py-3"
-      >
-        <HStack space={3} alignItems="center">
-          <BackButton to={`/apps/${slug}/deployments`} />
-          <HStack space={2} alignItems="center">
-            <span className="text-[13px] font-medium text-text">
-              {app.name}
-            </span>
-            <ChevronRight className="size-3 text-text-tertiary" />
-            <CommitButton sha={deployment.commit_sha} />
-          </HStack>
-        </HStack>
-
-        <HStack space={3} alignItems="center">
-          <StatusBadge status={deployment.status} />
-          <span className="text-[11px] text-text-tertiary">
-            Deployed {formatRelativeTime(deployment.created_at)}
-          </span>
-        </HStack>
-      </HStack>
-
       <div className="flex min-h-0 flex-1 flex-col gap-6 px-8 py-6">
         <div className="grid grid-cols-2 gap-6 rounded-lg border border-border bg-surface/30 p-6 sm:grid-cols-4">
           <MetaItem label="Commit">

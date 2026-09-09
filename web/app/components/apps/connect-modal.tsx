@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, Check } from 'lucide-react';
 import type { Service } from '~/models/service';
 import { getServiceEnvVarsOptions } from '~/queries/services';
 import { Button } from '~/components/interface/button';
+import { CopyButton } from '~/components/interface/copy-button';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
-import { serviceEnvReference } from '~/utils/service-env';
-import { toast } from 'sonner';
+import { serviceEnvReference, serviceProxyCommand } from '~/utils/service-env';
 import {
   Dialog,
   DialogContent,
@@ -28,34 +27,14 @@ type CopyBlockProps = {
 
 function CopyBlock(props: CopyBlockProps) {
   const { text } = props;
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch (e) {
-      toast.error('Failed to copy: ' + e);
-    }
-  };
 
   return (
-    <div className="relative rounded-lg border border-border bg-black/40 p-3 pr-10 font-mono text-[12px] text-text">
-      <code className="select-all break-all">{text}</code>
-      <button
-        type="button"
-        onClick={handleCopy}
-        aria-label="Copy"
-        className="absolute right-2 top-2 cursor-pointer rounded p-1 text-text-tertiary transition-colors hover:bg-white/5 hover:text-text"
-      >
-        {copied ? (
-          <Check className="size-3.5 text-emerald-400" />
-        ) : (
-          <Copy className="size-3.5" />
-        )}
-      </button>
-    </div>
+    <HStack className="rounded-lg border border-border bg-black/40 p-1 pl-3">
+      <code className="min-w-0 flex-1 break-all py-2 font-mono text-[12px] text-text select-all">
+        {text}
+      </code>
+      <CopyButton value={text} />
+    </HStack>
   );
 }
 
@@ -75,7 +54,7 @@ export function ConnectModal(props: ConnectModalProps) {
 
   const envKeys = Object.keys(envData?.env_vars ?? {}).sort();
   const appExample = `DATABASE_URL=${serviceEnvReference(service.name, 'DATABASE_URL')}`;
-  const proxyCommand = `slasha proxy --app ${appSlug} ${service.name}`;
+  const proxyCommand = serviceProxyCommand(appSlug, service.name);
 
   return (
     <Dialog open={true} onOpenChange={onClose}>

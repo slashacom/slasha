@@ -20,6 +20,7 @@ import {
 import { TextInput } from '~/components/interface/text-input';
 import { EnvEditor } from '~/components/apps/env-editor';
 import { EnvVarChips } from '~/components/apps/env-var-chips';
+import { ServiceKindIcon } from '~/components/apps/service-kind-badge';
 import { buildResourcesPayload } from '~/components/apps/service-resources';
 import { serviceEnvReference } from '~/utils/service-env';
 
@@ -116,6 +117,13 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
               onChange={(value) => setName(sanitizeServiceName(value))}
               placeholder="e.g. main-db"
             />
+            <span className="text-[11px] leading-5 text-text-tertiary">
+              Becomes the namespace your app references its variables through —{' '}
+              <span className="font-mono text-text-secondary">
+                {serviceEnvReference(name.trim() || 'main-db', 'DATABASE_URL')}
+              </span>
+              . Letters, numbers, hyphens and underscores only.
+            </span>
           </VStack>
 
           <HStack space={4}>
@@ -153,6 +161,24 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
               </Select>
             </VStack>
           </HStack>
+
+          {selectedKind ? (
+            <HStack
+              space={3}
+              alignItems="start"
+              className="rounded-lg border border-border bg-surface/30 p-3"
+            >
+              <ServiceKindIcon kind={selectedKind.name} className="size-7" />
+              <span className="text-[11px] leading-5 text-text-tertiary">
+                Starts a dedicated {selectedKind.name} {version} container on
+                this app&apos;s private network, listening on port{' '}
+                <span className="font-mono text-text-secondary">
+                  {selectedKind.default_env_vars.PORT}
+                </span>
+                . Only this app can reach it — nothing is exposed publicly.
+              </span>
+            </HStack>
+          ) : null}
 
           <EnvConfigSection
             kindName={kindName}
@@ -267,12 +293,11 @@ function EnvConfigSection(props: EnvConfigSectionProps) {
       )}
 
       <p className="text-[11px] leading-5 text-text-tertiary">
-        Slasha automatically exposes{' '}
+        Slasha assembles{' '}
         <span className="font-mono text-text-secondary">
           {serviceEnvReference(refName, 'DATABASE_URL')}
         </span>{' '}
-        built from these parameters. Your app can reference it directly or build
-        custom connection strings using individual variable references.
+        from these values, and each one is also referenceable on its own.
       </p>
     </VStack>
   );

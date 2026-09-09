@@ -14,7 +14,8 @@ import { TableRowActions } from '~/components/interface/table-row-actions';
 import type { CronJob } from '~/models/cron';
 import { getCronsOptions, useDeleteCron, useRunCron } from '~/queries/crons';
 import { queryClient } from '~/utils/query-client';
-import { formatDateTime } from '~/utils/date';
+import { describeSchedule } from '~/utils/cron';
+import { formatDateTime, formatRelativeTime } from '~/utils/date';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
@@ -60,70 +61,80 @@ export default function AppCronsPage() {
             actionTo={`/apps/${slug}/crons/new`}
           />
         ) : (
-          <div className="rounded-lg border border-border bg-surface p-6">
-            <div className="overflow-x-auto">
-              <Table
-                columns={[
-                  'Name',
-                  'Schedule',
-                  'Status',
-                  'Last run',
-                  'Next run',
-                  { label: '', align: 'right' },
-                ]}
-              >
-                {data.crons.map((cron) => (
-                  <TableRow key={cron.id} to={`/apps/${slug}/crons/${cron.id}`}>
-                    <td className="py-3 pr-4">
-                      <div className="font-medium text-text">{cron.name}</div>
-                      <div className="mt-1 max-w-[280px] truncate font-mono text-xs text-text-tertiary">
-                        {cron.command}
-                      </div>
-                    </td>
-                    <td className="py-3 pr-4 font-mono text-text-secondary">
+          <div className="overflow-x-auto">
+            <Table
+              columns={[
+                'Name',
+                'Schedule',
+                'Status',
+                'Last run',
+                'Next run',
+                { label: '', align: 'right' },
+              ]}
+            >
+              {data.crons.map((cron) => (
+                <TableRow key={cron.id} to={`/apps/${slug}/crons/${cron.id}`}>
+                  <td className="py-3 pr-4">
+                    <div className="font-medium text-text">{cron.name}</div>
+                    <div className="mt-1 max-w-[280px] truncate font-mono text-xs text-text-tertiary">
+                      {cron.command}
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4">
+                    <div className="text-text-secondary">
+                      {describeSchedule(cron.schedule) ?? cron.schedule}
+                    </div>
+                    <div className="mt-1 font-mono text-xs text-text-tertiary">
                       {cron.schedule}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <AlertStatusBadge state={cron.enabled ? 'ok' : 'muted'}>
-                        {cron.enabled ? 'Enabled' : 'Disabled'}
-                      </AlertStatusBadge>
-                    </td>
-                    <td className="py-3 pr-4">
-                      {cron.last_run ? (
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4">
+                    <AlertStatusBadge state={cron.enabled ? 'ok' : 'muted'}>
+                      {cron.enabled ? 'Enabled' : 'Disabled'}
+                    </AlertStatusBadge>
+                  </td>
+                  <td className="py-3 pr-4">
+                    {cron.last_run ? (
+                      <>
                         <CronRunStatusBadge status={cron.last_run.status} />
-                      ) : (
-                        <span className="text-text-tertiary">—</span>
-                      )}
-                    </td>
-                    <td className="py-3 pr-4 text-text-secondary">
-                      {cron.enabled ? formatDateTime(cron.next_run_at) : '—'}
-                    </td>
-                    <td className="py-3 text-right">
-                      <TableRowActions
-                        actions={[
-                          {
-                            label: 'Run now',
-                            icon: Play,
-                            onClick: () => handleRun(cron),
-                          },
-                          {
-                            label: 'Edit job',
-                            icon: Pencil,
-                            to: `/apps/${slug}/crons/${cron.id}/edit`,
-                          },
-                          {
-                            label: 'Delete job',
-                            icon: Trash2,
-                            isDestructive: true,
-                            onClick: () => setCronToDelete(cron),
-                          },
-                        ]}
-                      />
-                    </td>
-                  </TableRow>
-                ))}
-              </Table>
-            </div>
+                        <div className="mt-1 text-xs text-text-tertiary">
+                          {formatRelativeTime(
+                            cron.last_run.started_at ?? cron.last_run.created_at
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-text-tertiary">—</span>
+                    )}
+                  </td>
+                  <td className="py-3 pr-4 text-text-secondary">
+                    {cron.enabled ? formatDateTime(cron.next_run_at) : '—'}
+                  </td>
+                  <td className="py-3 text-right">
+                    <TableRowActions
+                      actions={[
+                        {
+                          label: 'Run now',
+                          icon: Play,
+                          onClick: () => handleRun(cron),
+                        },
+                        {
+                          label: 'Edit job',
+                          icon: Pencil,
+                          to: `/apps/${slug}/crons/${cron.id}/edit`,
+                        },
+                        {
+                          label: 'Delete job',
+                          icon: Trash2,
+                          isDestructive: true,
+                          onClick: () => setCronToDelete(cron),
+                        },
+                      ]}
+                    />
+                  </td>
+                </TableRow>
+              ))}
+            </Table>
           </div>
         )}
       </div>

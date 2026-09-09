@@ -80,61 +80,59 @@ export default function AlertsRulesPage() {
             }
           />
         ) : (
-          <div className="rounded-lg border border-border bg-surface p-6">
-            <div className="overflow-x-auto">
-              <Table
-                columns={[
-                  'Name',
-                  'Kind',
-                  'Delivery',
-                  'Cooldown',
-                  'Status',
-                  { label: '', align: 'right' },
-                ]}
-              >
-                {rulesData.rules.map((rule) => (
-                  <TableRow key={rule.id} to={`/alerts/rules/${rule.id}/edit`}>
-                    <td className="py-3 pr-4">
-                      <div className="font-medium text-text">{rule.name}</div>
-                      <div className="mt-1 text-xs text-text-tertiary">
-                        {configSummary(rule, apps)}
-                      </div>
-                    </td>
-                    <td className="py-3 pr-4 capitalize text-text-secondary">
-                      {rule.config.kind.replaceAll('_', ' ')}
-                    </td>
-                    <td className="py-3 pr-4 text-text-secondary">
-                      {deliverySummary(rule, channelsById)}
-                    </td>
-                    <td className="py-3 pr-4 text-text-secondary">
-                      {rule.cooldown_secs}s
-                    </td>
-                    <td className="py-3 pr-4">
-                      <AlertStatusBadge state={rule.enabled ? 'ok' : 'muted'}>
-                        {rule.enabled ? 'Enabled' : 'Disabled'}
-                      </AlertStatusBadge>
-                    </td>
-                    <td className="py-3 text-right">
-                      <TableRowActions
-                        actions={[
-                          {
-                            label: 'Edit rule',
-                            icon: Pencil,
-                            to: `/alerts/rules/${rule.id}/edit`,
-                          },
-                          {
-                            label: 'Delete rule',
-                            icon: Trash2,
-                            isDestructive: true,
-                            onClick: () => setRuleToDelete(rule),
-                          },
-                        ]}
-                      />
-                    </td>
-                  </TableRow>
-                ))}
-              </Table>
-            </div>
+          <div className="overflow-x-auto">
+            <Table
+              columns={[
+                'Name',
+                'Kind',
+                'Delivery',
+                'Cooldown',
+                'Status',
+                { label: '', align: 'right' },
+              ]}
+            >
+              {rulesData.rules.map((rule) => (
+                <TableRow key={rule.id} to={`/alerts/rules/${rule.id}/edit`}>
+                  <td className="py-3 pr-4">
+                    <div className="font-medium text-text">{rule.name}</div>
+                    <div className="mt-1 text-xs text-text-tertiary">
+                      {configSummary(rule, apps)}
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4 capitalize text-text-secondary">
+                    {rule.config.kind.replaceAll('_', ' ')}
+                  </td>
+                  <td className="py-3 pr-4 text-text-secondary">
+                    {deliverySummary(rule, channelsById)}
+                  </td>
+                  <td className="py-3 pr-4 text-text-secondary">
+                    {rule.cooldown_secs}s
+                  </td>
+                  <td className="py-3 pr-4">
+                    <AlertStatusBadge state={rule.enabled ? 'ok' : 'muted'}>
+                      {rule.enabled ? 'Enabled' : 'Disabled'}
+                    </AlertStatusBadge>
+                  </td>
+                  <td className="py-3 text-right">
+                    <TableRowActions
+                      actions={[
+                        {
+                          label: 'Edit rule',
+                          icon: Pencil,
+                          to: `/alerts/rules/${rule.id}/edit`,
+                        },
+                        {
+                          label: 'Delete rule',
+                          icon: Trash2,
+                          isDestructive: true,
+                          onClick: () => setRuleToDelete(rule),
+                        },
+                      ]}
+                    />
+                  </td>
+                </TableRow>
+              ))}
+            </Table>
           </div>
         )}
       </div>

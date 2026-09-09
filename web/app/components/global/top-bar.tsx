@@ -200,6 +200,10 @@ export function TopBar() {
   const app = isAppRoute ? appData?.app : undefined;
   const node = isNodeRoute ? nodeData?.node : undefined;
   const crumbs = useCrumbs(app?.name, node?.name);
+  // Branch, runtime and clone URL describe the app. On a nested entity (a service,
+  // a deployment, a job) that entity carries its own status, so showing the app's
+  // too reads as if it were the entity's.
+  const isAppItself = crumbs.length <= 2;
 
   return (
     <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border px-8">
@@ -232,7 +236,7 @@ export function TopBar() {
           })}
         </nav>
 
-        {app ? (
+        {app && isAppItself ? (
           <HStack space={2} className="shrink-0 pl-1">
             <span className={chipClasses}>
               <GitBranch className="size-3" />
@@ -279,7 +283,9 @@ export function TopBar() {
         ) : null}
       </HStack>
 
-      {app && app.source === 'local' ? <CloneUrl app={app} /> : null}
+      {app && isAppItself && app.source === 'local' ? (
+        <CloneUrl app={app} />
+      ) : null}
     </header>
   );
 }
