@@ -9,7 +9,6 @@ import { getScalesOptions } from '~/queries/apps';
 import type { ProcessType } from '~/models/app-scale';
 import { EmptyPage } from '~/components/global/empty-page';
 import { VStack } from '~/components/interface/stacks';
-import { SectionHeader } from '~/components/interface/section-header';
 import { ScaleCard } from '~/components/apps/scale-card';
 import { ProcessExplorer } from '~/components/apps/process-explorer';
 import { queryClient } from '~/utils/query-client';
@@ -48,10 +47,14 @@ export default function AppScalingPage() {
   if (!runningDeployment) {
     return (
       <EmptyPage
-        className="flex-1"
+        className="mx-8 my-6 flex-1"
         icon={Layers}
-        title="App is not running"
-        subtitle="Scaling controls become available once a deployment is running. Deploy your app to manage process replicas."
+        size="lg"
+        title="App is not running."
+        subtitle="Scaling controls unlock once a deployment is live. Deploy the app to manage process replicas."
+        actionLabel="View deployments"
+        actionColor="neutral"
+        actionTo={`/apps/${slug}/deployments`}
       />
     );
   }
@@ -72,13 +75,14 @@ export default function AppScalingPage() {
     processGroups.web = 0;
   }
 
-  const scalableTypes = Object.keys(processGroups) as ProcessType[];
+  const typeOrder: Record<string, number> = { web: 0, worker: 1, release: 2 };
+  const scalableTypes = (Object.keys(processGroups) as ProcessType[]).sort(
+    (a, b) => (typeOrder[a] ?? 99) - (typeOrder[b] ?? 99)
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
-      <SectionHeader icon={Layers} title="Scaling" />
-
-      <div className="p-8">
+      <div className="px-8 py-6">
         <VStack space={6}>
           <VStack space={3}>
             <VStack space={1}>
@@ -106,11 +110,9 @@ export default function AppScalingPage() {
 
           <VStack space={3}>
             <VStack space={1}>
-              <h3 className="text-sm font-semibold text-text">
-                Process Explorer
-              </h3>
+              <h3 className="text-sm font-semibold text-text">Processes</h3>
               <p className="text-[12px] text-text-tertiary">
-                Live containers for the running deployment.
+                Containers running for the current deployment.
               </p>
             </VStack>
             <ProcessExplorer

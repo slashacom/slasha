@@ -1,7 +1,8 @@
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
+  LoaderCircle,
   RefreshCw,
 } from 'lucide-react';
 import {
@@ -10,7 +11,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '~/components/interface/dropdown-menu';
-import { Loader } from '~/components/icons/loader';
 import { cn } from '~/utils/classname';
 
 type PaginationButtonProps = {
@@ -35,7 +35,7 @@ function PaginationButton(props: PaginationButtonProps) {
       )}
     >
       {isFetching ? (
-        <Loader className="size-3.5" />
+        <LoaderCircle className="size-3.5" />
       ) : (
         <Icon className="size-3.5" />
       )}

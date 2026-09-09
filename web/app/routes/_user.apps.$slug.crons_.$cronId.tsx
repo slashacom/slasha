@@ -1,10 +1,13 @@
-import { useNavigate, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
-import { ArrowLeft, Clock, Pencil, Play } from 'lucide-react';
+import { Pencil, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { Button } from '~/components/interface/button';
-import { SectionHeader } from '~/components/interface/section-header';
+import { HStack, VStack } from '~/components/interface/stacks';
+import { Page } from '~/components/global/page';
+import { PageHeader } from '~/components/interface/page-header';
+import { TabActions } from '~/components/interface/tab-actions';
 import { CronRunHistory } from '~/components/apps/cron-run-history';
 import { CronRunStatusBadge } from '~/components/apps/cron-run-status-badge';
 import {
@@ -13,7 +16,12 @@ import {
   useRunCron,
 } from '~/queries/crons';
 import { queryClient } from '~/utils/query-client';
-import { formatDate } from '~/utils/format';
+import { describeSchedule } from '~/utils/cron';
+import {
+  formatDateTime,
+  formatRelativeTime,
+  formatSeconds,
+} from '~/utils/date';
 
 export async function clientLoader(args: {
   params: { slug: string; cronId: string };
@@ -25,9 +33,26 @@ export async function clientLoader(args: {
   ]);
 }
 
+type MetaItemProps = {
+  label: string;
+  children: React.ReactNode;
+};
+
+function MetaItem(props: MetaItemProps) {
+  const { label, children } = props;
+
+  return (
+    <VStack space={1} className="min-w-0">
+      <span className="text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+        {label}
+      </span>
+      <div className="text-[13px] text-text">{children}</div>
+    </VStack>
+  );
+}
+
 export default function CronDetailPage() {
   const { slug, cronId } = useParams();
-  const navigate = useNavigate();
   const { data: cronsData } = useSuspenseQuery(getCronsOptions(slug!));
   const runCron = useRunCron(slug!);
   const { data: runsData } = useQuery({
@@ -35,13 +60,18 @@ export default function CronDetailPage() {
     refetchInterval: 5000,
   });
   const cron = cronsData.crons.find((item) => item.id === cronId);
-  const latestRun = runsData?.runs?.[0];
 
   if (!cron) {
     return (
-      <div className="p-8 text-sm text-text-secondary">Cron job not found.</div>
+      <Page>
+        <p className="text-sm text-text-secondary">Cron job not found.</p>
+      </Page>
     );
   }
+
+  const runs = runsData?.runs ?? [];
+  const latestRun = runs[0];
+  const description = describeSchedule(cron.schedule);
 
   const handleRun = () => {
     const promise = runCron.mutateAsync(cron.id);
@@ -52,105 +82,84 @@ export default function CronDetailPage() {
     });
   };
 
-  const stats = [
-    {
-      label: 'Status',
-      value: (
-        <AlertStatusBadge state={cron.enabled ? 'ok' : 'muted'}>
-          {cron.enabled ? 'Enabled' : 'Disabled'}
-        </AlertStatusBadge>
-      ),
-    },
-    {
-      label: 'Next run',
-      value: cron.enabled ? formatDate(cron.next_run_at) : '—',
-    },
-    {
-      label: 'Last run',
-      value: latestRun ? (
-        <div className="flex items-center gap-2">
-          <CronRunStatusBadge status={latestRun.status} />
-          <span className="text-xs font-normal text-text-tertiary">
-            {formatDate(latestRun.started_at ?? latestRun.created_at)}
-          </span>
-        </div>
-      ) : (
-        '—'
-      ),
-    },
-    { label: 'Timeout', value: `${cron.timeout_secs}s` },
-  ];
-
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
-      <SectionHeader
-        icon={Clock}
+    <Page className="min-h-0 flex-1 overflow-y-auto">
+      <TabActions>
+        <Button
+          to={`/apps/${slug}/crons/${cron.id}/edit`}
+          label="Edit"
+          variant="ghost"
+          size="sm"
+          icon={<Pencil className="size-3.5" />}
+        />
+        <Button
+          label="Run now"
+          size="sm"
+          icon={<Play className="size-3.5" />}
+          onClick={handleRun}
+          isLoading={runCron.isPending}
+        />
+      </TabActions>
+
+      <PageHeader
         title={cron.name}
-        description={cron.schedule}
-        actions={
-          <>
-            <Button
-              to={`/apps/${slug}/crons`}
-              label="Back"
-              variant="ghost"
-              icon={<ArrowLeft className="size-4" />}
-            />
-            <Button
-              to={`/apps/${slug}/crons/${cron.id}/edit`}
-              label="Edit"
-              variant="ghost"
-              icon={<Pencil className="size-4" />}
-            />
-            <Button
-              label="Run now"
-              icon={<Play className="size-4" />}
-              onClick={handleRun}
-              isLoading={runCron.isPending}
-            />
-          </>
+        description={
+          description ? `${description} · ${cron.timezone}` : cron.schedule
         }
       />
 
-      <div className="space-y-8 p-8">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {stats.map((stat) => (
-            <div
-              key={stat.label}
-              className="rounded-lg border border-border bg-surface p-5"
-            >
-              <p className="text-xs font-medium text-text-tertiary">
-                {stat.label}
-              </p>
-              <div className="mt-2 text-sm font-semibold text-text">
-                {stat.value}
-              </div>
-            </div>
-          ))}
-        </div>
+      <div className="mt-6 rounded-lg border border-border bg-surface">
+        <HStack wrap alignItems="start" className="gap-x-12 gap-y-5 px-5 py-4">
+          <MetaItem label="Status">
+            <AlertStatusBadge state={cron.enabled ? 'ok' : 'muted'}>
+              {cron.enabled ? 'Enabled' : 'Disabled'}
+            </AlertStatusBadge>
+          </MetaItem>
+          <MetaItem label="Schedule">
+            <span className="font-mono text-xs text-text-secondary">
+              {cron.schedule}
+            </span>
+          </MetaItem>
+          <MetaItem label="Next run">
+            {cron.enabled ? formatDateTime(cron.next_run_at) : '—'}
+          </MetaItem>
+          <MetaItem label="Last run">
+            {latestRun ? (
+              <HStack space={2}>
+                <CronRunStatusBadge status={latestRun.status} />
+                <span className="text-text-tertiary">
+                  {formatRelativeTime(
+                    latestRun.started_at ?? latestRun.created_at
+                  )}
+                </span>
+              </HStack>
+            ) : (
+              '—'
+            )}
+          </MetaItem>
+          <MetaItem label="Timeout">
+            {formatSeconds(cron.timeout_secs)}
+          </MetaItem>
+          <MetaItem label="Runtime">
+            {cron.runtime === 'utility' ? 'Utility (curl)' : 'App image'}
+          </MetaItem>
+        </HStack>
 
-        <div className="rounded-lg border border-border bg-surface p-6">
-          <h3 className="text-xs font-medium text-text-tertiary">Command</h3>
-          <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs text-text-secondary">
-            {cron.command}
-          </pre>
-          <p className="mt-3 text-[11px] text-text-tertiary">
-            Runtime:{' '}
-            {cron.runtime === 'utility' ? 'Utility (curl)' : 'App image'} ·
-            Timezone: {cron.timezone}
-          </p>
-        </div>
-
-        <div className="rounded-lg border border-border bg-surface p-6">
-          <h3 className="mb-4 text-xs font-medium text-text-tertiary">
-            Run history
-          </h3>
-          <CronRunHistory
-            appSlug={slug!}
-            cronId={cron.id}
-            runs={runsData?.runs ?? []}
-          />
+        <div className="border-t border-border px-5 py-3">
+          <MetaItem label="Command">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs text-text-secondary">
+              {cron.command}
+            </pre>
+          </MetaItem>
         </div>
       </div>
-    </div>
+
+      <div className="mt-6 rounded-lg border border-border bg-surface p-6">
+        <h3 className="mb-4 text-xs font-medium uppercase tracking-wider text-text-tertiary">
+          Run history
+        </h3>
+        <CronRunHistory appSlug={slug!} cronId={cron.id} runs={runs} />
+      </div>
+    </Page>
   );
 }

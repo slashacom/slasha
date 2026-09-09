@@ -9,13 +9,19 @@ export type TabNavItem = {
 
 type TabNavProps = {
   items: TabNavItem[];
+  actions?: React.ReactNode;
   className?: string;
 };
 
 export function TabNav(props: TabNavProps) {
-  const { items, className } = props;
+  const { items, actions, className } = props;
   return (
-    <div className={cn('border-b border-border', className)}>
+    <div
+      className={cn(
+        'flex items-center justify-between gap-4 border-b border-border',
+        className
+      )}
+    >
       <nav className="-mb-px flex gap-6" aria-label="Tabs">
         {items.map((item) => (
           <NavLink
@@ -35,6 +41,7 @@ export function TabNav(props: TabNavProps) {
           </NavLink>
         ))}
       </nav>
+      {actions}
     </div>
   );
 }

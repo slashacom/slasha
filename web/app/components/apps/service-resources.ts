@@ -1,4 +1,6 @@
+import type { ServiceResources } from '~/models/service';
 import { type ResourcesPayload } from '~/queries/services';
+import { formatFileSize } from '~/utils/format';
 
 export const BYTES_PER_MB = 1024 * 1024;
 export const NANO_PER_CORE = 1_000_000_000;
@@ -100,4 +102,29 @@ export function buildResourcesPayload(
     payload: { memory_bytes, nano_cpus, pids_limit, shm_size },
     error: null,
   };
+}
+
+export function describeResources(
+  resources: ServiceResources | null
+): string[] {
+  if (!resources) {
+    return [];
+  }
+
+  const parts: string[] = [];
+
+  if (resources.memory_bytes != null) {
+    parts.push(`${formatFileSize(Number(resources.memory_bytes))} memory`);
+  }
+  if (resources.nano_cpus != null) {
+    parts.push(`${Number(resources.nano_cpus) / NANO_PER_CORE} CPU`);
+  }
+  if (resources.pids_limit != null) {
+    parts.push(`${Number(resources.pids_limit)} PIDs`);
+  }
+  if (resources.shm_size != null) {
+    parts.push(`${formatFileSize(Number(resources.shm_size))} shared memory`);
+  }
+
+  return parts;
 }

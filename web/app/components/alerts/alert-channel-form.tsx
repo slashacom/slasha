@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
+import { FormActions } from '~/components/interface/form-actions';
 import { FormField } from '~/components/interface/form-field';
 import { Input } from '~/components/interface/input';
 import { Select } from '~/components/interface/select';
@@ -233,12 +234,13 @@ export function AlertChannelForm(props: AlertChannelFormProps) {
       </div>
 
       <div className="flex items-center gap-2 pt-2">
-        <Button
-          label={channel ? 'Save changes' : 'Create channel'}
-          onClick={handleSave}
-          isLoading={createChannel.isPending || updateChannel.isPending}
+        <FormActions
+          submitLabel={channel ? 'Save changes' : 'Create channel'}
+          onSubmit={handleSave}
+          onCancel={onCancel}
+          isPending={createChannel.isPending || updateChannel.isPending}
+          className="pt-0"
         />
-        <Button label="Cancel" variant="ghost" onClick={onCancel} />
       </div>
     </div>
   );

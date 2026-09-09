@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { Bell, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Gauge, Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import {
@@ -11,8 +10,7 @@ import {
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
-import { SectionHeader } from '~/components/interface/section-header';
-import { Table } from '~/components/interface/table';
+import { Table, TableRow } from '~/components/interface/table';
 import type { AlertRule } from '~/models/alerts';
 import { getAppsOptions } from '~/queries/apps';
 import {
@@ -20,7 +18,11 @@ import {
   getAlertRulesOptions,
   useDeleteAlertRule,
 } from '~/queries/alerts';
+import { formatSeconds } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
+import { Page } from '~/components/global/page';
+import { TabActions } from '~/components/interface/tab-actions';
+import { TableRowActions } from '~/components/interface/table-row-actions';
 
 export async function clientLoader() {
   await Promise.all([
@@ -32,7 +34,6 @@ export async function clientLoader() {
 }
 
 export default function AlertsRulesPage() {
-  const navigate = useNavigate();
   const { data: rulesData } = useSuspenseQuery(getAlertRulesOptions());
   const { data: channelsData } = useSuspenseQuery(getAlertChannelsOptions());
   const { data: appsData } = useSuspenseQuery(getAppsOptions());
@@ -46,90 +47,93 @@ export default function AlertsRulesPage() {
   );
 
   return (
-    <div className="p-8">
-      <SectionHeader
-        icon={Bell}
-        title="Rules"
-        description="Manage alert conditions and their delivery behavior."
-        actions={
-          <Button
-            to="/alerts/rules/new"
-            label="New rule"
-            icon={<Plus className="size-4" />}
-          />
-        }
-        className="h-auto border-0 px-0"
-      />
+    <Page>
+      <TabActions>
+        <Button
+          to="/alerts/rules/new"
+          label="New rule"
+          size="sm"
+          icon={<Plus className="size-3.5" />}
+        />
+      </TabActions>
 
-      <div className="mt-8">
+      <p className="max-w-prose text-pretty text-sm text-text-secondary">
+        Conditions Slasha watches, and how each one notifies you.
+      </p>
+
+      <div className="mt-6">
         {rulesData.rules.length === 0 ? (
           <EmptyPage
-            icon={Bell}
-            title="No rules yet."
-            subtitle="Create a rule to start monitoring your server and apps."
+            icon={Gauge}
+            size="lg"
+            title="No alert rules yet."
+            subtitle="A rule watches one signal, such as CPU, memory, disk or app health, and notifies a channel when it crosses your threshold."
             actionLabel="Create rule"
-            actionIcon={<Plus className="size-4" />}
-            onAction={() => navigate('/alerts/rules/new')}
-            className="min-h-[320px]"
+            actionIcon={<Plus className="size-3.5" />}
+            actionTo="/alerts/rules/new"
+            secondaryLabel={
+              channelsData.channels.length === 0 ? 'Add a channel' : undefined
+            }
+            secondaryTo={
+              channelsData.channels.length === 0
+                ? '/alerts/channels/new'
+                : undefined
+            }
           />
         ) : (
-          <div className="rounded-lg border border-border bg-surface p-6">
-            <div className="overflow-x-auto">
-              <Table
-                columns={[
-                  'Name',
-                  'Kind',
-                  'Delivery',
-                  'Cooldown',
-                  'Status',
-                  { label: '', align: 'right' },
-                ]}
-              >
-                {rulesData.rules.map((rule) => (
-                  <tr key={rule.id}>
-                    <td className="py-3 pr-4">
-                      <div className="font-medium text-text">{rule.name}</div>
-                      <div className="mt-1 text-xs text-text-tertiary">
-                        {configSummary(rule, apps)}
-                      </div>
-                    </td>
-                    <td className="py-3 pr-4 capitalize text-text-secondary">
-                      {rule.config.kind.replaceAll('_', ' ')}
-                    </td>
-                    <td className="py-3 pr-4 text-text-secondary">
-                      {deliverySummary(rule, channelsById)}
-                    </td>
-                    <td className="py-3 pr-4 text-text-secondary">
-                      {rule.cooldown_secs}s
-                    </td>
-                    <td className="py-3 pr-4">
-                      <AlertStatusBadge state={rule.enabled ? 'ok' : 'muted'}>
-                        {rule.enabled ? 'Enabled' : 'Disabled'}
-                      </AlertStatusBadge>
-                    </td>
-                    <td className="py-3 text-right">
-                      <div className="flex items-center justify-end gap-3">
-                        <Link
-                          to={`/alerts/rules/${rule.id}/edit`}
-                          className="text-text-secondary transition-colors hover:text-text"
-                          title="Edit rule"
-                        >
-                          <Pencil className="size-4" />
-                        </Link>
-                        <button
-                          type="button"
-                          title="Delete rule"
-                          onClick={() => setRuleToDelete(rule)}
-                          className="text-red-400/80 transition-colors hover:text-red-400"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </Table>
-            </div>
+          <div className="-mx-8 overflow-x-auto">
+            <Table
+              columns={[
+                'Name',
+                'Kind',
+                'Delivery',
+                'Cooldown',
+                'Status',
+                { label: '', align: 'right' },
+              ]}
+            >
+              {rulesData.rules.map((rule) => (
+                <TableRow key={rule.id} to={`/alerts/rules/${rule.id}/edit`}>
+                  <td className="py-3 pr-4">
+                    <div className="font-medium text-text">{rule.name}</div>
+                    <div className="mt-1 text-xs text-text-tertiary">
+                      {configSummary(rule, apps)}
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4 capitalize text-text-secondary">
+                    {rule.config.kind.replaceAll('_', ' ')}
+                  </td>
+                  <td className="py-3 pr-4 text-text-secondary">
+                    {deliverySummary(rule, channelsById)}
+                  </td>
+                  <td className="py-3 pr-4 text-text-secondary">
+                    {formatSeconds(rule.cooldown_secs)}
+                  </td>
+                  <td className="py-3 pr-4">
+                    <AlertStatusBadge state={rule.enabled ? 'ok' : 'muted'}>
+                      {rule.enabled ? 'Enabled' : 'Disabled'}
+                    </AlertStatusBadge>
+                  </td>
+                  <td className="py-3 text-right">
+                    <TableRowActions
+                      actions={[
+                        {
+                          label: 'Edit rule',
+                          icon: Pencil,
+                          to: `/alerts/rules/${rule.id}/edit`,
+                        },
+                        {
+                          label: 'Delete rule',
+                          icon: Trash2,
+                          isDestructive: true,
+                          onClick: () => setRuleToDelete(rule),
+                        },
+                      ]}
+                    />
+                  </td>
+                </TableRow>
+              ))}
+            </Table>
           </div>
         )}
       </div>
@@ -163,6 +167,6 @@ export default function AlertsRulesPage() {
           }
         }}
       />
-    </div>
+    </Page>
   );
 }

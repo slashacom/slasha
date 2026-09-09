@@ -2,6 +2,7 @@ import { Link } from 'react-router';
 import { ArrowUpRight, GitBranchIcon } from 'lucide-react';
 import type { AppListItem } from '~/queries/apps';
 import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
+import { formatDate } from '~/utils/date';
 
 type AppCardProps = {
   item: AppListItem;
@@ -33,7 +34,7 @@ export function AppCard(props: AppCardProps) {
           <GitBranchIcon className="size-3.5" />
           <span>{app.default_branch}</span>
           <span className="px-1">·</span>
-          <span>{new Date(app.created_at).toLocaleDateString()}</span>
+          <span>{formatDate(app.created_at)}</span>
         </div>
         {runtime_status === 'running' ? (
           <a

@@ -1,17 +1,22 @@
 import { useState } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { PlusIcon, Users } from 'lucide-react';
+import { Pencil, PlusIcon, Trash2, Users } from 'lucide-react';
+import { Page } from '~/components/global/page';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
-import { Table } from '~/components/interface/table';
+import { HStack } from '~/components/interface/stacks';
+import { Table, TableRow } from '~/components/interface/table';
 import { redirect } from 'react-router';
 import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getUsersOptions, useDeleteUser } from '~/queries/users';
 import type { User } from '~/models/user';
+import { PageHeader } from '~/components/interface/page-header';
+import { formatDate } from '~/utils/date';
+import { TableRowActions } from '~/components/interface/table-row-actions';
 
 export async function clientLoader() {
   const me = await queryClient.ensureQueryData(getAuthMeOptions());
@@ -25,6 +30,7 @@ export async function clientLoader() {
 export default function UsersPage() {
   const navigate = useNavigate();
   const { data: usersData } = useSuspenseQuery(getUsersOptions());
+  const { data: me } = useSuspenseQuery(getAuthMeOptions());
   const deleteUser = useDeleteUser();
   const [pendingDelete, setPendingDelete] = useState<User | null>(null);
 
@@ -49,24 +55,29 @@ export default function UsersPage() {
   };
 
   return (
-    <div>
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="font-semibold text-text">Users</h3>
-          <p className="mt-2 text-sm text-text-secondary">
-            Manage who has access to this instance.
-          </p>
-        </div>
-        <Button
-          label="Add user"
-          icon={<PlusIcon className="size-4" />}
-          onClick={() => navigate('/users/new')}
-        />
-      </div>
+    <Page>
+      <PageHeader
+        title="Users"
+        description="Manage who has access to this instance."
+        actions={
+          <Button
+            label="Add user"
+            icon={<PlusIcon className="size-4" />}
+            onClick={() => navigate('/users/new')}
+          />
+        }
+      />
 
-      <div className="mt-6 overflow-x-auto">
+      <div className="-mx-8 mt-6 overflow-x-auto">
         {usersData.users.length === 0 ? (
-          <EmptyPage icon={Users} title="No users yet." />
+          <EmptyPage
+            icon={Users}
+            title="No users yet."
+            subtitle="Invite teammates so they can deploy apps and respond to alerts alongside you."
+            actionLabel="Add user"
+            actionIcon={<PlusIcon className="size-3.5" />}
+            actionTo="/users/new"
+          />
         ) : (
           <Table
             columns={[
@@ -77,34 +88,46 @@ export default function UsersPage() {
             ]}
           >
             {usersData.users.map((user: User) => (
-              <tr key={user.id}>
+              <TableRow key={user.id} to={`/users/${user.id}/edit`}>
                 <td className="py-3 pr-4 font-medium text-text">
-                  {user.email}
+                  <HStack space={2}>
+                    <span>{user.email}</span>
+                    {user.id === me.user?.id ? (
+                      <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[11px] font-medium text-text-tertiary">
+                        You
+                      </span>
+                    ) : null}
+                  </HStack>
                 </td>
                 <td className="py-3 pr-4 text-text-secondary capitalize">
                   {user.role}
                 </td>
                 <td className="py-3 pr-4 text-text-secondary">
-                  {new Date(user.created_at).toLocaleDateString()}
+                  {formatDate(user.created_at)}
                 </td>
                 <td className="py-3 text-right">
-                  <div className="flex items-center justify-end gap-3">
-                    <Link
-                      to={`/users/${user.id}/edit`}
-                      className="text-xs !text-text-secondary !no-underline hover:!text-text"
-                    >
-                      Edit
-                    </Link>
-                    <button
-                      onClick={() => setPendingDelete(user)}
-                      disabled={deleteUser.isPending}
-                      className="text-xs text-red-500 hover:underline disabled:opacity-50"
-                    >
-                      Delete
-                    </button>
-                  </div>
+                  <TableRowActions
+                    actions={[
+                      {
+                        label: 'Edit user',
+                        icon: Pencil,
+                        to: `/users/${user.id}/edit`,
+                      },
+                      ...(user.id === me.user?.id
+                        ? []
+                        : [
+                            {
+                              label: 'Delete user',
+                              icon: Trash2,
+                              isDestructive: true,
+                              isDisabled: deleteUser.isPending,
+                              onClick: () => setPendingDelete(user),
+                            },
+                          ]),
+                    ]}
+                  />
                 </td>
-              </tr>
+              </TableRow>
             ))}
           </Table>
         )}
@@ -122,6 +145,6 @@ export default function UsersPage() {
         confirmLabel="Delete"
         onConfirm={handleConfirmDelete}
       />
-    </div>
+    </Page>
   );
 }

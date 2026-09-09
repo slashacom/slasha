@@ -65,62 +65,18 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-export function parseUTC(str: string): Date {
-  if (!str.endsWith('Z') && !str.includes('+')) {
-    return new Date(str + 'Z');
-  }
-  return new Date(str);
-}
-
-export function formatRelativeTime(date: string | Date): string {
-  const now = new Date();
-  const then = typeof date === 'string' ? parseUTC(date) : date;
-  const seconds = Math.floor((now.getTime() - then.getTime()) / 1000);
-
-  if (seconds < 60) {
-    return 'just now';
-  }
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h ago`;
-  }
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-export function formatUptime(startedAt: string): string {
-  const ms = Date.now() - parseUTC(startedAt).getTime();
-  if (Number.isNaN(ms) || ms < 0) {
-    return '—';
-  }
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) {
-    return `${seconds}s`;
-  }
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h ${minutes % 60}m`;
-  }
-  const days = Math.floor(hours / 24);
-  return `${days}d ${hours % 24}h`;
-}
-
-export function formatDate(value: string | null | undefined) {
-  return value ? parseUTC(value).toLocaleString() : '—';
-}
-
 export function formatMetric(value: number | null | undefined) {
   if (value === null || value === undefined) {
     return '—';
   }
 
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+export function titleCase(value: string) {
+  if (!value) {
+    return value;
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

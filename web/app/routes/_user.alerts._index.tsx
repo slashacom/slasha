@@ -1,19 +1,25 @@
 import { useMemo } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { ShieldAlert } from 'lucide-react';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { AlertEmptyState } from '~/components/alerts/alert-empty-state';
 import { Button } from '~/components/interface/button';
-import { SectionHeader } from '~/components/interface/section-header';
-import { Table } from '~/components/interface/table';
+import { Table, TableRow } from '~/components/interface/table';
 import { TablePagination } from '~/components/interface/table-pagination';
 import { usePagination } from '~/hooks/use-pagination';
 import {
   getAlertIncidentsOptions,
   getAlertRulesOptions,
 } from '~/queries/alerts';
-import { formatDate, formatMetric } from '~/utils/format';
+import {
+  formatDateTime,
+  formatDuration,
+  formatRelativeTime,
+} from '~/utils/date';
+import { incidentValueSummary } from '~/components/alerts/incident-values';
+import { titleCase } from '~/utils/format';
 import { queryClient } from '~/utils/query-client';
+import { Page } from '~/components/global/page';
+import { TabActions } from '~/components/interface/tab-actions';
 
 export async function clientLoader() {
   await Promise.all([
@@ -24,7 +30,9 @@ export async function clientLoader() {
 }
 
 export default function AlertsPage() {
-  const { data, refetch } = useSuspenseQuery(getAlertIncidentsOptions());
+  const { data, refetch, isFetching, dataUpdatedAt } = useSuspenseQuery(
+    getAlertIncidentsOptions()
+  );
   const { data: rulesData } = useSuspenseQuery(getAlertRulesOptions());
   const pagination = usePagination(data.incidents);
   const rulesById = useMemo(
@@ -33,78 +41,75 @@ export default function AlertsPage() {
   );
 
   return (
-    <div className="p-8">
-      <SectionHeader
-        icon={ShieldAlert}
-        title="Alerts"
-        description="Each alert entry groups its incident details and trigger history."
-        actions={
-          <Button label="Refresh" variant="ghost" onClick={() => refetch()} />
-        }
-        className="h-auto border-0 px-0"
-      />
+    <Page>
+      <TabActions>
+        <span className="text-[11px] text-text-tertiary">
+          Updated {formatRelativeTime(new Date(dataUpdatedAt))}
+        </span>
+        <Button
+          label="Refresh"
+          variant="ghost"
+          size="sm"
+          isLoading={isFetching}
+          onClick={() => refetch()}
+        />
+      </TabActions>
 
-      <div className="mt-8 space-y-4">
+      <p className="max-w-prose text-pretty text-sm text-text-secondary">
+        Every alert groups its details and full trigger history.
+      </p>
+
+      <div className="mt-6 space-y-4">
         {data.incidents.length === 0 ? (
-          <AlertEmptyState type="incidents" />
+          <AlertEmptyState
+            type="incidents"
+            hasRules={rulesData.rules.length > 0}
+          />
         ) : (
-          <div className="rounded-lg border border-border bg-surface p-6">
-            <div className="overflow-x-auto">
+          <>
+            <div className="-mx-8 overflow-x-auto">
               <Table
-                columns={[
-                  'Rule',
-                  'Values',
-                  'Status',
-                  'Opened',
-                  'Last seen',
-                  'Resolved',
-                  { label: '', align: 'right' },
-                ]}
+                columns={['Rule', 'Status', 'Opened', 'Duration', 'Resolved']}
               >
                 {pagination.rows.map((incident) => (
-                  <tr key={incident.id}>
+                  <TableRow
+                    key={incident.id}
+                    to={`/alerts/incidents/${incident.id}`}
+                  >
                     <td className="py-4 pr-4">
                       <div className="font-medium text-text">
                         {rulesById.get(incident.rule_id)?.name ??
                           'Unknown rule'}
                       </div>
-                    </td>
-                    <td className="py-4 pr-4 text-text-secondary">
-                      <div className="space-y-1">
-                        <div>
-                          Trigger {formatMetric(incident.trigger_value)} ·
-                          Current {formatMetric(incident.current_value)}
+                      {incidentValueSummary(
+                        incident,
+                        rulesById.get(incident.rule_id)
+                      ) ? (
+                        <div className="mt-1 text-xs text-text-tertiary">
+                          {incidentValueSummary(
+                            incident,
+                            rulesById.get(incident.rule_id)
+                          )}
                         </div>
-                        <div className="text-xs text-text-tertiary">
-                          Threshold {formatMetric(incident.threshold_value)}
-                        </div>
-                      </div>
+                      ) : null}
                     </td>
                     <td className="py-4 pr-4">
                       <AlertStatusBadge
                         state={incident.status === 'open' ? 'warn' : 'ok'}
                       >
-                        {incident.status}
+                        {titleCase(incident.status)}
                       </AlertStatusBadge>
                     </td>
                     <td className="py-4 pr-4 text-text-secondary">
-                      {formatDate(incident.opened_at)}
+                      {formatDateTime(incident.opened_at)}
                     </td>
                     <td className="py-4 pr-4 text-text-secondary">
-                      {formatDate(incident.last_notified_at)}
+                      {formatDuration(incident.opened_at, incident.resolved_at)}
                     </td>
                     <td className="py-4 text-text-secondary">
-                      {formatDate(incident.resolved_at)}
+                      {formatDateTime(incident.resolved_at)}
                     </td>
-                    <td className="py-4 text-right">
-                      <Button
-                        to={`/alerts/incidents/${incident.id}`}
-                        label="View"
-                        variant="ghost"
-                        size="sm"
-                      />
-                    </td>
-                  </tr>
+                  </TableRow>
                 ))}
               </Table>
             </div>
@@ -123,9 +128,9 @@ export default function AlertsPage() {
                 onLimitChange={pagination.setLimit}
               />
             </div>
-          </div>
+          </>
         )}
       </div>
-    </div>
+    </Page>
   );
 }

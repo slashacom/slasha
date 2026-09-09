@@ -3,7 +3,9 @@ import { toast } from 'sonner';
 import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { useCreateNode } from '~/queries/nodes';
+import { Page } from '~/components/global/page';
 import { NodeForm } from '~/components/nodes/node-form';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
   const me = await queryClient.ensureQueryData(getAuthMeOptions());
@@ -34,14 +36,11 @@ export default function NewNodePage() {
   };
 
   return (
-    <div>
-      <div>
-        <h3 className="font-semibold text-text">Connect Node</h3>
-        <p className="mt-2 text-sm text-text-secondary">
-          Connect a remote node to use as a server for app deployments. Slasha
-          will connect via SSH and automatically provision it.
-        </p>
-      </div>
+    <Page>
+      <PageHeader
+        title="Connect Node"
+        description="Connect a remote node to use as a server for app deployments. Slasha will connect via SSH and automatically provision it."
+      />
 
       <div className="mt-6">
         <NodeForm
@@ -52,6 +51,6 @@ export default function NewNodePage() {
           isLocalNode={false}
         />
       </div>
-    </div>
+    </Page>
   );
 }

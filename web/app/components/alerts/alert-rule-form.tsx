@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
+import { FormActions } from '~/components/interface/form-actions';
 import { FormField } from '~/components/interface/form-field';
 import { FormSection } from '~/components/interface/form-section';
 import { Input } from '~/components/interface/input';
@@ -79,7 +80,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
   };
 
   return (
-    <div className="max-w-2xl space-y-8">
+    <div className="max-w-xl space-y-8">
       <FormSection
         title="Trigger"
         description="Choose what Slasha should monitor and when it should alert."
@@ -156,6 +157,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
             min={0}
             max={100}
             step={0.1}
+            suffix="%"
             onChange={(threshold_percent) =>
               setDraft((current) => ({ ...current, threshold_percent }))
             }
@@ -200,6 +202,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
               min={0}
               max={100}
               step={0.1}
+              suffix="%"
               onChange={(threshold_percent) =>
                 setDraft((current) => ({ ...current, threshold_percent }))
               }
@@ -397,12 +400,13 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
       </FormSection>
 
       <div className="flex items-center gap-2 border-t border-border pt-6">
-        <Button
-          label={rule ? 'Save changes' : 'Create rule'}
-          onClick={handleSave}
-          isLoading={createRule.isPending || updateRule.isPending}
+        <FormActions
+          submitLabel={rule ? 'Save changes' : 'Create rule'}
+          onSubmit={handleSave}
+          onCancel={onCancel}
+          isPending={createRule.isPending || updateRule.isPending}
+          className="pt-0"
         />
-        <Button label="Cancel" variant="ghost" onClick={onCancel} />
       </div>
     </div>
   );

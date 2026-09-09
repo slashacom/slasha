@@ -13,7 +13,7 @@ import {
 import { cn } from '~/utils/classname';
 
 const PROCESS_TYPE_HELP: Record<ProcessType, string> = {
-  web: 'Serves HTTP traffic — requests are routed here by the proxy.',
+  web: 'Serves HTTP traffic. The proxy routes requests here.',
   worker: 'Runs background jobs. Does not receive HTTP traffic.',
   release: 'Runs once before each deploy (e.g. migrations).',
 };

@@ -1,6 +1,6 @@
+import { LoaderCircle } from 'lucide-react';
 import { forwardRef } from 'react';
 import { Link } from 'react-router';
-import { Loader } from '~/components/icons/loader';
 import { cn } from '~/utils/classname';
 
 export type ButtonColor = 'neutral' | 'primary' | 'success' | 'error';
@@ -65,7 +65,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       !isInteractable && 'pointer-events-none',
       !label && 'p-1.5',
       size === 'sm' && 'h-7 rounded px-2 text-[12px]',
-      size === 'md' && 'h-8',
+      size === 'md' && 'h-9',
       size === 'lg' && 'h-10 px-4 text-[14px]',
       noOutline && 'focus:ring-0 focus:ring-offset-0',
       className
@@ -80,7 +80,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     if (to) {
       return (
         <Link to={to} className={classes} target={target}>
-          {isLoading && <Loader className={loaderClasses} />}
+          {isLoading && <LoaderCircle className={loaderClasses} />}
           {!isLoading && (
             <>
               {icon}
@@ -100,7 +100,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         className={classes}
         {...rest}
       >
-        {isLoading && <Loader className={loaderClasses} />}
+        {isLoading && <LoaderCircle className={loaderClasses} />}
         {!isLoading && (
           <>
             {icon}

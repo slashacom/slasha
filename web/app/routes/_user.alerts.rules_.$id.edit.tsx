@@ -9,6 +9,7 @@ import {
 } from '~/queries/alerts';
 import { getNodesOptions } from '~/queries/nodes';
 import { queryClient } from '~/utils/query-client';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
   await Promise.all([
@@ -33,20 +34,19 @@ export default function EditAlertRulePage() {
 
   if (!rule) {
     return (
-      <div className="p-8 text-sm text-text-secondary">
+      <div className="px-8 py-6 text-sm text-text-secondary">
         Alert rule not found.
       </div>
     );
   }
 
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h2 className="text-base font-semibold text-text">Edit rule</h2>
-        <p className="mt-1 text-sm text-text-tertiary">
-          Update {rule.name} and its delivery behavior.
-        </p>
-      </div>
+    <div className="px-8 py-6">
+      <PageHeader
+        className="mb-8"
+        title="Edit rule"
+        description={`Update ${rule.name} and its delivery behavior.`}
+      />
       <AlertRuleForm
         rule={rule}
         apps={appsData.apps.map((item) => item.app)}

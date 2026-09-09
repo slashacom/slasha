@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { GitBranch, Link as LinkIcon } from 'lucide-react';
+import { Page } from '~/components/global/page';
 import { Github } from '~/components/icons/github';
 import { Button } from '~/components/interface/button';
+import { FormActions } from '~/components/interface/form-actions';
 import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
 import { getCheckSlugOptions, useCreateApp } from '~/queries/apps';
@@ -22,6 +24,7 @@ import {
 import { queryClient } from '~/utils/query-client';
 import { useDebounce } from '~/hooks/use-debounce';
 import type { AppSource } from '~/models/app';
+import { PageHeader } from '~/components/interface/page-header';
 
 export function meta() {
   return [{ title: 'New app · slasha' }];
@@ -156,16 +159,14 @@ export default function NewApp() {
   const repositories = reposData?.repositories || [];
 
   return (
-    <div>
-      <div>
-        <h3 className="font-semibold text-text">New app</h3>
-        <p className="mt-2 text-sm text-text-secondary">
-          Give your application a name and choose how to deploy it.
-        </p>
-      </div>
+    <Page>
+      <PageHeader
+        title="New app"
+        description="Give your application a name and choose how to deploy it."
+      />
 
       <div className="mt-6">
-        <form onSubmit={handleSubmit} className="w-full max-w-md space-y-6">
+        <form onSubmit={handleSubmit} className="w-full max-w-xl space-y-6">
           <div className="space-y-1.5">
             <Label
               htmlFor="name"
@@ -270,7 +271,7 @@ export default function NewApp() {
                 </p>
               ) : installations.length === 0 ? (
                 <div className="text-center">
-                  <p className="mb-4 text-sm text-text-secondary">
+                  <p className="mb-4 text-balance text-sm text-text-secondary">
                     You haven't connected any GitHub accounts yet.
                   </p>
                   <Button
@@ -283,7 +284,7 @@ export default function NewApp() {
                 </div>
               ) : repositories.length === 0 ? (
                 <div className="text-center py-4">
-                  <p className="mb-4 text-sm text-text-secondary">
+                  <p className="mb-4 text-balance text-sm text-text-secondary">
                     No repositories found in your connected installations.
                   </p>
                   <button
@@ -417,29 +418,20 @@ export default function NewApp() {
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2 pt-4">
-            <Button
-              variant="ghost"
-              label="Cancel"
-              type="button"
-              onClick={() => navigate('/apps')}
-              isDisabled={createApp.isPending}
-            />
-            <Button
-              type="submit"
-              label="Create app"
-              isLoading={createApp.isPending}
-              isDisabled={
-                createApp.isPending ||
-                debouncedName !== name ||
-                slugChecking ||
-                (source === 'github' && !selectedRepository) ||
-                (source === 'git' && !gitUrl.trim())
-              }
-            />
-          </div>
+          <FormActions
+            submitLabel="Create app"
+            onCancel={() => navigate('/apps')}
+            isPending={createApp.isPending}
+            isDisabled={
+              debouncedName !== name ||
+              slugChecking ||
+              (source === 'github' && !selectedRepository) ||
+              (source === 'git' && !gitUrl.trim())
+            }
+            className="pt-4"
+          />
         </form>
       </div>
-    </div>
+    </Page>
   );
 }

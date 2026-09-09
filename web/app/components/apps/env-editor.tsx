@@ -3,8 +3,7 @@ import { Save, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '~/components/interface/button';
-import { HStack, VStack } from '~/components/interface/stacks';
-import { cn } from '~/utils/classname';
+import { HStack } from '~/components/interface/stacks';
 import {
   DotenvEditor,
   type SuggestionGroup,
@@ -15,6 +14,7 @@ import {
   parseDotEnv,
   serializeDotEnv,
 } from '~/components/apps/env-parsing';
+import { SettingsCard } from '~/components/interface/settings-card';
 
 export type EnvEditorProps = {
   title?: string;
@@ -127,60 +127,49 @@ export function EnvEditor(props: EnvEditorProps) {
     />
   );
 
+  const body = (
+    <>
+      <div className="min-w-0">{editor}</div>
+
+      {showFooter && (
+        <div className="flex items-center justify-between gap-3 border-t border-border bg-surface/50 px-6 py-4">
+          <div className="min-w-0 text-[12px] leading-5 text-text-tertiary">
+            {hint}
+          </div>
+          <HStack space={3}>
+            {onCancel && (
+              <Button
+                label={readOnly ? 'Close' : 'Cancel'}
+                variant="ghost"
+                onClick={onCancel}
+                size="sm"
+              />
+            )}
+            {!readOnly && (
+              <Button
+                label="Save Changes"
+                icon={<Save className="size-4" />}
+                onClick={handleSave}
+                isLoading={isSaving}
+                size="sm"
+              />
+            )}
+          </HStack>
+        </div>
+      )}
+    </>
+  );
+
+  if (isEmbedded) {
+    return <div className="min-w-0">{body}</div>;
+  }
+
   return (
-    <VStack space={isEmbedded ? 3 : 4} className="min-w-0">
-      <div
-        className={cn(
-          'min-w-0',
-          !isEmbedded &&
-            'overflow-hidden rounded-xl border border-border bg-surface/50 shadow-sm backdrop-blur-sm'
-        )}
-      >
-        {!isEmbedded && (
-          <div className="border-b border-border bg-surface/50 px-6 py-5">
-            <HStack space={3} alignItems="start">
-              <div className="rounded-lg bg-white/5 p-2 text-text-secondary">
-                <KeyRound className="size-5" />
-              </div>
-              <div>
-                <h3 className="text-[15px] font-semibold text-text">{title}</h3>
-                <p className="mt-0.5 text-[13px] text-text-tertiary">
-                  {description}
-                </p>
-              </div>
-            </HStack>
-          </div>
-        )}
-
-        <div className="min-w-0">{editor}</div>
-
-        {showFooter && (
-          <div className="flex items-center justify-between gap-3 border-t border-border bg-surface/50 px-6 py-4">
-            <div className="min-w-0 text-[12px] leading-5 text-text-tertiary">
-              {hint}
-            </div>
-            <HStack space={3}>
-              {onCancel && (
-                <Button
-                  label={readOnly ? 'Close' : 'Cancel'}
-                  variant="ghost"
-                  onClick={onCancel}
-                  size="sm"
-                />
-              )}
-              {!readOnly && (
-                <Button
-                  label="Save Changes"
-                  icon={<Save className="size-4" />}
-                  onClick={handleSave}
-                  isLoading={isSaving}
-                  size="sm"
-                />
-              )}
-            </HStack>
-          </div>
-        )}
-      </div>
-    </VStack>
+    <SettingsCard
+      icon={KeyRound}
+      title={title}
+      description={description}
+      body={body}
+    />
   );
 }

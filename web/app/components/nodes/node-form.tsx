@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Button } from '~/components/interface/button';
+import { FormActions } from '~/components/interface/form-actions';
 import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
 import { Textarea } from '~/components/interface/textarea';
@@ -110,7 +110,7 @@ export function NodeForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="w-full max-w-lg space-y-6">
+    <form onSubmit={handleSubmit} className="w-full max-w-xl space-y-6">
       <div className="space-y-1.5">
         <Label
           htmlFor="name"
@@ -220,21 +220,12 @@ export function NodeForm({
         </>
       )}
 
-      <div className="flex items-center justify-end gap-2 pt-4">
-        <Button
-          variant="ghost"
-          label="Cancel"
-          type="button"
-          onClick={onCancel}
-          isDisabled={isPending}
-        />
-        <Button
-          type="submit"
-          label={submitLabel}
-          isLoading={isPending}
-          isDisabled={isPending || !isFormValid()}
-        />
-      </div>
+      <FormActions
+        submitLabel={submitLabel}
+        onCancel={onCancel}
+        isPending={isPending}
+        isDisabled={!isFormValid()}
+      />
     </form>
   );
 }

@@ -1,11 +1,15 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Link, useNavigate, redirect } from 'react-router';
 import { PlusIcon, Server, HardDrive, Network } from 'lucide-react';
+import { Page } from '~/components/global/page';
 import { Button } from '~/components/interface/button';
 import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getNodesOptions } from '~/queries/nodes';
 import { NodeStatusBadge } from '~/components/interface/status-badge';
+import { EmptyPage } from '~/components/global/empty-page';
+import { PageHeader } from '~/components/interface/page-header';
+import { formatDate } from '~/utils/date';
 
 export async function clientLoader() {
   const me = await queryClient.ensureQueryData(getAuthMeOptions());
@@ -24,28 +28,30 @@ export default function NodesPage() {
   });
 
   return (
-    <div>
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="font-semibold text-text">Nodes</h3>
-          <p className="mt-2 text-sm text-text-secondary">
-            Manage the server nodes running Slasha apps.
-          </p>
-        </div>
-        <Button
-          label="Add Node"
-          icon={<PlusIcon className="size-4" />}
-          onClick={() => navigate('/nodes/new')}
-        />
-      </div>
+    <Page>
+      <PageHeader
+        title="Nodes"
+        description="Manage the server nodes running Slasha apps."
+        actions={
+          <Button
+            label="Add Node"
+            icon={<PlusIcon className="size-4" />}
+            onClick={() => navigate('/nodes/new')}
+          />
+        }
+      />
 
       {nodesData.nodes.length === 0 ? (
-        <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-border border-dashed p-12 text-center bg-surface/5">
-          <Server className="size-10 text-text-tertiary mb-3 animate-pulse" />
-          <p className="text-sm font-medium text-text-secondary">
-            No nodes configured
-          </p>
-        </div>
+        <EmptyPage
+          className="mt-8"
+          icon={Server}
+          size="lg"
+          title="No nodes configured."
+          subtitle="Nodes are the servers your apps run on. Add one to start scheduling deployments onto it."
+          actionLabel="Add node"
+          actionIcon={<PlusIcon className="size-3.5" />}
+          actionTo="/nodes/new"
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mt-6">
           {[...nodesData.nodes]
@@ -109,7 +115,7 @@ export default function NodesPage() {
                     <div className="flex items-center justify-between">
                       <span className="text-text-tertiary">Added On</span>
                       <span className="text-text-secondary">
-                        {new Date(node.created_at).toLocaleDateString()}
+                        {formatDate(node.created_at)}
                       </span>
                     </div>
                   </div>
@@ -118,6 +124,6 @@ export default function NodesPage() {
             ))}
         </div>
       )}
-    </div>
+    </Page>
   );
 }

@@ -1,17 +1,17 @@
 import { useNavigate } from 'react-router';
 import { AlertChannelForm } from '~/components/alerts/alert-channel-form';
+import { PageHeader } from '~/components/interface/page-header';
 
 export default function NewAlertChannelPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h2 className="text-base font-semibold text-text">New channel</h2>
-        <p className="mt-1 text-sm text-text-tertiary">
-          Add a reusable destination for alert notifications.
-        </p>
-      </div>
+    <div className="px-8 py-6">
+      <PageHeader
+        className="mb-8"
+        title="New channel"
+        description="Add a reusable destination for alert notifications."
+      />
       <AlertChannelForm
         onCancel={() => navigate('/alerts/channels')}
         onSaved={() => navigate('/alerts/channels')}

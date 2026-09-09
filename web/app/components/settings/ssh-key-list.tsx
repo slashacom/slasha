@@ -6,30 +6,19 @@ import { Table } from '~/components/interface/table';
 
 type SshKeyListProps = {
   keys: SshKey[];
-  isLoading: boolean;
   onDelete: (key: SshKey) => void;
   onAddFirst: () => void;
 };
 
 export function SshKeyList(props: SshKeyListProps) {
-  const { keys, isLoading, onDelete, onAddFirst } = props;
+  const { keys, onDelete, onAddFirst } = props;
   return (
     <div className="mt-2 min-w-0 flex-1 overflow-x-auto">
-      {isLoading ? (
-        <div className="space-y-4">
-          {[...Array(3)].map((_, i) => (
-            <div
-              key={i}
-              className="h-10 w-full animate-pulse rounded border border-border bg-surface/50"
-            />
-          ))}
-        </div>
-      ) : keys.length === 0 ? (
+      {keys.length === 0 ? (
         <EmptyPage
-          dashed
           icon={KeyIcon}
-          title="No SSH keys found"
-          subtitle="Add a public key to access your applications via Git over SSH."
+          title="No SSH keys yet."
+          subtitle="Add a public key to push code and reach your applications over Git via SSH."
           actionLabel="Add your first key"
           onAction={onAddFirst}
         />

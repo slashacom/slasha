@@ -14,11 +14,18 @@ import {
   X,
   Copy,
   Check,
+  ChevronDown,
 } from 'lucide-react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '~/components/interface/dropdown-menu';
 import { getAuthToken } from '~/utils/jwt';
 import { cn } from '~/utils/classname';
-import { parseUTC } from '~/utils/format';
+import { parseUTC } from '~/utils/date';
 import { Terminal } from 'lucide-react';
 import type {
   LogRecord,
@@ -344,6 +351,18 @@ export function LogStream(props: LogStreamProps) {
   selectedPrefixRef.current = selectedPrefix;
 
   const allowedPrefixes = ALLOWED_PREFIXES_BY_KIND[resourceKind];
+  const prefixOptions = useMemo(() => {
+    const seen = new Set(
+      allowedPrefixes.map((prefix) => formatLogPrefix(prefix))
+    );
+    for (const entry of state.logs) {
+      const formatted = formatLogPrefix(entry.prefix);
+      if (formatted) {
+        seen.add(formatted);
+      }
+    }
+    return [...seen].sort();
+  }, [allowedPrefixes, state.logs]);
 
   const fetchLogs = useCallback(
     async (params: {
@@ -520,34 +539,40 @@ export function LogStream(props: LogStreamProps) {
             ) : null}
           </div>
 
-          <div className="relative flex items-center">
-            <input
-              type="text"
-              value={selectedPrefix === 'all' ? '' : selectedPrefix}
-              onChange={(e) =>
-                setSelectedPrefix(e.target.value.trim() || 'all')
-              }
-              placeholder="Prefix (e.g. web.0)"
-              list="log-prefix-suggestions"
-              className="h-7 w-32 rounded border border-border bg-surface pl-2 pr-6 text-[10px] font-medium text-text placeholder:text-text-tertiary focus:border-text-secondary focus:outline-none"
-            />
-            <datalist id="log-prefix-suggestions">
-              {allowedPrefixes.map((p) => {
-                const formatted = formatLogPrefix(p);
-                return <option key={formatted} value={formatted} />;
-              })}
-            </datalist>
-            {selectedPrefix !== 'all' ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                onClick={() => setSelectedPrefix('all')}
-                title="Clear prefix filter"
-                className="absolute right-1.5 text-text-tertiary hover:text-text"
+                className="flex h-7 cursor-pointer items-center gap-1.5 rounded border border-border bg-surface px-2 text-[11px] font-medium text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text"
               >
-                <X className="size-3" />
+                {selectedPrefix === 'all' ? 'All processes' : selectedPrefix}
+                <ChevronDown className="size-3 text-text-tertiary" />
               </button>
-            ) : null}
-          </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setSelectedPrefix('all')}>
+                {selectedPrefix === 'all' ? (
+                  <Check className="size-3.5" />
+                ) : (
+                  <span className="size-3.5" />
+                )}
+                All processes
+              </DropdownMenuItem>
+              {prefixOptions.map((option) => (
+                <DropdownMenuItem
+                  key={option}
+                  onClick={() => setSelectedPrefix(option)}
+                >
+                  {selectedPrefix === option ? (
+                    <Check className="size-3.5" />
+                  ) : (
+                    <span className="size-3.5" />
+                  )}
+                  {option}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <div className="flex items-center gap-1 border-l border-border pl-2">
             <button
@@ -606,7 +631,7 @@ export function LogStream(props: LogStreamProps) {
             type="button"
             onClick={scrollToBottom}
             title="Scroll to latest"
-            className="absolute bottom-6 right-8 flex size-8 items-center justify-center rounded-full border border-border bg-surface text-text-tertiary shadow-xl backdrop-blur transition-all hover:bg-white/[0.06] hover:text-text z-10"
+            className="absolute bottom-6 right-8 z-10 flex size-8 items-center justify-center rounded-full border border-border bg-surface text-text-tertiary shadow-none backdrop-blur transition-all hover:bg-white/[0.06] hover:text-text"
           >
             <ArrowDown className="size-4" />
           </button>

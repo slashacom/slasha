@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Database, Server, Plus } from 'lucide-react';
+import { Database, Plus } from 'lucide-react';
 import { getAppServicesOptions } from '~/queries/services';
 import { Button } from '~/components/interface/button';
-import { SectionHeader } from '~/components/interface/section-header';
+import { TabActions } from '~/components/interface/tab-actions';
 import { EmptyPage } from '~/components/global/empty-page';
 import { VStack } from '~/components/interface/stacks';
 import { ServiceRow } from '~/components/apps/service-row';
@@ -31,7 +31,7 @@ export function ServicesView(props: ServicesViewProps) {
 
   if (isLoading) {
     return (
-      <VStack className="p-8" space={4}>
+      <VStack className="px-8 py-6" space={4}>
         <div className="h-4 w-32 animate-pulse rounded bg-white/[0.06]" />
         <VStack space={2}>
           {[1, 2].map((i) => (
@@ -47,26 +47,23 @@ export function ServicesView(props: ServicesViewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <SectionHeader
-        icon={Server}
-        title="Services"
-        actions={
-          <Button
-            label="Provision Service"
-            icon={<Plus className="size-3.5" />}
-            size="sm"
-            onClick={() => setProvisionModalOpen(true)}
-          />
-        }
-      />
+      <TabActions>
+        <Button
+          label="Provision service"
+          icon={<Plus className="size-3.5" />}
+          size="sm"
+          onClick={() => setProvisionModalOpen(true)}
+        />
+      </TabActions>
 
       {services.length === 0 ? (
         <EmptyPage
-          className="flex-1"
+          className="mx-8 my-6 flex-1"
           icon={Database}
-          title="No services running"
-          subtitle="Provision databases and auxiliary services to attach them to your application."
-          actionLabel="Provision First Service"
+          title="No services running."
+          subtitle="Provision a database, cache, or queue and attach it to this app with its credentials wired in."
+          actionLabel="Provision service"
+          actionIcon={<Plus className="size-3.5" />}
           onAction={() => setProvisionModalOpen(true)}
         />
       ) : (

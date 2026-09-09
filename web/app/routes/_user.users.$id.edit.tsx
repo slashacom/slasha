@@ -5,7 +5,9 @@ import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getUserOptions, useUpdateUser } from '~/queries/users';
 import { getAppsOptions } from '~/queries/apps';
+import { Page } from '~/components/global/page';
 import { UserForm } from '~/components/users/user-form';
+import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader(args: { params: { id: string } }) {
   const { params } = args;
@@ -66,13 +68,15 @@ export default function EditUser() {
   const apps = appsData.apps.map((item) => item.app);
 
   return (
-    <div>
-      <div>
-        <h3 className="font-semibold text-text">Edit user</h3>
-        <p className="mt-2 text-sm text-text-secondary">
-          Update details for <span className="text-text">{user.email}</span>.
-        </p>
-      </div>
+    <Page>
+      <PageHeader
+        title="Edit user"
+        description={
+          <>
+            Update details for <span className="text-text">{user.email}</span>.
+          </>
+        }
+      />
 
       <div className="mt-6">
         <UserForm
@@ -85,6 +89,6 @@ export default function EditUser() {
           submitLabel="Save changes"
         />
       </div>
-    </div>
+    </Page>
   );
 }

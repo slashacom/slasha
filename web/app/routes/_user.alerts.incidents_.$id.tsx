@@ -1,18 +1,23 @@
 import { useState } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { ArrowLeft, ShieldAlert } from 'lucide-react';
+import { Bell, Clock, Gauge } from 'lucide-react';
 import { useParams } from 'react-router';
 import { AlertCard } from '~/components/alerts/alert-card';
-import { AlertDetailStat } from '~/components/alerts/alert-detail-stat';
+import {
+  IncidentCard,
+  IncidentMeta,
+  IncidentRow,
+  IncidentTimeline,
+} from '~/components/alerts/incident-meta';
 import { AlertEmptyState } from '~/components/alerts/alert-empty-state';
 import { AlertNotificationDialog } from '~/components/alerts/alert-notification-dialog';
 import { AlertNotificationPreview } from '~/components/alerts/alert-notification-preview';
-import { AlertStat } from '~/components/alerts/alert-stat';
 import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { configSummary } from '~/components/alerts/alert-definitions';
 import { formatNotificationKind } from '~/components/alerts/notification-kind';
 import { Button } from '~/components/interface/button';
-import { SectionHeader } from '~/components/interface/section-header';
+import { PageHeader } from '~/components/interface/page-header';
+import { HStack, VStack } from '~/components/interface/stacks';
 import { Table } from '~/components/interface/table';
 import type { AlertNotification } from '~/models/alerts';
 import { getAppsOptions } from '~/queries/apps';
@@ -20,7 +25,9 @@ import {
   getAlertIncidentNotificationsOptions,
   getAlertRulesOptions,
 } from '~/queries/alerts';
-import { formatDate, formatMetric } from '~/utils/format';
+import { formatDateTime, formatDuration } from '~/utils/date';
+import { titleCase } from '~/utils/format';
+import { incidentValues } from '~/components/alerts/incident-values';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader(args: { params: { id: string } }) {
@@ -49,137 +56,73 @@ export default function AlertIncidentDetailPage() {
   const apps = appsData.apps.map((item) => item.app);
   const ruleName = rule?.name ?? 'Unknown rule';
   const ruleCondition = rule ? configSummary(rule, apps) : null;
+  const values = incidentValues(incident, rule);
+  const latestNotification = notifications[notifications.length - 1];
 
   return (
-    <div className="space-y-8 p-8">
-      <SectionHeader
-        icon={ShieldAlert}
-        title={ruleName}
-        description={ruleCondition ?? undefined}
-        actions={
-          <>
-            <Button
-              to="/alerts"
-              label="Back to alerts"
-              variant="ghost"
-              icon={<ArrowLeft className="size-4" />}
-            />
-            <Button label="Refresh" variant="ghost" onClick={() => refetch()} />
-          </>
-        }
-        className="h-auto border-0 px-0"
-      />
-
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-        <AlertStat
-          label="Status"
-          value={
+    <div className="space-y-6 px-8 py-6">
+      <PageHeader
+        title={
+          <HStack space={3}>
+            <span>{ruleName}</span>
             <AlertStatusBadge
               state={incident.status === 'open' ? 'warn' : 'ok'}
             >
-              {incident.status}
+              {titleCase(incident.status)}
             </AlertStatusBadge>
-          }
-          valueClassName="mt-2"
-        />
-        <AlertStat
-          label="Opened"
-          value={formatDate(incident.opened_at)}
-          mono={false}
-        />
-        <AlertStat
-          label="Last seen"
-          value={formatDate(incident.last_notified_at)}
-          mono={false}
-        />
-        <AlertStat
-          label="Resolved"
-          value={formatDate(incident.resolved_at)}
-          mono={false}
-        />
-      </div>
+          </HStack>
+        }
+        description={ruleCondition ?? undefined}
+        actions={
+          <Button
+            label="Refresh"
+            variant="ghost"
+            size="sm"
+            onClick={() => refetch()}
+          />
+        }
+      />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <AlertCard>
-          <div className="mb-4">
-            <h3 className="text-xs font-medium text-text-tertiary">
-              Incident details
-            </h3>
-            <p className="mt-1 text-[11px] text-text-tertiary">
-              Threshold and routing metadata for this alert entry.
-            </p>
-          </div>
+      <IncidentMeta>
+        <IncidentCard icon={Clock} title="Timeline">
+          <IncidentTimeline
+            openedAt={formatDateTime(incident.opened_at)}
+            resolvedAt={
+              incident.resolved_at ? formatDateTime(incident.resolved_at) : null
+            }
+            duration={formatDuration(incident.opened_at, incident.resolved_at)}
+          />
+        </IncidentCard>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <AlertDetailStat label="Rule" value={ruleName} />
-            {ruleCondition ? (
-              <AlertDetailStat label="Condition" value={ruleCondition} />
-            ) : null}
-            <AlertDetailStat
-              label="Trigger value"
-              value={formatMetric(incident.trigger_value)}
-            />
-            <AlertDetailStat
-              label="Current value"
-              value={formatMetric(incident.current_value)}
-            />
-            <AlertDetailStat
-              label="Recovery value"
-              value={formatMetric(incident.recovery_value)}
-            />
-            <AlertDetailStat
-              label="Threshold value"
-              value={formatMetric(incident.threshold_value)}
-            />
-          </div>
-        </AlertCard>
+        <IncidentCard icon={Gauge} title="Measurements">
+          <VStack space={2}>
+            {values.map((entry) => (
+              <IncidentRow key={entry.label} label={entry.label}>
+                {entry.value}
+              </IncidentRow>
+            ))}
+          </VStack>
+        </IncidentCard>
 
-        <AlertCard>
-          <div className="mb-4">
-            <h3 className="text-xs font-medium text-text-tertiary">
-              Trigger summary
-            </h3>
-            <p className="mt-1 text-[11px] text-text-tertiary">
-              Every recorded trigger, re-notify, and resolution event for this
-              incident.
-            </p>
-          </div>
+        <IncidentCard icon={Bell} title="Notifications">
+          <VStack space={2}>
+            <IncidentRow label="Sent">{notifications.length}</IncidentRow>
+            <IncidentRow label="Latest">
+              {latestNotification
+                ? formatNotificationKind(latestNotification.kind)
+                : 'None'}
+            </IncidentRow>
+            <IncidentRow label="Last sent">
+              {formatDateTime(latestNotification?.created_at)}
+            </IncidentRow>
+          </VStack>
+        </IncidentCard>
+      </IncidentMeta>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <AlertDetailStat
-              label="Trigger count"
-              value={String(notifications.length)}
-            />
-            <AlertDetailStat
-              label="Latest event"
-              value={
-                notifications[notifications.length - 1]
-                  ? formatNotificationKind(
-                      notifications[notifications.length - 1].kind
-                    )
-                  : '—'
-              }
-            />
-            <AlertDetailStat
-              label="Opened"
-              value={formatDate(incident.opened_at)}
-            />
-            <AlertDetailStat
-              label="Resolved"
-              value={formatDate(incident.resolved_at)}
-            />
-          </div>
-        </AlertCard>
-      </div>
-
-      <AlertCard>
-        <div className="mb-5">
-          <h3 className="text-xs font-medium text-text-tertiary">Triggers</h3>
-          <p className="mt-1 text-[11px] text-text-tertiary">
-            Click a trigger entry to inspect the full message and payload.
-          </p>
-        </div>
-
+      <AlertCard
+        title="Triggers"
+        description="Click a trigger entry to inspect the full message and payload."
+      >
         {notifications.length === 0 ? (
           <AlertEmptyState type="notifications" />
         ) : (
@@ -206,7 +149,7 @@ export default function AlertIncidentDetailPage() {
                     />
                   </td>
                   <td className="py-4 text-text-secondary">
-                    {formatDate(notification.created_at)}
+                    {formatDateTime(notification.created_at)}
                   </td>
                   <td className="py-4 text-right">
                     <Button

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Plus, Webhook, Send, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -7,8 +6,7 @@ import { AlertStatusBadge } from '~/components/alerts/alert-status-badge';
 import { Button } from '~/components/interface/button';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { EmptyPage } from '~/components/global/empty-page';
-import { SectionHeader } from '~/components/interface/section-header';
-import { Table } from '~/components/interface/table';
+import { Table, TableRow } from '~/components/interface/table';
 import type { AlertChannel } from '~/models/alerts';
 import {
   getAlertChannelsOptions,
@@ -16,8 +14,11 @@ import {
   useTestAlertChannel,
 } from '~/queries/alerts';
 import { channelSummary } from '~/components/alerts/alert-definitions';
-import { formatDate } from '~/utils/format';
+import { formatDateTime } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
+import { Page } from '~/components/global/page';
+import { TabActions } from '~/components/interface/tab-actions';
+import { TableRowActions } from '~/components/interface/table-row-actions';
 
 export async function clientLoader() {
   await queryClient.ensureQueryData(getAlertChannelsOptions());
@@ -25,7 +26,6 @@ export async function clientLoader() {
 }
 
 export default function AlertsChannelsPage() {
-  const navigate = useNavigate();
   const { data } = useSuspenseQuery(getAlertChannelsOptions());
   const deleteChannel = useDeleteAlertChannel();
   const testChannel = useTestAlertChannel();
@@ -34,107 +34,97 @@ export default function AlertsChannelsPage() {
   );
 
   return (
-    <div className="p-8">
-      <SectionHeader
-        icon={Webhook}
-        title="Channels"
-        description="Manage reusable destinations for alert delivery."
-        actions={
-          <Button
-            to="/alerts/channels/new"
-            label="New channel"
-            icon={<Plus className="size-4" />}
-          />
-        }
-        className="h-auto border-0 px-0"
-      />
+    <Page>
+      <TabActions>
+        <Button
+          to="/alerts/channels/new"
+          label="New channel"
+          size="sm"
+          icon={<Plus className="size-3.5" />}
+        />
+      </TabActions>
 
-      <div className="mt-8">
+      <p className="max-w-prose text-pretty text-sm text-text-secondary">
+        Reusable destinations that alert rules deliver to.
+      </p>
+
+      <div className="mt-6">
         {data.channels.length === 0 ? (
           <EmptyPage
             icon={Webhook}
-            title="No channels yet."
-            subtitle="Create a delivery channel, then attach it to an alert rule."
+            size="lg"
+            title="No delivery channels yet."
+            subtitle="A channel is where alerts land, such as a Slack workspace, a webhook or an inbox. Create one, then attach it to a rule."
             actionLabel="Create channel"
-            actionIcon={<Plus className="size-4" />}
-            onAction={() => navigate('/alerts/channels/new')}
-            className="min-h-[320px]"
+            actionIcon={<Plus className="size-3.5" />}
+            actionTo="/alerts/channels/new"
           />
         ) : (
-          <div className="rounded-lg border border-border bg-surface p-6">
-            <div className="overflow-x-auto">
-              <Table
-                columns={[
-                  'Name',
-                  'Kind',
-                  'Status',
-                  'Updated',
-                  { label: '', align: 'right' },
-                ]}
-              >
-                {data.channels.map((channel) => (
-                  <tr key={channel.id}>
-                    <td className="py-3 pr-4">
-                      <div className="font-medium text-text">
-                        {channel.name}
-                      </div>
-                      <div className="mt-1 text-xs text-text-tertiary">
-                        {channelSummary(channel)}
-                      </div>
-                    </td>
-                    <td className="py-3 pr-4 capitalize text-text-secondary">
-                      {channel.config.kind}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <AlertStatusBadge
-                        state={channel.enabled ? 'ok' : 'muted'}
-                      >
-                        {channel.enabled ? 'Enabled' : 'Disabled'}
-                      </AlertStatusBadge>
-                    </td>
-                    <td className="py-3 pr-4 text-text-secondary">
-                      {formatDate(channel.updated_at)}
-                    </td>
-                    <td className="py-3 text-right">
-                      <div className="flex items-center justify-end gap-3">
-                        <button
-                          type="button"
-                          title="Test channel"
-                          disabled={testChannel.isPending}
-                          onClick={async () => {
-                            const promise = testChannel.mutateAsync(channel.id);
-                            toast.promise(promise, {
+          <div className="-mx-8 overflow-x-auto">
+            <Table
+              columns={[
+                'Name',
+                'Kind',
+                'Status',
+                'Updated',
+                { label: '', align: 'right' },
+              ]}
+            >
+              {data.channels.map((channel) => (
+                <TableRow
+                  key={channel.id}
+                  to={`/alerts/channels/${channel.id}/edit`}
+                >
+                  <td className="py-3 pr-4">
+                    <div className="font-medium text-text">{channel.name}</div>
+                    <div className="mt-1 text-xs text-text-tertiary">
+                      {channelSummary(channel)}
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4 capitalize text-text-secondary">
+                    {channel.config.kind}
+                  </td>
+                  <td className="py-3 pr-4">
+                    <AlertStatusBadge state={channel.enabled ? 'ok' : 'muted'}>
+                      {channel.enabled ? 'Enabled' : 'Disabled'}
+                    </AlertStatusBadge>
+                  </td>
+                  <td className="py-3 pr-4 text-text-secondary">
+                    {formatDateTime(channel.updated_at)}
+                  </td>
+                  <td className="py-3 text-right">
+                    <TableRowActions
+                      actions={[
+                        {
+                          label: 'Test channel',
+                          icon: Send,
+                          isDisabled: testChannel.isPending,
+                          onClick: () => {
+                            toast.promise(testChannel.mutateAsync(channel.id), {
                               loading: 'Sending test message...',
                               success: 'Test message sent.',
                               error: (error) =>
                                 error.message || 'Failed to send test message.',
                             });
-                          }}
-                          className="text-text-secondary transition-colors hover:text-text disabled:opacity-50"
-                        >
-                          <Send className="size-4" />
-                        </button>
-                        <Link
-                          to={`/alerts/channels/${channel.id}/edit`}
-                          className="text-text-secondary transition-colors hover:text-text"
-                          title="Edit channel"
-                        >
-                          <Pencil className="size-4" />
-                        </Link>
-                        <button
-                          type="button"
-                          title="Delete channel"
-                          onClick={() => setChannelToDelete(channel)}
-                          className="text-red-400/80 transition-colors hover:text-red-400"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </Table>
-            </div>
+                          },
+                        },
+                        {
+                          label: 'Edit channel',
+                          icon: Pencil,
+                          to: `/alerts/channels/${channel.id}/edit`,
+                        },
+                        {
+                          label: 'Delete channel',
+                          icon: Trash2,
+                          isDestructive: true,
+                          onClick: () => setChannelToDelete(channel),
+                        },
+                      ]}
+                    />
+                  </td>
+                </TableRow>
+              ))}
+            </Table>
           </div>
         )}
       </div>
@@ -168,6 +158,6 @@ export default function AlertsChannelsPage() {
           }
         }}
       />
-    </div>
+    </Page>
   );
 }

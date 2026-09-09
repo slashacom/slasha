@@ -1,8 +1,10 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { MailIcon, KeyRoundIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '~/components/interface/button';
+import { Page } from '~/components/global/page';
+import { FormActions } from '~/components/interface/form-actions';
 import { Input } from '~/components/interface/input';
+import { PasswordInput } from '~/components/interface/password-input';
 import { Label } from '~/components/interface/label';
 import { VStack } from '~/components/interface/stacks';
 import { getAuthMeOptions, useUpdateProfile } from '~/queries/auth';
@@ -63,15 +65,12 @@ export default function AccountSettings() {
   };
 
   return (
-    <div className="space-y-6 max-w-xl">
-      <div>
-        <h3 className="font-semibold text-text">Account Settings</h3>
-        <p className="mt-2 text-sm text-text-secondary">
-          Manage your account profile and security settings.
-        </p>
-      </div>
+    <Page className="space-y-6">
+      <p className="max-w-prose text-pretty text-sm text-text-secondary">
+        Your profile and sign-in credentials.
+      </p>
 
-      <form onSubmit={handleSubmit} className="space-y-6 max-w-md">
+      <form onSubmit={handleSubmit} className="max-w-xl space-y-6">
         <VStack space={4}>
           <VStack space={2}>
             <Label
@@ -105,10 +104,9 @@ export default function AccountSettings() {
             </Label>
             <div className="relative">
               <KeyRoundIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
-              <Input
+              <PasswordInput
                 id="newPassword"
                 name="newPassword"
-                type="password"
                 pattern=".{8,}"
                 title="8 characters minimum"
                 className="h-11 border-border bg-surface pl-9 text-text placeholder:text-text-tertiary transition-all focus-visible:border-text-secondary focus-visible:ring-0"
@@ -130,10 +128,9 @@ export default function AccountSettings() {
             </Label>
             <div className="relative">
               <KeyRoundIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
-              <Input
+              <PasswordInput
                 id="confirmNewPassword"
                 name="confirmNewPassword"
-                type="password"
                 className="h-11 border-border bg-surface pl-9 text-text placeholder:text-text-tertiary transition-all focus-visible:border-text-secondary focus-visible:ring-0"
                 placeholder="Confirm new password"
                 autoComplete="new-password"
@@ -152,10 +149,9 @@ export default function AccountSettings() {
             </Label>
             <div className="relative">
               <KeyRoundIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
-              <Input
+              <PasswordInput
                 id="currentPassword"
                 name="currentPassword"
-                type="password"
                 required
                 className="h-11 border-border bg-surface pl-9 text-text placeholder:text-text-tertiary transition-all focus-visible:border-text-secondary focus-visible:ring-0"
                 placeholder="Required to save changes"
@@ -164,17 +160,12 @@ export default function AccountSettings() {
             </div>
           </VStack>
 
-          <div className="flex justify-start pt-2">
-            <Button
-              type="submit"
-              isLoading={updateProfile.isPending}
-              isDisabled={updateProfile.isPending}
-              label="Save changes"
-              className="h-11 px-6 justify-center bg-white text-bg hover:bg-white/90 focus:ring-0 focus:ring-offset-0 font-medium"
-            />
-          </div>
+          <FormActions
+            submitLabel="Save changes"
+            isPending={updateProfile.isPending}
+          />
         </VStack>
       </form>
-    </div>
+    </Page>
   );
 }

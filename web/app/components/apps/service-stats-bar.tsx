@@ -1,8 +1,9 @@
-import { Clock, Cpu, HardDrive, MemoryStick } from 'lucide-react';
+import { Activity, Clock, Cpu, HardDrive, MemoryStick } from 'lucide-react';
 import type { Service } from '~/models/service';
 import type { ServiceStats } from '~/queries/services';
 import { HStack } from '~/components/interface/stacks';
-import { formatFileSize, formatUptime } from '~/utils/format';
+import { formatFileSize } from '~/utils/format';
+import { formatUptime } from '~/utils/date';
 import { cn } from '~/utils/classname';
 
 type StatTileProps = {
@@ -77,6 +78,27 @@ export function ServiceStatsBar(props: ServiceStatsBarProps) {
     memUsed != null && memLimit != null && memLimit > 0
       ? memUsed / memLimit
       : null;
+
+  const hasStats =
+    (isRunning && stats?.started_at != null) ||
+    stats?.cpu_percent != null ||
+    memUsed != null ||
+    stats?.disk_bytes != null;
+
+  if (!hasStats) {
+    return (
+      <HStack
+        space={2}
+        className="rounded-xl border border-border bg-surface/50 px-4 py-3"
+      >
+        <Activity className="size-3.5 shrink-0 text-text-tertiary" />
+        <span className="text-[12px] text-text-tertiary">
+          No live usage yet. Docker reports uptime, CPU, memory and disk once
+          the container has been running for a few seconds.
+        </span>
+      </HStack>
+    );
+  }
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

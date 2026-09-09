@@ -9,7 +9,7 @@ import {
 } from '~/queries/storage';
 import { HStack } from '~/components/interface/stacks';
 import { cn } from '~/utils/classname';
-import { formatRelativeTime } from '~/utils/format';
+import { formatRelativeTime } from '~/utils/date';
 
 type BackupStatusStripProps = {
   appSlug: string;
@@ -33,12 +33,12 @@ function deriveView(status: BackupStatus, health: ReplicaHealth | undefined) {
   }
   return {
     dot: 'bg-text-tertiary',
-    label: 'Idle — deploy to start replicating',
+    label: 'Idle. Deploy to start replicating',
   };
 }
 
 // The live status/probe polling lives here, in the leaf, so each refresh only
-// re-renders this strip — not the surrounding backup form and card shell.
+// re-renders this strip, not the surrounding backup form and card shell.
 export function BackupStatusStrip(props: BackupStatusStripProps) {
   const { appSlug } = props;
 

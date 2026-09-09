@@ -1,8 +1,7 @@
 import { useNavigate, useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { ArrowLeft, Clock } from 'lucide-react';
-import { Button } from '~/components/interface/button';
-import { SectionHeader } from '~/components/interface/section-header';
+import { Page } from '~/components/global/page';
+import { PageHeader } from '~/components/interface/page-header';
 import { CronForm } from '~/components/apps/cron-form';
 import { getCronsOptions } from '~/queries/crons';
 import { queryClient } from '~/utils/query-client';
@@ -20,26 +19,17 @@ export default function EditCronPage() {
 
   if (!cron) {
     return (
-      <div className="p-8 text-sm text-text-secondary">Cron job not found.</div>
+      <Page>
+        <p className="text-sm text-text-secondary">Cron job not found.</p>
+      </Page>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
-      <SectionHeader
-        icon={Clock}
-        title={`Edit ${cron.name}`}
-        actions={
-          <Button
-            to={`/apps/${slug}/crons/${cron.id}`}
-            label="Back"
-            variant="ghost"
-            icon={<ArrowLeft className="size-4" />}
-          />
-        }
-      />
+    <Page className="min-h-0 flex-1 overflow-y-auto">
+      <PageHeader title={`Edit ${cron.name}`} />
 
-      <div className="p-8">
+      <div className="mt-6">
         <CronForm
           appSlug={slug!}
           cron={cron}
@@ -47,6 +37,6 @@ export default function EditCronPage() {
           onSaved={() => navigate(`/apps/${slug}/crons/${cron.id}`)}
         />
       </div>
-    </div>
+    </Page>
   );
 }

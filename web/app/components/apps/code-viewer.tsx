@@ -183,7 +183,7 @@ export function CodeViewer(props: CodeViewerProps) {
         {data.is_binary ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-text-tertiary">
             <FileWarning className="size-6" />
-            <p className="text-xs">Binary file — cannot be displayed</p>
+            <p className="text-xs">Binary file cannot be displayed</p>
           </div>
         ) : highlightedHtml ? (
           <div

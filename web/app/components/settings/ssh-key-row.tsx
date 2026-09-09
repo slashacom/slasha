@@ -1,5 +1,7 @@
 import { KeyIcon, Trash2Icon } from 'lucide-react';
 import type { SshKey } from '~/models/ssh-key';
+import { formatDate } from '~/utils/date';
+import { TableRowActions } from '~/components/interface/table-row-actions';
 
 type SshKeyRowProps = {
   sshKey: SshKey;
@@ -22,16 +24,19 @@ export function SshKeyRow(props: SshKeyRowProps) {
         </code>
       </td>
       <td className="py-4 pr-4 align-top text-text-tertiary">
-        {new Date(sshKey.created_at).toLocaleDateString()}
+        {formatDate(sshKey.created_at)}
       </td>
       <td className="py-4 text-right align-top">
-        <button
-          onClick={() => onDelete(sshKey)}
-          className="text-text-tertiary transition-colors hover:text-red-500"
-          title="Delete key"
-        >
-          <Trash2Icon className="size-4" />
-        </button>
+        <TableRowActions
+          actions={[
+            {
+              label: 'Delete key',
+              icon: Trash2Icon,
+              isDestructive: true,
+              onClick: () => onDelete(sshKey),
+            },
+          ]}
+        />
       </td>
     </tr>
   );

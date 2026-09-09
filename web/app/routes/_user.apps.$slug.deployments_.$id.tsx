@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
-import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
-import { ArrowLeft, Check, ChevronRight, Copy, Terminal } from 'lucide-react';
+import { useParams } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
+import { Check, Copy, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 import { getDeploymentOptions } from '~/queries/deployments';
 import { getAppOptions } from '~/queries/apps';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
 import { LogStream } from '~/components/global/log-stream';
-import { formatRelativeTime, parseUTC } from '~/utils/format';
+import { formatRelativeTime, parseUTC } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
 
 type CommitButtonProps = {
@@ -32,7 +32,7 @@ function CommitButton(props: CommitButtonProps) {
     <button
       type="button"
       onClick={handleCopy}
-      title={`${sha} — click to copy`}
+      title={`Copy ${sha}`}
       className="group inline-flex items-center gap-1.5 rounded font-mono text-[12px] text-text-tertiary transition-colors hover:text-text"
     >
       {sha.slice(0, 7)}
@@ -88,9 +88,7 @@ function MetaItem(props: MetaItemProps) {
 
 export default function DeploymentDetailPage() {
   const { slug, id } = useParams();
-  const navigate = useNavigate();
 
-  const { data: appData } = useSuspenseQuery(getAppOptions(slug!));
   const { data: deploymentData } = useQuery({
     ...getDeploymentOptions(slug!, id!),
     refetchInterval: (query) => {
@@ -99,7 +97,6 @@ export default function DeploymentDetailPage() {
     },
   });
 
-  const app = appData.app;
   const deployment = deploymentData?.deployment;
   if (!deployment) {
     return null;
@@ -111,36 +108,7 @@ export default function DeploymentDetailPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
-      <HStack
-        justifyContent="between"
-        alignItems="center"
-        className="shrink-0 gap-4 border-b border-border bg-surface/30 px-8 py-3"
-      >
-        <HStack space={3} alignItems="center">
-          <button
-            onClick={() => navigate(`/apps/${slug}/deployments`)}
-            className="group flex size-7 items-center justify-center rounded border border-border bg-surface transition-all hover:bg-white/[0.06]"
-          >
-            <ArrowLeft className="size-3.5 text-text-tertiary group-hover:text-text" />
-          </button>
-          <HStack space={2} alignItems="center">
-            <span className="text-[13px] font-medium text-text">
-              {app.name}
-            </span>
-            <ChevronRight className="size-3 text-text-tertiary" />
-            <CommitButton sha={deployment.commit_sha} />
-          </HStack>
-        </HStack>
-
-        <HStack space={3} alignItems="center">
-          <StatusBadge status={deployment.status} />
-          <span className="text-[11px] text-text-tertiary">
-            Deployed {formatRelativeTime(deployment.created_at)}
-          </span>
-        </HStack>
-      </HStack>
-
-      <div className="flex min-h-0 flex-1 flex-col gap-6 p-8">
+      <div className="flex min-h-0 flex-1 flex-col gap-6 px-8 py-6">
         <div className="grid grid-cols-2 gap-6 rounded-lg border border-border bg-surface/30 p-6 sm:grid-cols-4">
           <MetaItem label="Commit">
             <CommitButton sha={deployment.commit_sha} />

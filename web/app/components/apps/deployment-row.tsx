@@ -29,7 +29,7 @@ import {
 } from '~/components/interface/dropdown-menu';
 import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
-import { formatRelativeTime } from '~/utils/format';
+import { formatRelativeTime } from '~/utils/date';
 import { toast } from 'sonner';
 
 type DeploymentRowProps = {
@@ -243,6 +243,7 @@ export function DeploymentRow(props: DeploymentRowProps) {
         title="Rollback Deployment"
         description={`Roll back to commit ${deployment.commit_sha.slice(0, 7)}? A new deployment will be created.`}
         confirmLabel="Rollback"
+        isDestructive={false}
         onConfirm={handleRollback}
       />
 
@@ -261,6 +262,7 @@ export function DeploymentRow(props: DeploymentRowProps) {
         title="Stop Deployment"
         description="This stops the running containers and takes the app offline until you restart or redeploy it."
         confirmLabel="Stop"
+        isDestructive={false}
         onConfirm={handleStop}
       />
 

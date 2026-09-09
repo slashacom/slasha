@@ -16,7 +16,8 @@ import {
   getDeploymentsOptions,
   useTriggerDeploy,
 } from '~/queries/deployments';
-import { SectionHeader } from '~/components/interface/section-header';
+import { EmptyPage } from '~/components/global/empty-page';
+import { TabActions } from '~/components/interface/tab-actions';
 import { VStack } from '~/components/interface/stacks';
 import { toast } from 'sonner';
 import { CommitSelector } from '~/components/apps/commit-selector';
@@ -127,7 +128,7 @@ export function DeploymentsView(props: DeploymentsViewProps) {
 
   if (isLoading) {
     return (
-      <VStack className="p-8" space={4}>
+      <VStack className="px-8 py-6" space={4}>
         <div className="h-4 w-32 animate-pulse rounded bg-white/[0.06]" />
         <VStack space={2}>
           {[1, 2, 3].map((i) => (
@@ -143,53 +144,45 @@ export function DeploymentsView(props: DeploymentsViewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <SectionHeader
-        icon={History}
-        title="Deployments"
-        actions={
-          <>
-            <Button
-              label="Deploy Commit"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowCommitSelector(true)}
-              isDisabled={!hasCode || triggerDeploy.isPending}
-            />
-            <Button
-              label="Deploy Latest"
-              icon={<Play className="size-3.5" />}
-              size="sm"
-              onClick={handleDeploy}
-              isLoading={triggerDeploy.isPending}
-              isDisabled={!hasCode || triggerDeploy.isPending}
-            />
-          </>
-        }
-      />
+      <TabActions>
+        <Button
+          label="Deploy commit"
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowCommitSelector(true)}
+          isDisabled={!hasCode || triggerDeploy.isPending}
+        />
+        <Button
+          label="Deploy latest"
+          icon={<Play className="size-3.5" />}
+          size="sm"
+          onClick={handleDeploy}
+          isLoading={triggerDeploy.isPending}
+          isDisabled={!hasCode || triggerDeploy.isPending}
+        />
+      </TabActions>
 
       {deployments.length === 0 ? (
-        <VStack className="flex-1 items-center justify-center" space={5}>
-          <div className="rounded-full border border-border p-4">
-            <RotateCcw className="size-8 text-text-tertiary" />
-          </div>
-          <VStack alignItems="center" space={1}>
-            <p className="text-sm font-medium text-text">No deployments yet</p>
-            <p className="max-w-[340px] text-center text-xs text-text-tertiary">
-              {app.source === 'local'
-                ? 'Add the remote and push to deploy your default branch.'
-                : app.source === 'github'
-                  ? 'Push to the connected GitHub repository for automatic deployments, or deploy the latest commit now.'
-                  : 'Deploy the latest commit from the configured Git repository.'}
-            </p>
-          </VStack>
-
+        <EmptyPage
+          className="mx-8 my-6 flex-1"
+          icon={RotateCcw}
+          size="lg"
+          title="No deployments yet."
+          subtitle={
+            app.source === 'local'
+              ? 'Add the remote below and push your default branch. The first deployment starts automatically.'
+              : app.source === 'github'
+                ? 'Push to the connected GitHub repository to deploy automatically, or deploy the latest commit now.'
+                : 'Deploy the latest commit from the configured Git repository.'
+          }
+        >
           {app.source === 'local' && (
             <GitSetupInstructions
               cloneUrl={cloneUrl}
               defaultBranch={app.default_branch}
             />
           )}
-        </VStack>
+        </EmptyPage>
       ) : (
         <div className="flex-1 overflow-auto">
           <div className="divide-y divide-border">

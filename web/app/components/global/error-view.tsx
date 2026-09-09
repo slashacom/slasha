@@ -49,10 +49,10 @@ export function ErrorView(props: ErrorViewProps) {
           <AlertTriangle className="size-5 text-red-400" />
         </div>
 
-        <h1 className="mb-1.5 text-[15px] font-medium tracking-tight text-text">
+        <h1 className="mb-1.5 text-balance text-[15px] font-medium tracking-tight text-text">
           {title}
         </h1>
-        <p className="text-[13px] leading-relaxed text-text-secondary">
+        <p className="text-balance text-[13px] leading-relaxed text-text-secondary">
           {message}
         </p>
 

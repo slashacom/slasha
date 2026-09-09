@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "web",
@@ -28,10 +27,14 @@
         "@xterm/xterm": "^6.0.0",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
+        "cmdk": "^1.1.1",
+        "cronstrue": "^3.25.0",
+        "date-fns": "^4.4.0",
         "isbot": "^5.1.36",
         "jose": "^6.2.2",
         "js-cookie": "^3.0.5",
         "lucide-react": "^1.7.0",
+        "node-emoji": "^2.2.0",
         "nprogress": "^0.2.0",
         "radix-ui": "^1.4.3",
         "react": "^19.2.4",
@@ -572,6 +575,8 @@
 
     "clsx": ["clsx@2.1.1", "", {}, ""],
 
+    "cmdk": ["cmdk@1.1.1", "", { "dependencies": { "@radix-ui/react-compose-refs": "^1.1.1", "@radix-ui/react-dialog": "^1.1.6", "@radix-ui/react-id": "^1.1.0", "@radix-ui/react-primitive": "^2.0.2" }, "peerDependencies": { "react": "^18 || ^19 || ^19.0.0-rc", "react-dom": "^18 || ^19 || ^19.0.0-rc" } }, "sha512-Vsv7kFaXm+ptHDMZ7izaRsP70GgrW9NBNGswt9OZaVBLlE0SNpDq8eu/VGXyF9r7M0azK3Wy7OlYXsuyYLFzHg=="],
+
     "comma-separated-tokens": ["comma-separated-tokens@2.0.3", "", {}, ""],
 
     "compressible": ["compressible@2.0.18", "", { "dependencies": { "mime-db": ">= 1.43.0 < 2" } }, ""],
@@ -589,6 +594,8 @@
     "cookie": ["cookie@1.1.1", "", {}, ""],
 
     "cookie-signature": ["cookie-signature@1.0.7", "", {}, ""],
+
+    "cronstrue": ["cronstrue@3.25.0", "", { "bin": { "cronstrue": "bin/cli.js" } }, "sha512-PAPaioNXHMLiUSM8V5sC0bIx5MALUQjjtuDZZWBir5Tau8D676Aoj3Oju/SCaggi4eLG+QPC3IU+dCo30AzDIA=="],
 
     "csstype": ["csstype@3.2.3", "", {}, ""],
 
@@ -613,6 +620,8 @@
     "d3-time-format": ["d3-time-format@4.1.0", "", { "dependencies": { "d3-time": "1 - 3" } }, "sha512-dJxPBlzC7NugB2PDLwo9Q8JiTR3M3e4/XANkreKSUxF8vvXKqm1Yfq4Q5dl8budlunRVlUUaDUgFt7eA8D6NLg=="],
 
     "d3-timer": ["d3-timer@3.0.1", "", {}, "sha512-ndfJ/JxxMd3nw31uyKoY2naivF+r29V+Lc0svZxe1JvvIRmi8hUsrMvdOwgS1o6uBHmiz91geQ0ylPP0aj1VUA=="],
+
+    "date-fns": ["date-fns@4.4.0", "", {}, "sha512-+1UMbeh68lH1SegH83CGWwpb6OHHbpSgr3+s5Eww5M4CAgswBpoWS0AjTOfEJ33HiYKz1hdj/KTFprzXHmq/6w=="],
 
     "debug": ["debug@4.4.3", "", { "dependencies": { "ms": "^2.1.3" } }, ""],
 

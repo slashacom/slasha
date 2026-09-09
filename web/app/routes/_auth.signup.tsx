@@ -3,6 +3,7 @@ import { redirect, useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
+import { PasswordInput } from '~/components/interface/password-input';
 import { Label } from '~/components/interface/label';
 import { VStack } from '~/components/interface/stacks';
 import { SlashaLogo } from '~/components/icons/slasha-logo';
@@ -94,10 +95,9 @@ export default function Signup() {
             </Label>
             <div className="relative">
               <KeyRoundIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
-              <Input
+              <PasswordInput
                 id="password"
                 name="password"
-                type="password"
                 required
                 pattern=".{8,}"
                 title="8 characters minimum"
@@ -120,10 +120,9 @@ export default function Signup() {
             </Label>
             <div className="relative">
               <KeyRoundIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
-              <Input
+              <PasswordInput
                 id="confirmPassword"
                 name="confirmPassword"
-                type="password"
                 required
                 pattern=".{8,}"
                 title="8 characters minimum"
