@@ -167,6 +167,7 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
         title="Restart Service"
         description={`Restart ${service.name}? It will be briefly unavailable while it restarts.`}
         confirmLabel="Restart"
+        isDestructive={false}
         onConfirm={handleRestart}
       />
 
@@ -176,6 +177,7 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
         title="Redeploy Service"
         description={`Redeploy ${service.name}? The container is recreated, so it will be briefly unavailable.`}
         confirmLabel="Redeploy"
+        isDestructive={false}
         onConfirm={handleRedeploy}
       />
 
@@ -185,6 +187,7 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
         title="Stop Service"
         description={`Stop ${service.name}? Apps using it will lose their connection until it is restarted.`}
         confirmLabel="Stop"
+        isDestructive={false}
         onConfirm={handleStop}
       />
 

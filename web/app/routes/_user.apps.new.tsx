@@ -6,6 +6,7 @@ import { GitBranch, Link as LinkIcon } from 'lucide-react';
 import { Page } from '~/components/global/page';
 import { Github } from '~/components/icons/github';
 import { Button } from '~/components/interface/button';
+import { FormActions } from '~/components/interface/form-actions';
 import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
 import { getCheckSlugOptions, useCreateApp } from '~/queries/apps';
@@ -165,7 +166,7 @@ export default function NewApp() {
       />
 
       <div className="mt-6">
-        <form onSubmit={handleSubmit} className="w-full max-w-md space-y-6">
+        <form onSubmit={handleSubmit} className="w-full max-w-xl space-y-6">
           <div className="space-y-1.5">
             <Label
               htmlFor="name"
@@ -417,27 +418,18 @@ export default function NewApp() {
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2 pt-4">
-            <Button
-              variant="ghost"
-              label="Cancel"
-              type="button"
-              onClick={() => navigate('/apps')}
-              isDisabled={createApp.isPending}
-            />
-            <Button
-              type="submit"
-              label="Create app"
-              isLoading={createApp.isPending}
-              isDisabled={
-                createApp.isPending ||
-                debouncedName !== name ||
-                slugChecking ||
-                (source === 'github' && !selectedRepository) ||
-                (source === 'git' && !gitUrl.trim())
-              }
-            />
-          </div>
+          <FormActions
+            submitLabel="Create app"
+            onCancel={() => navigate('/apps')}
+            isPending={createApp.isPending}
+            isDisabled={
+              debouncedName !== name ||
+              slugChecking ||
+              (source === 'github' && !selectedRepository) ||
+              (source === 'git' && !gitUrl.trim())
+            }
+            className="pt-4"
+          />
         </form>
       </div>
     </Page>

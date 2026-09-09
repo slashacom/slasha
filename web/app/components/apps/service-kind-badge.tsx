@@ -15,8 +15,11 @@ type ServiceKindBadgeProps = {
 
 export function ServiceKindBadge(props: ServiceKindBadgeProps) {
   const { service } = props;
+  const Icon = KIND_ICONS[service.kind];
+
   return (
-    <span className="whitespace-nowrap rounded bg-white/5 px-1.5 py-0.5 text-[11px] font-medium text-text-secondary">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-white/5 px-1.5 py-0.5 text-[11px] font-medium text-text-secondary">
+      <Icon className="size-3 text-text-tertiary" />
       {service.kind} {service.version}
     </span>
   );

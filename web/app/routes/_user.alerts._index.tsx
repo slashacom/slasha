@@ -10,7 +10,11 @@ import {
   getAlertIncidentsOptions,
   getAlertRulesOptions,
 } from '~/queries/alerts';
-import { formatDateTime, formatDuration } from '~/utils/date';
+import {
+  formatDateTime,
+  formatDuration,
+  formatRelativeTime,
+} from '~/utils/date';
 import { incidentValueSummary } from '~/components/alerts/incident-values';
 import { queryClient } from '~/utils/query-client';
 import { Page } from '~/components/global/page';
@@ -25,7 +29,9 @@ export async function clientLoader() {
 }
 
 export default function AlertsPage() {
-  const { data, refetch } = useSuspenseQuery(getAlertIncidentsOptions());
+  const { data, refetch, isFetching, dataUpdatedAt } = useSuspenseQuery(
+    getAlertIncidentsOptions()
+  );
   const { data: rulesData } = useSuspenseQuery(getAlertRulesOptions());
   const pagination = usePagination(data.incidents);
   const rulesById = useMemo(
@@ -36,10 +42,14 @@ export default function AlertsPage() {
   return (
     <Page>
       <TabActions>
+        <span className="text-[11px] text-text-tertiary">
+          Updated {formatRelativeTime(new Date(dataUpdatedAt))}
+        </span>
         <Button
           label="Refresh"
           variant="ghost"
           size="sm"
+          isLoading={isFetching}
           onClick={() => refetch()}
         />
       </TabActions>
@@ -56,7 +66,7 @@ export default function AlertsPage() {
           />
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="-mx-8 overflow-x-auto">
               <Table
                 columns={['Rule', 'Status', 'Opened', 'Duration', 'Resolved']}
               >

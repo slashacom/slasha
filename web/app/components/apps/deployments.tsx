@@ -170,7 +170,7 @@ export function DeploymentsView(props: DeploymentsViewProps) {
           title="No deployments yet."
           subtitle={
             app.source === 'local'
-              ? 'Add the remote below and push your default branch — the first deployment starts automatically.'
+              ? 'Add the remote below and push your default branch. The first deployment starts automatically.'
               : app.source === 'github'
                 ? 'Push to the connected GitHub repository to deploy automatically, or deploy the latest commit now.'
                 : 'Deploy the latest commit from the configured Git repository.'

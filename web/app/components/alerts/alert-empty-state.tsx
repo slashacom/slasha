@@ -44,7 +44,7 @@ export function AlertEmptyState(props: AlertEmptyStateProps) {
     <EmptyPage
       icon={ShieldCheck}
       size="lg"
-      title="All clear — no incidents."
+      title="All clear. No incidents."
       subtitle="Your rules are running. The moment one trips, the incident and its trigger history land here."
       secondaryLabel="View rules"
       secondaryTo="/alerts/rules"

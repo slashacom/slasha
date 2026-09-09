@@ -16,7 +16,14 @@ type TableProps = {
 export function Table(props: TableProps) {
   const { columns, children, className } = props;
   return (
-    <table className={cn('w-full text-left text-sm', className)}>
+    <table
+      className={cn(
+        'w-full text-left text-sm',
+        '[&_td:first-child]:pl-8 [&_th:first-child]:pl-8',
+        '[&_td:last-child]:pr-8 [&_th:last-child]:pr-8',
+        className
+      )}
+    >
       <thead>
         <tr className="border-b border-border">
           {columns.map((column, i) => {

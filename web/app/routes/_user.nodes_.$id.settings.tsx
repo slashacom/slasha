@@ -64,8 +64,10 @@ export default function NodeSettingsTab() {
               open={showDeleteConfirm}
               onOpenChange={setShowDeleteConfirm}
               title="Delete Node"
-              description={`Are you sure you want to delete ${node.name}? This action cannot be undone. This will delete the node and run a teardown script on the server.`}
-              confirmLabel="Delete Node"
+              description={`Deleting ${node.name} is permanent. Slasha runs a teardown script on the server and removes the node.`}
+              confirmLabel="Delete node"
+              confirmText={node.name}
+              isPending={deleteNode.isPending}
               onConfirm={() => {
                 const promise = deleteNode.mutateAsync(node.id);
                 toast.promise(promise, {

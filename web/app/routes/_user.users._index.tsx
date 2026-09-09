@@ -68,7 +68,7 @@ export default function UsersPage() {
         }
       />
 
-      <div className="mt-6 overflow-x-auto">
+      <div className="-mx-8 mt-6 overflow-x-auto">
         {usersData.users.length === 0 ? (
           <EmptyPage
             icon={Users}

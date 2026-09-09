@@ -3,6 +3,7 @@ import { Outlet, useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { getAppOptions } from '~/queries/apps';
 import { getDeploymentsOptions } from '~/queries/deployments';
+import { PageSkeleton } from '~/components/global/page-skeleton';
 import { TabNav } from '~/components/interface/tab-nav';
 import { TabActionsProvider } from '~/components/interface/tab-actions';
 import { queryClient } from '~/utils/query-client';
@@ -69,7 +70,7 @@ export default function AppLayout() {
               ]}
             />
 
-            <Suspense fallback={null}>
+            <Suspense fallback={<PageSkeleton />}>
               <Outlet />
             </Suspense>
           </>

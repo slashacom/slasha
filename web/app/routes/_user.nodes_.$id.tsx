@@ -3,6 +3,7 @@ import { Outlet, useParams, useNavigate, redirect } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getNodeOptions } from '~/queries/nodes';
+import { PageSkeleton } from '~/components/global/page-skeleton';
 import { TabNav } from '~/components/interface/tab-nav';
 import { TabActionsProvider } from '~/components/interface/tab-actions';
 import { queryClient } from '~/utils/query-client';
@@ -73,7 +74,7 @@ export default function NodeDetailLayout() {
               ]}
             />
 
-            <Suspense fallback={null}>
+            <Suspense fallback={<PageSkeleton />}>
               <Outlet />
             </Suspense>
           </>

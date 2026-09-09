@@ -118,7 +118,8 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
               placeholder="e.g. main-db"
             />
             <span className="text-[11px] leading-5 text-text-tertiary">
-              Becomes the namespace your app references its variables through —{' '}
+              Becomes the namespace your app references its variables through,
+              as{' '}
               <span className="font-mono text-text-secondary">
                 {serviceEnvReference(name.trim() || 'main-db', 'DATABASE_URL')}
               </span>
@@ -175,7 +176,7 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
                 <span className="font-mono text-text-secondary">
                   {selectedKind.default_env_vars.PORT}
                 </span>
-                . Only this app can reach it — nothing is exposed publicly.
+                . Only this app can reach it. Nothing is exposed publicly.
               </span>
             </HStack>
           ) : null}

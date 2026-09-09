@@ -4,10 +4,7 @@ import { HStack, VStack } from '~/components/interface/stacks';
 import { StatusBadge } from '~/components/interface/status-badge';
 import { CopyButton } from '~/components/interface/copy-button';
 import { ServiceActionsMenu } from '~/components/apps/service-actions-menu';
-import {
-  ServiceKindBadge,
-  ServiceKindIcon,
-} from '~/components/apps/service-kind-badge';
+import { ServiceKindBadge } from '~/components/apps/service-kind-badge';
 import { describeResources } from '~/components/apps/service-resources';
 import { formatRelativeTime } from '~/utils/date';
 import { serviceEnvReference } from '~/utils/service-env';
@@ -41,7 +38,7 @@ function ServiceRowDetail(props: ServiceRowProps) {
   if (service.status === 'Stopped') {
     return (
       <span className="text-[11px] text-text-tertiary">
-        Stopped — apps referencing its variables cannot connect until it is
+        Stopped. Apps referencing its variables cannot connect until it is
         restarted.
       </span>
     );
@@ -72,11 +69,8 @@ export function ServiceRow(props: ServiceRowProps) {
   return (
     <div
       onClick={() => navigate(`/apps/${appSlug}/services/${service.id}`)}
-      className="group grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-4 px-8 py-4 transition-colors hover:bg-white/[0.02]"
+      className="group grid cursor-pointer grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 px-8 py-4 transition-colors hover:bg-white/[0.02]"
     >
-      {/* Optically anchored to the name, not the two-line block. */}
-      <ServiceKindIcon kind={service.kind} className="-mt-1 self-start" />
-
       <VStack space={1.5} className="min-w-0">
         <HStack space={3} className="min-w-0">
           <span className="truncate font-mono text-[13px] font-semibold text-text transition-colors group-hover:text-primary">

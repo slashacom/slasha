@@ -32,7 +32,7 @@ function CommitButton(props: CommitButtonProps) {
     <button
       type="button"
       onClick={handleCopy}
-      title={`${sha} — click to copy`}
+      title={`Copy ${sha}`}
       className="group inline-flex items-center gap-1.5 rounded font-mono text-[12px] text-text-tertiary transition-colors hover:text-text"
     >
       {sha.slice(0, 7)}

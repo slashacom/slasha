@@ -44,7 +44,7 @@ function dnsLine(health: DomainHealth): Line {
     return {
       tone: 'error',
       label: 'DNS misconfigured',
-      detail: `Resolves to ${resolved_ips.join(', ')} — expected ${expected_ips.join(', ')}`,
+      detail: `Resolves to ${resolved_ips.join(', ')}, expected ${expected_ips.join(', ')}`,
     };
   }
 
@@ -88,7 +88,7 @@ function tlsLine(health: DomainHealth): Line {
     return {
       tone: 'warn',
       label: 'TLS certificate provisioning',
-      detail: 'Awaiting a certificate — verify DNS points to this server',
+      detail: 'Awaiting a certificate. Verify DNS points to this server',
     };
   }
 

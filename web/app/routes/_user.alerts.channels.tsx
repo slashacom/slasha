@@ -54,13 +54,13 @@ export default function AlertsChannelsPage() {
             icon={Webhook}
             size="lg"
             title="No delivery channels yet."
-            subtitle="A channel is where alerts land — a Slack workspace, a webhook, an inbox. Create one, then attach it to a rule."
+            subtitle="A channel is where alerts land, such as a Slack workspace, a webhook or an inbox. Create one, then attach it to a rule."
             actionLabel="Create channel"
             actionIcon={<Plus className="size-3.5" />}
             actionTo="/alerts/channels/new"
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="-mx-8 overflow-x-auto">
             <Table
               columns={[
                 'Name',

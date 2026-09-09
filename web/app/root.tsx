@@ -8,6 +8,7 @@ import { queryClient } from '~/utils/query-client';
 
 import { ErrorView } from '~/components/global/error-view';
 import { FullPageSpinner } from '~/components/icons/full-page-spinner';
+import { ShellSkeleton } from '~/components/global/shell-skeleton';
 import { NavigationProgress } from '~/components/interface/navigation-progress';
 
 import './styles/global.css';
@@ -51,7 +52,7 @@ export function Layout(props: LayoutProps) {
             offset={{
               top: 15,
             }}
-            visibleToasts={1}
+            visibleToasts={3}
             toastOptions={{
               className: '!w-fit !bg-zinc-800 !text-zinc-300 !border-zinc-900',
               style: {
@@ -82,5 +83,11 @@ export function ErrorBoundary(props: Route.ErrorBoundaryProps) {
 }
 
 export function HydrateFallback() {
-  return <FullPageSpinner />;
+  // The auth screens have no shell, so a spinner is the honest placeholder there.
+  const path = typeof window === 'undefined' ? '' : window.location.pathname;
+  if (path === '/login' || path === '/signup' || path === '/') {
+    return <FullPageSpinner />;
+  }
+
+  return <ShellSkeleton />;
 }

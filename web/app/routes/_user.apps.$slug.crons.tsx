@@ -55,13 +55,13 @@ export default function AppCronsPage() {
             icon={Clock}
             size="lg"
             title="No scheduled jobs yet."
-            subtitle="Cron jobs run a command against this app on a recurring schedule — backups, digests, cleanups."
+            subtitle="Cron jobs run a command against this app on a recurring schedule, like backups, digests and cleanups."
             actionLabel="Create job"
             actionIcon={<Plus className="size-3.5" />}
             actionTo={`/apps/${slug}/crons/new`}
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="-mx-8 overflow-x-auto">
             <Table
               columns={[
                 'Name',

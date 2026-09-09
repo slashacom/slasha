@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { SearchIcon } from 'lucide-react';
-import { Button } from '~/components/interface/button';
+import { FormActions } from '~/components/interface/form-actions';
 import { Input } from '~/components/interface/input';
+import { PasswordInput } from '~/components/interface/password-input';
 import { Label } from '~/components/interface/label';
 import { Select } from '~/components/interface/select';
 import { Checkbox } from '~/components/interface/checkbox';
@@ -51,7 +52,7 @@ export function UserForm(props: UserFormProps) {
     ) || [];
 
   return (
-    <form onSubmit={onSubmit} className="w-full max-w-md">
+    <form onSubmit={onSubmit} className="w-full max-w-xl">
       <div className="space-y-5">
         <div className="space-y-1.5">
           <Label
@@ -78,10 +79,9 @@ export function UserForm(props: UserFormProps) {
           >
             {initialData ? 'New Password (optional)' : 'Password'}
           </Label>
-          <Input
+          <PasswordInput
             id="password"
             name="password"
-            type="password"
             required={!initialData}
             pattern=".{8,}"
             title="8 characters minimum"
@@ -202,20 +202,11 @@ export function UserForm(props: UserFormProps) {
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-2 pt-2">
-          <Button
-            variant="ghost"
-            label="Cancel"
-            onClick={onCancel}
-            isDisabled={isPending}
-          />
-          <Button
-            type="submit"
-            label={submitLabel}
-            isLoading={isPending}
-            isDisabled={isPending}
-          />
-        </div>
+        <FormActions
+          submitLabel={submitLabel}
+          onCancel={onCancel}
+          isPending={isPending}
+        />
       </div>
     </form>
   );

@@ -18,6 +18,7 @@ import {
   getAlertRulesOptions,
   useDeleteAlertRule,
 } from '~/queries/alerts';
+import { formatSeconds } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
 import { Page } from '~/components/global/page';
 import { TabActions } from '~/components/interface/tab-actions';
@@ -66,7 +67,7 @@ export default function AlertsRulesPage() {
             icon={Gauge}
             size="lg"
             title="No alert rules yet."
-            subtitle="A rule watches one signal — CPU, memory, disk, or app health — and notifies a channel when it crosses your threshold."
+            subtitle="A rule watches one signal, such as CPU, memory, disk or app health, and notifies a channel when it crosses your threshold."
             actionLabel="Create rule"
             actionIcon={<Plus className="size-3.5" />}
             actionTo="/alerts/rules/new"
@@ -80,7 +81,7 @@ export default function AlertsRulesPage() {
             }
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="-mx-8 overflow-x-auto">
             <Table
               columns={[
                 'Name',
@@ -106,7 +107,7 @@ export default function AlertsRulesPage() {
                     {deliverySummary(rule, channelsById)}
                   </td>
                   <td className="py-3 pr-4 text-text-secondary">
-                    {rule.cooldown_secs}s
+                    {formatSeconds(rule.cooldown_secs)}
                   </td>
                   <td className="py-3 pr-4">
                     <AlertStatusBadge state={rule.enabled ? 'ok' : 'muted'}>

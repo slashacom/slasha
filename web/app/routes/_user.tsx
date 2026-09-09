@@ -1,5 +1,6 @@
 import { Suspense, useState } from 'react';
 import { Outlet, redirect, useLocation, useParams } from 'react-router';
+import { PageSkeleton } from '~/components/global/page-skeleton';
 import { CommandMenu } from '~/components/global/command-menu';
 import { Sidebar } from '~/components/global/sidebar';
 import { TopBar } from '~/components/global/top-bar';
@@ -52,7 +53,7 @@ export default function UserLayout() {
               : 'min-h-0 flex-1 overflow-y-auto'
           }
         >
-          <Suspense fallback={null}>
+          <Suspense fallback={<PageSkeleton />}>
             <Outlet />
           </Suspense>
         </main>

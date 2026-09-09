@@ -69,8 +69,8 @@ export function ServiceStatusNotice(props: ServiceStatusNoticeProps) {
           </span>
           <span className="text-[12px] leading-5 text-text-tertiary">
             The container exited before it became healthy. The logs below hold
-            its last output — a bad variable, an unsupported version, or the
-            node running out of memory are the usual causes. Fix the cause, then
+            its last output. The usual causes are a bad variable, an unsupported
+            version, or the node running out of memory. Fix the cause, then
             redeploy to recreate the container.
           </span>
         </VStack>

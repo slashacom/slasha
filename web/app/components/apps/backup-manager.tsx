@@ -129,8 +129,8 @@ function BackupManagerComponent(props: BackupManagerProps) {
             />
             {onPersistentVolume ? (
               <p className="mt-1.5 text-[11px] leading-5 text-text-tertiary">
-                On a persistent volume — restarts are fast and the local copy is
-                kept.
+                On a persistent volume, so restarts are fast and the local copy
+                is kept.
               </p>
             ) : (
               <HStack
@@ -204,8 +204,8 @@ function BackupManagerComponent(props: BackupManagerProps) {
 
           <p className="text-[11px] leading-5 text-text-tertiary">
             slasha puts the database in WAL mode automatically. Backups require
-            the web process at a single instance — Litestream must be the only
-            writer. For best concurrency, set{' '}
+            the web process at a single instance, because Litestream must be the
+            only writer. For best concurrency, set{' '}
             <span className="font-mono">busy_timeout</span> and{' '}
             <span className="font-mono">synchronous=NORMAL</span> in your app.
           </p>
@@ -257,6 +257,7 @@ function BackupManagerComponent(props: BackupManagerProps) {
         title="Restore database from backup"
         description="On the next deploy, the live database will be discarded and replaced with the latest copy from object storage. This cannot be undone. Continue?"
         confirmLabel="Queue restore"
+        isDestructive={false}
         onConfirm={handleRestore}
       />
     </>
@@ -264,6 +265,6 @@ function BackupManagerComponent(props: BackupManagerProps) {
 }
 
 // Memoized so the app layout's deployments poll (which re-renders the settings
-// subtree every 10s) doesn't re-render this card. The only live part — the
-// status strip — owns its own polling and re-renders independently.
+// subtree every 10s) doesn't re-render this card. The only live part is the
+// status strip, which owns its own polling and re-renders independently.
 export const BackupManager = memo(BackupManagerComponent);

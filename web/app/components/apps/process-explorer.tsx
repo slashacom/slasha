@@ -47,7 +47,7 @@ export function ProcessExplorer(props: ProcessExplorerProps) {
                 ) : (
                   <p className="text-balance text-xs text-text-tertiary">
                     {deploymentStatus === 'Failed'
-                      ? 'This deployment failed — no processes are running.'
+                      ? 'This deployment failed. No processes are running.'
                       : deploymentStatus === 'Stopped'
                         ? 'This deployment is stopped.'
                         : 'No processes are running.'}

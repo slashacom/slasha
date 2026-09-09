@@ -110,8 +110,8 @@ export function ConnectModal(props: ConnectModalProps) {
           <VStack space={3} className="mt-4">
             <p className="text-xs leading-5 text-text-tertiary">
               Open a secure tunnel from your local machine to {service.kind}. It
-              rides the existing HTTPS connection — no firewall changes or
-              exposed ports.
+              rides the existing HTTPS connection, so no firewall changes or
+              exposed ports are needed.
             </p>
             <CopyBlock text={proxyCommand} />
             <p className="text-[11px] leading-5 text-text-tertiary">

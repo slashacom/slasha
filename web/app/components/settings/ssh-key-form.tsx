@@ -1,4 +1,4 @@
-import { Button } from '~/components/interface/button';
+import { FormActions } from '~/components/interface/form-actions';
 import { Input } from '~/components/interface/input';
 import { Label } from '~/components/interface/label';
 import { Textarea } from '~/components/interface/textarea';
@@ -14,7 +14,7 @@ export function SshKeyForm(props: SshKeyFormProps) {
   const { onSubmit, onCancel, isPending, submitLabel } = props;
 
   return (
-    <form onSubmit={onSubmit} className="w-full max-w-md">
+    <form onSubmit={onSubmit} className="w-full max-w-xl">
       <div className="space-y-5">
         <div className="space-y-1.5">
           <Label
@@ -49,20 +49,11 @@ export function SshKeyForm(props: SshKeyFormProps) {
           />
         </div>
 
-        <div className="flex items-center justify-end gap-2 pt-2">
-          <Button
-            variant="ghost"
-            label="Cancel"
-            onClick={onCancel}
-            isDisabled={isPending}
-          />
-          <Button
-            type="submit"
-            label={submitLabel}
-            isLoading={isPending}
-            isDisabled={isPending}
-          />
-        </div>
+        <FormActions
+          submitLabel={submitLabel}
+          onCancel={onCancel}
+          isPending={isPending}
+        />
       </div>
     </form>
   );

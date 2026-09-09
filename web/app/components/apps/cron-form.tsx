@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Button } from '~/components/interface/button';
+import { FormActions } from '~/components/interface/form-actions';
 import { FormField } from '~/components/interface/form-field';
 import { Input } from '~/components/interface/input';
 import { Select } from '~/components/interface/select';
@@ -111,7 +111,7 @@ export function CronForm(props: CronFormProps) {
   };
 
   return (
-    <div className="max-w-2xl space-y-5">
+    <div className="max-w-xl space-y-5">
       <FormField label="Name">
         <Input
           value={name}
@@ -171,7 +171,7 @@ export function CronForm(props: CronFormProps) {
         />
         <p className="mt-2 text-xs text-text-tertiary">
           {runtime === 'utility'
-            ? 'Runs in a lightweight container with curl available. Your app’s environment variables are injected — good for webhooks and HTTP calls.'
+            ? 'Runs in a lightweight container with curl available. Your app’s environment variables are injected, so it suits webhooks and HTTP calls.'
             : 'Runs in your app’s container, with the same image, environment variables, and files. Available commands depend on what your image includes.'}
         </p>
       </FormField>
@@ -212,14 +212,12 @@ export function CronForm(props: CronFormProps) {
         <Switch checked={enabled} onCheckedChange={setEnabled} />
       </div>
 
-      <div className="flex items-center gap-2 pt-2">
-        <Button
-          label={cron ? 'Save changes' : 'Create job'}
-          onClick={handleSave}
-          isLoading={createCron.isPending || updateCron.isPending}
-        />
-        <Button label="Cancel" variant="ghost" onClick={onCancel} />
-      </div>
+      <FormActions
+        submitLabel={cron ? 'Save changes' : 'Create job'}
+        onSubmit={handleSave}
+        onCancel={onCancel}
+        isPending={createCron.isPending || updateCron.isPending}
+      />
     </div>
   );
 }

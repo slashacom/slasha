@@ -30,17 +30,20 @@ import { DangerZone } from '~/components/global/danger-zone';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
+  // Only the two queries this route reads block the navigation; the section
+  // cards below fetch their own data and suspend into the page skeleton.
+  void queryClient.prefetchQuery(getGithubStatusOptions());
+  void queryClient.prefetchQuery(getAppEnvVarsOptions(params.slug));
+  void queryClient.prefetchQuery(getAppEnvSuggestionsOptions(params.slug));
+  void queryClient.prefetchQuery(getAppDomainsOptions(params.slug));
+  void queryClient.prefetchQuery(getVolumesOptions(params.slug));
+  void queryClient.prefetchQuery(getBackupOptions(params.slug));
+  void queryClient.prefetchQuery(getNodesOptions());
+  void queryClient.prefetchQuery(getAppDirectoriesOptions(params.slug));
+
   await Promise.all([
     queryClient.ensureQueryData(getAppOptions(params.slug)),
     queryClient.ensureQueryData(getAppConnectionOptions(params.slug)),
-    queryClient.ensureQueryData(getGithubStatusOptions()),
-    queryClient.ensureQueryData(getAppEnvVarsOptions(params.slug)),
-    queryClient.ensureQueryData(getAppEnvSuggestionsOptions(params.slug)),
-    queryClient.ensureQueryData(getAppDomainsOptions(params.slug)),
-    queryClient.ensureQueryData(getVolumesOptions(params.slug)),
-    queryClient.ensureQueryData(getBackupOptions(params.slug)),
-    queryClient.ensureQueryData(getNodesOptions()),
-    queryClient.ensureQueryData(getAppDirectoriesOptions(params.slug)),
   ]);
 }
 
@@ -107,8 +110,10 @@ export default function AppSettingsPage() {
           open={showDeleteConfirm}
           onOpenChange={setShowDeleteConfirm}
           title="Delete Application"
-          description={`Are you sure you want to delete ${app.name}? This action cannot be undone and will permanently delete all associated data.`}
-          confirmLabel="Delete Application"
+          description={`Deleting ${app.name} is permanent. Its containers, deployments, services and volumes go with it.`}
+          confirmLabel="Delete application"
+          confirmText={app.slug}
+          isPending={deleteApp.isPending}
           onConfirm={() => {
             deleteApp.mutate(app.slug, {
               onSuccess: () => {

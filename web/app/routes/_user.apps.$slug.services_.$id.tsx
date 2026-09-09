@@ -9,10 +9,7 @@ import { ServiceStatsBar } from '~/components/apps/service-stats-bar';
 import { ServiceStatusNotice } from '~/components/apps/service-status-notice';
 import { ServiceConnectionCard } from '~/components/apps/service-connection-card';
 import { ServiceActionsMenu } from '~/components/apps/service-actions-menu';
-import {
-  ServiceKindBadge,
-  ServiceKindIcon,
-} from '~/components/apps/service-kind-badge';
+import { ServiceKindBadge } from '~/components/apps/service-kind-badge';
 import { describeResources } from '~/components/apps/service-resources';
 import { formatRelativeTime } from '~/utils/date';
 import { queryClient } from '~/utils/query-client';
@@ -61,8 +58,6 @@ export default function ServiceDetailPage() {
         className="shrink-0 gap-4 border-b border-border px-8 py-5"
       >
         <HStack space={3} alignItems="start" className="min-w-0">
-          {/* Optically anchored to the name, not the two-line block. */}
-          <ServiceKindIcon kind={service.kind} className="-mt-1" />
           <VStack space={1.5} className="min-w-0">
             <HStack space={3} className="min-w-0">
               <h1 className="truncate font-mono text-[15px] font-semibold text-text">

@@ -11,7 +11,7 @@ export default function NewCronPage() {
     <Page className="min-h-0 flex-1 overflow-y-auto">
       <PageHeader
         title="New cron job"
-        description="Run a command against this app on a recurring schedule — backups, digests, cleanups."
+        description="Run a command against this app on a recurring schedule, like backups, digests and cleanups."
       />
 
       <div className="mt-6">
