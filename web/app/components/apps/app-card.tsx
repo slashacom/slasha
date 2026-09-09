@@ -1,8 +1,16 @@
-import { Link } from 'react-router';
-import { ArrowUpRight, GitBranchIcon } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { ArrowUpRight, GitBranch } from 'lucide-react';
+import type { AppSource } from '~/models/app';
 import type { AppListItem } from '~/queries/apps';
 import { AppRuntimeBadge } from '~/components/apps/app-runtime-badge';
-import { formatDate } from '~/utils/date';
+import { HStack, VStack } from '~/components/interface/stacks';
+import { formatRelativeTime } from '~/utils/date';
+
+const SOURCE_LABELS: Record<AppSource, string> = {
+  local: 'Slasha Git',
+  github: 'GitHub',
+  git: 'Git URL',
+};
 
 type AppCardProps = {
   item: AppListItem;
@@ -11,44 +19,66 @@ type AppCardProps = {
 export function AppCard(props: AppCardProps) {
   const { item } = props;
   const { app, url, runtime_status } = item;
+  const navigate = useNavigate();
 
   return (
-    <Link
-      to={`/apps/${app.slug}`}
-      className="group block rounded-lg border border-border bg-surface p-4 !no-underline transition-colors hover:bg-white/[0.04]"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="truncate text-[14px] font-medium text-text">
-            {app.name}
-          </h3>
-          <p className="mt-0.5 truncate font-mono text-[12px] text-text-tertiary">
-            {app.slug}
-          </p>
-        </div>
-        <AppRuntimeBadge status={runtime_status} />
-      </div>
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={() => navigate(`/apps/${app.slug}`)}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter') {
+          return;
+        }
 
-      <div className="mt-4 flex items-center justify-between text-[12px] text-text-tertiary">
-        <div className="flex items-center gap-1.5">
-          <GitBranchIcon className="size-3.5" />
-          <span>{app.default_branch}</span>
-          <span className="px-1">·</span>
-          <span>{formatDate(app.created_at)}</span>
-        </div>
+        navigate(`/apps/${app.slug}`);
+      }}
+      className="group cursor-pointer rounded-lg border border-border bg-surface/60 p-4 transition-colors hover:bg-surface focus-visible:bg-surface focus-visible:outline-none"
+    >
+      <HStack justifyContent="between" alignItems="start" className="gap-2">
+        <VStack space={0.5} className="min-w-0">
+          <span className="truncate text-[14px] font-medium text-text">
+            {app.name}
+          </span>
+          <code className="truncate font-mono text-[12px] text-text-tertiary">
+            {app.slug}
+          </code>
+        </VStack>
+        <AppRuntimeBadge status={runtime_status} />
+      </HStack>
+
+      <HStack
+        justifyContent="between"
+        className="mt-4 gap-2 border-t border-border/60 pt-3"
+      >
+        <HStack space={1.5} className="min-w-0">
+          <GitBranch className="size-3 shrink-0 text-text-tertiary" />
+          <span className="truncate text-[11px] text-text-tertiary">
+            {app.default_branch}
+          </span>
+          <span className="text-[11px] text-text-tertiary/50">·</span>
+          <span className="truncate text-[11px] text-text-tertiary">
+            {SOURCE_LABELS[app.source]}
+          </span>
+        </HStack>
+
         {runtime_status === 'running' ? (
           <a
             href={url}
             target="_blank"
             rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-0.5 text-text-tertiary !no-underline opacity-0 transition-all hover:text-text group-hover:opacity-100"
+            onClick={(event) => event.stopPropagation()}
+            className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-text-tertiary !no-underline transition-colors hover:text-text"
           >
             Visit
             <ArrowUpRight className="size-3" />
           </a>
-        ) : null}
-      </div>
-    </Link>
+        ) : (
+          <span className="shrink-0 whitespace-nowrap text-[11px] text-text-tertiary/70">
+            {formatRelativeTime(app.created_at)}
+          </span>
+        )}
+      </HStack>
+    </div>
   );
 }
