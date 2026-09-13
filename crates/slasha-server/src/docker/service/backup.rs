@@ -4,7 +4,7 @@ use bollard::Docker;
 use bytes::Bytes;
 use futures_util::stream::BoxStream;
 use slasha_db::{
-    logs::ResourceKind,
+    logs::{LogPrefix, ResourceKind},
     models::service::{Service, ServiceKind},
     repos::{s3_storage::S3StorageRepo, service::ServiceRepo, service_backup::ServiceBackupRepo},
     service::ServiceStatus,
@@ -25,7 +25,7 @@ use crate::{
             ServiceDocker, env::resolve_service_env, provision::instance::wait_for_service_health,
             spec::ServiceKindDockerExt,
         },
-        utils::{restart_container, stop_container},
+        utils::{restart_container, stop_container, stream_container_logs},
     },
     s3,
     state::AppState,
@@ -176,6 +176,12 @@ pub async fn execute_service_restore(
             .writer(ResourceKind::Service, &service.id)
             .app_id(&service_docker.app.id);
 
+        stream_container_logs(
+            service_docker.docker_client.clone(),
+            log_writer.clone().prefix(LogPrefix::Service),
+            container_name.clone(),
+        );
+
         wait_for_service_health(
             &service_docker.docker_client,
             &container_name,
@@ -198,6 +204,7 @@ pub async fn execute_service_restore(
                 None,
             )
             .await;
+            let _ = ServiceRepo::update_status(&db_pool, &service.id, ServiceStatus::Running).await;
         }
         Err(e) => {
             error!(
