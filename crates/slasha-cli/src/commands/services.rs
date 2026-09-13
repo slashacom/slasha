@@ -109,6 +109,22 @@ async fn handle_create(
     name: &str,
     version: Option<&str>,
 ) -> Result<()> {
+    let name_trimmed = name.trim();
+    let is_valid_name = !name_trimmed.is_empty()
+        && name_trimmed.len() <= 63
+        && name_trimmed
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && !name_trimmed.starts_with('-')
+        && !name_trimmed.ends_with('-');
+
+    if !is_valid_name {
+        anyhow::bail!(
+            "Service name '{}' is invalid: must consist of lowercase alphanumeric characters or '-' and must start and end with an alphanumeric character (max 63 characters)",
+            name
+        );
+    }
+
     let default_env = fetch_default_env(client, kind).await?;
 
     let resolved_version = match version {
@@ -249,9 +265,8 @@ async fn fetch_default_env(
         .await
         .context("Failed to fetch supported service kinds")?;
 
-    let kind_str = kind.to_string();
     for k in res.kinds {
-        if k["name"].as_str().unwrap_or("") == kind_str {
+        if k["name"].as_str().unwrap_or("") == kind.to_string() {
             return serde_json::from_value(k["default_env_vars"].clone())
                 .context("Failed to parse default env vars for service kind");
         }

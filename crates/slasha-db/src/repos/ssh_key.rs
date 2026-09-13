@@ -33,6 +33,22 @@ impl SshKeyRepo {
         .await?
     }
 
+    pub async fn name_exists(pool: &DbPool, user_id: &str, name: &str) -> DbResult<bool> {
+        let pool = pool.clone();
+        let user_id = user_id.to_string();
+        let name = name.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let existing_names: Vec<String> = ssh_keys::table
+                .filter(ssh_keys::user_id.eq(&user_id))
+                .select(ssh_keys::name)
+                .load::<String>(&mut conn)?;
+
+            Ok(existing_names.iter().any(|n| n.eq_ignore_ascii_case(&name)))
+        })
+        .await?
+    }
+
     pub async fn create(pool: &DbPool, key: NewSshKey) -> DbResult<SshKey> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {

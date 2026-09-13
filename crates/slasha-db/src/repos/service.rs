@@ -72,6 +72,43 @@ impl ServiceRepo {
         .await?
     }
 
+    pub async fn name_exists(pool: &DbPool, app_id: &str, name: &str) -> DbResult<bool> {
+        let pool = pool.clone();
+        let app_id = app_id.to_string();
+        let name = name.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let existing_names: Vec<String> = services::table
+                .filter(services::app_id.eq(&app_id))
+                .select(services::name)
+                .load::<String>(&mut conn)?;
+
+            Ok(existing_names.iter().any(|n| n.eq_ignore_ascii_case(&name)))
+        })
+        .await?
+    }
+
+    pub async fn find_by_name(
+        pool: &DbPool,
+        app_id: &str,
+        name: &str,
+    ) -> DbResult<Option<Service>> {
+        let pool = pool.clone();
+        let app_id = app_id.to_string();
+        let name = name.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let services: Vec<Service> = services::table
+                .filter(services::app_id.eq(&app_id))
+                .load::<Service>(&mut conn)?;
+
+            Ok(services
+                .into_iter()
+                .find(|s| s.name.eq_ignore_ascii_case(&name)))
+        })
+        .await?
+    }
+
     pub async fn create_with_env_vars(
         pool: &DbPool,
         service: NewService,

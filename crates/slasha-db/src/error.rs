@@ -20,7 +20,7 @@ pub enum DbError {
     Pool(#[from] r2d2::Error),
 
     #[error("query error: {0}")]
-    Query(#[from] diesel::result::Error),
+    Query(diesel::result::Error),
 
     #[error("duckdb error: {0}")]
     Duckdb(#[from] duckdb::Error),
@@ -33,3 +33,16 @@ pub enum DbError {
 }
 
 pub type DbResult<T> = std::result::Result<T, DbError>;
+
+impl From<diesel::result::Error> for DbError {
+    fn from(err: diesel::result::Error) -> Self {
+        if let diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            info,
+        ) = &err
+        {
+            return DbError::Conflict(info.message().to_string());
+        }
+        DbError::Query(err)
+    }
+}

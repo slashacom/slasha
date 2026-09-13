@@ -51,6 +51,30 @@ impl S3StorageRepo {
         .await?
     }
 
+    pub async fn name_exists(
+        pool: &DbPool,
+        name: &str,
+        exclude_id: Option<&str>,
+    ) -> DbResult<bool> {
+        let pool = pool.clone();
+        let name = name.to_string();
+        let exclude_id = exclude_id.map(str::to_string);
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let mut query = s3_storages::table.into_boxed();
+
+            if let Some(id) = exclude_id {
+                query = query.filter(s3_storages::id.ne(id));
+            }
+
+            let existing_names: Vec<String> =
+                query.select(s3_storages::name).load::<String>(&mut conn)?;
+
+            Ok(existing_names.iter().any(|n| n.eq_ignore_ascii_case(&name)))
+        })
+        .await?
+    }
+
     pub async fn create(pool: &DbPool, storage: NewS3Storage) -> DbResult<S3Storage> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {

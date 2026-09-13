@@ -35,7 +35,7 @@ use crate::{
     operations::ResourceKey,
     routing::api::{
         logs::{LogQuery, fetch_resource_logs, stream_resource_logs},
-        validation::not_empty,
+        validation::{not_empty, valid_service_name},
     },
     s3,
     state::{AppState, Runtime},
@@ -79,7 +79,7 @@ struct CreateServiceReq {
     #[garde(skip)]
     kind: ServiceKind,
     #[serde(deserialize_with = "crate::routing::api::deserialize::trim_string")]
-    #[garde(custom(not_empty))]
+    #[garde(custom(valid_service_name))]
     name: String,
     #[garde(custom(not_empty))]
     version: String,
@@ -155,6 +155,13 @@ async fn create_service(
         return Err(HttpError::bad_request(
             "DATABASE_URL cannot be set manually as it is automatically managed and exported by Slasha",
         ));
+    }
+
+    if ServiceRepo::name_exists(&state.storage.db_pool, &app.id, &payload.name).await? {
+        return Err(HttpError::bad_request(format!(
+            "Service with name '{}' already exists for this app",
+            payload.name
+        )));
     }
 
     let service = ServiceDocker::new(state, app)

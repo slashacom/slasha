@@ -56,6 +56,54 @@ impl NodeRepo {
         .await?
     }
 
+    pub async fn name_exists(
+        pool: &DbPool,
+        name: &str,
+        exclude_id: Option<&str>,
+    ) -> DbResult<bool> {
+        let pool = pool.clone();
+        let name = name.to_string();
+        let exclude_id = exclude_id.map(str::to_string);
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let mut query = nodes::table
+                .filter(nodes::deleted_at.is_null())
+                .into_boxed();
+
+            if let Some(id) = exclude_id {
+                query = query.filter(nodes::id.ne(id));
+            }
+
+            let existing_names: Vec<String> =
+                query.select(nodes::name).load::<String>(&mut conn)?;
+
+            Ok(existing_names.iter().any(|n| n.eq_ignore_ascii_case(&name)))
+        })
+        .await?
+    }
+
+    pub async fn find_by_name(pool: &DbPool, name: &str) -> DbResult<Option<Node>> {
+        let pool = pool.clone();
+        let name = name.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let mut nodes: Vec<Node> = nodes::table
+                .filter(nodes::deleted_at.is_null())
+                .load::<Node>(&mut conn)?;
+
+            for node in &mut nodes {
+                if let Some(ref key) = node.ssh_private_key {
+                    node.ssh_private_key = Some(crypto::decrypt(key)?);
+                }
+            }
+
+            Ok(nodes
+                .into_iter()
+                .find(|n| n.name.eq_ignore_ascii_case(&name)))
+        })
+        .await?
+    }
+
     pub async fn create(pool: &DbPool, mut node: NewNode) -> DbResult<Node> {
         let pool = pool.clone();
         tokio::task::spawn_blocking(move || {

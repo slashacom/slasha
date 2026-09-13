@@ -65,6 +65,13 @@ async fn create_storage(
     State(storage): State<Storage>,
     ValidatedJson(payload): ValidatedJson<CreateS3StorageReq>,
 ) -> HttpResult<Json<Value>> {
+    if S3StorageRepo::name_exists(&storage.db_pool, &payload.name, None).await? {
+        return Err(HttpError::bad_request(format!(
+            "S3 storage with name '{}' already exists",
+            payload.name
+        )));
+    }
+
     let temp_storage = S3Storage {
         id: "test".to_string(),
         name: payload.name.clone(),
@@ -128,6 +135,15 @@ async fn update_storage(
     ValidatedJson(payload): ValidatedJson<UpdateS3StorageReq>,
 ) -> HttpResult<Json<Value>> {
     let existing = S3StorageRepo::find(&storage.db_pool, &id).await?;
+
+    if let Some(ref new_name) = payload.name
+        && S3StorageRepo::name_exists(&storage.db_pool, new_name, Some(&id)).await?
+    {
+        return Err(HttpError::bad_request(format!(
+            "S3 storage with name '{}' already exists",
+            new_name
+        )));
+    }
 
     let test_storage = S3Storage {
         id: existing.id.clone(),
