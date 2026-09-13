@@ -420,7 +420,7 @@ pub enum ServiceBackupCommand {
         yes: bool,
     },
 
-    #[command(name = "config", about = "View automated backup configuration")]
+    #[command(name = "config", about = "View backup configuration")]
     Config,
 }
 

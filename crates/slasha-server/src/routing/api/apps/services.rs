@@ -383,7 +383,7 @@ async fn update_service_backup_config(
     let keep_local = payload.keep_local.unwrap_or(true);
     let s3_storage_id = payload.s3_storage_id.filter(|s| !s.is_empty());
 
-    if payload.enabled && !keep_local && s3_storage_id.is_none() {
+    if !keep_local && s3_storage_id.is_none() {
         return Err(HttpError::bad_request(
             "At least one backup destination (Local Storage or S3 Storage) must be enabled",
         ));

@@ -359,7 +359,7 @@ async fn handle_config(
         );
     } else {
         cli_info(
-            "No automated backups configured. Configure backup schedules and S3 storage in the Slasha web dashboard.",
+            "No backup configuration found. Configure backup storage destinations and schedules in the web dashboard.",
         );
     }
 

@@ -103,7 +103,7 @@ export function ServiceBackupConfigModal(props: ServiceBackupConfigModalProps) {
       return;
     }
 
-    if (enabled && !keepLocal && !s3StorageId) {
+    if (!keepLocal && !s3StorageId) {
       toast.error(
         'At least one storage destination (Local or S3) must be enabled'
       );
@@ -135,14 +135,64 @@ export function ServiceBackupConfigModal(props: ServiceBackupConfigModalProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Automated Backups</DialogTitle>
+          <DialogTitle>Backup Configuration</DialogTitle>
           <DialogDescription>
-            Configure automated snapshot schedules and offsite replication for{' '}
+            Configure storage destinations and optional automated snapshot
+            schedules for{' '}
             <span className="font-mono text-text">{service.name}</span>.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-1">
+          <div className="space-y-3 rounded-lg border border-border bg-surface/30 p-3.5">
+            <span className="text-xs font-medium text-text-secondary">
+              Storage Destinations
+            </span>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <span className="text-[13px] font-medium text-text">
+                  Local Host Storage
+                </span>
+                <p className="text-[11px] text-text-tertiary">
+                  Keep snapshot on the server host for instant restoration.
+                </p>
+              </div>
+              <Switch
+                checked={keepLocal}
+                onCheckedChange={setKeepLocal}
+                aria-label="Local host storage"
+              />
+            </div>
+
+            <div className="space-y-2 border-t border-border/50 pt-3">
+              <label className="text-xs font-medium text-text-secondary">
+                Offsite S3 Storage
+              </label>
+              <Select
+                value={s3StorageId}
+                onChange={(e) => setS3StorageId(e.target.value)}
+              >
+                <option value="">None (do not replicate to S3)</option>
+                {storages.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.bucket})
+                  </option>
+                ))}
+              </Select>
+              <p className="text-[11px] leading-relaxed text-text-tertiary">
+                Upload snapshots to an external S3-compatible cloud bucket for
+                disaster recovery.
+              </p>
+            </div>
+
+            {!keepLocal && !s3StorageId && (
+              <p className="text-[11px] font-medium text-red-400">
+                Select an S3 bucket or enable Local Host Storage.
+              </p>
+            )}
+          </div>
+
           <div className="flex items-center justify-between rounded-lg border border-border bg-surface/50 p-3.5">
             <div className="space-y-0.5">
               <span className="text-[13px] font-medium text-text">
@@ -258,56 +308,6 @@ export function ServiceBackupConfigModal(props: ServiceBackupConfigModalProps) {
                 </p>
               </div>
             </div>
-
-            <div className="space-y-3 rounded-lg border border-border bg-surface/30 p-3.5">
-              <span className="text-xs font-medium text-text-secondary">
-                Storage Destinations
-              </span>
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <span className="text-[13px] font-medium text-text">
-                    Local Host Storage
-                  </span>
-                  <p className="text-[11px] text-text-tertiary">
-                    Keep snapshot on the server host for instant restoration.
-                  </p>
-                </div>
-                <Switch
-                  checked={keepLocal}
-                  onCheckedChange={setKeepLocal}
-                  disabled={!enabled}
-                />
-              </div>
-
-              <div className="space-y-2 border-t border-border/50 pt-3">
-                <label className="text-xs font-medium text-text-secondary">
-                  Offsite S3 Storage
-                </label>
-                <Select
-                  value={s3StorageId}
-                  onChange={(e) => setS3StorageId(e.target.value)}
-                  disabled={!enabled}
-                >
-                  <option value="">None (do not replicate to S3)</option>
-                  {storages.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.bucket})
-                    </option>
-                  ))}
-                </Select>
-                <p className="text-[11px] leading-relaxed text-text-tertiary">
-                  Upload snapshots to an external S3-compatible cloud bucket for
-                  disaster recovery.
-                </p>
-              </div>
-
-              {!keepLocal && !s3StorageId && (
-                <p className="text-[11px] font-medium text-red-400">
-                  Select an S3 bucket or enable Local Host Storage.
-                </p>
-              )}
-            </div>
           </div>
         </div>
 
@@ -322,9 +322,7 @@ export function ServiceBackupConfigModal(props: ServiceBackupConfigModalProps) {
             type="button"
             label="Save configuration"
             isLoading={updateConfig.isPending}
-            isDisabled={
-              updateConfig.isPending || (enabled && !keepLocal && !s3StorageId)
-            }
+            isDisabled={updateConfig.isPending || (!keepLocal && !s3StorageId)}
             onClick={handleSave}
           />
         </DialogFooter>

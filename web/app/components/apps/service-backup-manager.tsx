@@ -282,20 +282,20 @@ function ServiceBackupContent(props: ServiceBackupManagerProps) {
 
   const storageDestinationLabel = config
     ? config.keep_local && s3StorageObj
-      ? `local + ${s3StorageObj.name}`
+      ? `Local Host + ${s3StorageObj.name}`
       : config.keep_local
-        ? 'local host'
+        ? 'Local Host'
         : s3StorageObj
           ? s3StorageObj.name
           : 'None'
-    : '';
+    : 'Local Host';
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
-      {/* Automated Backups Configuration Card */}
+      {/* Backup Configuration Card */}
       <SettingsCard
         icon={Archive}
-        title="Automated Backups"
+        title="Backup Configuration"
         description={
           <span className="flex flex-col gap-1">
             <span className="flex items-center gap-2">
@@ -316,7 +316,9 @@ function ServiceBackupContent(props: ServiceBackupManagerProps) {
                         ? ` · Next: ${formatDateTime(config.next_run_at)}`
                         : ''
                     } · Retaining ${config.retention_count} · Storage: ${storageDestinationLabel}`
-                  : 'Automated backups are currently disabled. Schedule regular database snapshots and offsite replication.'}
+                  : config
+                    ? `Automated schedule is disabled · Storage: ${storageDestinationLabel}`
+                    : 'Configure backup storage destinations and optional automated schedules.'}
               </span>
             </span>
           </span>
@@ -358,7 +360,7 @@ function ServiceBackupContent(props: ServiceBackupManagerProps) {
           actionLabel={isRunning ? 'Backup now' : undefined}
           actionIcon={<Play className="size-3.5" />}
           onAction={handleTriggerBackup}
-          secondaryLabel="Configure schedule"
+          secondaryLabel="Configure backups"
           onSecondaryAction={() => setShowConfigModal(true)}
           className="my-1 flex-1"
         />
