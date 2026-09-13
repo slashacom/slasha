@@ -6,6 +6,7 @@ import {
   Bell,
   Box,
   Clock,
+  Cloud,
   Database,
   FileText,
   Gauge,
@@ -189,6 +190,12 @@ export function CommandMenu(props: CommandMenuProps) {
               Users
             </CommandItem>
           ) : null}
+          {isAdmin ? (
+            <CommandItem onSelect={() => go('/settings/s3-storages')}>
+              <Cloud />
+              S3 Storages
+            </CommandItem>
+          ) : null}
           <CommandItem onSelect={() => go('/settings/account')}>
             <Settings />
             Settings
@@ -298,6 +305,12 @@ export function CommandMenu(props: CommandMenuProps) {
             <CommandItem onSelect={() => go('/users/new')}>
               <Plus />
               Add user
+            </CommandItem>
+          ) : null}
+          {isAdmin ? (
+            <CommandItem onSelect={() => go('/settings/s3-storages/new')}>
+              <Plus />
+              Add S3 storage
             </CommandItem>
           ) : null}
           <CommandItem onSelect={() => go('/settings/ssh-keys/new')}>

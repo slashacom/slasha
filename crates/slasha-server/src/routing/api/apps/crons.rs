@@ -108,8 +108,8 @@ fn validate(input: CronInput) -> HttpResult<ValidatedCron> {
         _ => CronRuntime::App,
     };
 
-    let next_run_at =
-        cron::next_run_at(&input.schedule, &timezone, &Utc::now())?.filter(|_| input.enabled);
+    let calculated = cron::next_run_at(&input.schedule, &timezone, &Utc::now())?;
+    let next_run_at = input.enabled.then_some(calculated);
 
     Ok(ValidatedCron {
         name: input.name,
@@ -184,7 +184,6 @@ async fn update_cron(
 ) -> HttpResult<impl IntoResponse> {
     let _existing = CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
     let valid = validate(input)?;
-    let now = Utc::now().naive_utc();
 
     let cron = CronJobChangeset {
         name: valid.name,
@@ -195,7 +194,6 @@ async fn update_cron(
         timeout_secs: valid.timeout_secs,
         runtime: valid.runtime,
         next_run_at: valid.next_run_at,
-        updated_at: now,
     };
 
     let cron = CronJobRepo::update(&db_pool, &cron_id, cron).await?;

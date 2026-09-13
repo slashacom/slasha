@@ -1,23 +1,36 @@
+pub mod backup;
 pub mod env;
 pub mod provision;
+pub mod scheduler;
 pub mod spec;
 pub mod stats;
 
-use std::collections::HashMap;
-
-use bollard::{
-    Docker,
-    exec::{CreateExecOptions, StartExecOptions, StartExecResults},
+use std::{
+    collections::HashMap,
+    io,
+    pin::Pin,
+    task::{Context, Poll},
 };
+
+use bollard::Docker;
+use bytes::Bytes;
+use chrono::Utc;
 pub use env::resolve_service_env;
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt, stream::BoxStream};
 pub use provision::run_provision_service_workflow;
 use slasha_db::{
     app::App,
     logs::{LogPrefix, ResourceKind},
-    repos::{logs::LogsRepo, node::NodeRepo, service::ServiceRepo},
+    repos::{
+        logs::LogsRepo, node::NodeRepo, s3_storage::S3StorageRepo, service::ServiceRepo,
+        service_backup::ServiceBackupRepo,
+    },
     service::{
         NewService, NewServiceEnvVar, Service, ServiceKind, ServiceResources, ServiceStatus,
+    },
+    service_backup::{
+        NewServiceBackup, ServiceBackup, ServiceBackupStatus, ServiceBackupTrigger,
+        ServiceRestoreStatus,
     },
 };
 pub use spec::ServiceKindDockerExt;
@@ -31,10 +44,26 @@ use crate::{
         service::provision::instance::wait_for_service_health,
         utils::{self, stream_container_logs},
     },
-    operations,
+    operations::{self, OperationGuard, ServiceOperation},
+    s3,
     state::AppState,
 };
 
+/// Stream adapter retaining an [`OperationGuard`] until the stream terminates or drops.
+struct GuardedStream<S> {
+    stream: S,
+    _guard: OperationGuard,
+}
+
+impl<S: Stream + Unpin> Stream for GuardedStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.stream).poll_next(cx)
+    }
+}
+
+#[derive(Clone)]
 pub struct ServiceDocker {
     pub state: AppState,
     pub app: App,
@@ -130,7 +159,7 @@ impl ServiceDocker {
             None => default_resources,
         };
 
-        self.validate_resources(&resources).await?;
+        provision::validate_resources(&self.docker_client, &resources).await?;
 
         let service_id = Uuid::new_v4().to_string();
 
@@ -222,8 +251,8 @@ impl ServiceDocker {
         let service = ServiceRepo::find(db_pool, service_id, &self.app.id).await?;
 
         if service.status == ServiceStatus::Provisioning {
-            return Err(DockerError::Validation(format!(
-                "Service {} is currently provisioning",
+            return Err(DockerError::PreconditionFailed(format!(
+                "Service \"{}\" is currently provisioning",
                 service.name
             )));
         }
@@ -323,7 +352,7 @@ impl ServiceDocker {
         let service = ServiceRepo::find(db_pool, service_id, &self.app.id).await?;
 
         if service.status != ServiceStatus::Stopped && service.status != ServiceStatus::Failed {
-            return Err(DockerError::Validation(
+            return Err(DockerError::PreconditionFailed(
                 "Cannot delete a running or provisioning service. Please stop it first.".into(),
             ));
         }
@@ -341,9 +370,26 @@ impl ServiceDocker {
             tracing::warn!(volume = %volume_name, error = ?e, "Failed to remove service volume");
         }
 
+        if let Ok(s3_backups) =
+            ServiceBackupRepo::list_for_service_with_s3(db_pool, &service.id).await
+        {
+            for b in s3_backups {
+                if let Some(s3_id) = b.s3_storage_id
+                    && let Ok(storage) = S3StorageRepo::find(db_pool, &s3_id).await
+                {
+                    let key = backup::service_backup_s3_key(&service.id, &b.file_name);
+                    let _ = s3::delete_file(&storage, &key).await;
+                }
+            }
+        }
+
         ServiceRepo::delete(db_pool, &service.id).await?;
+
         self.state.runtime.log_bus.remove(&service.id);
         let _ = LogsRepo::delete_by_resource_id(&self.state.storage.duckdb_pool, &service.id).await;
+
+        let backup_dir = self.state.storage.get_service_backup_dir(&service.id);
+        let _ = tokio::fs::remove_dir_all(&backup_dir).await;
 
         Ok(())
     }
@@ -357,11 +403,10 @@ impl ServiceDocker {
     /// # Returns
     ///
     /// A [`DockerResult`] containing a boxed byte stream.
-    pub async fn backup_service(
+    pub async fn stream_service_backup(
         &self,
         service_id: &str,
-    ) -> DockerResult<futures_util::stream::BoxStream<'static, Result<bytes::Bytes, std::io::Error>>>
-    {
+    ) -> DockerResult<BoxStream<'static, io::Result<Bytes>>> {
         let db_pool = &self.state.storage.db_pool;
         let service = ServiceRepo::find(db_pool, service_id, &self.app.id).await?;
 
@@ -369,48 +414,208 @@ impl ServiceDocker {
             return Err(DockerError::ServiceNotRunning(service.name));
         }
 
-        let _guard = self.get_guard(&service.id, operations::ServiceOperation::BackingUp)?;
+        if !service.kind.supports_backups() {
+            return Err(DockerError::Validation(
+                "Automated backups are not supported for this service kind".into(),
+            ));
+        }
+
+        let guard = self.get_guard(&service.id, ServiceOperation::BackingUp)?;
 
         let env_vars = ServiceRepo::get_env_vars(db_pool, &service.id).await?;
         let resolved = resolve_service_env(env_vars, &service)?;
 
-        let cmd = service.kind.backup_cmd(&resolved);
-        let container_name = service_container_name(&service.id);
+        let stream =
+            backup::stream_service_backup(&self.docker_client, &service, &resolved).await?;
+        let guarded = GuardedStream {
+            stream,
+            _guard: guard,
+        };
+        Ok(guarded.boxed())
+    }
 
-        let exec_id = self
-            .docker_client
-            .create_exec(
-                &container_name,
-                CreateExecOptions {
-                    attach_stdout: Some(true),
-                    attach_stderr: Some(false),
-                    cmd: Some(cmd),
-                    ..Default::default()
-                },
-            )
-            .await?;
+    /// Triggers a database backup for a service.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_id` - Target service ID string.
+    /// * `trigger` - Origin trigger kind ([`ServiceBackupTrigger`]).
+    ///
+    /// # Returns
+    ///
+    /// A [`DockerResult`] containing the created [`ServiceBackup`].
+    pub async fn run_service_backup(
+        &self,
+        service_id: &str,
+        trigger: ServiceBackupTrigger,
+    ) -> DockerResult<ServiceBackup> {
+        let db_pool = &self.state.storage.db_pool;
+        let service = ServiceRepo::find(db_pool, service_id, &self.app.id).await?;
 
-        let output_stream = match self
-            .docker_client
-            .start_exec(&exec_id.id, None::<StartExecOptions>)
-            .await?
-        {
-            StartExecResults::Attached { output, .. } => output,
-            StartExecResults::Detached => {
-                return Err(DockerError::Other(anyhow::anyhow!(
-                    "exec returned detached"
-                )));
-            }
+        if service.status != ServiceStatus::Running {
+            return Err(DockerError::ServiceNotRunning(service.name));
+        }
+
+        if !service.kind.supports_backups() {
+            return Err(DockerError::Validation(
+                "Automated backups are not supported for this service kind".into(),
+            ));
+        }
+
+        let guard = self.get_guard(&service.id, operations::ServiceOperation::BackingUp)?;
+
+        let env_vars = ServiceRepo::get_env_vars(db_pool, &service.id).await?;
+        let resolved = resolve_service_env(env_vars, &service)?;
+
+        let config = ServiceBackupRepo::get_config(db_pool, &service.id).await?;
+        let keep_local = config.as_ref().map(|c| c.keep_local).unwrap_or(true);
+        let s3_storage_id = config.as_ref().and_then(|c| c.s3_storage_id.clone());
+
+        let timestamp = Utc::now().format("%Y%m%d%H%M%S");
+        let ext = service.kind.backup_extension();
+        let file_name = format!("{}-{}.{}", service.name, timestamp, ext);
+        let backup_id = Uuid::new_v4().to_string();
+
+        let new_backup = NewServiceBackup {
+            id: backup_id,
+            service_id: service.id.clone(),
+            s3_storage_id,
+            file_name,
+            file_size: 0,
+            status: ServiceBackupStatus::Running,
+            trigger_kind: trigger,
+            stored_locally: keep_local,
         };
 
-        let byte_stream = output_stream.filter_map(|item| async move {
-            match item {
-                Ok(bollard::container::LogOutput::StdOut { message }) => Some(Ok(message)),
-                _ => None,
+        let backup = ServiceBackupRepo::create_backup(db_pool, new_backup).await?;
+
+        tokio::spawn({
+            let service_docker = self.clone();
+            let backup = backup.clone();
+            async move {
+                let _guard = guard;
+                backup::execute_service_backup(service_docker, service, backup, resolved, config)
+                    .await;
             }
         });
 
-        Ok(byte_stream.boxed())
+        Ok(backup)
+    }
+
+    /// Restores a database service from a backup snapshot.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_id` - Target service ID string.
+    /// * `backup_id` - ID string of backup snapshot to restore.
+    ///
+    /// # Returns
+    ///
+    /// A [`DockerResult`] indicating restoration success.
+    pub async fn run_service_restore(&self, service_id: &str, backup_id: &str) -> DockerResult<()> {
+        let db_pool = &self.state.storage.db_pool;
+        let service = ServiceRepo::find(db_pool, service_id, &self.app.id).await?;
+
+        if service.status != ServiceStatus::Running {
+            return Err(DockerError::ServiceNotRunning(service.name));
+        }
+
+        let backup = ServiceBackupRepo::find_backup(db_pool, backup_id).await?;
+        if backup.service_id != service.id {
+            return Err(DockerError::PreconditionFailed(format!(
+                "Service backup \"{}\" not found",
+                backup_id
+            )));
+        }
+
+        if !service.kind.supports_backups() {
+            return Err(DockerError::Validation(
+                "Automated restore is not supported for this service kind".into(),
+            ));
+        }
+
+        if backup.status == ServiceBackupStatus::Running {
+            return Err(DockerError::PreconditionFailed(
+                "Cannot restore while backup is running".into(),
+            ));
+        }
+
+        if backup.restore_status == ServiceRestoreStatus::Restoring {
+            return Err(DockerError::PreconditionFailed(
+                "Backup is already currently being restored".into(),
+            ));
+        }
+
+        if backup.status != ServiceBackupStatus::Succeeded {
+            return Err(DockerError::PreconditionFailed(
+                "Cannot restore from a failed backup".into(),
+            ));
+        }
+
+        let guard = self.get_guard(
+            &service.id,
+            operations::ServiceOperation::Restoring {
+                backup_id: backup_id.to_string(),
+            },
+        )?;
+
+        tokio::spawn({
+            let service_docker = self.clone();
+            async move {
+                let _guard = guard;
+                backup::execute_service_restore(service_docker, service, backup).await;
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Deletes a backup snapshot from local disk, S3, and database.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_id` - Target service ID string.
+    /// * `backup_id` - Target backup ID string.
+    ///
+    /// # Returns
+    ///
+    /// A [`DockerResult`] indicating deletion success.
+    pub async fn delete_service_backup(
+        &self,
+        service_id: &str,
+        backup_id: &str,
+    ) -> DockerResult<()> {
+        let db_pool = &self.state.storage.db_pool;
+        let service = ServiceRepo::find(db_pool, service_id, &self.app.id).await?;
+
+        let backup = ServiceBackupRepo::find_backup(db_pool, backup_id).await?;
+        if backup.service_id != service.id {
+            return Err(DockerError::PreconditionFailed(format!(
+                "Service backup \"{}\" not found",
+                backup_id
+            )));
+        }
+
+        if backup.status == ServiceBackupStatus::Running {
+            return Err(DockerError::PreconditionFailed(
+                "Cannot delete backup while it is running".into(),
+            ));
+        }
+
+        if backup.restore_status == ServiceRestoreStatus::Restoring {
+            return Err(DockerError::PreconditionFailed(
+                "Cannot delete backup while it is being restored".into(),
+            ));
+        }
+
+        let service_key = operations::ResourceKey::Service(service.id.as_str().into());
+        self.state.runtime.operations.ensure_idle(&service_key)?;
+
+        backup::delete_service_backup_files(&self.state, &service, &backup).await?;
+
+        ServiceBackupRepo::delete_backup(db_pool, backup_id).await?;
+
+        Ok(())
     }
 
     /// Fetches resource usage statistics for a database service.
@@ -429,89 +634,5 @@ impl ServiceDocker {
         stats::get_service_stats(&self.docker_client, &service)
             .await
             .ok_or_else(|| DockerError::Other(anyhow::anyhow!("failed to fetch service stats")))
-    }
-
-    /// Validates requested service resource limits against host node capacity caps.
-    ///
-    /// # Arguments
-    ///
-    /// * `resources` - Requested resource limits ([`ServiceResources`]).
-    async fn validate_resources(&self, resources: &ServiceResources) -> DockerResult<()> {
-        const MIN_MEMORY_BYTES: i64 = 64 * 1024 * 1024;
-        const MIN_NANO_CPUS: i64 = 100_000_000;
-        const MIN_SHM_BYTES: i64 = 64 * 1024 * 1024;
-        const MIN_PIDS_LIMIT: i64 = 64;
-
-        if let Some(mem) = resources.memory_bytes
-            && mem < MIN_MEMORY_BYTES
-        {
-            return Err(DockerError::Validation(format!(
-                "memory must be at least {} MB",
-                MIN_MEMORY_BYTES / (1024 * 1024)
-            )));
-        }
-        if let Some(nc) = resources.nano_cpus
-            && nc < MIN_NANO_CPUS
-        {
-            return Err(DockerError::Validation(
-                "CPU must be at least 0.1 cores".into(),
-            ));
-        }
-        if let Some(shm) = resources.shm_size
-            && shm < MIN_SHM_BYTES
-        {
-            return Err(DockerError::Validation(format!(
-                "shared memory must be at least {} MB",
-                MIN_SHM_BYTES / (1024 * 1024)
-            )));
-        }
-        if let Some(pids) = resources.pids_limit
-            && pids < MIN_PIDS_LIMIT
-        {
-            return Err(DockerError::Validation(format!(
-                "PID limit must be at least {}",
-                MIN_PIDS_LIMIT
-            )));
-        }
-
-        let info = self.docker_client.info().await?;
-
-        if let Some(host_mem) = info.mem_total
-            && let Some(mem) = resources.memory_bytes
-        {
-            let max_allowed_mem = (host_mem as f64 * 0.80) as i64;
-            if mem > max_allowed_mem {
-                return Err(DockerError::Validation(format!(
-                    "Requested memory ({} MB) exceeds 80% host capacity cap ({} MB of {} MB total host RAM)",
-                    mem / (1024 * 1024),
-                    max_allowed_mem / (1024 * 1024),
-                    host_mem / (1024 * 1024)
-                )));
-            }
-        }
-        if let Some(host_cpus) = info.ncpu
-            && let Some(nc) = resources.nano_cpus
-        {
-            let host_nano = host_cpus.saturating_mul(1_000_000_000);
-            if nc > host_nano {
-                return Err(DockerError::Validation(format!(
-                    "CPU ({:.2} cores) exceeds host capacity ({} cores)",
-                    nc as f64 / 1_000_000_000.0,
-                    host_cpus
-                )));
-            }
-        }
-        if let Some(host_mem) = info.mem_total
-            && let Some(shm) = resources.shm_size
-            && shm > host_mem
-        {
-            return Err(DockerError::Validation(format!(
-                "shared memory ({} MB) exceeds host capacity ({} MB)",
-                shm / (1024 * 1024),
-                host_mem / (1024 * 1024)
-            )));
-        }
-
-        Ok(())
     }
 }

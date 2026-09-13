@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::json;
+use slasha_db::{DbError, crypto::CryptoError};
 
 use crate::{operations, proxy::ProxyError};
 
@@ -117,13 +118,13 @@ impl From<garde::Report> for HttpError {
     }
 }
 
-impl From<slasha_db::DbError> for HttpError {
-    fn from(error: slasha_db::DbError) -> Self {
+impl From<DbError> for HttpError {
+    fn from(error: DbError) -> Self {
         match error {
-            slasha_db::DbError::NotFound(message) => HttpError::not_found(message),
-            slasha_db::DbError::PreconditionFailed(message)
-            | slasha_db::DbError::Conflict(message)
-            | slasha_db::DbError::Data(message) => HttpError::bad_request(message),
+            DbError::NotFound(message) => HttpError::not_found(message),
+            DbError::PreconditionFailed(message)
+            | DbError::Conflict(message)
+            | DbError::Data(message) => HttpError::bad_request(message),
             _ => HttpError::internal(anyhow::anyhow!(error)),
         }
     }
@@ -154,6 +155,12 @@ impl From<ProxyError> for HttpError {
             ProxyError::Timeout(message) => HttpError::new(StatusCode::GATEWAY_TIMEOUT, message),
             _ => HttpError::internal(anyhow::anyhow!(error)),
         }
+    }
+}
+
+impl From<CryptoError> for HttpError {
+    fn from(error: CryptoError) -> Self {
+        HttpError::internal(anyhow::anyhow!(error))
     }
 }
 

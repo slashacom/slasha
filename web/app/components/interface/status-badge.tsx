@@ -16,36 +16,96 @@ export type StatusKind =
   | 'Provisioning'
   | 'Running'
   | 'Failed'
-  | 'Stopped';
+  | 'Stopped'
+  | 'Restoring'
+  | 'Backing up'
+  | 'Restarting'
+  | 'Stopping'
+  | 'Deleting'
+  | string;
 
 type StatusConfig = {
   icon: LucideIcon;
   color: string;
   bg: string;
   spin?: boolean;
+  label: string;
 };
 
-const STATUS_CONFIG: Record<StatusKind, StatusConfig> = {
-  Pending: { icon: Clock, color: 'text-text-tertiary', bg: 'bg-white/5' },
-  Building: {
+const STATUS_CONFIG: Record<string, StatusConfig> = {
+  pending: {
+    icon: Clock,
+    color: 'text-text-tertiary',
+    bg: 'bg-white/5',
+    label: 'Pending',
+  },
+  building: {
     icon: CircleDashed,
     color: 'text-sky-400',
     bg: 'bg-sky-400/10',
     spin: true,
+    label: 'Building',
   },
-  Provisioning: {
+  provisioning: {
     icon: CircleDashed,
     color: 'text-sky-400',
     bg: 'bg-sky-400/10',
     spin: true,
+    label: 'Provisioning',
   },
-  Running: {
+  running: {
     icon: CheckCircle2,
     color: 'text-emerald-400',
     bg: 'bg-emerald-400/10',
+    label: 'Running',
   },
-  Failed: { icon: XCircle, color: 'text-red-400', bg: 'bg-red-400/10' },
-  Stopped: { icon: AlertCircle, color: 'text-text-tertiary', bg: 'bg-white/5' },
+  failed: {
+    icon: XCircle,
+    color: 'text-red-400',
+    bg: 'bg-red-400/10',
+    label: 'Failed',
+  },
+  stopped: {
+    icon: AlertCircle,
+    color: 'text-text-tertiary',
+    bg: 'bg-white/5',
+    label: 'Stopped',
+  },
+  restoring: {
+    icon: CircleDashed,
+    color: 'text-amber-400',
+    bg: 'bg-amber-400/10',
+    spin: true,
+    label: 'Restoring',
+  },
+  'backing up': {
+    icon: CircleDashed,
+    color: 'text-sky-400',
+    bg: 'bg-sky-400/10',
+    spin: true,
+    label: 'Backing up',
+  },
+  restarting: {
+    icon: CircleDashed,
+    color: 'text-sky-400',
+    bg: 'bg-sky-400/10',
+    spin: true,
+    label: 'Restarting',
+  },
+  stopping: {
+    icon: CircleDashed,
+    color: 'text-text-tertiary',
+    bg: 'bg-white/5',
+    spin: true,
+    label: 'Stopping',
+  },
+  deleting: {
+    icon: CircleDashed,
+    color: 'text-red-400',
+    bg: 'bg-red-400/10',
+    spin: true,
+    label: 'Deleting',
+  },
 };
 
 type StatusBadgeProps = {
@@ -54,19 +114,25 @@ type StatusBadgeProps = {
 
 export function StatusBadge(props: StatusBadgeProps) {
   const { status } = props;
-  const config = STATUS_CONFIG[status];
+  const normalizedKey = status.toLowerCase();
+  const config = STATUS_CONFIG[normalizedKey] ?? {
+    icon: AlertCircle,
+    color: 'text-text-secondary',
+    bg: 'bg-white/5',
+    label: status,
+  };
   const Icon = config.icon;
 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded px-2 py-0.5 text-[11px] font-medium',
+        'inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded px-2 py-0.5 text-[11px] font-medium capitalize',
         config.color,
         config.bg
       )}
     >
       <Icon className={cn('size-3', config.spin && 'animate-spin')} />
-      {status}
+      {config.label}
     </span>
   );
 }

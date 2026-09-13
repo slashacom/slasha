@@ -181,7 +181,6 @@ pub struct CronJobChangeset {
     pub timeout_secs: i32,
     pub runtime: CronRuntime,
     pub next_run_at: Option<NaiveDateTime>,
-    pub updated_at: NaiveDateTime,
 }
 
 #[derive(

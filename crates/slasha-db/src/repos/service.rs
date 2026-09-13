@@ -58,6 +58,20 @@ impl ServiceRepo {
         .await?
     }
 
+    pub async fn find_by_id(pool: &DbPool, id: &str) -> DbResult<Service> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            services::table
+                .filter(services::id.eq(&id))
+                .first::<Service>(&mut conn)
+                .optional()?
+                .ok_or_else(|| DbError::NotFound("service not found".into()))
+        })
+        .await?
+    }
+
     pub async fn create_with_env_vars(
         pool: &DbPool,
         service: NewService,

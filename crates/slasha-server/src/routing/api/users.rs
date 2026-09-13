@@ -4,7 +4,6 @@ use axum::{
     response::IntoResponse,
     routing::{delete, get, patch, post},
 };
-use chrono::Utc;
 use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
@@ -129,7 +128,6 @@ async fn update_user(
             email: payload.email,
             role: payload.role,
             password_hash,
-            updated_at: Utc::now().naive_utc(),
         },
     )
     .await?;

@@ -64,9 +64,7 @@ async fn tick(
         let next_run_at = match job.next_run_at {
             Some(next) => next,
             None => {
-                let next = super::next_run_at(&job.schedule, &job.timezone, &now)
-                    .ok()
-                    .flatten();
+                let next = super::next_run_at(&job.schedule, &job.timezone, &now).ok();
                 CronJobRepo::update_schedule_state(db_pool, &job.id, job.last_run_at, next).await?;
                 continue;
             }
@@ -77,9 +75,7 @@ async fn tick(
         }
 
         // Advance the schedule before firing so a slow run never double-fires.
-        let following = super::next_run_at(&job.schedule, &job.timezone, &now)
-            .ok()
-            .flatten();
+        let following = super::next_run_at(&job.schedule, &job.timezone, &now).ok();
         CronJobRepo::update_schedule_state(db_pool, &job.id, Some(now.naive_utc()), following)
             .await?;
 

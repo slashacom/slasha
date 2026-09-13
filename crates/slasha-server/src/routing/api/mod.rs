@@ -1,4 +1,4 @@
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{Json, Router, extract::State, middleware::from_fn_with_state, routing::get};
 use serde_json::{Value, json};
 
 use crate::AppState;
@@ -11,6 +11,7 @@ pub mod deserialize;
 pub mod error;
 pub mod logs;
 pub mod nodes;
+pub mod s3_storages;
 pub mod service_kinds;
 pub mod ssh_keys;
 pub mod users;
@@ -28,26 +29,21 @@ pub fn router(state: AppState) -> Router<AppState> {
         .nest("/apps", apps::router())
         .nest(
             "/alerts",
-            alerts::router().route_layer(axum::middleware::from_fn_with_state(
-                state.clone(),
-                admin_middleware,
-            )),
+            alerts::router().route_layer(from_fn_with_state(state.clone(), admin_middleware)),
         )
         .nest("/services", service_kinds::router())
+        .nest(
+            "/s3-storages",
+            s3_storages::router().route_layer(from_fn_with_state(state.clone(), admin_middleware)),
+        )
         .nest("/ssh-keys", ssh_keys::router())
         .nest(
             "/users",
-            users::router().route_layer(axum::middleware::from_fn_with_state(
-                state.clone(),
-                admin_middleware,
-            )),
+            users::router().route_layer(from_fn_with_state(state.clone(), admin_middleware)),
         )
         .nest(
             "/nodes",
-            nodes::router().route_layer(axum::middleware::from_fn_with_state(
-                state,
-                admin_middleware,
-            )),
+            nodes::router().route_layer(from_fn_with_state(state, admin_middleware)),
         )
 }
 
