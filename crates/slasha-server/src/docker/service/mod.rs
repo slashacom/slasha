@@ -5,18 +5,11 @@ pub mod scheduler;
 pub mod spec;
 pub mod stats;
 
-use std::{
-    collections::HashMap,
-    io,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::collections::HashMap;
 
 use bollard::Docker;
-use bytes::Bytes;
 use chrono::Utc;
 pub use env::resolve_service_env;
-use futures_util::{Stream, StreamExt, stream::BoxStream};
 pub use provision::run_provision_service_workflow;
 use slasha_db::{
     app::App,
@@ -44,24 +37,9 @@ use crate::{
         service::provision::instance::wait_for_service_health,
         utils::{self, stream_container_logs},
     },
-    operations::{self, OperationGuard, ServiceOperation},
-    s3,
+    operations, s3,
     state::AppState,
 };
-
-/// Stream adapter retaining an [`OperationGuard`] until the stream terminates or drops.
-struct GuardedStream<S> {
-    stream: S,
-    _guard: OperationGuard,
-}
-
-impl<S: Stream + Unpin> Stream for GuardedStream<S> {
-    type Item = S::Item;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.stream).poll_next(cx)
-    }
-}
 
 #[derive(Clone)]
 pub struct ServiceDocker {
@@ -392,46 +370,6 @@ impl ServiceDocker {
         let _ = tokio::fs::remove_dir_all(&backup_dir).await;
 
         Ok(())
-    }
-
-    /// Triggers a database backup stream for a running service.
-    ///
-    /// # Arguments
-    ///
-    /// * `service_id` - Target service ID string.
-    ///
-    /// # Returns
-    ///
-    /// A [`DockerResult`] containing a boxed byte stream.
-    pub async fn stream_service_backup(
-        &self,
-        service_id: &str,
-    ) -> DockerResult<BoxStream<'static, io::Result<Bytes>>> {
-        let db_pool = &self.state.storage.db_pool;
-        let service = ServiceRepo::find(db_pool, service_id, &self.app.id).await?;
-
-        if service.status != ServiceStatus::Running {
-            return Err(DockerError::ServiceNotRunning(service.name));
-        }
-
-        if !service.kind.supports_backups() {
-            return Err(DockerError::Validation(
-                "Automated backups are not supported for this service kind".into(),
-            ));
-        }
-
-        let guard = self.get_guard(&service.id, ServiceOperation::BackingUp)?;
-
-        let env_vars = ServiceRepo::get_env_vars(db_pool, &service.id).await?;
-        let resolved = resolve_service_env(env_vars, &service)?;
-
-        let stream =
-            backup::stream_service_backup(&self.docker_client, &service, &resolved).await?;
-        let guarded = GuardedStream {
-            stream,
-            _guard: guard,
-        };
-        Ok(guarded.boxed())
     }
 
     /// Triggers a database backup for a service.

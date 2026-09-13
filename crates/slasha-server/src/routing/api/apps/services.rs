@@ -49,7 +49,6 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/env", get(get_env_vars).put(update_env_vars))
         .route("/{id}/logs", get(get_logs))
         .route("/{id}/stream", get(stream_logs))
-        .route("/{id}/backup", get(stream_service_backup))
         .route(
             "/{id}/backup-config",
             get(get_service_backup_config).put(update_service_backup_config),
@@ -249,34 +248,6 @@ async fn delete_service(
         .await?;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
-}
-
-async fn stream_service_backup(
-    State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
-    Path((_, id)): Path<(String, String)>,
-) -> HttpResult<impl IntoResponse> {
-    let service = ServiceRepo::find(&state.storage.db_pool, &id, &app.id).await?;
-
-    let byte_stream = ServiceDocker::new(state.clone(), app.clone())
-        .await?
-        .stream_service_backup(&id)
-        .await?;
-
-    let timestamp = Utc::now().format("%Y%m%d%H%M%S");
-    let ext = service.kind.backup_extension();
-    let filename = format!("{}-{}.{}", service.name, timestamp, ext);
-
-    let response = Response::builder()
-        .header(header::CONTENT_TYPE, "application/octet-stream")
-        .header(
-            header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{}\"", filename),
-        )
-        .body(Body::from_stream(byte_stream))
-        .map_err(|e| HttpError::internal(anyhow::anyhow!(e)))?;
-
-    Ok(response)
 }
 
 async fn get_logs(

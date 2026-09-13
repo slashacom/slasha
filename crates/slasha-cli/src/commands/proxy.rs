@@ -78,12 +78,12 @@ pub async fn handle_proxy(
 async fn resolve_service(client: &ApiClient, slug: &str, name: &str) -> Result<ResolvedService> {
     let res: ServiceListResponse = client.get(&format!("/api/apps/{}/services", slug)).await?;
 
-    for svc in res.services {
-        if svc.name.eq_ignore_ascii_case(name) {
+    for item in res.services {
+        if item.service.name.eq_ignore_ascii_case(name) {
             return Ok(ResolvedService {
-                id: svc.id,
-                name: svc.name,
-                kind: svc.kind,
+                id: item.service.id,
+                name: item.service.name,
+                kind: item.service.kind,
             });
         }
     }

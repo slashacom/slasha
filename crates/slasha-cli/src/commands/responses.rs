@@ -1,7 +1,8 @@
+// shared api response types used across multiple cli command modules
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use slasha_db::models::logs::LogRecord;
 
 #[derive(Debug, Default, Clone, Copy, Serialize)]
 pub struct OkResponse;
@@ -14,11 +15,6 @@ impl<'de> Deserialize<'de> for OkResponse {
         let _ = serde::de::IgnoredAny::deserialize(deserializer)?;
         Ok(OkResponse)
     }
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct LogsResponse {
-    pub logs: Vec<LogRecord>,
 }
 
 #[derive(Deserialize, Serialize)]

@@ -325,17 +325,12 @@ pub enum ServicesCommand {
         command: ServiceEnvCommand,
     },
 
-    #[command(name = "backup", about = "Backup service database")]
+    #[command(name = "backups", about = "Manage service backups")]
     Backup {
         #[arg(value_name = "NAME", help = "Service name")]
         service: String,
-        #[arg(
-            short = 'f',
-            long = "file",
-            value_name = "FILE",
-            help = "Output file path"
-        )]
-        file: Option<String>,
+        #[command(subcommand)]
+        command: ServiceBackupCommand,
     },
 
     #[command(name = "proxy", about = "Proxy local port to service")]
@@ -380,6 +375,53 @@ pub enum ServiceEnvCommand {
         )]
         keys: Vec<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum ServiceBackupCommand {
+    #[command(name = "list", about = "List backups")]
+    List,
+
+    #[command(name = "trigger", about = "Trigger a service backup")]
+    Trigger,
+
+    #[command(name = "download", about = "Download a service backup")]
+    Download {
+        #[arg(
+            value_name = "BACKUP",
+            help = "Backup file name (defaults to latest backup)"
+        )]
+        backup: Option<String>,
+        #[arg(
+            short = 'f',
+            long = "file",
+            value_name = "FILE",
+            help = "Output file path (defaults to backup filename, or stdout if piped)"
+        )]
+        file: Option<String>,
+    },
+
+    #[command(name = "restore", about = "Restore database from a backup")]
+    Restore {
+        #[arg(
+            value_name = "BACKUP",
+            help = "Backup file name (defaults to latest backup)"
+        )]
+        backup: Option<String>,
+        #[arg(short = 'y', long, help = "Skip confirmation prompt")]
+        yes: bool,
+    },
+
+    #[command(name = "delete", about = "Delete a service backup")]
+    Delete {
+        #[arg(value_name = "BACKUP", help = "Backup file name")]
+        backup: String,
+        #[arg(short = 'y', long, help = "Skip confirmation prompt")]
+        yes: bool,
+    },
+
+    #[command(name = "config", about = "View automated backup configuration")]
+    Config,
 }
 
 #[derive(Subcommand)]

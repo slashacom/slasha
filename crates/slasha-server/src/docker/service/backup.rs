@@ -1,8 +1,8 @@
 use std::{collections::HashMap, path::Path};
 
-use bollard::{Docker, container::LogOutput};
+use bollard::Docker;
 use bytes::Bytes;
-use futures_util::{StreamExt, stream::BoxStream};
+use futures_util::stream::BoxStream;
 use slasha_db::{
     logs::ResourceKind,
     models::service::{Service, ServiceKind},
@@ -43,37 +43,6 @@ use crate::{
 /// Formatted S3 object key string.
 pub fn service_backup_s3_key(service_id: &str, file_name: &str) -> String {
     format!("services/{}/{}", service_id, file_name)
-}
-
-/// Triggers a database backup stream from the service container.
-///
-/// # Arguments
-///
-/// * `docker_client` - Docker API client ([`Docker`]).
-/// * `service` - Target database service model ([`Service`]).
-/// * `resolved_env` - Map of resolved environment key-value pairs.
-///
-/// # Returns
-///
-/// A [`DockerResult`] containing a boxed byte stream.
-pub async fn stream_service_backup(
-    docker_client: &Docker,
-    service: &Service,
-    resolved_env: &HashMap<String, String>,
-) -> DockerResult<BoxStream<'static, io::Result<Bytes>>> {
-    let (cmd, env) = service.kind.backup_exec(resolved_env);
-    let container_name = service_container_name(&service.id);
-
-    let exec = start_container_exec(docker_client, &container_name, cmd, env, false).await?;
-
-    let byte_stream = exec.output.filter_map(|item| async move {
-        match item {
-            Ok(LogOutput::StdOut { message }) => Some(Ok(message)),
-            _ => None,
-        }
-    });
-
-    Ok(byte_stream.boxed())
 }
 
 /// Executes a database service backup asynchronously, streaming the dump to disk/S3, pruning retention, and updating DB status.
