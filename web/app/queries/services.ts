@@ -6,6 +6,33 @@ import {
 import { httpGet, httpPost, httpDelete, httpPut } from '~/utils/http';
 import type { Service, ServiceKind } from '~/models/service';
 
+export type ServiceRuntimeStatus =
+  | 'provisioning'
+  | 'stopping'
+  | 'restarting'
+  | 'deleting'
+  | 'backing up'
+  | 'restoring'
+  | 'running'
+  | 'stopped'
+  | 'failed';
+
+export function isServiceTransitional(status: string): boolean {
+  return [
+    'provisioning',
+    'stopping',
+    'restarting',
+    'deleting',
+    'backing up',
+    'restoring',
+  ].includes(status.toLowerCase());
+}
+
+export type ServiceListItem = {
+  service: Service;
+  runtime_status: ServiceRuntimeStatus;
+};
+
 export type ResourcesPayload = {
   memory_bytes: number | null;
   nano_cpus: number | null;
@@ -46,7 +73,8 @@ export function getServiceKindsOptions() {
 export function getAppServicesOptions(appSlug: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'services'],
-    queryFn: () => httpGet<{ services: Service[] }>(`apps/${appSlug}/services`),
+    queryFn: () =>
+      httpGet<{ services: ServiceListItem[] }>(`apps/${appSlug}/services`),
   });
 }
 
@@ -54,7 +82,9 @@ export function getServiceOptions(appSlug: string, serviceId: string) {
   return queryOptions({
     queryKey: ['apps', appSlug, 'services', serviceId],
     queryFn: () =>
-      httpGet<{ service: Service }>(`apps/${appSlug}/services/${serviceId}`),
+      httpGet<{ service: Service; runtime_status: ServiceRuntimeStatus }>(
+        `apps/${appSlug}/services/${serviceId}`
+      ),
   });
 }
 

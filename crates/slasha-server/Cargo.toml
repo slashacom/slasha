@@ -68,3 +68,5 @@ sysinfo = "0.39.6"
 cron-parser = "0.11.2"
 portable-pty = "0.9.0"
 encoding_rs = "0.8.41"
+rust-s3 = { version = "0.37.2", default-features = false, features = ["tokio-native-tls", "fail-on-err"] }
+

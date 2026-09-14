@@ -4,7 +4,10 @@ use bollard::{
     Docker,
     query_parameters::{ListContainersOptions, ListVolumesOptions},
 };
-use slasha_db::{app::App, repos::service::ServiceRepo};
+use slasha_db::{
+    app::App,
+    repos::{s3_storage::S3StorageRepo, service::ServiceRepo, service_backup::ServiceBackupRepo},
+};
 
 use crate::{
     docker::{
@@ -12,8 +15,10 @@ use crate::{
         app::{image::remove_app_images, network::remove_app_network},
         labels::LABEL_APP_ID,
         naming::{app_volume_prefix, service_volume_name},
+        service::backup::service_backup_s3_key,
         utils,
     },
+    s3,
     state::Storage,
 };
 
@@ -38,7 +43,40 @@ pub async fn purge_app_from_node(
         for service in services {
             let volume_name = service_volume_name(&service.id);
             if let Err(e) = utils::remove_volume(docker_client, &volume_name).await {
-                tracing::warn!(volume = %volume_name, error = ?e, "Failed to remove service volume during purge");
+                tracing::warn!(volume = %volume_name, error = ?e, "failed to remove service volume during purge");
+            }
+
+            if let Ok(s3_backups) =
+                ServiceBackupRepo::list_for_service_with_s3(&storage.db_pool, &service.id).await
+            {
+                for backup in s3_backups {
+                    if let Some(ref s3_id) = backup.s3_storage_id
+                        && let Ok(s3_storage) = S3StorageRepo::find(&storage.db_pool, s3_id).await
+                    {
+                        let key = service_backup_s3_key(&service.id, &backup.file_name);
+                        if let Err(e) = s3::delete_file(&s3_storage, &key).await {
+                            tracing::warn!(
+                                service_id = %service.id,
+                                backup_id = %backup.id,
+                                key = %key,
+                                error = ?e,
+                                "failed to delete S3 backup object during purge"
+                            );
+                        }
+                    }
+                }
+            }
+
+            let backup_dir = storage.get_service_backup_dir(&service.id);
+            if let Err(e) = tokio::fs::remove_dir_all(&backup_dir).await
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!(
+                    service_id = %service.id,
+                    path = %backup_dir.display(),
+                    error = ?e,
+                    "failed to remove service backup directory during purge"
+                );
             }
         }
     }

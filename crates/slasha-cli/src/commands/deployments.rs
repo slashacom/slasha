@@ -9,7 +9,10 @@ use crate::{
     commands::{logs::display_logs, resolve::resolve_deployment_id, responses::OkResponse},
     context::Context,
     http::ApiClient,
-    output::{cli_info, cli_label, cli_success, confirm_action, print_table, spinner},
+    output::{
+        cli_info, cli_label, cli_success, confirm_action, format_local_datetime, print_table,
+        spinner,
+    },
 };
 
 #[derive(Deserialize, Serialize)]
@@ -111,7 +114,7 @@ async fn handle_list(client: &ApiClient, slug: &str) -> Result<()> {
                     d.id.to_string(),
                     d.commit_sha.to_string(),
                     format_status(d.status),
-                    d.created_at.format("%Y-%m-%d %H:%M").to_string(),
+                    format_local_datetime(d.created_at),
                 ]
             })
             .collect();

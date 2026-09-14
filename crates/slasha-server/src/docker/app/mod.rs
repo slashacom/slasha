@@ -298,7 +298,7 @@ impl AppDocker {
                 .await?
                 .is_some_and(|b| b.enabled);
             if backups_on {
-                return Err(DockerError::EnvResolveFailed(
+                return Err(DockerError::PreconditionFailed(
                     "Backups require a single web instance (Litestream must be the only writer). Disable backups to scale web beyond 1.".to_string(),
                 ));
             }
@@ -307,7 +307,7 @@ impl AppDocker {
         let deployment = DeploymentRepo::find(db_pool, deployment_id, &self.app.id).await?;
 
         if deployment.status != DeploymentStatus::Running {
-            return Err(DockerError::EnvResolveFailed(
+            return Err(DockerError::PreconditionFailed(
                 "Scaling is only allowed for running deployments".to_string(),
             ));
         }
@@ -359,7 +359,7 @@ impl AppDocker {
             deployment.status,
             DeploymentStatus::Building | DeploymentStatus::Pending
         ) {
-            return Err(crate::docker::DockerError::EnvResolveFailed(format!(
+            return Err(DockerError::PreconditionFailed(format!(
                 "Deployment is in state '{}' and cannot be cancelled",
                 deployment.status
             )));
@@ -390,7 +390,7 @@ impl AppDocker {
             DeploymentRepo::find(&self.state.storage.db_pool, deployment_id, &self.app.id).await?;
 
         if deployment.status != DeploymentStatus::Running {
-            return Err(crate::docker::DockerError::EnvResolveFailed(format!(
+            return Err(DockerError::PreconditionFailed(format!(
                 "Deployment is in state '{}' and cannot be stopped",
                 deployment.status
             )));
@@ -490,14 +490,14 @@ impl AppDocker {
     /// * `target_node_id` - Destination node ID string.
     pub async fn move_to_node(&self, target_node_id: &str) -> DockerResult<()> {
         if self.app.node_id == target_node_id {
-            return Err(crate::docker::DockerError::EnvResolveFailed(
+            return Err(DockerError::PreconditionFailed(
                 "App is already on the target node".to_string(),
             ));
         }
 
         let target_node = NodeRepo::get(&self.state.storage.db_pool, target_node_id).await?;
         if target_node.status != NodeStatus::Ready {
-            return Err(crate::docker::DockerError::EnvResolveFailed(
+            return Err(DockerError::PreconditionFailed(
                 "Target node is not ready".to_string(),
             ));
         }

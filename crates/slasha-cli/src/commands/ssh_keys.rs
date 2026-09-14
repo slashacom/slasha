@@ -8,7 +8,7 @@ use crate::{
     commands::responses::OkResponse,
     context::Context,
     http::ApiClient,
-    output::{cli_info, cli_label, cli_success, print_table, spinner},
+    output::{cli_info, cli_label, cli_success, format_local_date, print_table, spinner},
 };
 
 #[derive(Deserialize, Serialize)]
@@ -37,7 +37,7 @@ async fn handle_list(client: &ApiClient) -> Result<()> {
             &["NAME", "ADDED"],
             res.keys
                 .iter()
-                .map(|k| vec![k.name.clone(), k.created_at.format("%Y-%m-%d").to_string()])
+                .map(|k| vec![k.name.clone(), format_local_date(k.created_at)])
                 .collect(),
         );
     }

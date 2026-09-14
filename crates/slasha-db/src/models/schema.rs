@@ -230,6 +230,55 @@ diesel::table! {
 }
 
 diesel::table! {
+    s3_storages (id) {
+        id -> Text,
+        name -> Text,
+        endpoint -> Text,
+        bucket -> Text,
+        region -> Text,
+        access_key_id -> Text,
+        secret_access_key -> Text,
+        force_path_style -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    service_backup_configs (service_id) {
+        service_id -> Text,
+        enabled -> Bool,
+        schedule -> Text,
+        timezone -> Text,
+        retention_count -> Integer,
+        s3_storage_id -> Nullable<Text>,
+        keep_local -> Bool,
+        last_run_at -> Nullable<Timestamp>,
+        next_run_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    service_backups (id) {
+        id -> Text,
+        service_id -> Text,
+        s3_storage_id -> Nullable<Text>,
+        file_name -> Text,
+        file_size -> BigInt,
+        status -> Text,
+        trigger_kind -> Text,
+        error -> Nullable<Text>,
+        stored_locally -> Bool,
+        last_restored_at -> Nullable<Timestamp>,
+        restore_status -> Text,
+        restore_error -> Nullable<Text>,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     service_env_vars (id) {
         id -> Text,
         service_id -> Text,
@@ -292,6 +341,10 @@ diesel::joinable!(deployments -> nodes (node_id));
 diesel::joinable!(git_connections -> apps (app_id));
 diesel::joinable!(github_connections -> apps (app_id));
 diesel::joinable!(github_installations -> users (user_id));
+diesel::joinable!(service_backup_configs -> s3_storages (s3_storage_id));
+diesel::joinable!(service_backup_configs -> services (service_id));
+diesel::joinable!(service_backups -> s3_storages (s3_storage_id));
+diesel::joinable!(service_backups -> services (service_id));
 diesel::joinable!(service_env_vars -> services (service_id));
 diesel::joinable!(services -> apps (app_id));
 diesel::joinable!(ssh_keys -> users (user_id));
@@ -315,6 +368,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     github_connections,
     github_installations,
     nodes,
+    s3_storages,
+    service_backup_configs,
+    service_backups,
     service_env_vars,
     services,
     ssh_keys,

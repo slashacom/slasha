@@ -14,20 +14,20 @@ pub use scheduler::spawn_cron_scheduler;
 ///
 /// # Returns
 ///
-/// An [`anyhow::Result`] containing an optional [`NaiveDateTime`].
+/// An [`anyhow::Result`] containing [`NaiveDateTime`].
 pub fn next_run_at(
     schedule: &str,
     timezone: &str,
     from: &DateTime<Utc>,
-) -> anyhow::Result<Option<NaiveDateTime>> {
+) -> anyhow::Result<NaiveDateTime> {
     let tz: Tz = timezone
         .parse()
         .map_err(|_| anyhow::anyhow!("invalid timezone '{timezone}'"))?;
 
-    match cron_parser::parse(schedule, &from.with_timezone(&tz)) {
-        Ok(next) => Ok(Some(next.with_timezone(&Utc).naive_utc())),
-        Err(e) => Err(anyhow::anyhow!("invalid cron schedule: {e}")),
-    }
+    let next = cron_parser::parse(schedule, &from.with_timezone(&tz))
+        .map_err(|e| anyhow::anyhow!("invalid cron schedule: {e}"))?;
+
+    Ok(next.with_timezone(&Utc).naive_utc())
 }
 
 /// Generates upcoming execution timestamps for schedule preview endpoints.

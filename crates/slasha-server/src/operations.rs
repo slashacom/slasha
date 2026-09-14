@@ -71,6 +71,7 @@ pub enum ServiceOperation {
     Restarting,
     Deleting,
     BackingUp,
+    Restoring { backup_id: String },
 }
 
 #[derive(Clone)]
@@ -100,7 +101,8 @@ impl ActiveOperation {
             Self::Service(ServiceOperation::Stopping) => "stopping",
             Self::Service(ServiceOperation::Restarting) => "restarting",
             Self::Service(ServiceOperation::Deleting) => "deleting",
-            Self::Service(ServiceOperation::BackingUp) => "backing_up",
+            Self::Service(ServiceOperation::BackingUp) => "backing up",
+            Self::Service(ServiceOperation::Restoring { .. }) => "restoring",
         }
     }
 }

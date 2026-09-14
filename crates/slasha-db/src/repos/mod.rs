@@ -12,6 +12,8 @@ pub mod github_connection;
 pub mod logs;
 pub mod node;
 pub mod node_metrics;
+pub mod s3_storage;
 pub mod service;
+pub mod service_backup;
 pub mod ssh_key;
 pub mod user;

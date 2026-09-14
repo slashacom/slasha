@@ -139,3 +139,51 @@ pub fn spinner(msg: &str) -> SpinnerGuard {
     pb.set_message(msg.to_string());
     SpinnerGuard { pb: Some(pb) }
 }
+
+/// Formats a UTC naive timestamp as a local date-time string (`YYYY-MM-DD HH:MM`).
+///
+/// # Arguments
+///
+/// * `dt` - UTC naive date-time ([`chrono::NaiveDateTime`]).
+///
+/// # Returns
+///
+/// Localized date-time string.
+pub fn format_local_datetime(dt: chrono::NaiveDateTime) -> String {
+    dt.and_utc()
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d %H:%M")
+        .to_string()
+}
+
+/// Formats a UTC naive timestamp as a local date-time string with seconds (`YYYY-MM-DD HH:MM:SS`).
+///
+/// # Arguments
+///
+/// * `dt` - UTC naive date-time ([`chrono::NaiveDateTime`]).
+///
+/// # Returns
+///
+/// Localized date-time string including seconds.
+pub fn format_local_datetime_secs(dt: chrono::NaiveDateTime) -> String {
+    dt.and_utc()
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string()
+}
+
+/// Formats a UTC naive timestamp as a local date string (`YYYY-MM-DD`).
+///
+/// # Arguments
+///
+/// * `dt` - UTC naive date-time ([`chrono::NaiveDateTime`]).
+///
+/// # Returns
+///
+/// Localized date string.
+pub fn format_local_date(dt: chrono::NaiveDateTime) -> String {
+    dt.and_utc()
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d")
+        .to_string()
+}

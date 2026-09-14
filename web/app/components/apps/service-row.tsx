@@ -7,17 +7,37 @@ import { ServiceActionsMenu } from '~/components/apps/service-actions-menu';
 import { ServiceKindBadge } from '~/components/apps/service-kind-badge';
 import { describeResources } from '~/components/apps/service-resources';
 import { formatRelativeTime } from '~/utils/date';
+import type { ServiceRuntimeStatus } from '~/queries/services';
 import { serviceEnvReference } from '~/utils/service-env';
 
 type ServiceRowProps = {
   service: Service;
+  runtimeStatus?: ServiceRuntimeStatus;
   appSlug: string;
 };
 
 function ServiceRowDetail(props: ServiceRowProps) {
-  const { service } = props;
+  const { service, runtimeStatus } = props;
+  const status = (runtimeStatus || service.status).toLowerCase();
 
-  if (service.status === 'Provisioning') {
+  if (status === 'restoring') {
+    return (
+      <span className="text-[11px] text-amber-400">
+        Restoring database snapshot... Apps may experience temporary connection
+        loss.
+      </span>
+    );
+  }
+
+  if (status === 'backing up') {
+    return (
+      <span className="text-[11px] text-sky-400">
+        Capturing database snapshot...
+      </span>
+    );
+  }
+
+  if (status === 'provisioning') {
     return (
       <span className="text-[11px] text-text-tertiary">
         Pulling the {service.kind} {service.version} image and starting the
@@ -26,7 +46,7 @@ function ServiceRowDetail(props: ServiceRowProps) {
     );
   }
 
-  if (service.status === 'Failed') {
+  if (status === 'failed') {
     return (
       <span className="text-[11px] text-red-400/90">
         The container did not start. Open the service to read its logs, then
@@ -35,7 +55,7 @@ function ServiceRowDetail(props: ServiceRowProps) {
     );
   }
 
-  if (service.status === 'Stopped') {
+  if (status === 'stopped') {
     return (
       <span className="text-[11px] text-text-tertiary">
         Stopped. Apps referencing its variables cannot connect until it is
@@ -61,8 +81,9 @@ function ServiceRowDetail(props: ServiceRowProps) {
 }
 
 export function ServiceRow(props: ServiceRowProps) {
-  const { service, appSlug } = props;
+  const { service, runtimeStatus, appSlug } = props;
   const navigate = useNavigate();
+  const status = runtimeStatus || service.status;
 
   const limits = describeResources(service.resources).slice(0, 2).join(' · ');
 
@@ -77,9 +98,13 @@ export function ServiceRow(props: ServiceRowProps) {
             {service.name}
           </span>
           <ServiceKindBadge service={service} />
-          <StatusBadge status={service.status} />
+          <StatusBadge status={status} />
         </HStack>
-        <ServiceRowDetail service={service} appSlug={appSlug} />
+        <ServiceRowDetail
+          service={service}
+          runtimeStatus={runtimeStatus}
+          appSlug={appSlug}
+        />
       </VStack>
 
       <VStack space={1} className="hidden shrink-0 items-end lg:flex">

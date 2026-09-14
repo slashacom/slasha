@@ -12,7 +12,7 @@ use slasha_db::{
 };
 
 use crate::{
-    HttpResult,
+    HttpError, HttpResult,
     extractors::{ValidatedJson, auth::AuthUser},
     routing::api::validation::not_empty,
     ssh::regenerate_authorized_keys,
@@ -53,6 +53,13 @@ async fn create_ssh_key(
     AuthUser(user): AuthUser,
     ValidatedJson(payload): ValidatedJson<CreateSshKeyRequest>,
 ) -> HttpResult<Json<SshKey>> {
+    if SshKeyRepo::name_exists(&storage.db_pool, &user.id, &payload.name).await? {
+        return Err(HttpError::bad_request(format!(
+            "SSH key with name '{}' already exists",
+            payload.name
+        )));
+    }
+
     let new_key = NewSshKey {
         user_id: user.id.clone(),
         name: payload.name,

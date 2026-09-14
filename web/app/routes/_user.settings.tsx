@@ -5,12 +5,14 @@ import { TabActionsProvider } from '~/components/interface/tab-actions';
 import { getAuthMeOptions } from '~/queries/auth';
 
 export default function SettingsLayout() {
-  useSuspenseQuery(getAuthMeOptions());
+  const { data: me } = useSuspenseQuery(getAuthMeOptions());
+  const isAdmin = me.user?.role === 'Admin';
 
   const tabs = [
     { label: 'Account', to: '/settings/account' },
     { label: 'Connections', to: '/settings/connections' },
     { label: 'SSH Keys', to: '/settings/ssh-keys' },
+    ...(isAdmin ? [{ label: 'S3 Storages', to: '/settings/s3-storages' }] : []),
   ];
 
   return (

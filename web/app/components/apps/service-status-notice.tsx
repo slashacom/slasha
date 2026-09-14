@@ -1,19 +1,26 @@
-import { AlertCircle, CircleDashed, Loader2, XCircle } from 'lucide-react';
+import { AlertCircle, CircleDashed, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Service } from '~/models/service';
-import { useRedeployService, useRestartService } from '~/queries/services';
+import {
+  type ServiceRuntimeStatus,
+  useRedeployService,
+  useRestartService,
+} from '~/queries/services';
 import { Button } from '~/components/interface/button';
 import { HStack, VStack } from '~/components/interface/stacks';
 
 type ServiceStatusNoticeProps = {
   appSlug: string;
   service: Service;
+  runtimeStatus?: ServiceRuntimeStatus;
 };
 
 export function ServiceStatusNotice(props: ServiceStatusNoticeProps) {
-  const { appSlug, service } = props;
+  const { appSlug, service, runtimeStatus } = props;
   const redeployService = useRedeployService();
   const restartService = useRestartService();
+
+  const status = (runtimeStatus || service.status).toLowerCase();
 
   const handleRedeploy = async () => {
     try {
@@ -33,7 +40,48 @@ export function ServiceStatusNotice(props: ServiceStatusNoticeProps) {
     }
   };
 
-  if (service.status === 'Provisioning') {
+  if (status === 'restoring') {
+    return (
+      <HStack
+        space={3}
+        alignItems="start"
+        className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3"
+      >
+        <CircleDashed className="mt-0.5 size-4 shrink-0 animate-spin text-amber-400" />
+        <VStack space={1}>
+          <span className="text-[13px] font-medium text-text">
+            Restoring database snapshot
+          </span>
+          <span className="text-[12px] leading-5 text-text-tertiary">
+            A snapshot is currently being restored into this service. The
+            container will restart automatically once the restore finishes.
+          </span>
+        </VStack>
+      </HStack>
+    );
+  }
+
+  if (status === 'backing up') {
+    return (
+      <HStack
+        space={3}
+        alignItems="start"
+        className="rounded-xl border border-sky-400/20 bg-sky-400/[0.06] px-4 py-3"
+      >
+        <CircleDashed className="mt-0.5 size-4 shrink-0 animate-spin text-sky-400" />
+        <VStack space={1}>
+          <span className="text-[13px] font-medium text-text">
+            Generating database snapshot
+          </span>
+          <span className="text-[12px] leading-5 text-text-tertiary">
+            A database snapshot is currently being captured and stored.
+          </span>
+        </VStack>
+      </HStack>
+    );
+  }
+
+  if (status === 'provisioning') {
     return (
       <HStack
         space={3}
@@ -78,12 +126,8 @@ export function ServiceStatusNotice(props: ServiceStatusNoticeProps) {
           label="Redeploy"
           color="neutral"
           size="sm"
-          icon={
-            redeployService.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : undefined
-          }
           onClick={handleRedeploy}
+          isLoading={redeployService.isPending}
           isDisabled={redeployService.isPending}
         />
       </HStack>
@@ -109,12 +153,8 @@ export function ServiceStatusNotice(props: ServiceStatusNoticeProps) {
           label="Restart"
           color="neutral"
           size="sm"
-          icon={
-            restartService.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : undefined
-          }
           onClick={handleRestart}
+          isLoading={restartService.isPending}
           isDisabled={restartService.isPending}
         />
       </HStack>

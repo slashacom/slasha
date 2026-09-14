@@ -1,12 +1,12 @@
 use chrono::Utc;
-use diesel::prelude::*;
+use diesel::{prelude::*, upsert::excluded};
 
 use crate::{
     connection::DbPool,
     crypto,
     error::DbResult,
     models::{
-        github_app_config::{GithubAppConfig, GithubAppConfigChangeset, NewGithubAppConfig},
+        github_app_config::{GithubAppConfig, NewGithubAppConfig},
         schema::github_app_config,
     },
 };
@@ -43,15 +43,6 @@ impl GithubAppConfigRepo {
             let enc_private_key = crypto::encrypt(&config.private_key)?;
             let enc_webhook_secret = crypto::encrypt(&config.webhook_secret)?;
 
-            let changeset = GithubAppConfigChangeset {
-                app_id: config.app_id.clone(),
-                client_id: config.client_id.clone(),
-                client_secret: enc_client_secret.clone(),
-                private_key: enc_private_key.clone(),
-                webhook_secret: enc_webhook_secret.clone(),
-                updated_at: Utc::now().naive_utc(),
-            };
-
             let mut result: GithubAppConfig = diesel::insert_into(github_app_config::table)
                 .values((
                     github_app_config::id.eq("default"),
@@ -63,7 +54,15 @@ impl GithubAppConfigRepo {
                 ))
                 .on_conflict(github_app_config::id)
                 .do_update()
-                .set(&changeset)
+                .set((
+                    github_app_config::app_id.eq(excluded(github_app_config::app_id)),
+                    github_app_config::client_id.eq(excluded(github_app_config::client_id)),
+                    github_app_config::client_secret.eq(excluded(github_app_config::client_secret)),
+                    github_app_config::private_key.eq(excluded(github_app_config::private_key)),
+                    github_app_config::webhook_secret
+                        .eq(excluded(github_app_config::webhook_secret)),
+                    github_app_config::updated_at.eq(Utc::now().naive_utc()),
+                ))
                 .returning(GithubAppConfig::as_returning())
                 .get_result(&mut conn)?;
 

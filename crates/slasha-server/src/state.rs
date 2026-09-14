@@ -40,6 +40,7 @@ pub struct Storage {
     pub db_pool: DbPool,
     pub duckdb_pool: DuckdbPool,
     pub repos_dir: PathBuf,
+    pub services_backup_dir: PathBuf,
 }
 
 impl Storage {
@@ -50,6 +51,7 @@ impl Storage {
     /// * `db_path` - Path to the primary SQLite database file.
     /// * `duckdb_path` - Path to the DuckDB metrics database file.
     /// * `repos_dir` - Root directory where app source repositories are cloned.
+    /// * `services_backup_dir` - Root directory where database service backups are stored.
     ///
     /// # Returns
     ///
@@ -58,6 +60,7 @@ impl Storage {
         db_path: &std::path::Path,
         duckdb_path: &std::path::Path,
         repos_dir: PathBuf,
+        services_backup_dir: PathBuf,
     ) -> anyhow::Result<Self> {
         let db_str = db_path
             .to_str()
@@ -73,7 +76,21 @@ impl Storage {
             db_pool,
             duckdb_pool,
             repos_dir,
+            services_backup_dir,
         })
+    }
+
+    /// Resolves the local filesystem backup directory for a specific service ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_id` - Target service identifier string.
+    ///
+    /// # Returns
+    ///
+    /// A [`PathBuf`] pointing to the service backup storage path.
+    pub fn get_service_backup_dir(&self, service_id: &str) -> PathBuf {
+        self.services_backup_dir.join(service_id)
     }
 }
 
