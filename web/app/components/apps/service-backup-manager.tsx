@@ -282,13 +282,13 @@ function ServiceBackupContent(props: ServiceBackupManagerProps) {
 
   const storageDestinationLabel = config
     ? config.keep_local && s3StorageObj
-      ? `Local Host + ${s3StorageObj.name}`
+      ? `Local + ${s3StorageObj.name}`
       : config.keep_local
-        ? 'Local Host'
+        ? 'Local'
         : s3StorageObj
           ? s3StorageObj.name
           : 'None'
-    : 'Local Host';
+    : 'Local';
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
