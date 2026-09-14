@@ -61,8 +61,17 @@ pub enum DockerError {
     #[error("Deployment \"{0}\" no longer has a retained image")]
     ArtifactUnavailable(String),
 
+    #[error("{0}")]
+    PreconditionFailed(String),
+
     #[error("Validation error: {0}")]
     Validation(String),
+
+    #[error("Service backup command failed with exit code {0}: {1}")]
+    ServiceBackupFailed(i64, String),
+
+    #[error("Service restore command failed with exit code {0}: {1}")]
+    ServiceRestoreFailed(i64, String),
 
     #[error("{0}")]
     Other(#[from] anyhow::Error),
@@ -73,20 +82,53 @@ pub type DockerResult<T> = std::result::Result<T, DockerError>;
 impl From<DockerError> for HttpError {
     fn from(e: DockerError) -> Self {
         match e {
+            DockerError::Db(err) => err.into(),
+
             DockerError::ServiceNotFound(msg) => HttpError::not_found(msg),
-            DockerError::ServiceNotRunning(msg) => {
-                HttpError::bad_request(format!("Service {} is not running", msg))
-            }
+
+            DockerError::ServiceNotRunning(msg)
+            | DockerError::PreconditionFailed(msg)
+            | DockerError::ScaleError(msg)
+            | DockerError::Validation(msg)
+            | DockerError::EnvResolveFailed(msg) => HttpError::bad_request(msg),
+
             DockerError::ReleaseFailed(code) => {
                 HttpError::bad_request(format!("Release command failed with exit code {}", code))
             }
+
             DockerError::ArtifactUnavailable(msg) => {
                 HttpError::bad_request(format!("Deployment {} no longer has a retained image", msg))
             }
-            DockerError::Validation(msg) => HttpError::bad_request(msg),
-            DockerError::EnvResolveFailed(msg) => HttpError::bad_request(msg),
+
+            DockerError::ServiceBackupFailed(code, msg) => {
+                let detail = if msg.trim().is_empty() {
+                    format!("Service backup command failed with exit code {}", code)
+                } else {
+                    format!(
+                        "Service backup command failed with exit code {}: {}",
+                        code,
+                        msg.trim()
+                    )
+                };
+                HttpError::bad_request(detail)
+            }
+
+            DockerError::ServiceRestoreFailed(code, msg) => {
+                let detail = if msg.trim().is_empty() {
+                    format!("Service restore command failed with exit code {}", code)
+                } else {
+                    format!(
+                        "Service restore command failed with exit code {}: {}",
+                        code,
+                        msg.trim()
+                    )
+                };
+                HttpError::bad_request(detail)
+            }
+
             DockerError::Git(err) => HttpError::bad_request(err.message()),
             DockerError::Operation(err) => HttpError::bad_request(err.to_string()),
+
             _ => HttpError::internal(e),
         }
     }

@@ -2,6 +2,7 @@ use anyhow::Result;
 use serde::Deserialize;
 use slasha_db::{
     deployment::{Deployment, DeploymentStatus},
+    models::service_backup::{ServiceBackup, ServiceBackupStatus},
     service::Service,
 };
 
@@ -74,8 +75,13 @@ pub async fn resolve_deployment_id(
 }
 
 #[derive(Deserialize)]
+struct ServiceListItem {
+    service: Service,
+}
+
+#[derive(Deserialize)]
 struct ServiceListResponse {
-    services: Vec<Service>,
+    services: Vec<ServiceListItem>,
 }
 
 /// Resolves a service ID by matching the service name.
@@ -92,9 +98,9 @@ struct ServiceListResponse {
 pub async fn resolve_service_id(client: &ApiClient, slug: &str, name: &str) -> Result<String> {
     let res: ServiceListResponse = client.get(&format!("/api/apps/{}/services", slug)).await?;
 
-    for service in res.services {
-        if service.name.eq_ignore_ascii_case(name) {
-            return Ok(service.id);
+    for item in res.services {
+        if item.service.name.eq_ignore_ascii_case(name) {
+            return Ok(item.service.id);
         }
     }
 
@@ -132,4 +138,65 @@ pub async fn resolve_node_id(client: &ApiClient, name: &str) -> Result<String> {
     }
 
     anyhow::bail!("Node '{}' not found", name)
+}
+
+#[derive(Deserialize)]
+struct BackupListResponse {
+    backups: Vec<ServiceBackup>,
+}
+
+/// Resolves a service backup by file name or defaults to the latest completed backup.
+///
+/// # Arguments
+///
+/// * `client` - Reference to the API client ([`ApiClient`]).
+/// * `slug` - Target application slug.
+/// * `service_id` - Target service ID string.
+/// * `service_name` - Service name string for error reporting.
+/// * `reference` - Optional backup file name or 'latest'.
+///
+/// # Returns
+///
+/// The resolved [`ServiceBackup`].
+pub async fn resolve_backup(
+    client: &ApiClient,
+    slug: &str,
+    service_id: &str,
+    service_name: &str,
+    reference: Option<&str>,
+) -> Result<ServiceBackup> {
+    let res: BackupListResponse = client
+        .get(&format!(
+            "/api/apps/{}/services/{}/backups",
+            slug, service_id
+        ))
+        .await?;
+
+    let reference = reference.map(str::trim).filter(|s| !s.is_empty());
+
+    match reference {
+        None | Some("latest") => {
+            let target = res
+                .backups
+                .into_iter()
+                .filter(|b| b.status == ServiceBackupStatus::Succeeded)
+                .max_by_key(|b| b.created_at);
+
+            match target {
+                Some(b) => Ok(b),
+                None => anyhow::bail!("No completed backups found for service '{}'", service_name),
+            }
+        }
+        Some(target) => res
+            .backups
+            .into_iter()
+            .find(|b| b.file_name == target)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Backup '{}' not found for service '{}'",
+                    target,
+                    service_name
+                )
+            }),
+    }
 }

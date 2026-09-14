@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS s3_storages;
+

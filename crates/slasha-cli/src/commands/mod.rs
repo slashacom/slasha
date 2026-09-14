@@ -22,6 +22,7 @@ mod proxy;
 mod resolve;
 mod responses;
 mod scale;
+mod service_backup;
 mod service_env;
 mod services;
 mod ssh_keys;

@@ -8,7 +8,7 @@ use crate::{
     commands::responses::OkResponse,
     context::Context,
     http::ApiClient,
-    output::{cli_info, cli_success, print_table, spinner},
+    output::{cli_info, cli_success, format_local_datetime, print_table, spinner},
 };
 
 #[derive(Deserialize, Serialize)]
@@ -48,12 +48,7 @@ async fn handle_list(client: &ApiClient, app_slug: &str) -> Result<()> {
             &["DOMAIN", "CREATED AT"],
             res.domains
                 .iter()
-                .map(|d| {
-                    vec![
-                        d.domain.clone(),
-                        d.created_at.format("%Y-%m-%d %H:%M").to_string(),
-                    ]
-                })
+                .map(|d| vec![d.domain.clone(), format_local_datetime(d.created_at)])
                 .collect(),
         );
     }

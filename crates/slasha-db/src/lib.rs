@@ -11,7 +11,8 @@ pub use connection::{
 pub use error::{DbError, DbResult};
 pub use models::{
     alerts, app, app_backup, app_metrics, cron, deployment, git_connection, github_app_config,
-    github_connection, logs, node, node_metrics, schema, service, ssh_keys, user,
+    github_connection, logs, node, node_metrics, s3_storage, schema, service, service_backup,
+    ssh_keys, user,
 };
 
 /// Initializes the database by configuring encryption and applying pending migrations.

@@ -8,10 +8,14 @@ use slasha_db::models::logs::{LogRecord, LogStream};
 
 use crate::{
     clap_app::LogArgs,
-    commands::responses::LogsResponse,
     http::ApiClient,
-    output::{cli_error, cli_info},
+    output::{cli_error, cli_info, format_local_datetime_secs},
 };
+
+#[derive(serde::Deserialize)]
+struct LogsResponse {
+    logs: Vec<LogRecord>,
+}
 
 /// Fetches historical logs or streams live logs based on [`LogArgs`].
 ///
@@ -72,11 +76,7 @@ pub async fn display_logs(
 
 /// Formats a log record into a colorized single line string.
 fn format_log_record(rec: &LogRecord) -> String {
-    let timestamp = rec
-        .timestamp
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string()
-        .dimmed();
+    let timestamp = format_local_datetime_secs(rec.timestamp).dimmed();
 
     let stream = match rec.stream {
         LogStream::Stdout => "[stdout]".green().to_string(),

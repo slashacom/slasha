@@ -15,6 +15,7 @@ pub mod operations;
 pub mod proxy;
 
 pub mod routing;
+pub mod s3;
 
 pub mod ssh;
 pub mod state;
@@ -25,7 +26,7 @@ use std::net::SocketAddr;
 
 use dotenv::dotenv;
 pub use routing::api::{HttpError, HttpResult};
-use slasha_db::repos::github_app_config::GithubAppConfigRepo;
+use slasha_db::repos::{github_app_config::GithubAppConfigRepo, service_backup::ServiceBackupRepo};
 pub use state::AppState;
 use tokio::net::TcpListener;
 use tracing::{info, warn};
@@ -46,6 +47,7 @@ fn setup_dirs() -> (
     std::path::PathBuf, // repos
     std::path::PathBuf, // logs
     std::path::PathBuf, // nodes
+    std::path::PathBuf, // services backup dir
 ) {
     let data_dir = utils::ensure_dir(
         dirs::home_dir()
@@ -53,12 +55,18 @@ fn setup_dirs() -> (
             .join(".slasha"),
     );
 
+    let services_backup_dir = match std::env::var("SLASHA_SERVICES_BACKUP_DIR") {
+        Ok(dir) => utils::ensure_dir(std::path::PathBuf::from(dir)),
+        Err(_) => utils::ensure_dir(data_dir.join("backups").join("services")),
+    };
+
     (
         data_dir.join("slasha.db"),
         data_dir.join("slasha.duckdb"),
         data_dir.join("repos"),
         data_dir.join("logs"),
         utils::ensure_dir(data_dir.join("nodes")),
+        services_backup_dir,
     )
 }
 
@@ -76,7 +84,7 @@ pub async fn serve() -> anyhow::Result<()> {
     dotenv().ok();
     setup_tracing();
 
-    let (db_path, duckdb_path, repos_dir, _logs_dir, nodes_dir) = setup_dirs();
+    let (db_path, duckdb_path, repos_dir, _logs_dir, nodes_dir, services_backup_dir) = setup_dirs();
 
     let slasha_env = Env::from_str_or_default(
         &std::env::var("SLASHA_ENV").unwrap_or_else(|_| "development".to_string()),
@@ -108,7 +116,7 @@ pub async fn serve() -> anyhow::Result<()> {
         slasha_key.as_deref(),
     );
 
-    let storage = Storage::new(&db_path, &duckdb_path, repos_dir)?;
+    let storage = Storage::new(&db_path, &duckdb_path, repos_dir, services_backup_dir)?;
 
     let github_config = GithubAppConfigRepo::get(&storage.db_pool).await?;
     let github_client = github_config
@@ -158,6 +166,10 @@ pub async fn serve() -> anyhow::Result<()> {
     );
 
     let state = AppState::new(config, node_registry, clients, storage, runtime);
+
+    ServiceBackupRepo::mark_zombie_backups_failed(&state.storage.db_pool).await?;
+
+    docker::service::scheduler::spawn_service_backup_scheduler(state.clone());
 
     docker::sync::startup_container_sync(&state).await?;
 

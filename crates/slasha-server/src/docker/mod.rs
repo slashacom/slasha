@@ -2,6 +2,7 @@ pub mod app;
 pub mod cron;
 pub mod env_resolver;
 pub mod error;
+pub mod exec;
 pub mod labels;
 pub mod log_driver;
 pub mod naming;
@@ -13,6 +14,7 @@ pub mod workflow;
 
 pub use app::AppDocker;
 pub use error::{DockerError, DockerResult};
+pub use exec::AttachedExec;
 pub use naming::*;
 pub use rollback::Rollback;
 pub use workflow::{RollbackJournal, WorkflowRunner};

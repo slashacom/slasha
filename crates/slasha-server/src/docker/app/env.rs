@@ -66,7 +66,7 @@ pub async fn resolve_app_env(
             RefSource::Service(service_name) => {
                 let service = app_services
                     .iter()
-                    .find(|s| &s.name == service_name)
+                    .find(|s| s.name.eq_ignore_ascii_case(service_name))
                     .ok_or_else(|| DockerError::ServiceNotFound(service_name.clone()))?;
 
                 if service.status != ServiceStatus::Running {

@@ -84,15 +84,14 @@ impl UserRepo {
         .await?
     }
 
-    pub async fn update(pool: &DbPool, id: &str, mut changeset: UserChangeset) -> DbResult<User> {
+    pub async fn update(pool: &DbPool, id: &str, changeset: UserChangeset) -> DbResult<User> {
         let pool = pool.clone();
         let id = id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            changeset.updated_at = Utc::now().naive_utc();
 
             let updated_user: User = diesel::update(users::table.filter(users::id.eq(&id)))
-                .set(&changeset)
+                .set((&changeset, users::updated_at.eq(Utc::now().naive_utc())))
                 .returning(User::as_returning())
                 .get_result(&mut conn)?;
 

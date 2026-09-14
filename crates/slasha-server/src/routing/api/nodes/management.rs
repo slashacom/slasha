@@ -102,6 +102,13 @@ async fn create_node(
 ) -> HttpResult<impl IntoResponse> {
     let port = payload.port.unwrap_or(22);
 
+    if NodeRepo::name_exists(&state.storage.db_pool, &payload.name, None).await? {
+        return Err(HttpError::bad_request(format!(
+            "Node with name '{}' already exists",
+            payload.name
+        )));
+    }
+
     let new_node = NewNode {
         id: Uuid::new_v4().to_string(),
         name: payload.name,
@@ -206,6 +213,15 @@ async fn update_node(
     ValidatedJson(payload): ValidatedJson<UpdateNodeReq>,
 ) -> HttpResult<impl IntoResponse> {
     let mut node = NodeRepo::get(&state.storage.db_pool, &id).await?;
+
+    if let Some(ref new_name) = payload.name
+        && NodeRepo::name_exists(&state.storage.db_pool, new_name, Some(&id)).await?
+    {
+        return Err(HttpError::bad_request(format!(
+            "Node with name '{}' already exists",
+            new_name
+        )));
+    }
 
     let connection_changed = payload.host.is_some()
         || payload.user.is_some()

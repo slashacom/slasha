@@ -30,10 +30,12 @@ type ProvisionServiceModalProps = {
 };
 
 // Service names double as the reference namespace (`${{ name.KEY }}`), so keep
-// them to a safe identifier: spaces become hyphens and other characters are
-// dropped.
+// them to a safe DNS/identifier label: lowercase letters, numbers, and hyphens.
 function sanitizeServiceName(value: string) {
-  return value.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_-]/g, '');
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
 }
 
 export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
@@ -86,18 +88,28 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
       return;
     }
 
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      toast.error('Service name is required');
+      return;
+    }
+    if (trimmedName.startsWith('-') || trimmedName.endsWith('-')) {
+      toast.error('Service name cannot start or end with a hyphen');
+      return;
+    }
+
     try {
       await provisionService.mutateAsync({
         appSlug,
         kind: kindName as ServiceKind,
-        name: name.trim(),
+        name: trimmedName,
         version,
         envVars,
         resources: payload,
       });
       onClose();
-    } catch (e) {
-      toast.error('Failed to provision service: ' + e);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to provision service');
     }
   };
 
@@ -123,7 +135,7 @@ export function ProvisionServiceModal(props: ProvisionServiceModalProps) {
               <span className="font-mono text-text-secondary">
                 {serviceEnvReference(name.trim() || 'main-db', 'DATABASE_URL')}
               </span>
-              . Letters, numbers, hyphens and underscores only.
+              . Lowercase letters, numbers, and hyphens only.
             </span>
           </VStack>
 

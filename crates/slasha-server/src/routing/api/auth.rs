@@ -236,7 +236,6 @@ async fn update_profile(
             email: new_email,
             role: None,
             password_hash: new_pwd_hash,
-            updated_at: Utc::now().naive_utc(),
         },
     )
     .await?;

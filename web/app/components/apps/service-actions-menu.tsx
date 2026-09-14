@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
+  Archive,
   Eye,
   MoreHorizontal,
   Plug,
@@ -18,6 +19,7 @@ import {
   useDeleteService,
 } from '~/queries/services';
 import { ConnectModal } from '~/components/apps/connect-modal';
+import { ServiceBackupConfigModal } from '~/components/apps/service-backup-config-modal';
 import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import {
   DropdownMenu,
@@ -41,6 +43,7 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
   const stopService = useStopService();
   const deleteService = useDeleteService();
   const [showConnect, setShowConnect] = useState(false);
+  const [showBackupConfig, setShowBackupConfig] = useState(false);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [showRedeployConfirm, setShowRedeployConfirm] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
@@ -142,6 +145,12 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
               Stop
             </DropdownMenuItem>
           ) : null}
+          {service.kind !== 'Redis' ? (
+            <DropdownMenuItem onClick={() => setShowBackupConfig(true)}>
+              <Archive className="size-3.5" />
+              Backup settings
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
@@ -161,6 +170,15 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
         />
       ) : null}
 
+      {service.kind !== 'Redis' ? (
+        <ServiceBackupConfigModal
+          appSlug={appSlug}
+          service={service}
+          open={showBackupConfig}
+          onOpenChange={setShowBackupConfig}
+        />
+      ) : null}
+
       <ConfirmationDialog
         open={showRestartConfirm}
         onOpenChange={setShowRestartConfirm}
@@ -168,6 +186,7 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
         description={`Restart ${service.name}? It will be briefly unavailable while it restarts.`}
         confirmLabel="Restart"
         isDestructive={false}
+        isPending={restartService.isPending}
         onConfirm={handleRestart}
       />
 
@@ -178,6 +197,7 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
         description={`Redeploy ${service.name}? The container is recreated, so it will be briefly unavailable.`}
         confirmLabel="Redeploy"
         isDestructive={false}
+        isPending={redeployService.isPending}
         onConfirm={handleRedeploy}
       />
 
@@ -188,6 +208,7 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
         description={`Stop ${service.name}? Apps using it will lose their connection until it is restarted.`}
         confirmLabel="Stop"
         isDestructive={false}
+        isPending={stopService.isPending}
         onConfirm={handleStop}
       />
 
@@ -197,6 +218,7 @@ export function ServiceActionsMenu(props: ServiceActionsMenuProps) {
         title="Delete Service"
         description={`Are you sure you want to delete ${service.name}? All underlying data will be permanently destroyed.`}
         confirmLabel="Delete Service"
+        isPending={deleteService.isPending}
         onConfirm={handleDelete}
       />
     </div>

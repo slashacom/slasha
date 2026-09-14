@@ -35,13 +35,12 @@ pub struct NewUser {
     pub role: UserRole,
 }
 
-#[derive(AsChangeset)]
+#[derive(AsChangeset, Default, Debug, Clone)]
 #[diesel(table_name = crate::models::schema::users)]
 pub struct UserChangeset {
     pub email: Option<String>,
     pub password_hash: Option<String>,
     pub role: Option<UserRole>,
-    pub updated_at: chrono::NaiveDateTime,
 }
 
 #[derive(

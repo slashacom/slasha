@@ -1,6 +1,8 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, path::Path, str::FromStr};
 
 use slasha_db::models::app_scale::ProcessType;
+
+use crate::docker::DockerResult;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Procfile {
@@ -22,6 +24,35 @@ impl Procfile {
     }
 }
 
+/// Loads and parses the `Procfile` for a specific Git repository commit.
+///
+/// # Arguments
+///
+/// * `repo_path` - Path to the local Git repository directory ([`Path`]).
+/// * `commit_sha` - Commit SHA string to inspect.
+/// * `root_dir` - Subdirectory path within repository.
+///
+/// # Returns
+///
+/// A [`DockerResult`] containing an optional [`Procfile`].
+pub async fn read_procfile(
+    repo_path: &Path,
+    commit_sha: &str,
+    root_dir: &str,
+) -> DockerResult<Option<Procfile>> {
+    let repo_path = repo_path.to_owned();
+    let commit_sha = commit_sha.to_owned();
+    let root_dir = root_dir.to_owned();
+
+    tokio::task::spawn_blocking(move || -> DockerResult<Option<Procfile>> {
+        match super::read_repo_file(&repo_path, &commit_sha, &root_dir, "Procfile")? {
+            Some(content) => Ok(Some(parse_procfile_content(&content))),
+            None => Ok(None),
+        }
+    })
+    .await?
+}
+
 /// Parses a Procfile content string and returns a [`Procfile`] model.
 ///
 /// # Arguments
@@ -31,7 +62,7 @@ impl Procfile {
 /// # Returns
 ///
 /// A [`Procfile`] model.
-pub fn parse_procfile_content(content: &str) -> Procfile {
+fn parse_procfile_content(content: &str) -> Procfile {
     let mut commands = HashMap::new();
     for line in content.lines() {
         let trimmed = line.trim();

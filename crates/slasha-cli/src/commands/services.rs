@@ -1,18 +1,14 @@
 use anyhow::{Context as _, Result};
 use colored::Colorize;
-use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use slasha_db::service::{Service, ServiceKind, ServiceStatus};
-use tokio::{
-    fs::File,
-    io::{AsyncWriteExt, stdout},
-};
+use slasha_db::service::{Service, ServiceKind};
 
 use crate::{
     clap_app::{LogArgs, ServicesCommand},
     commands::{
-        logs::display_logs, proxy, resolve::resolve_service_id, responses::OkResponse, service_env,
+        logs::display_logs, proxy, resolve::resolve_service_id, responses::OkResponse,
+        service_backup, service_env,
     },
     context::Context,
     http::ApiClient,
@@ -20,8 +16,15 @@ use crate::{
 };
 
 #[derive(Deserialize, Serialize)]
+pub struct ServiceListItem {
+    pub service: Service,
+    #[serde(default)]
+    pub runtime_status: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
 pub struct ServiceListResponse {
-    pub services: Vec<Service>,
+    pub services: Vec<ServiceListItem>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -59,8 +62,8 @@ pub async fn dispatch(
         ServicesCommand::Env { service, command } => {
             service_env::dispatch(client, slug, &service, command).await
         }
-        ServicesCommand::Backup { service, file } => {
-            handle_backup(client, slug, &service, file).await
+        ServicesCommand::Backup { service, command } => {
+            service_backup::dispatch(client, slug, &service, command).await
         }
         ServicesCommand::Proxy {
             service,
@@ -80,12 +83,16 @@ async fn handle_list(client: &ApiClient, slug: &str) -> Result<()> {
             &["NAME", "KIND", "VERSION", "STATUS"],
             res.services
                 .iter()
-                .map(|s| {
+                .map(|item| {
+                    let status = item
+                        .runtime_status
+                        .clone()
+                        .unwrap_or_else(|| item.service.status.to_string());
                     vec![
-                        s.name.clone(),
-                        s.kind.to_string(),
-                        s.version.clone(),
-                        format_status(s.status),
+                        item.service.name.clone(),
+                        item.service.kind.to_string(),
+                        item.service.version.clone(),
+                        status,
                     ]
                 })
                 .collect(),
@@ -102,6 +109,22 @@ async fn handle_create(
     name: &str,
     version: Option<&str>,
 ) -> Result<()> {
+    let name_trimmed = name.trim();
+    let is_valid_name = !name_trimmed.is_empty()
+        && name_trimmed.len() <= 63
+        && name_trimmed
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && !name_trimmed.starts_with('-')
+        && !name_trimmed.ends_with('-');
+
+    if !is_valid_name {
+        anyhow::bail!(
+            "Service name '{}' is invalid: must consist of lowercase alphanumeric characters or '-' and must start and end with an alphanumeric character (max 63 characters)",
+            name
+        );
+    }
+
     let default_env = fetch_default_env(client, kind).await?;
 
     let resolved_version = match version {
@@ -223,82 +246,6 @@ async fn handle_logs(client: &ApiClient, slug: &str, service: &str, args: LogArg
     .await
 }
 
-async fn handle_backup(
-    client: &ApiClient,
-    slug: &str,
-    service: &str,
-    file_path: Option<String>,
-) -> Result<()> {
-    let service_id = resolve_service_id(client, slug, service).await?;
-
-    let res = client
-        .get_stream(&format!(
-            "/api/apps/{}/services/{}/backup",
-            slug, service_id
-        ))
-        .await?;
-
-    let mut stream = res.bytes_stream();
-    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
-
-    let target_path = match file_path {
-        Some(path) => Some(path),
-        None if is_tty => {
-            let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-            Some(format!("{}-{}.dump", service, timestamp))
-        }
-        None => None,
-    };
-
-    match target_path {
-        Some(path) => {
-            let mut file = File::create(&path)
-                .await
-                .with_context(|| format!("Failed to create file: {}", path))?;
-
-            cli_info(format!("Writing backup to {}…", path));
-            let mut total: u64 = 0;
-
-            while let Some(chunk) = stream.next().await {
-                let chunk = chunk.context("Stream error")?;
-                total += chunk.len() as u64;
-                file.write_all(&chunk).await.context("Write error")?;
-            }
-
-            file.flush().await.context("Flush error")?;
-            cli_success(format!("Done. {} bytes written to {}.", total, path));
-        }
-        None => {
-            let mut out = stdout();
-            while let Some(chunk) = stream.next().await {
-                let chunk = chunk.context("Stream error")?;
-                out.write_all(&chunk).await.context("Write error")?;
-            }
-            out.flush().await.context("Flush error")?;
-        }
-    }
-
-    Ok(())
-}
-
-/// Formats a service status enum into an ANSI colored string.
-///
-/// # Arguments
-///
-/// * `status` - Service status ([`ServiceStatus`]).
-///
-/// # Returns
-///
-/// Colored status string representation.
-fn format_status(status: ServiceStatus) -> String {
-    match status {
-        ServiceStatus::Running => status.to_string().green().to_string(),
-        ServiceStatus::Provisioning => status.to_string().yellow().to_string(),
-        ServiceStatus::Failed => status.to_string().red().to_string(),
-        ServiceStatus::Stopped => status.to_string().dimmed().to_string(),
-    }
-}
-
 /// Fetches default environment variables associated with a service kind.
 ///
 /// # Arguments
@@ -318,9 +265,8 @@ async fn fetch_default_env(
         .await
         .context("Failed to fetch supported service kinds")?;
 
-    let kind_str = kind.to_string();
     for k in res.kinds {
-        if k["name"].as_str().unwrap_or("") == kind_str {
+        if k["name"].as_str().unwrap_or("") == kind.to_string() {
             return serde_json::from_value(k["default_env_vars"].clone())
                 .context("Failed to parse default env vars for service kind");
         }

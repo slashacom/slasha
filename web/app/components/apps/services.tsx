@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Database, Plus } from 'lucide-react';
-import { getAppServicesOptions } from '~/queries/services';
+import {
+  getAppServicesOptions,
+  isServiceTransitional,
+} from '~/queries/services';
 import { Button } from '~/components/interface/button';
 import { TabActions } from '~/components/interface/tab-actions';
 import { EmptyPage } from '~/components/global/empty-page';
@@ -19,10 +22,10 @@ export function ServicesView(props: ServicesViewProps) {
     ...getAppServicesOptions(appSlug),
     refetchInterval: (query) => {
       const services = query.state.data?.services ?? [];
-      const isAnyProvisioning = services.some(
-        (s) => s.status === 'Provisioning'
+      const isAnyTransitional = services.some((item) =>
+        isServiceTransitional(item.runtime_status || item.service.status)
       );
-      return isAnyProvisioning ? 2000 : 5000;
+      return isAnyTransitional ? 2000 : 5000;
     },
   });
   const [isProvisionModalOpen, setProvisionModalOpen] = useState(false);
@@ -69,10 +72,11 @@ export function ServicesView(props: ServicesViewProps) {
       ) : (
         <div className="flex-1 overflow-auto">
           <div className="divide-y divide-border">
-            {services.map((service) => (
+            {services.map((item) => (
               <ServiceRow
-                key={service.id}
-                service={service}
+                key={item.service.id}
+                service={item.service}
+                runtimeStatus={item.runtime_status}
                 appSlug={appSlug}
               />
             ))}

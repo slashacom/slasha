@@ -105,19 +105,14 @@ impl CronJobRepo {
         .await?
     }
 
-    pub async fn update(
-        pool: &DbPool,
-        id: &str,
-        mut changeset: CronJobChangeset,
-    ) -> DbResult<CronJob> {
+    pub async fn update(pool: &DbPool, id: &str, changeset: CronJobChangeset) -> DbResult<CronJob> {
         let pool = pool.clone();
         let id = id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            changeset.updated_at = Utc::now().naive_utc();
 
             let job: CronJob = diesel::update(cron_jobs::table.filter(cron_jobs::id.eq(&id)))
-                .set(&changeset)
+                .set((&changeset, cron_jobs::updated_at.eq(Utc::now().naive_utc())))
                 .returning(CronJob::as_returning())
                 .get_result(&mut conn)?;
 

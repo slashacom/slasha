@@ -480,24 +480,27 @@ fn derive_runtime_status(
     deployments: &[Deployment],
     runtime: &crate::state::Runtime,
     app_id: &str,
-) -> &'static str {
+) -> String {
     if let Some(status) = runtime
         .operations
         .status_of(&operations::ResourceKey::app(app_id))
     {
-        return status;
+        return status.to_string();
     }
 
     if deployments
         .iter()
         .any(|d| d.status == DeploymentStatus::Running)
     {
-        return "running";
+        return DeploymentStatus::Running.to_string();
     }
+
     match deployments.first().map(|d| d.status) {
-        Some(DeploymentStatus::Building) | Some(DeploymentStatus::Pending) => "deploying",
-        Some(DeploymentStatus::Failed) => "failed",
-        _ => "idle",
+        Some(DeploymentStatus::Building) | Some(DeploymentStatus::Pending) => {
+            "deploying".to_string()
+        }
+        Some(status) => status.to_string(),
+        None => "idle".to_string(),
     }
 }
 
