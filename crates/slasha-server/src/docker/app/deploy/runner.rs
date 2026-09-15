@@ -266,6 +266,7 @@ impl<'a> DeploymentRunner<'a> {
                                     self.log,
                                     self.app,
                                     self.deployment,
+                                    &self.context.commands,
                                     ssh_env.as_ref(),
                                 )
                                 .await?

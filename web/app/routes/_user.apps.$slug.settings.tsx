@@ -17,6 +17,7 @@ import { AppRootDirManager } from '~/components/apps/app-root-dir-manager';
 import { AppNodeManager } from '~/components/apps/app-node-manager';
 import { AutoDeployManager } from '~/components/apps/auto-deploy-manager';
 import { HealthCheckManager } from '~/components/apps/health-check-manager';
+import { BuildCommandsManager } from '~/components/apps/build-commands-manager';
 import { GithubConnectionManager } from '~/components/apps/github-connection-manager';
 import { GitConnectionManager } from '~/components/apps/git-connection-manager';
 import { BackupManager } from '~/components/apps/backup-manager';
@@ -66,6 +67,7 @@ export default function AppSettingsPage() {
         <div className="max-w-3xl space-y-8">
           <AppNameManager app={app} />
           <AppRootDirManager app={app} />
+          <BuildCommandsManager appSlug={slug!} />
           <AppNodeManager app={app} />
           <AutoDeployManager app={app} />
           <HealthCheckManager appSlug={slug!} />
