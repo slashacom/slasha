@@ -1,4 +1,5 @@
 pub mod build;
+pub mod commands;
 pub mod context;
 pub mod create;
 pub mod readiness;
