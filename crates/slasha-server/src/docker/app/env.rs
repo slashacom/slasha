@@ -2,14 +2,15 @@ use std::collections::HashMap;
 
 use slasha_db::{
     app::App,
-    models::service::ServiceStatus,
+    models::service::{Service, ServiceKind, ServiceStatus},
     repos::{app::AppRepo, service::ServiceRepo},
 };
 
 use crate::docker::{
     DockerError, DockerResult,
     app::deploy::context::MANAGED_DATA_PATH,
-    env_resolver::{RefSource, resolve_env_value, topo_sort_env},
+    env_resolver::{MAX_REF_DEPTH, RefSource, contains_env_ref, resolve_env_value, topo_sort_env},
+    naming::service_container_name,
     service::{ServiceKindDockerExt, resolve_service_env},
 };
 
@@ -73,18 +74,28 @@ pub async fn resolve_app_env(
                     return Err(DockerError::ServiceNotRunning(service_name.clone()));
                 }
 
-                match ref_key {
-                    "service_name" => Ok(service.name.clone()),
-                    _ => service_env_map
-                        .get(&service.id)
-                        .and_then(|m| m.get(ref_key))
-                        .cloned()
-                        .ok_or_else(|| {
-                            DockerError::EnvResolveFailed(format!(
-                                "Service \"{}\" does not export env key \"{}\"",
-                                service_name, ref_key
-                            ))
-                        }),
+                if ref_key == "service_name" {
+                    return Ok(service.name.clone());
+                }
+
+                let service_map = service_env_map.get(&service.id).ok_or_else(|| {
+                    DockerError::EnvResolveFailed(format!(
+                        "Service \"{}\" does not export env key \"{}\"",
+                        service_name, ref_key
+                    ))
+                })?;
+
+                let raw_value = service_map.get(ref_key).cloned().ok_or_else(|| {
+                    DockerError::EnvResolveFailed(format!(
+                        "Service \"{}\" does not export env key \"{}\"",
+                        service_name, ref_key
+                    ))
+                })?;
+
+                if !contains_env_ref(&raw_value) {
+                    Ok(raw_value)
+                } else {
+                    resolve_service_scoped_value(&raw_value, service, service_map, 0)
                 }
             }
         })?;
@@ -97,18 +108,68 @@ pub async fn resolve_app_env(
             continue;
         }
         if let Some(map) = service_env_map.get(&service.id) {
-            if !resolved.contains_key("DATABASE_URL")
-                && let Some(db_url) = map.get("DATABASE_URL")
-            {
-                resolved.insert("DATABASE_URL".to_string(), db_url.clone());
-            }
-            if !resolved.contains_key("REDIS_URL")
-                && let Some(redis_url) = map.get("REDIS_URL")
-            {
-                resolved.insert("REDIS_URL".to_string(), redis_url.clone());
-            }
+            apply_service_url_fallbacks(&mut resolved, service, map);
         }
     }
 
     Ok(resolved)
+}
+
+fn apply_service_url_fallbacks(
+    resolved: &mut HashMap<String, String>,
+    service: &Service,
+    service_map: &HashMap<String, String>,
+) {
+    let Some(db_url) = service_map.get("DATABASE_URL") else {
+        return;
+    };
+
+    if !resolved.contains_key("DATABASE_URL") {
+        resolved.insert("DATABASE_URL".to_string(), db_url.clone());
+    }
+
+    if service.kind == ServiceKind::Redis && !resolved.contains_key("REDIS_URL") {
+        resolved.insert("REDIS_URL".to_string(), db_url.clone());
+    }
+}
+
+fn resolve_service_scoped_value(
+    raw_value: &str,
+    service: &Service,
+    service_map: &HashMap<String, String>,
+    depth: usize,
+) -> DockerResult<String> {
+    if depth > MAX_REF_DEPTH {
+        return Err(DockerError::EnvResolveFailed(format!(
+            "Environment variable reference nesting exceeded {} levels while resolving service \"{}\"; check for a circular reference",
+            MAX_REF_DEPTH, service.name
+        )));
+    }
+
+    resolve_env_value(raw_value, |source, ref_key| match source {
+        RefSource::Own => {
+            let nested_value = service_map.get(ref_key).cloned().ok_or_else(|| {
+                DockerError::EnvResolveFailed(format!("Missing variable dependency: {}", ref_key))
+            })?;
+
+            if contains_env_ref(&nested_value) {
+                resolve_service_scoped_value(&nested_value, service, service_map, depth + 1)
+            } else {
+                Ok(nested_value)
+            }
+        }
+
+        RefSource::System => match ref_key {
+            "service_name" => Ok(service.name.clone()),
+            "service_container_name" => Ok(service_container_name(&service.id)),
+            _ => Err(DockerError::EnvResolveFailed(format!(
+                "Unknown system key: {}",
+                ref_key
+            ))),
+        },
+
+        RefSource::Service(_) => Err(DockerError::EnvResolveFailed(
+            "Service references not supported in this context".to_string(),
+        )),
+    })
 }
