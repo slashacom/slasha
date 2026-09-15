@@ -8,6 +8,8 @@ use super::{DockerError, DockerResult};
 /// Regular expression matching environment variable reference expressions formatted as `${{ ... }}`.
 static ENV_REF_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\{\{([^}]*)\}\}").unwrap());
 
+pub const MAX_REF_DEPTH: usize = 8;
+
 /// Indicates the origin domain for an environment variable reference token.
 pub enum RefSource {
     Own,
@@ -168,4 +170,8 @@ pub fn resolve_env_value(
 
     result.push_str(&value[last..]);
     Ok(result)
+}
+
+pub fn contains_env_ref(value: &str) -> bool {
+    ENV_REF_REGEX.is_match(value)
 }

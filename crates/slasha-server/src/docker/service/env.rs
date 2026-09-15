@@ -5,6 +5,7 @@ use slasha_db::service::{Service, ServiceEnvVar};
 use crate::docker::{
     DockerError, DockerResult,
     env_resolver::{RefSource, resolve_env_value, topo_sort_env},
+    naming::service_container_name,
 };
 
 /// Resolves and interpolates environment variables for a database service.
@@ -34,6 +35,7 @@ pub fn resolve_service_env(
             }),
             RefSource::System => match ref_key {
                 "service_name" => Ok(service.name.clone()),
+                "service_container_name" => Ok(service_container_name(&service.id)),
                 _ => Err(DockerError::EnvResolveFailed(format!(
                     "Unknown system key: {}",
                     ref_key
