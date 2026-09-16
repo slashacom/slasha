@@ -27,6 +27,7 @@ use slasha_db::{
         node::NodeRepo,
         user::UserRepo,
     },
+    user::UserRole,
 };
 use tokio::process::Command;
 use uuid::Uuid;
@@ -813,7 +814,13 @@ async fn add_member(
     AppMembersAccess { app, .. }: AppMembersAccess,
     ValidatedJson(payload): ValidatedJson<AddMemberReq>,
 ) -> HttpResult<impl IntoResponse> {
-    UserRepo::find_by_id(&storage.db_pool, &payload.user_id).await?;
+    let target_user = UserRepo::find_by_id(&storage.db_pool, &payload.user_id).await?;
+
+    if target_user.role == UserRole::Admin {
+        return Err(HttpError::bad_request(
+            "System administrators already have full access to all applications",
+        ));
+    }
 
     let member = AppRepo::upsert_member(
         &storage.db_pool,
@@ -834,6 +841,20 @@ async fn update_member(
     Path((_, user_id)): Path<(String, String)>,
     ValidatedJson(payload): ValidatedJson<UpdateMemberReq>,
 ) -> HttpResult<impl IntoResponse> {
+    let target_user = UserRepo::find_by_id(&storage.db_pool, &user_id).await?;
+    if target_user.role == UserRole::Admin {
+        return Err(HttpError::bad_request(
+            "Cannot modify permissions for system administrators",
+        ));
+    }
+
+    let target = AppRepo::find_membership(&storage.db_pool, &app.id, &user_id).await?;
+    if target.as_ref().is_some_and(|m| m.is_owner) {
+        return Err(HttpError::bad_request(
+            "Cannot modify permissions for the app owner",
+        ));
+    }
+
     let member =
         AppRepo::upsert_member(&storage.db_pool, &app.id, &user_id, payload.permissions).await?;
 
@@ -851,6 +872,18 @@ async fn remove_member(
         return Err(HttpError::bad_request(
             "You cannot remove yourself from the app",
         ));
+    }
+
+    let target_user = UserRepo::find_by_id(&storage.db_pool, &member_user_id).await?;
+    if target_user.role == UserRole::Admin {
+        return Err(HttpError::bad_request(
+            "Cannot remove system administrators",
+        ));
+    }
+
+    let target = AppRepo::find_membership(&storage.db_pool, &app.id, &member_user_id).await?;
+    if target.as_ref().is_some_and(|m| m.is_owner) {
+        return Err(HttpError::bad_request("Cannot remove the app owner"));
     }
 
     AppRepo::remove_member(&storage.db_pool, &app.id, &member_user_id).await?;

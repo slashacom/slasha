@@ -132,7 +132,7 @@ export function AppMembersManager(props: AppMembersManagerProps) {
 
   const existingMemberUserIds = new Set(members.map((m) => m.user_id));
   const availableUsers = allUsers.filter(
-    (u) => !existingMemberUserIds.has(u.id)
+    (u) => !existingMemberUserIds.has(u.id) && u.role !== 'Admin'
   );
 
   const handleOpenAdd = () => {
@@ -164,6 +164,10 @@ export function AppMembersManager(props: AppMembersManagerProps) {
   };
 
   const handleOpenEdit = (member: AppMemberWithUser) => {
+    if (member.is_owner) {
+      toast.error('You cannot edit permissions for the app owner');
+      return;
+    }
     setEditingMember(member);
     setEditPermissions({
       can_pull: member.can_pull,
@@ -176,7 +180,7 @@ export function AppMembersManager(props: AppMembersManagerProps) {
   };
 
   const handleUpdateMember = async () => {
-    if (!editingMember) return;
+    if (!editingMember || editingMember.is_owner) return;
 
     try {
       await updateMember.mutateAsync({
@@ -195,7 +199,7 @@ export function AppMembersManager(props: AppMembersManagerProps) {
   };
 
   const handleConfirmRemove = async () => {
-    if (!removingMember) return;
+    if (!removingMember || removingMember.is_owner) return;
 
     try {
       await removeMember.mutateAsync({
