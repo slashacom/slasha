@@ -1,4 +1,7 @@
-use std::{path::Path, process::Stdio};
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 use bytes::Bytes;
 use slasha_db::{app::App, deployment::Deployment};
@@ -9,10 +12,7 @@ use tokio::{
 };
 
 use crate::{
-    docker::{
-        DockerError, DockerResult,
-        app::{image::image_tag, parser::repo_file_path},
-    },
+    docker::{DockerError, DockerResult, app::image::image_tag},
     logs::LogWriter,
     node_registry::DockerSshEnv,
 };
@@ -32,9 +32,18 @@ pub async fn build_docker(
     ssh_env: Option<&DockerSshEnv>,
 ) -> DockerResult<()> {
     let (tmp, image_tag) = prepare_build_context(log, app, deployment).await?;
-    let dockerfile_path = tmp.path().join(repo_file_path(&app.root_dir, "Dockerfile"));
+    let context_dir = resolve_build_dir(tmp.path(), app, deployment)?;
+    let dockerfile_path = context_dir.join("Dockerfile");
 
-    build_image_cli(log, &image_tag, &dockerfile_path, tmp.path(), ssh_env, None).await
+    build_image_cli(
+        log,
+        &image_tag,
+        &dockerfile_path,
+        &context_dir,
+        ssh_env,
+        None,
+    )
+    .await
 }
 
 /// Builds a Docker image using the Railpack buildpack engine via the Docker CLI.
@@ -54,8 +63,11 @@ pub async fn build_railpack(
     let (tmp, image_tag) = prepare_build_context(log, app, deployment).await?;
     let tmp_path = tmp.path();
 
-    let target_dir = tmp_path.join(&app.root_dir);
+    // The app's root directory is both what railpack analyzes and the build
+    // context BuildKit copies from, so plan paths and COPY sources line up.
+    let context_dir = resolve_build_dir(tmp_path, app, deployment)?;
 
+    // Keep the plan outside the context so it is not copied into the image.
     let plan_path = tmp_path.join("railpack-plan.json");
     let info_path = tmp_path.join("railpack-info.json");
 
@@ -63,7 +75,7 @@ pub async fn build_railpack(
 
     let prepare_child = TokioCommand::new("railpack")
         .arg("prepare")
-        .arg(&target_dir)
+        .arg(&context_dir)
         .arg("--plan-out")
         .arg(&plan_path)
         .arg("--info-out")
@@ -83,11 +95,38 @@ pub async fn build_railpack(
         log,
         &image_tag,
         &plan_path,
-        tmp_path,
+        &context_dir,
         ssh_env,
         Some(&[("BUILDKIT_SYNTAX", "ghcr.io/railwayapp/railpack-frontend")]),
     )
     .await
+}
+
+/// Resolves the directory the image is built from: the checked-out repository joined with the app's root directory.
+///
+/// # Arguments
+///
+/// * `checkout` - Base path of the checked-out repository ([`Path`]).
+/// * `app` - Target application model ([`App`]).
+/// * `deployment` - Target deployment model ([`Deployment`]).
+///
+/// # Returns
+///
+/// A [`DockerResult`] containing the resolved build directory ([`PathBuf`]).
+fn resolve_build_dir(checkout: &Path, app: &App, deployment: &Deployment) -> DockerResult<PathBuf> {
+    if app.root_dir.is_empty() {
+        return Ok(checkout.to_path_buf());
+    }
+
+    let dir = checkout.join(&app.root_dir);
+    if !dir.is_dir() {
+        return Err(DockerError::BuildFailed(format!(
+            "Root directory '{}' does not exist at commit {}; fix it in the app settings",
+            app.root_dir, deployment.commit_sha
+        )));
+    }
+
+    Ok(dir)
 }
 
 /// Prepares a temporary directory containing the archived repository files at the target commit SHA.
