@@ -12,10 +12,7 @@ use tokio::{
 };
 
 use crate::{
-    docker::{
-        DockerError, DockerResult,
-        app::{deploy::commands::BuildCommands, image::image_tag},
-    },
+    docker::{DockerError, DockerResult, app::image::image_tag},
     logs::LogWriter,
     node_registry::DockerSshEnv,
 };
@@ -61,7 +58,6 @@ pub async fn build_railpack(
     log: &LogWriter,
     app: &App,
     deployment: &Deployment,
-    commands: &BuildCommands,
     ssh_env: Option<&DockerSshEnv>,
 ) -> DockerResult<()> {
     let (tmp, image_tag) = prepare_build_context(log, app, deployment).await?;
@@ -77,26 +73,13 @@ pub async fn build_railpack(
 
     log.stdout("Running railpack prepare…");
 
-    let mut prepare_cmd = TokioCommand::new("railpack");
-    prepare_cmd
+    let prepare_child = TokioCommand::new("railpack")
         .arg("prepare")
         .arg(&context_dir)
         .arg("--plan-out")
         .arg(&plan_path)
         .arg("--info-out")
-        .arg(&info_path);
-
-    if let Some(build) = &commands.build {
-        log.stdout(format!("Using custom build command: {build}"));
-        prepare_cmd.arg("--build-cmd").arg(build);
-    }
-
-    if let Some(start) = &commands.start {
-        log.stdout(format!("Using custom start command: {start}"));
-        prepare_cmd.arg("--start-cmd").arg(start);
-    }
-
-    let prepare_child = prepare_cmd
+        .arg(&info_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
@@ -119,9 +102,17 @@ pub async fn build_railpack(
     .await
 }
 
-/// Resolves the directory the image is built from: the checked-out repository
-/// joined with the app's root directory. Fails early with a clear message when
-/// the configured root directory is absent at the deployed commit.
+/// Resolves the directory the image is built from: the checked-out repository joined with the app's root directory.
+///
+/// # Arguments
+///
+/// * `checkout` - Base path of the checked-out repository ([`Path`]).
+/// * `app` - Target application model ([`App`]).
+/// * `deployment` - Target deployment model ([`Deployment`]).
+///
+/// # Returns
+///
+/// A [`DockerResult`] containing the resolved build directory ([`PathBuf`]).
 fn resolve_build_dir(checkout: &Path, app: &App, deployment: &Deployment) -> DockerResult<PathBuf> {
     if app.root_dir.is_empty() {
         return Ok(checkout.to_path_buf());

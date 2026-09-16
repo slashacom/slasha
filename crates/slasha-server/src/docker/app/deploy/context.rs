@@ -5,7 +5,6 @@ use slasha_db::{app::App, deployment::Deployment};
 use crate::docker::{
     DockerError, DockerResult,
     app::{
-        deploy::commands::{BuildCommands, apply_start_command, resolve_build_commands},
         env::resolve_app_env,
         parser::{
             BuildStrategy, Procfile, detect_build_strategy, parse_expose, parse_volumes,
@@ -43,14 +42,12 @@ pub async fn resolve_deployment_context(
 
     let container_port = resolve_container_port(&strategy, &mut env_map)?;
     let volume_paths = resolve_volume_paths(&strategy);
-    let commands = resolve_build_commands(&env_map);
     let procfile = read_procfile(
         Path::new(&app.repo_path),
         &deployment.commit_sha,
         &app.root_dir,
     )
     .await?;
-    let procfile = apply_start_command(procfile, commands.start.as_deref());
 
     Ok(DeploymentContext {
         strategy,
@@ -58,7 +55,6 @@ pub async fn resolve_deployment_context(
         container_port,
         volume_paths,
         procfile,
-        commands,
     })
 }
 
@@ -105,7 +101,6 @@ pub struct DeploymentContext {
     pub container_port: u16,
     pub volume_paths: Vec<String>,
     pub procfile: Option<Procfile>,
-    pub commands: BuildCommands,
 }
 
 /// Determines the container port from environment variables (`PORT`) or Dockerfile `EXPOSE` directives, defaulting to [`DEFAULT_CONTAINER_PORT`].

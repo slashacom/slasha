@@ -138,19 +138,6 @@ slasha env set SLASHA_HEALTH_CHECK_PATH=/healthz   # probe this path; requires a
 slasha env set SLASHA_HEALTH_CHECK_TIMEOUT=120     # seconds to wait before failing the release
 ```
 
-Build and start commands: Slasha detects how to build and start your app from the repository
-(a `Dockerfile`, a `Procfile`, or what Railpack infers from your code). When detection gets it
-wrong, for example in a monorepo where the `start` script lives in a workspace package, set the
-commands explicitly from the Build & Start section in the app settings, or with two env vars:
-
-```bash
-slasha env set SLASHA_BUILD_CMD="pnpm --filter @acme/api build"   # Railpack builds only
-slasha env set SLASHA_START_CMD="pnpm --filter @acme/api start"   # runs as the web process
-```
-
-The start command takes precedence over a Procfile `web:` entry. The Root Directory setting
-selects the folder inside the repository that is built; only that folder is sent to the build.
-
 Managed services:
 
 ```bash
