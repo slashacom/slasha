@@ -14,7 +14,10 @@ use slasha_db::{
 use crate::{
     HttpResult,
     docker::AppDocker,
-    extractors::{ValidatedJson, app::ActiveApp},
+    extractors::{
+        ValidatedJson,
+        app::{AppAccess, AppDeployAccess},
+    },
     logs::LogBus,
     routing::api::logs::{LogQuery, fetch_resource_logs, stream_resource_logs},
     state::AppState,
@@ -45,7 +48,7 @@ struct TriggerDeployReq {
 
 async fn trigger_deploy(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppDeployAccess { app, .. }: AppDeployAccess,
     ValidatedJson(payload): ValidatedJson<TriggerDeployReq>,
 ) -> HttpResult<impl IntoResponse> {
     let deployment = AppDocker::new(state, app)
@@ -58,7 +61,7 @@ async fn trigger_deploy(
 
 async fn list_deployments(
     State(db_pool): State<DbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let deployments = DeploymentRepo::list_for_app(&db_pool, &app.id).await?;
 
@@ -67,7 +70,7 @@ async fn list_deployments(
 
 async fn get_deployment(
     State(db_pool): State<DbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let deployment = DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
@@ -77,7 +80,7 @@ async fn get_deployment(
 
 async fn cancel_deployment(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppDeployAccess { app, .. }: AppDeployAccess,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     AppDocker::new(state, app)
@@ -93,7 +96,7 @@ async fn cancel_deployment(
 
 async fn stop_deployment(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppDeployAccess { app, .. }: AppDeployAccess,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     AppDocker::new(state, app)
@@ -109,7 +112,7 @@ async fn stop_deployment(
 
 async fn redeploy_deployment(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppDeployAccess { app, .. }: AppDeployAccess,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let updated_deployment = AppDocker::new(state, app)
@@ -124,7 +127,7 @@ async fn redeploy_deployment(
 
 async fn restart_deployment(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppDeployAccess { app, .. }: AppDeployAccess,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     AppDocker::new(state, app)
@@ -140,7 +143,7 @@ async fn restart_deployment(
 
 async fn rollback_deployment(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppDeployAccess { app, .. }: AppDeployAccess,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let deployment = AppDocker::new(state, app)
@@ -154,7 +157,7 @@ async fn rollback_deployment(
 async fn get_logs(
     State(db_pool): State<DbPool>,
     State(duckdb_pool): State<DuckdbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, deployment_id)): Path<(String, String)>,
     Query(query): Query<LogQuery>,
 ) -> HttpResult<impl IntoResponse> {
@@ -165,7 +168,7 @@ async fn get_logs(
 async fn stream_logs(
     State(db_pool): State<DbPool>,
     State(log_bus): State<LogBus>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     DeploymentRepo::find(&db_pool, &deployment_id, &app.id).await?;
@@ -174,7 +177,7 @@ async fn stream_logs(
 
 async fn delete_deployment(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppDeployAccess { app, .. }: AppDeployAccess,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     AppDocker::new(state, app)
@@ -198,7 +201,7 @@ struct ScaleDeploymentReq {
 
 async fn scale_deployment(
     State(app_state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppDeployAccess { app, .. }: AppDeployAccess,
     Path((_, deployment_id)): Path<(String, String)>,
     ValidatedJson(payload): ValidatedJson<ScaleDeploymentReq>,
 ) -> HttpResult<impl IntoResponse> {
@@ -212,7 +215,7 @@ async fn scale_deployment(
 
 async fn list_processes(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, deployment_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let processes = AppDocker::new(state, app)

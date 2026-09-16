@@ -29,7 +29,7 @@ use crate::{
     docker::service::{ServiceDocker, ServiceKindDockerExt, backup::service_backup_s3_key},
     extractors::{
         ValidatedJson,
-        app::{ActiveApp, ActiveAppOwner},
+        app::{AppAccess, AppServicesAccess},
     },
     logs::LogBus,
     operations::ResourceKey,
@@ -103,7 +103,7 @@ fn derive_service_runtime_status(service: &Service, runtime: &Runtime) -> String
 
 async fn list_services(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let services = ServiceRepo::list_for_app(&state.storage.db_pool, &app.id).await?;
     let items: Vec<serde_json::Value> = services
@@ -124,7 +124,7 @@ async fn list_services(
 
 async fn get_service(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&state.storage.db_pool, &id, &app.id).await?;
@@ -138,7 +138,7 @@ async fn get_service(
 
 async fn service_stats(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let stats = ServiceDocker::new(state, app).await?.get_stats(&id).await?;
@@ -148,7 +148,7 @@ async fn service_stats(
 
 async fn create_service(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     ValidatedJson(payload): ValidatedJson<CreateServiceReq>,
 ) -> HttpResult<impl IntoResponse> {
     if payload.env_vars.contains_key("DATABASE_URL") {
@@ -181,7 +181,7 @@ async fn create_service(
 async fn tunnel(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
-    ActiveAppOwner { app, user, .. }: ActiveAppOwner,
+    AppServicesAccess { app, user, .. }: AppServicesAccess,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&state.storage.db_pool, &id, &app.id).await?;
@@ -207,7 +207,7 @@ async fn tunnel(
 
 async fn restart_service(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     ServiceDocker::new(state, app)
@@ -220,7 +220,7 @@ async fn restart_service(
 
 async fn redeploy_service(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     ServiceDocker::new(state, app)
@@ -233,7 +233,7 @@ async fn redeploy_service(
 
 async fn stop_service(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     ServiceDocker::new(state, app)
@@ -246,7 +246,7 @@ async fn stop_service(
 
 async fn delete_service(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     ServiceDocker::new(state, app)
@@ -260,7 +260,7 @@ async fn delete_service(
 async fn get_logs(
     State(db_pool): State<DbPool>,
     State(duckdb_pool): State<DuckdbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, service_id)): Path<(String, String)>,
     Query(query): Query<LogQuery>,
 ) -> HttpResult<impl IntoResponse> {
@@ -271,7 +271,7 @@ async fn get_logs(
 async fn stream_logs(
     State(db_pool): State<DbPool>,
     State(log_bus): State<LogBus>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, service_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     ServiceRepo::find(&db_pool, &service_id, &app.id).await?;
@@ -286,7 +286,7 @@ struct UpdateEnvVarsReq {
 
 async fn get_env_vars(
     State(db_pool): State<DbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     Path((_, service_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     ServiceRepo::find(&db_pool, &service_id, &app.id).await?;
@@ -302,7 +302,7 @@ async fn get_env_vars(
 
 async fn update_env_vars(
     State(db_pool): State<DbPool>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     Path((_, service_id)): Path<(String, String)>,
     ValidatedJson(payload): ValidatedJson<UpdateEnvVarsReq>,
 ) -> HttpResult<impl IntoResponse> {
@@ -342,7 +342,7 @@ async fn update_env_vars(
 
 async fn get_service_backup_config(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let _service = ServiceRepo::find(&state.storage.db_pool, &id, &app.id).await?;
@@ -368,7 +368,7 @@ struct UpdateBackupConfigReq {
 
 async fn update_service_backup_config(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     Path((_, id)): Path<(String, String)>,
     ValidatedJson(payload): ValidatedJson<UpdateBackupConfigReq>,
 ) -> HttpResult<impl IntoResponse> {
@@ -414,7 +414,7 @@ async fn update_service_backup_config(
 
 async fn list_service_backups(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let _service = ServiceRepo::find(&state.storage.db_pool, &id, &app.id).await?;
@@ -424,7 +424,7 @@ async fn list_service_backups(
 
 async fn trigger_service_backup(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     Path((_, id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service_docker = ServiceDocker::new(state, app).await?;
@@ -436,7 +436,7 @@ async fn trigger_service_backup(
 
 async fn download_service_backup(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     Path((_, id, backup_id)): Path<(String, String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service = ServiceRepo::find(&state.storage.db_pool, &id, &app.id).await?;
@@ -499,7 +499,7 @@ async fn download_service_backup(
 
 async fn restore_service_backup(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     Path((_, id, backup_id)): Path<(String, String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service_docker = ServiceDocker::new(state, app).await?;
@@ -509,7 +509,7 @@ async fn restore_service_backup(
 
 async fn delete_service_backup(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppServicesAccess { app, .. }: AppServicesAccess,
     Path((_, id, backup_id)): Path<(String, String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let service_docker = ServiceDocker::new(state, app).await?;

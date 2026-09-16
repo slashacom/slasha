@@ -1,7 +1,8 @@
 use axum::{
     Json, Router,
     extract::{Path, State},
-    routing::{get, post},
+    middleware::from_fn_with_state,
+    routing::{get, patch, post},
 };
 use chrono::Utc;
 use garde::Validate;
@@ -14,25 +15,27 @@ use slasha_db::{
 
 use crate::{
     HttpError, HttpResult,
-    extractors::ValidatedJson,
+    extractors::{ValidatedJson, auth::AuthUser},
+    middleware::admin::admin_middleware,
     routing::api::validation::not_empty,
     s3,
     state::{AppState, Storage},
 };
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/", get(list_storages).post(create_storage))
-        .route(
-            "/{id}",
-            get(get_storage)
-                .patch(update_storage)
-                .delete(delete_storage),
-        )
+pub fn router(state: AppState) -> Router<AppState> {
+    let admin_routes = Router::new()
+        .route("/", post(create_storage))
+        .route("/{id}", patch(update_storage).delete(delete_storage))
         .route("/{id}/test", post(test_connection))
+        .route_layer(from_fn_with_state(state, admin_middleware));
+
+    Router::new()
+        .route("/", get(list_storages))
+        .route("/{id}", get(get_storage))
+        .merge(admin_routes)
 }
 
-async fn list_storages(State(storage): State<Storage>) -> HttpResult<Json<Value>> {
+async fn list_storages(_auth: AuthUser, State(storage): State<Storage>) -> HttpResult<Json<Value>> {
     let storages = S3StorageRepo::list(&storage.db_pool).await?;
     Ok(Json(json!({ "storages": storages })))
 }
@@ -104,6 +107,7 @@ async fn create_storage(
 }
 
 async fn get_storage(
+    _auth: AuthUser,
     State(storage): State<Storage>,
     Path(id): Path<String>,
 ) -> HttpResult<Json<Value>> {

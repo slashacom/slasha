@@ -1,8 +1,14 @@
 import { queryOptions, useMutation } from '@tanstack/react-query';
 import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
-import type { App, AppSource } from '~/models/app';
+import type {
+  App,
+  AppDomain,
+  AppMember,
+  AppMemberPermissions,
+  AppMemberWithUser,
+  AppSource,
+} from '~/models/app';
 import type { AppScale } from '~/models/app-scale';
-import type { AppDomain } from '~/models/app';
 import type { DomainHealth } from '~/models/domain-health';
 
 import type { AppMetrics } from '~/models/app-metrics';
@@ -105,6 +111,7 @@ export function getAppOptions(slug: string) {
         app: App;
         url: string;
         runtime_status: string;
+        membership?: AppMember | null;
       }>(`apps/${slug}`),
     refetchInterval: (query) => {
       const status = query.state.data?.runtime_status;
@@ -291,5 +298,48 @@ export function useMoveAppNode() {
       httpPut<{ app: App }>(`apps/${data.appSlug}/node`, {
         node_id: data.node_id,
       }),
+  });
+}
+
+export function getAppMembersOptions(appSlug: string) {
+  return queryOptions({
+    queryKey: ['apps', appSlug, 'members'],
+    queryFn: () =>
+      httpGet<{ members: AppMemberWithUser[] }>(`apps/${appSlug}/members`),
+  });
+}
+
+export function useAddAppMember() {
+  return useMutation({
+    mutationFn: (data: {
+      appSlug: string;
+      user_id: string;
+      permissions: AppMemberPermissions;
+    }) =>
+      httpPost<{ member: AppMember }>(`apps/${data.appSlug}/members`, {
+        user_id: data.user_id,
+        ...data.permissions,
+      }),
+  });
+}
+
+export function useUpdateAppMember() {
+  return useMutation({
+    mutationFn: (data: {
+      appSlug: string;
+      user_id: string;
+      permissions: AppMemberPermissions;
+    }) =>
+      httpPut<{ member: AppMember }>(
+        `apps/${data.appSlug}/members/${data.user_id}`,
+        data.permissions
+      ),
+  });
+}
+
+export function useRemoveAppMember() {
+  return useMutation({
+    mutationFn: (data: { appSlug: string; user_id: string }) =>
+      httpDelete<void>(`apps/${data.appSlug}/members/${data.user_id}`),
   });
 }

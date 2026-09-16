@@ -6,7 +6,7 @@ use axum::{
 use serde::Deserialize;
 use slasha_db::repos::app_metrics::AppMetricsRepo;
 
-use crate::{HttpResult, extractors::app::ActiveApp, state::Storage};
+use crate::{HttpResult, extractors::app::AppAccess, state::Storage};
 
 const RAW_INTERVAL_SECONDS: i64 = 10;
 const TARGET_POINTS: i64 = 240;
@@ -25,7 +25,7 @@ fn bucket_seconds(start: chrono::DateTime<chrono::Utc>, end: chrono::DateTime<ch
 
 pub async fn get_metrics(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Query(query): Query<MetricsQuery>,
 ) -> HttpResult<impl IntoResponse> {
     let end = query.end.unwrap_or_else(chrono::Utc::now);
@@ -47,7 +47,7 @@ pub async fn get_metrics(
 
 pub async fn get_latest_metric(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let metric = AppMetricsRepo::get_latest(&storage.duckdb_pool, &app.id).await?;
 

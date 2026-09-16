@@ -1,30 +1,36 @@
 use axum::{
     Json, Router,
     extract::{Path, State},
+    middleware::from_fn_with_state,
     response::IntoResponse,
     routing::{delete, get, patch, post},
 };
 use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
-    repos::{app::AppRepo, user::UserRepo},
+    repos::user::UserRepo,
     user::{NewUser, UserChangeset, UserRole},
 };
 
 use crate::{
     HttpError, HttpResult,
     auth::hash_password,
-    extractors::ValidatedJson,
+    extractors::{ValidatedJson, auth::AuthUser},
+    middleware::admin::admin_middleware,
     state::{AppState, Storage},
 };
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/", get(list_users))
+pub fn router(state: AppState) -> Router<AppState> {
+    let admin_routes = Router::new()
         .route("/", post(create_user))
         .route("/{id}", get(get_user))
         .route("/{id}", patch(update_user))
         .route("/{id}", delete(delete_user))
+        .route_layer(from_fn_with_state(state, admin_middleware));
+
+    Router::new()
+        .route("/", get(list_users))
+        .merge(admin_routes)
 }
 
 async fn get_user(
@@ -32,16 +38,16 @@ async fn get_user(
     Path(id): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
     let user = UserRepo::find_by_id(&storage.db_pool, &id).await?;
-    let memberships = AppRepo::list_memberships_for_user(&storage.db_pool, &id).await?;
-    let app_ids: Vec<String> = memberships.into_iter().map(|m| m.app_id).collect();
 
     Ok(Json(serde_json::json!({
         "user": user,
-        "app_ids": app_ids,
     })))
 }
 
-async fn list_users(State(storage): State<Storage>) -> HttpResult<impl IntoResponse> {
+async fn list_users(
+    _auth: AuthUser,
+    State(storage): State<Storage>,
+) -> HttpResult<impl IntoResponse> {
     let all_users = UserRepo::list(&storage.db_pool).await?;
 
     Ok(Json(serde_json::json!({
@@ -58,8 +64,6 @@ struct CreateUserReq {
     password: String,
     #[garde(skip)]
     role: UserRole,
-    #[garde(skip)]
-    app_ids: Option<Vec<String>>,
 }
 
 async fn create_user(
@@ -74,10 +78,6 @@ async fn create_user(
     };
 
     let new_user = UserRepo::create(&storage.db_pool, new_user).await?;
-
-    if let Some(app_ids) = payload.app_ids {
-        AppRepo::set_user_memberships(&storage.db_pool, &new_user.id, app_ids).await?;
-    }
 
     Ok(Json(serde_json::json!({
         "user": new_user,
@@ -96,8 +96,6 @@ struct UpdateUserReq {
     role: Option<UserRole>,
     #[garde(inner(length(min = 8)))]
     password: Option<String>,
-    #[garde(skip)]
-    app_ids: Option<Vec<String>>,
 }
 
 async fn update_user(
@@ -131,10 +129,6 @@ async fn update_user(
         },
     )
     .await?;
-
-    if let Some(app_ids) = payload.app_ids {
-        AppRepo::set_user_memberships(&storage.db_pool, &id, app_ids).await?;
-    }
 
     Ok(Json(serde_json::json!({
         "user": updated_user,

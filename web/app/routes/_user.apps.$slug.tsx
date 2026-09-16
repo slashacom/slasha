@@ -3,6 +3,7 @@ import { Outlet, useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { getAppOptions } from '~/queries/apps';
 import { getDeploymentsOptions } from '~/queries/deployments';
+import { getAuthMeOptions } from '~/queries/auth';
 import { PageSkeleton } from '~/components/global/page-skeleton';
 import { TabNav } from '~/components/interface/tab-nav';
 import { TabActionsProvider } from '~/components/interface/tab-actions';
@@ -12,8 +13,12 @@ import { PageHeader } from '~/components/interface/page-header';
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
   await Promise.all([
-    queryClient.ensureQueryData(getAppOptions(params.slug)),
-    queryClient.ensureQueryData(getDeploymentsOptions(params.slug)),
+    queryClient.query({ ...getAuthMeOptions(), staleTime: 'static' }),
+    queryClient.query({ ...getAppOptions(params.slug), staleTime: 'static' }),
+    queryClient.query({
+      ...getDeploymentsOptions(params.slug),
+      staleTime: 'static',
+    }),
   ]);
 }
 
@@ -23,6 +28,7 @@ export function meta() {
 
 export default function AppLayout() {
   const { slug } = useParams();
+  const { data: authData } = useSuspenseQuery(getAuthMeOptions());
   const { data } = useSuspenseQuery({
     ...getAppOptions(slug!),
     refetchInterval: (query) => {
@@ -39,6 +45,17 @@ export default function AppLayout() {
     },
   });
   const app = data.app;
+  const user = authData.user;
+  const membership = data.membership;
+
+  const isAdmin = user.role === 'Admin';
+  const isOwner = isAdmin || !!membership?.is_owner;
+  const canManageSettings =
+    isAdmin || isOwner || !!membership?.can_manage_settings;
+  const canManageMembers =
+    isAdmin || isOwner || !!membership?.can_manage_members;
+  const canPull = isAdmin || isOwner || !!membership?.can_pull;
+  const canAccessSettings = canManageSettings || canManageMembers;
 
   if (!app) {
     return (
@@ -65,8 +82,12 @@ export default function AppLayout() {
                 { label: 'Services', to: `/apps/${slug}/services` },
                 { label: 'Crons', to: `/apps/${slug}/crons` },
                 { label: 'Metrics', to: `/apps/${slug}/metrics` },
-                { label: 'Files', to: `/apps/${slug}/files` },
-                { label: 'Settings', to: `/apps/${slug}/settings` },
+                ...(canPull
+                  ? [{ label: 'Files', to: `/apps/${slug}/files` }]
+                  : []),
+                ...(canAccessSettings
+                  ? [{ label: 'Settings', to: `/apps/${slug}/settings` }]
+                  : []),
               ]}
             />
 

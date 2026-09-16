@@ -17,7 +17,7 @@ export function meta() {
 }
 
 export async function clientLoader() {
-  await queryClient.ensureQueryData(getS3StoragesOptions());
+  await queryClient.query({ ...getS3StoragesOptions(), staleTime: 'static' });
 }
 
 export default function S3Storages() {

@@ -32,19 +32,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             alerts::router().route_layer(from_fn_with_state(state.clone(), admin_middleware)),
         )
         .nest("/services", service_kinds::router())
-        .nest(
-            "/s3-storages",
-            s3_storages::router().route_layer(from_fn_with_state(state.clone(), admin_middleware)),
-        )
+        .nest("/s3-storages", s3_storages::router(state.clone()))
         .nest("/ssh-keys", ssh_keys::router())
-        .nest(
-            "/users",
-            users::router().route_layer(from_fn_with_state(state.clone(), admin_middleware)),
-        )
-        .nest(
-            "/nodes",
-            nodes::router().route_layer(from_fn_with_state(state, admin_middleware)),
-        )
+        .nest("/users", users::router(state.clone()))
+        .nest("/nodes", nodes::router(state))
 }
 
 async fn health_check(State(state): State<AppState>) -> HttpResult<Json<Value>> {

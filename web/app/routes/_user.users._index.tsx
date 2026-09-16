@@ -19,11 +19,14 @@ import { formatDate } from '~/utils/date';
 import { TableRowActions } from '~/components/interface/table-row-actions';
 
 export async function clientLoader() {
-  const me = await queryClient.ensureQueryData(getAuthMeOptions());
+  const me = await queryClient.query({
+    ...getAuthMeOptions(),
+    staleTime: 'static',
+  });
   if (me.user.role !== 'Admin') {
     return redirect('/apps');
   }
-  await queryClient.ensureQueryData(getUsersOptions());
+  await queryClient.query({ ...getUsersOptions(), staleTime: 'static' });
   return null;
 }
 

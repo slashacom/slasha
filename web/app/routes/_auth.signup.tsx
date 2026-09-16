@@ -11,7 +11,10 @@ import { getAuthStatusOptions, useSignup } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader() {
-  const status = await queryClient.ensureQueryData(getAuthStatusOptions());
+  const status = await queryClient.query({
+    ...getAuthStatusOptions(),
+    staleTime: 'static',
+  });
   if (status.has_admin) {
     throw redirect('/login');
   }

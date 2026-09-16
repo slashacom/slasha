@@ -15,7 +15,7 @@ use slasha_db::{
 
 use crate::{
     HttpResult,
-    extractors::{ValidatedJson, app::ActiveApp},
+    extractors::{ValidatedJson, app::AppSettingsAccess},
     state::{AppState, Storage},
 };
 
@@ -34,7 +34,7 @@ struct UpdateEnvVarsReq {
 
 async fn get_env_vars(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
 ) -> HttpResult<impl IntoResponse> {
     let vars = AppRepo::get_env_vars(&storage.db_pool, &app.id).await?;
 
@@ -53,7 +53,7 @@ struct ServiceSuggestion {
 
 async fn get_service_env_suggestions(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
 ) -> HttpResult<impl IntoResponse> {
     let services = ServiceRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
@@ -79,7 +79,7 @@ async fn get_service_env_suggestions(
 
 async fn update_env_vars(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
     ValidatedJson(payload): ValidatedJson<UpdateEnvVarsReq>,
 ) -> HttpResult<impl IntoResponse> {
     let new_vars: Vec<NewAppEnvVar> = payload

@@ -1,6 +1,7 @@
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
+    middleware::from_fn_with_state,
     response::IntoResponse,
     routing::{delete, get, post, put},
 };
@@ -20,6 +21,7 @@ use crate::{
     HttpError, HttpResult,
     extractors::{ValidatedJson, auth::AuthUser},
     logs::LogBus,
+    middleware::admin::admin_middleware,
     routing::api::{
         logs::{LogQuery, fetch_resource_logs, stream_resource_logs},
         validation::not_empty,
@@ -27,15 +29,19 @@ use crate::{
     state::AppState,
 };
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/", get(list_nodes))
+pub fn router(state: AppState) -> Router<AppState> {
+    let admin_routes = Router::new()
         .route("/", post(create_node))
-        .route("/{id}", get(get_node))
         .route("/{id}", put(update_node))
         .route("/{id}", delete(delete_node))
         .route("/{id}/logs", get(get_node_logs))
         .route("/{id}/stream", get(stream_node_logs))
+        .route_layer(from_fn_with_state(state, admin_middleware));
+
+    Router::new()
+        .route("/", get(list_nodes))
+        .route("/{id}", get(get_node))
+        .merge(admin_routes)
 }
 
 #[derive(Serialize)]

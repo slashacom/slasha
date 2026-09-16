@@ -23,8 +23,8 @@ import { TabActions } from '~/components/interface/tab-actions';
 
 export async function clientLoader() {
   await Promise.all([
-    queryClient.ensureQueryData(getAlertIncidentsOptions()),
-    queryClient.ensureQueryData(getAlertRulesOptions()),
+    queryClient.query({ ...getAlertIncidentsOptions(), staleTime: 'static' }),
+    queryClient.query({ ...getAlertRulesOptions(), staleTime: 'static' }),
   ]);
   return null;
 }

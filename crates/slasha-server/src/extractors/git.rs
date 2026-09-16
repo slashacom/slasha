@@ -4,9 +4,9 @@ use axum::{
 };
 use base64::prelude::*;
 use slasha_db::{
-    app::App,
+    app::{App, AppMember},
     repos::{app::AppRepo, user::UserRepo},
-    user::User,
+    user::{User, UserRole},
 };
 use thiserror::Error;
 
@@ -47,6 +47,17 @@ impl From<GitError> for HttpError {
 pub struct GitAuth {
     pub user: User,
     pub app: App,
+    pub membership: Option<AppMember>,
+}
+
+impl GitAuth {
+    pub fn can_pull(&self) -> bool {
+        self.user.role == UserRole::Admin || self.membership.as_ref().is_some_and(|m| m.can_pull())
+    }
+
+    pub fn can_push(&self) -> bool {
+        self.user.role == UserRole::Admin || self.membership.as_ref().is_some_and(|m| m.can_push())
+    }
 }
 
 impl FromRequestParts<AppState> for GitAuth
@@ -91,8 +102,15 @@ where
             .await
             .map_err(|_| GitError::RepoNotFound)?;
 
+        let membership =
+            AppRepo::find_membership(&state.storage.db_pool, &app.id, &user.id).await?;
+
         tracing::debug!(user_id = %user.id, app_slug = %app.slug, "git auth ok");
 
-        Ok(GitAuth { user, app })
+        Ok(GitAuth {
+            user,
+            app,
+            membership,
+        })
     }
 }

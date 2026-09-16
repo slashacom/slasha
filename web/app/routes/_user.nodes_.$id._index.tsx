@@ -5,9 +5,10 @@ import { TIME_RANGES } from '~/utils/metrics-utils';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader({ params }: { params: { id: string } }) {
-  await queryClient.ensureQueryData(
-    getNodeMetricsOptions(params.id, TIME_RANGES[0].hours)
-  );
+  await queryClient.query({
+    ...getNodeMetricsOptions(params.id, TIME_RANGES[0].hours),
+    staleTime: 'static',
+  });
   return null;
 }
 

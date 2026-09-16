@@ -17,7 +17,7 @@ export function meta() {
 }
 
 export async function clientLoader() {
-  await queryClient.ensureQueryData(getSshKeysOptions());
+  await queryClient.query({ ...getSshKeysOptions(), staleTime: 'static' });
 }
 
 export default function SshKeys() {

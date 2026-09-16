@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Context;
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, post, put},
@@ -12,7 +12,7 @@ use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
     DbPool, DbResult,
-    app::{AppSource, NewApp},
+    app::{AppMemberPermissions, AppSource, NewApp},
     deployment::{Deployment, DeploymentStatus},
     git_connection::NewGitConnection,
     github_connection::{ConnectionStatus, NewGithubConnection},
@@ -25,6 +25,7 @@ use slasha_db::{
         git_connection::GitConnectionRepo,
         github_connection::GithubConnectionRepo,
         node::NodeRepo,
+        user::UserRepo,
     },
 };
 use tokio::process::Command;
@@ -39,7 +40,7 @@ use crate::{
     docker::{AppDocker, app::network::create_app_network},
     extractors::{
         ValidatedJson,
-        app::{ActiveApp, ActiveAppOwner},
+        app::{AppAccess, AppMembersAccess, AppOwnerAccess, AppSettingsAccess},
         auth::AuthUser,
     },
     operations,
@@ -64,6 +65,11 @@ pub fn router() -> Router<AppState> {
         .route("/{slug}/connection/branch", put(update_connection_branch))
         .route("/{slug}/sync", post(sync_app))
         .route("/{slug}/node", put(move_app_node))
+        .route("/{slug}/members", get(list_members).post(add_member))
+        .route(
+            "/{slug}/members/{user_id}",
+            put(update_member).delete(remove_member),
+        )
 }
 
 #[derive(Deserialize, Validate)]
@@ -366,7 +372,9 @@ async fn get_app(
     State(storage): State<Storage>,
     State(config): State<Config>,
     State(runtime): State<Runtime>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess {
+        app, membership, ..
+    }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let domains = AppDomainRepo::list_for_app(&storage.db_pool, &app.id).await?;
     let url = match domains.first() {
@@ -394,12 +402,13 @@ async fn get_app(
         "app": app,
         "url": url,
         "runtime_status": runtime_status,
+        "membership": membership,
     })))
 }
 
 async fn get_connection(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let connection = match app.source {
         AppSource::Local => None,
@@ -466,7 +475,7 @@ async fn get_connection(
 
 async fn delete_app(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppOwnerAccess { app, .. }: AppOwnerAccess,
 ) -> HttpResult<impl IntoResponse> {
     AppDocker::new(state, app.clone())
         .await?
@@ -556,7 +565,7 @@ async fn list_apps(
 
 async fn list_scales(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let scales = AppScaleRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
@@ -604,7 +613,7 @@ struct UpdateSettingsReq {
 
 async fn update_settings(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
     ValidatedJson(payload): ValidatedJson<UpdateSettingsReq>,
 ) -> HttpResult<impl IntoResponse> {
     if let Some(auto_deploy) = payload.auto_deploy {
@@ -636,7 +645,7 @@ struct ReconnectGithubReq {
 
 async fn reconnect_github(
     State(state): State<AppState>,
-    ActiveAppOwner { app, user, .. }: ActiveAppOwner,
+    AppSettingsAccess { app, user, .. }: AppSettingsAccess,
     ValidatedJson(payload): ValidatedJson<ReconnectGithubReq>,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Github {
@@ -677,7 +686,7 @@ async fn reconnect_github(
 
 async fn disconnect_github(
     State(state): State<AppState>,
-    ActiveAppOwner { app, user: _, .. }: ActiveAppOwner,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Github {
         return Err(HttpError::bad_request("App does not use GitHub"));
@@ -702,9 +711,7 @@ struct UpdateBranchReq {
 
 async fn update_connection_branch(
     State(state): State<AppState>,
-    ActiveAppOwner {
-        mut app, user: _, ..
-    }: ActiveAppOwner,
+    AppSettingsAccess { mut app, .. }: AppSettingsAccess,
     ValidatedJson(payload): ValidatedJson<UpdateBranchReq>,
 ) -> HttpResult<impl IntoResponse> {
     if !matches!(app.source, AppSource::Git | AppSource::Github) {
@@ -732,7 +739,7 @@ async fn update_connection_branch(
 
 async fn sync_app(
     State(state): State<AppState>,
-    ActiveAppOwner { app, user: _, .. }: ActiveAppOwner,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
 ) -> HttpResult<impl IntoResponse> {
     if !matches!(app.source, AppSource::Git | AppSource::Github) {
         return Err(HttpError::bad_request(
@@ -760,7 +767,7 @@ struct MoveAppNodeReq {
 
 async fn move_app_node(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppOwnerAccess { app, .. }: AppOwnerAccess,
     ValidatedJson(payload): ValidatedJson<MoveAppNodeReq>,
 ) -> HttpResult<impl IntoResponse> {
     AppDocker::new(state, app)
@@ -771,4 +778,82 @@ async fn move_app_node(
     Ok(Json(serde_json::json!({
         "migrating": true,
     })))
+}
+
+#[derive(Deserialize, Validate)]
+struct AddMemberReq {
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(custom(not_empty))]
+    user_id: String,
+    #[garde(skip)]
+    #[serde(flatten)]
+    permissions: AppMemberPermissions,
+}
+
+#[derive(Deserialize, Validate)]
+struct UpdateMemberReq {
+    #[garde(skip)]
+    #[serde(flatten)]
+    permissions: AppMemberPermissions,
+}
+
+async fn list_members(
+    State(storage): State<Storage>,
+    AppAccess { app, .. }: AppAccess,
+) -> HttpResult<impl IntoResponse> {
+    let members = AppRepo::list_members_with_users(&storage.db_pool, &app.id).await?;
+
+    Ok(Json(serde_json::json!({
+        "members": members,
+    })))
+}
+
+async fn add_member(
+    State(storage): State<Storage>,
+    AppMembersAccess { app, .. }: AppMembersAccess,
+    ValidatedJson(payload): ValidatedJson<AddMemberReq>,
+) -> HttpResult<impl IntoResponse> {
+    UserRepo::find_by_id(&storage.db_pool, &payload.user_id).await?;
+
+    let member = AppRepo::upsert_member(
+        &storage.db_pool,
+        &app.id,
+        &payload.user_id,
+        payload.permissions,
+    )
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "member": member,
+    })))
+}
+
+async fn update_member(
+    State(storage): State<Storage>,
+    AppMembersAccess { app, .. }: AppMembersAccess,
+    Path((_, user_id)): Path<(String, String)>,
+    ValidatedJson(payload): ValidatedJson<UpdateMemberReq>,
+) -> HttpResult<impl IntoResponse> {
+    let member =
+        AppRepo::upsert_member(&storage.db_pool, &app.id, &user_id, payload.permissions).await?;
+
+    Ok(Json(serde_json::json!({
+        "member": member,
+    })))
+}
+
+async fn remove_member(
+    State(storage): State<Storage>,
+    AppMembersAccess { app, user, .. }: AppMembersAccess,
+    Path((_, member_user_id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    if user.id == member_user_id {
+        return Err(HttpError::bad_request(
+            "You cannot remove yourself from the app",
+        ));
+    }
+
+    AppRepo::remove_member(&storage.db_pool, &app.id, &member_user_id).await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

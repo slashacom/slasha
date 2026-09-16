@@ -14,8 +14,11 @@ import { getAppOptions } from '~/queries/apps';
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
   await Promise.all([
-    queryClient.ensureQueryData(getFileTreeOptions(params.slug)),
-    queryClient.ensureQueryData(getAppOptions(params.slug)),
+    queryClient.query({
+      ...getFileTreeOptions(params.slug),
+      staleTime: 'static',
+    }),
+    queryClient.query({ ...getAppOptions(params.slug), staleTime: 'static' }),
   ]);
 }
 

@@ -33,11 +33,12 @@ import { queryClient } from '~/utils/query-client';
 export async function clientLoader(args: { params: { id: string } }) {
   const { params } = args;
   await Promise.all([
-    queryClient.ensureQueryData(
-      getAlertIncidentNotificationsOptions(params.id)
-    ),
-    queryClient.ensureQueryData(getAlertRulesOptions()),
-    queryClient.ensureQueryData(getAppsOptions()),
+    queryClient.query({
+      ...getAlertIncidentNotificationsOptions(params.id),
+      staleTime: 'static',
+    }),
+    queryClient.query({ ...getAlertRulesOptions(), staleTime: 'static' }),
+    queryClient.query({ ...getAppsOptions(), staleTime: 'static' }),
   ]);
   return null;
 }

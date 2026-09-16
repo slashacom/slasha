@@ -11,12 +11,18 @@ import { toast } from 'sonner';
 
 export async function clientLoader(args: { params: { id: string } }) {
   const { params } = args;
-  const me = await queryClient.ensureQueryData(getAuthMeOptions());
+  const me = await queryClient.query({
+    ...getAuthMeOptions(),
+    staleTime: 'static',
+  });
   if (me.user.role !== 'Admin') {
     throw redirect('/apps');
   }
   try {
-    await queryClient.ensureQueryData(getNodeOptions(params.id));
+    await queryClient.query({
+      ...getNodeOptions(params.id),
+      staleTime: 'static',
+    });
   } catch (err: any) {
     if (err?.status === 404) throw redirect('/nodes');
     throw err;

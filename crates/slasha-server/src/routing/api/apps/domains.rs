@@ -10,7 +10,10 @@ use slasha_db::repos::app_domain::AppDomainRepo;
 
 use crate::{
     AppState, HttpResult, domain_health,
-    extractors::{ValidatedJson, app::ActiveApp},
+    extractors::{
+        ValidatedJson,
+        app::{AppAccess, AppSettingsAccess},
+    },
     routing::api::validation::not_empty,
     state::Storage,
 };
@@ -31,7 +34,7 @@ struct AddDomainRequest {
 
 async fn list_domains(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let domains = AppDomainRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
@@ -40,7 +43,7 @@ async fn list_domains(
 
 async fn list_domains_health(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let domains = AppDomainRepo::list_for_app(&state.storage.db_pool, &app.id).await?;
     let names = domains.into_iter().map(|d| d.domain).collect();
@@ -52,7 +55,7 @@ async fn list_domains_health(
 
 async fn add_domain(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
     ValidatedJson(payload): ValidatedJson<AddDomainRequest>,
 ) -> HttpResult<impl IntoResponse> {
     let raw_domain = payload.domain.as_str();
@@ -90,7 +93,7 @@ async fn add_domain(
 
 async fn delete_domain(
     State(state): State<AppState>,
-    ActiveApp { .. }: ActiveApp,
+    AppSettingsAccess { .. }: AppSettingsAccess,
     Path((_, domain_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     AppDomainRepo::delete(&state.storage.db_pool, &domain_id).await?;

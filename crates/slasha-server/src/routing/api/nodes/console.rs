@@ -16,15 +16,12 @@ use futures_util::{SinkExt, StreamExt};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
 use slasha_db::{
-    models::{
-        node::{Node, NodeStatus},
-        user::UserRole,
-    },
+    models::node::{Node, NodeStatus},
     repos::node::NodeRepo,
 };
 use tokio::sync::mpsc;
 
-use crate::{HttpError, HttpResult, extractors::auth::AuthUser, state::AppState};
+use crate::{HttpError, HttpResult, state::AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/{id}/console", get(handle_node_console))
@@ -54,14 +51,9 @@ pub struct ConsoleQueryParams {
 async fn handle_node_console(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
-    AuthUser(user): AuthUser,
     Path(id): Path<String>,
     Query(params): Query<ConsoleQueryParams>,
 ) -> HttpResult<impl IntoResponse> {
-    if user.role != UserRole::Admin {
-        return Err(HttpError::forbidden("Admin access required"));
-    }
-
     let node = NodeRepo::get(&state.storage.db_pool, &id).await?;
 
     if !node.is_local() && !matches!(node.status, NodeStatus::Ready) {
