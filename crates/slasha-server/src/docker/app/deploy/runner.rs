@@ -58,6 +58,14 @@ fn resolve_process_targets(
     procfile: &Option<Procfile>,
     scale_configs: &[AppScale],
 ) -> Vec<ProcessTarget> {
+    let desired = |process_type: ProcessType| {
+        scale_configs
+            .iter()
+            .find(|s| s.process_type == process_type)
+            .map(|s| s.desired as u32)
+            .unwrap_or(1)
+    };
+
     let mut targets = Vec::new();
 
     if let Some(pf) = procfile {
@@ -66,23 +74,21 @@ fn resolve_process_targets(
                 continue;
             }
 
-            let count = scale_configs
-                .iter()
-                .find(|s| s.process_type == *pt)
-                .map(|s| s.desired as u32)
-                .unwrap_or(1);
-
             targets.push(ProcessTarget {
                 process_type: *pt,
                 command: Some(cmd.clone()),
-                count,
+                count: desired(*pt),
             });
         }
-    } else {
+    }
+
+    // Without a Procfile, or with one that only declares `release`, the
+    // image's own command runs as the web process.
+    if targets.is_empty() {
         targets.push(ProcessTarget {
             process_type: ProcessType::Web,
             command: None,
-            count: 1,
+            count: desired(ProcessType::Web),
         });
     }
 
