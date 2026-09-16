@@ -32,18 +32,12 @@ pub async fn build_docker(
     ssh_env: Option<&DockerSshEnv>,
 ) -> DockerResult<()> {
     let (tmp, image_tag) = prepare_build_context(log, app, deployment).await?;
-    let context_dir = resolve_build_dir(tmp.path(), app, deployment)?;
-    let dockerfile_path = context_dir.join("Dockerfile");
+    // Dockerfiles in a subdirectory conventionally build from the repository
+    // root (`docker build -f apps/api/Dockerfile .`) so workspace packages
+    // stay in context; only the Dockerfile location follows the root directory.
+    let dockerfile_path = resolve_build_dir(tmp.path(), app, deployment)?.join("Dockerfile");
 
-    build_image_cli(
-        log,
-        &image_tag,
-        &dockerfile_path,
-        &context_dir,
-        ssh_env,
-        None,
-    )
-    .await
+    build_image_cli(log, &image_tag, &dockerfile_path, tmp.path(), ssh_env, None).await
 }
 
 /// Builds a Docker image using the Railpack buildpack engine via the Docker CLI.
