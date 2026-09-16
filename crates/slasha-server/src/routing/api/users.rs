@@ -8,7 +8,7 @@ use axum::{
 use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
-    repos::user::UserRepo,
+    repos::{app::AppRepo, user::UserRepo},
     user::{NewUser, UserChangeset, UserRole},
 };
 
@@ -106,15 +106,17 @@ async fn update_user(
     let user = UserRepo::find_by_id(&storage.db_pool, &id).await?;
 
     if let Some(new_role) = payload.role
-        && user.role == UserRole::Admin
-        && new_role == UserRole::User
+        && user.role != new_role
     {
-        let admin_count = UserRepo::admin_count(&storage.db_pool).await?;
-        if admin_count == 1 {
-            return Err(HttpError::bad_request(
-                "There needs to be at least one admin user!",
-            ));
+        if user.role == UserRole::Admin && new_role == UserRole::User {
+            let admin_count = UserRepo::admin_count(&storage.db_pool).await?;
+            if admin_count == 1 {
+                return Err(HttpError::bad_request(
+                    "There needs to be at least one admin user!",
+                ));
+            }
         }
+        AppRepo::remove_non_owner_memberships_for_user(&storage.db_pool, &id).await?;
     }
 
     let password_hash = payload.password.map(|p| hash_password(&p)).transpose()?;

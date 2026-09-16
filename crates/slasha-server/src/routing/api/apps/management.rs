@@ -71,6 +71,7 @@ pub fn router() -> Router<AppState> {
             "/{slug}/members/{user_id}",
             put(update_member).delete(remove_member),
         )
+        .route("/{slug}/transfer-ownership", post(transfer_ownership))
 }
 
 #[derive(Deserialize, Validate)]
@@ -822,6 +823,13 @@ async fn add_member(
         ));
     }
 
+    let existing = AppRepo::find_membership(&storage.db_pool, &app.id, &payload.user_id).await?;
+    if existing.is_some() {
+        return Err(HttpError::bad_request(
+            "User is already a member of this application",
+        ));
+    }
+
     let member = AppRepo::upsert_member(
         &storage.db_pool,
         &app.id,
@@ -837,10 +845,20 @@ async fn add_member(
 
 async fn update_member(
     State(storage): State<Storage>,
-    AppMembersAccess { app, .. }: AppMembersAccess,
+    AppMembersAccess {
+        app,
+        user,
+        membership,
+    }: AppMembersAccess,
     Path((_, user_id)): Path<(String, String)>,
     ValidatedJson(payload): ValidatedJson<UpdateMemberReq>,
 ) -> HttpResult<impl IntoResponse> {
+    let is_owner = user.role == UserRole::Admin || membership.as_ref().is_some_and(|m| m.is_owner);
+    if user.id == user_id && !is_owner {
+        return Err(HttpError::bad_request(
+            "You cannot modify your own permissions",
+        ));
+    }
     let target_user = UserRepo::find_by_id(&storage.db_pool, &user_id).await?;
     if target_user.role == UserRole::Admin {
         return Err(HttpError::bad_request(
@@ -889,4 +907,24 @@ async fn remove_member(
     AppRepo::remove_member(&storage.db_pool, &app.id, &member_user_id).await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, Validate)]
+struct TransferOwnershipReq {
+    #[garde(custom(not_empty))]
+    user_id: String,
+}
+
+async fn transfer_ownership(
+    State(storage): State<Storage>,
+    AppOwnerAccess { app, .. }: AppOwnerAccess,
+    ValidatedJson(payload): ValidatedJson<TransferOwnershipReq>,
+) -> HttpResult<impl IntoResponse> {
+    let target_user = UserRepo::find_by_id(&storage.db_pool, &payload.user_id).await?;
+
+    let member = AppRepo::transfer_ownership(&storage.db_pool, &app.id, &target_user.id).await?;
+
+    Ok(Json(serde_json::json!({
+        "member": member,
+    })))
 }

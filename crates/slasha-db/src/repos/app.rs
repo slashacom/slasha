@@ -527,4 +527,129 @@ impl AppRepo {
         })
         .await?
     }
+
+    pub async fn remove_non_owner_memberships_for_user(
+        pool: &DbPool,
+        user_id: &str,
+    ) -> DbResult<()> {
+        let pool = pool.clone();
+        let user_id = user_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            diesel::delete(
+                app_members::table
+                    .filter(app_members::user_id.eq(&user_id))
+                    .filter(app_members::is_owner.eq(false)),
+            )
+            .execute(&mut conn)?;
+            Ok(())
+        })
+        .await?
+    }
+
+    pub async fn transfer_ownership(
+        pool: &DbPool,
+        app_id: &str,
+        new_owner_id: &str,
+    ) -> DbResult<AppMember> {
+        let pool = pool.clone();
+        let app_id = app_id.to_string();
+        let new_owner_id = new_owner_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            conn.transaction::<_, DbError, _>(|tx| {
+                let current_owner = app_members::table
+                    .filter(app_members::app_id.eq(&app_id))
+                    .filter(app_members::is_owner.eq(true))
+                    .first::<AppMember>(tx)
+                    .optional()?;
+
+                if let Some(current_owner) = current_owner {
+                    if current_owner.user_id == new_owner_id {
+                        return Err(DbError::PreconditionFailed(
+                            "user is already the owner of this application".into(),
+                        ));
+                    }
+
+                    let prev_owner_user = users::table
+                        .filter(users::id.eq(&current_owner.user_id))
+                        .first::<User>(tx)
+                        .optional()?;
+
+                    if prev_owner_user
+                        .as_ref()
+                        .is_some_and(|u| u.role == UserRole::Admin)
+                    {
+                        diesel::delete(
+                            app_members::table
+                                .filter(app_members::app_id.eq(&app_id))
+                                .filter(app_members::user_id.eq(&current_owner.user_id)),
+                        )
+                        .execute(tx)?;
+                    } else {
+                        diesel::update(
+                            app_members::table
+                                .filter(app_members::app_id.eq(&app_id))
+                                .filter(app_members::user_id.eq(&current_owner.user_id)),
+                        )
+                        .set((
+                            app_members::is_owner.eq(false),
+                            app_members::can_pull.eq(true),
+                            app_members::can_push.eq(false),
+                            app_members::can_deploy.eq(false),
+                            app_members::can_manage_services.eq(false),
+                            app_members::can_manage_settings.eq(false),
+                            app_members::can_manage_members.eq(false),
+                        ))
+                        .execute(tx)?;
+                    }
+                }
+
+                let target_membership = app_members::table
+                    .filter(app_members::app_id.eq(&app_id))
+                    .filter(app_members::user_id.eq(&new_owner_id))
+                    .first::<AppMember>(tx)
+                    .optional()?;
+
+                let promoted_member = if target_membership.is_some() {
+                    diesel::update(
+                        app_members::table
+                            .filter(app_members::app_id.eq(&app_id))
+                            .filter(app_members::user_id.eq(&new_owner_id)),
+                    )
+                    .set((
+                        app_members::is_owner.eq(true),
+                        app_members::can_pull.eq(true),
+                        app_members::can_push.eq(true),
+                        app_members::can_deploy.eq(true),
+                        app_members::can_manage_services.eq(true),
+                        app_members::can_manage_settings.eq(true),
+                        app_members::can_manage_members.eq(true),
+                    ))
+                    .returning(AppMember::as_returning())
+                    .get_result(tx)?
+                } else {
+                    let new_member = AppMember {
+                        app_id: app_id.clone(),
+                        user_id: new_owner_id,
+                        is_owner: true,
+                        can_pull: true,
+                        can_push: true,
+                        can_deploy: true,
+                        can_manage_services: true,
+                        can_manage_settings: true,
+                        can_manage_members: true,
+                        added_at: chrono::Utc::now().naive_utc(),
+                    };
+                    diesel::insert_into(app_members::table)
+                        .values(&new_member)
+                        .returning(AppMember::as_returning())
+                        .get_result(tx)?
+                };
+
+                Ok(promoted_member)
+            })
+        })
+        .await?
+    }
 }

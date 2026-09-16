@@ -30,8 +30,10 @@ import { getBackupOptions, getVolumesOptions } from '~/queries/storage';
 import { queryClient } from '~/utils/query-client';
 import { getGithubStatusOptions } from '~/queries/connections';
 import { getAuthMeOptions } from '~/queries/auth';
+import { getUsersOptions } from '~/queries/users';
 import { PageHeader } from '~/components/interface/page-header';
 import { DangerZone } from '~/components/global/danger-zone';
+import { AppTransferOwnershipDialog } from '~/components/apps/app-transfer-ownership-dialog';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
@@ -69,6 +71,7 @@ export async function clientLoader(args: { params: { slug: string } }) {
 
   if (canManageMembers) {
     void queryClient.query(getAppMembersOptions(params.slug)).catch(() => {});
+    void queryClient.query(getUsersOptions()).catch(() => {});
   }
 }
 
@@ -85,6 +88,7 @@ export default function AppSettingsPage() {
   const user = authData.user;
   const membership = data.membership;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showTransferConfirm, setShowTransferConfirm] = useState(false);
 
   const isAdmin = user.role === 'Admin';
   const isOwner = isAdmin || !!membership?.is_owner;
@@ -150,18 +154,41 @@ export default function AppSettingsPage() {
             </>
           )}
 
-          {canManageMembers && <AppMembersManager appSlug={slug!} />}
+          {canManageMembers && (
+            <AppMembersManager appSlug={slug!} appName={app.name} />
+          )}
 
           {isOwner && (
             <DangerZone
-              description="Destructive actions for your application."
-              actionTitle="Delete this application"
-              actionDescription="Once you delete an application, there is no going back. Please be certain."
-              actionLabel="Delete App"
-              onAction={() => setShowDeleteConfirm(true)}
+              description="Actions with significant impact on your application."
+              items={[
+                {
+                  title: 'Transfer ownership',
+                  description:
+                    'Transfer this application to another user on the platform.',
+                  label: 'Transfer Ownership',
+                  color: 'neutral',
+                  onAction: () => setShowTransferConfirm(true),
+                },
+                {
+                  title: 'Delete this application',
+                  description:
+                    'Once you delete an application, there is no going back. Please be certain.',
+                  label: 'Delete App',
+                  color: 'error',
+                  onAction: () => setShowDeleteConfirm(true),
+                },
+              ]}
             />
           )}
         </div>
+
+        <AppTransferOwnershipDialog
+          open={showTransferConfirm}
+          onOpenChange={setShowTransferConfirm}
+          appSlug={app.slug}
+          appName={app.name}
+        />
 
         <ConfirmationDialog
           open={showDeleteConfirm}

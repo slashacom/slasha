@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Crown, Loader2, Pencil, Plus, Trash2, Users } from 'lucide-react';
+import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
+import { Crown, Pencil, Plus, Shield, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AppMemberPermissions, AppMemberWithUser } from '~/models/app';
 import {
@@ -26,10 +26,12 @@ import { Select } from '~/components/interface/select';
 import { SettingsCard } from '~/components/interface/settings-card';
 import { Switch } from '~/components/interface/switch';
 import { TableRowActions } from '~/components/interface/table-row-actions';
+import { AppTransferOwnershipDialog } from '~/components/apps/app-transfer-ownership-dialog';
 import { formatDate } from '~/utils/date';
 
 type AppMembersManagerProps = {
   appSlug: string;
+  appName?: string;
 };
 
 const DEFAULT_PERMISSIONS: AppMemberPermissions = {
@@ -100,14 +102,12 @@ const PERMISSION_CONFIG: {
 ];
 
 export function AppMembersManager(props: AppMembersManagerProps) {
-  const { appSlug } = props;
+  const { appSlug, appName } = props;
   const queryClient = useQueryClient();
 
-  const { data: membersData, isLoading: membersLoading } = useQuery(
-    getAppMembersOptions(appSlug)
-  );
-  const { data: usersData } = useQuery(getUsersOptions());
-  const { data: me } = useQuery(getAuthMeOptions());
+  const { data: membersData } = useSuspenseQuery(getAppMembersOptions(appSlug));
+  const { data: usersData } = useSuspenseQuery(getUsersOptions());
+  const { data: me } = useSuspenseQuery(getAuthMeOptions());
 
   const addMember = useAddAppMember();
   const updateMember = useUpdateAppMember();
@@ -126,11 +126,45 @@ export function AppMembersManager(props: AppMembersManagerProps) {
 
   const [removingMember, setRemovingMember] =
     useState<AppMemberWithUser | null>(null);
+  const [transferringMember, setTransferringMember] =
+    useState<AppMemberWithUser | null>(null);
 
   const members = membersData?.members ?? [];
   const allUsers = usersData?.users ?? [];
 
-  const existingMemberUserIds = new Set(members.map((m) => m.user_id));
+  const isOwner =
+    me?.user?.role === 'Admin' ||
+    members.some((m) => m.user_id === me?.user?.id && m.is_owner);
+
+  const adminMembers: AppMemberWithUser[] = allUsers
+    .filter(
+      (u) => u.role === 'Admin' && !members.some((m) => m.user_id === u.id)
+    )
+    .map((u) => ({
+      app_id: '',
+      user_id: u.id,
+      email: u.email,
+      is_owner: false,
+      can_pull: true,
+      can_push: true,
+      can_deploy: true,
+      can_manage_services: true,
+      can_manage_settings: true,
+      can_manage_members: true,
+      added_at: u.created_at,
+    }));
+
+  const displayedMembers = [...members, ...adminMembers].sort((a, b) => {
+    if (a.is_owner) return -1;
+    if (b.is_owner) return 1;
+    const aAdmin = allUsers.find((u) => u.id === a.user_id)?.role === 'Admin';
+    const bAdmin = allUsers.find((u) => u.id === b.user_id)?.role === 'Admin';
+    if (aAdmin && !bAdmin) return -1;
+    if (!aAdmin && bAdmin) return 1;
+    return a.email.localeCompare(b.email);
+  });
+
+  const existingMemberUserIds = new Set(displayedMembers.map((m) => m.user_id));
   const availableUsers = allUsers.filter(
     (u) => !existingMemberUserIds.has(u.id) && u.role !== 'Admin'
   );
@@ -164,8 +198,10 @@ export function AppMembersManager(props: AppMembersManagerProps) {
   };
 
   const handleOpenEdit = (member: AppMemberWithUser) => {
-    if (member.is_owner) {
-      toast.error('You cannot edit permissions for the app owner');
+    const isMemberAdmin =
+      allUsers.find((u) => u.id === member.user_id)?.role === 'Admin';
+    if (member.is_owner || isMemberAdmin) {
+      toast.error('Cannot edit permissions for this user');
       return;
     }
     setEditingMember(member);
@@ -200,6 +236,9 @@ export function AppMembersManager(props: AppMembersManagerProps) {
 
   const handleConfirmRemove = async () => {
     if (!removingMember || removingMember.is_owner) return;
+    const isMemberAdmin =
+      allUsers.find((u) => u.id === removingMember.user_id)?.role === 'Admin';
+    if (isMemberAdmin) return;
 
     try {
       await removeMember.mutateAsync({
@@ -222,6 +261,17 @@ export function AppMembersManager(props: AppMembersManagerProps) {
         <span className="inline-flex items-center gap-1.5 rounded border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-300">
           <Crown className="size-3 text-amber-400" />
           Owner
+        </span>
+      );
+    }
+
+    const isMemberAdmin =
+      allUsers.find((u) => u.id === member.user_id)?.role === 'Admin';
+    if (isMemberAdmin) {
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-300">
+          <Shield className="size-3 text-purple-400" />
+          Admin
         </span>
       );
     }
@@ -271,12 +321,7 @@ export function AppMembersManager(props: AppMembersManagerProps) {
 
   const body = (
     <div>
-      {membersLoading ? (
-        <div className="flex h-32 items-center justify-center text-text-tertiary">
-          <Loader2 className="size-5 animate-spin" />
-          <span className="ml-2">Loading team members...</span>
-        </div>
-      ) : members.length === 0 ? (
+      {displayedMembers.length === 0 ? (
         <div className="p-8 text-center text-text-tertiary">
           <Users className="mx-auto mb-2 size-8 opacity-40" />
           <p className="text-sm">No team members added yet.</p>
@@ -301,50 +346,77 @@ export function AppMembersManager(props: AppMembersManagerProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {members.map((member) => (
-                <tr
-                  key={member.user_id}
-                  className="group transition-colors hover:bg-white/[0.02]"
-                >
-                  <td className="py-3.5 pr-4 pl-6 align-middle">
-                    <HStack space={2} alignItems="center">
-                      <span className="font-medium text-text">
-                        {member.email}
-                      </span>
-                      {member.user_id === me?.user?.id ? (
-                        <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[11px] font-medium text-text-tertiary">
-                          You
+              {displayedMembers.map((member) => {
+                const isMemberAdmin =
+                  allUsers.find((u) => u.id === member.user_id)?.role ===
+                  'Admin';
+                return (
+                  <tr
+                    key={member.user_id}
+                    className="group transition-colors hover:bg-white/[0.02]"
+                  >
+                    <td className="py-3.5 pr-4 pl-6 align-middle">
+                      <HStack space={2} alignItems="center">
+                        <span className="font-medium text-text">
+                          {member.email}
                         </span>
-                      ) : null}
-                    </HStack>
-                  </td>
-                  <td className="py-3.5 pr-4 align-middle">
-                    {renderPermissionBadges(member)}
-                  </td>
-                  <td className="py-3.5 pr-4 align-middle text-xs whitespace-nowrap text-text-tertiary">
-                    {formatDate(member.added_at)}
-                  </td>
-                  <td className="py-3.5 pr-6 align-middle text-right">
-                    {member.is_owner ? null : (
-                      <TableRowActions
-                        actions={[
-                          {
-                            label: 'Edit permissions',
-                            icon: Pencil,
-                            onClick: () => handleOpenEdit(member),
-                          },
-                          {
-                            label: 'Remove member',
-                            icon: Trash2,
-                            isDestructive: true,
-                            onClick: () => setRemovingMember(member),
-                          },
-                        ]}
-                      />
-                    )}
-                  </td>
-                </tr>
-              ))}
+                        {member.user_id === me?.user?.id ? (
+                          <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[11px] font-medium text-text-tertiary">
+                            You
+                          </span>
+                        ) : null}
+                      </HStack>
+                    </td>
+                    <td className="py-3.5 pr-4 align-middle">
+                      {renderPermissionBadges(member)}
+                    </td>
+                    <td className="py-3.5 pr-4 align-middle text-xs whitespace-nowrap text-text-tertiary">
+                      {formatDate(member.added_at)}
+                    </td>
+                    <td className="py-3.5 pr-6 align-middle text-right">
+                      {member.is_owner ? null : isMemberAdmin ? (
+                        isOwner ? (
+                          <TableRowActions
+                            actions={[
+                              {
+                                label: 'Transfer ownership',
+                                icon: Crown,
+                                onClick: () => setTransferringMember(member),
+                              },
+                            ]}
+                          />
+                        ) : null
+                      ) : (
+                        <TableRowActions
+                          actions={[
+                            {
+                              label: 'Edit permissions',
+                              icon: Pencil,
+                              onClick: () => handleOpenEdit(member),
+                            },
+                            ...(isOwner
+                              ? [
+                                  {
+                                    label: 'Transfer ownership',
+                                    icon: Crown,
+                                    onClick: () =>
+                                      setTransferringMember(member),
+                                  },
+                                ]
+                              : []),
+                            {
+                              label: 'Remove member',
+                              icon: Trash2,
+                              isDestructive: true,
+                              onClick: () => setRemovingMember(member),
+                            },
+                          ]}
+                        />
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -569,6 +641,14 @@ export function AppMembersManager(props: AppMembersManagerProps) {
         isDestructive={true}
         isPending={removeMember.isPending}
         onConfirm={handleConfirmRemove}
+      />
+
+      <AppTransferOwnershipDialog
+        open={Boolean(transferringMember)}
+        onOpenChange={(open) => !open && setTransferringMember(null)}
+        appSlug={appSlug}
+        appName={appName || appSlug}
+        preselectedUserId={transferringMember?.user_id}
       />
     </>
   );

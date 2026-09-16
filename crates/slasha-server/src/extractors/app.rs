@@ -59,10 +59,6 @@ impl AppContext {
             return false;
         };
 
-        if member.is_owner {
-            return true;
-        }
-
         match permission {
             AppPermission::Pull => member.can_pull(),
             AppPermission::Push => member.can_push(),

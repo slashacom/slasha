@@ -182,6 +182,7 @@ export function DotenvEditor(props: DotenvEditorProps) {
   groupsRef.current = groups;
   const editor = useEditor(
     {
+      immediatelyRender: false,
       extensions: [
         Document,
         Paragraph,

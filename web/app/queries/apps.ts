@@ -343,3 +343,15 @@ export function useRemoveAppMember() {
       httpDelete<void>(`apps/${data.appSlug}/members/${data.user_id}`),
   });
 }
+
+export function useTransferAppOwnership() {
+  return useMutation({
+    mutationFn: (data: { appSlug: string; user_id: string }) =>
+      httpPost<{ member: AppMember }>(
+        `apps/${data.appSlug}/transfer-ownership`,
+        {
+          user_id: data.user_id,
+        }
+      ),
+  });
+}
