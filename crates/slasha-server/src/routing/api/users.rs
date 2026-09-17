@@ -15,7 +15,7 @@ use slasha_db::{
 use crate::{
     HttpError, HttpResult,
     auth::hash_password,
-    extractors::{ValidatedJson, auth::AuthUser},
+    extractors::ValidatedJson,
     middleware::admin::admin_middleware,
     state::{AppState, Storage},
 };
@@ -44,10 +44,7 @@ async fn get_user(
     })))
 }
 
-async fn list_users(
-    _auth: AuthUser,
-    State(storage): State<Storage>,
-) -> HttpResult<impl IntoResponse> {
+async fn list_users(State(storage): State<Storage>) -> HttpResult<impl IntoResponse> {
     let all_users = UserRepo::list(&storage.db_pool).await?;
 
     Ok(Json(serde_json::json!({

@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::{
     HttpError, HttpResult,
-    extractors::{ValidatedJson, auth::AuthUser},
+    extractors::ValidatedJson,
     logs::LogBus,
     middleware::admin::admin_middleware,
     routing::api::{
@@ -52,10 +52,7 @@ pub struct NodeWithInfo {
     pub os: Option<String>,
 }
 
-async fn list_nodes(
-    State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
-) -> HttpResult<impl IntoResponse> {
+async fn list_nodes(State(state): State<AppState>) -> HttpResult<impl IntoResponse> {
     let nodes = NodeRepo::list(&state.storage.db_pool).await?;
     let mut results = Vec::new();
 
@@ -73,7 +70,6 @@ async fn list_nodes(
 
 async fn get_node(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
     Path(id): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
     let node = NodeRepo::get(&state.storage.db_pool, &id).await?;
@@ -103,7 +99,6 @@ const TEARDOWN_SCRIPT: &str = include_str!("teardown.sh");
 
 async fn create_node(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
     ValidatedJson(payload): ValidatedJson<CreateNodeReq>,
 ) -> HttpResult<impl IntoResponse> {
     let port = payload.port.unwrap_or(22);
@@ -214,7 +209,6 @@ struct UpdateNodeReq {
 
 async fn update_node(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
     Path(id): Path<String>,
     ValidatedJson(payload): ValidatedJson<UpdateNodeReq>,
 ) -> HttpResult<impl IntoResponse> {
@@ -279,7 +273,6 @@ async fn update_node(
 
 async fn delete_node(
     State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
     Path(id): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
     let node = NodeRepo::get(&state.storage.db_pool, &id).await?;
@@ -342,7 +335,6 @@ async fn delete_node(
 async fn get_node_logs(
     State(db_pool): State<DbPool>,
     State(duckdb_pool): State<DuckdbPool>,
-    AuthUser(_user): AuthUser,
     Path(id): Path<String>,
     Query(query): Query<LogQuery>,
 ) -> HttpResult<impl IntoResponse> {
@@ -353,7 +345,6 @@ async fn get_node_logs(
 async fn stream_node_logs(
     State(db_pool): State<DbPool>,
     State(log_bus): State<LogBus>,
-    AuthUser(_user): AuthUser,
     Path(id): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
     NodeRepo::get(&db_pool, &id).await?;

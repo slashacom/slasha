@@ -15,7 +15,7 @@ use slasha_db::{
 
 use crate::{
     HttpError, HttpResult,
-    extractors::{ValidatedJson, auth::AuthUser},
+    extractors::ValidatedJson,
     middleware::admin::admin_middleware,
     routing::api::validation::not_empty,
     s3,
@@ -35,7 +35,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .merge(admin_routes)
 }
 
-async fn list_storages(_auth: AuthUser, State(storage): State<Storage>) -> HttpResult<Json<Value>> {
+async fn list_storages(State(storage): State<Storage>) -> HttpResult<Json<Value>> {
     let storages = S3StorageRepo::list(&storage.db_pool).await?;
     Ok(Json(json!({ "storages": storages })))
 }
@@ -107,7 +107,6 @@ async fn create_storage(
 }
 
 async fn get_storage(
-    _auth: AuthUser,
     State(storage): State<Storage>,
     Path(id): Path<String>,
 ) -> HttpResult<Json<Value>> {

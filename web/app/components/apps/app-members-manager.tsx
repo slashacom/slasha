@@ -26,7 +26,6 @@ import { Select } from '~/components/interface/select';
 import { SettingsCard } from '~/components/interface/settings-card';
 import { Switch } from '~/components/interface/switch';
 import { TableRowActions } from '~/components/interface/table-row-actions';
-import { AppTransferOwnershipDialog } from '~/components/apps/app-transfer-ownership-dialog';
 import { formatDate } from '~/utils/date';
 
 type AppMembersManagerProps = {
@@ -125,8 +124,6 @@ export function AppMembersManager(props: AppMembersManagerProps) {
     useState<AppMemberPermissions>(DEFAULT_PERMISSIONS);
 
   const [removingMember, setRemovingMember] =
-    useState<AppMemberWithUser | null>(null);
-  const [transferringMember, setTransferringMember] =
     useState<AppMemberWithUser | null>(null);
 
   const members = membersData?.members ?? [];
@@ -374,19 +371,7 @@ export function AppMembersManager(props: AppMembersManagerProps) {
                       {formatDate(member.added_at)}
                     </td>
                     <td className="py-3.5 pr-6 align-middle text-right">
-                      {member.is_owner ? null : isMemberAdmin ? (
-                        isOwner ? (
-                          <TableRowActions
-                            actions={[
-                              {
-                                label: 'Transfer ownership',
-                                icon: Crown,
-                                onClick: () => setTransferringMember(member),
-                              },
-                            ]}
-                          />
-                        ) : null
-                      ) : (
+                      {member.is_owner || isMemberAdmin ? null : (
                         <TableRowActions
                           actions={[
                             {
@@ -394,16 +379,6 @@ export function AppMembersManager(props: AppMembersManagerProps) {
                               icon: Pencil,
                               onClick: () => handleOpenEdit(member),
                             },
-                            ...(isOwner
-                              ? [
-                                  {
-                                    label: 'Transfer ownership',
-                                    icon: Crown,
-                                    onClick: () =>
-                                      setTransferringMember(member),
-                                  },
-                                ]
-                              : []),
                             {
                               label: 'Remove member',
                               icon: Trash2,
@@ -641,14 +616,6 @@ export function AppMembersManager(props: AppMembersManagerProps) {
         isDestructive={true}
         isPending={removeMember.isPending}
         onConfirm={handleConfirmRemove}
-      />
-
-      <AppTransferOwnershipDialog
-        open={Boolean(transferringMember)}
-        onOpenChange={(open) => !open && setTransferringMember(null)}
-        appSlug={appSlug}
-        appName={appName || appSlug}
-        preselectedUserId={transferringMember?.user_id}
       />
     </>
   );

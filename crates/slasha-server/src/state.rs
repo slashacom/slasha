@@ -143,7 +143,7 @@ impl Runtime {
     ///
     /// A ticket string.
     pub async fn create_access_ticket(&self, app_id: &str) -> String {
-        let ticket = format!("otk_{}", uuid::Uuid::new_v4().simple());
+        let ticket = format!("slasha_ott_{}", uuid::Uuid::new_v4().simple());
         let expires_at = std::time::Instant::now() + std::time::Duration::from_secs(30);
         let mut tickets = self.app_access_tickets.write().await;
 

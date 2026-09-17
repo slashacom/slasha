@@ -27,6 +27,10 @@ where
     type Rejection = HttpError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> HttpResult<Self> {
+        if let Some(user) = parts.extensions.get::<User>() {
+            return Ok(AuthUser(user.clone()));
+        }
+
         let token = if let Ok(TypedHeader(Authorization(bearer))) =
             TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state).await
         {
@@ -52,6 +56,8 @@ where
         let user = UserRepo::find_by_id(&state.storage.db_pool, &token_data.claims.id)
             .await
             .map_err(|_| HttpError::unauthorized())?;
+
+        parts.extensions.insert(user.clone());
 
         Ok(AuthUser(user))
     }
