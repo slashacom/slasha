@@ -11,6 +11,7 @@ export type App = {
   source: AppSource;
   node_id: string;
   root_dir: string;
+  visibility: AppVisibility;
 };
 
 export type AppDomain = {
@@ -66,3 +67,5 @@ export type AppMemberWithUser = {
 };
 
 export type AppSource = 'local' | 'github' | 'git';
+
+export type AppVisibility = 'public' | 'password' | 'private';

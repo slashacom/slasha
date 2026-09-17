@@ -4,6 +4,7 @@ use axum::{
 };
 use axum_extra::{
     TypedHeader,
+    extract::CookieJar,
     headers::{Authorization, authorization::Bearer},
 };
 use jsonwebtoken::{DecodingKey, Validation, decode};
@@ -30,6 +31,10 @@ where
             TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state).await
         {
             bearer.token().to_string()
+        } else if let Some(cookie) = CookieJar::from_headers(&parts.headers).get("__slasha_jwt__")
+            && !cookie.value().is_empty()
+        {
+            cookie.value().to_string()
         } else if let Ok(Query(query)) = Query::<AuthQuery>::from_request_parts(parts, state).await
         {
             query.token.ok_or(HttpError::unauthorized())?
@@ -49,5 +54,25 @@ where
             .map_err(|_| HttpError::unauthorized())?;
 
         Ok(AuthUser(user))
+    }
+}
+
+pub struct OptionalAuthUser(pub Option<User>);
+
+impl FromRequestParts<AppState> for OptionalAuthUser
+where
+    AppState: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let user = AuthUser::from_request_parts(parts, state)
+            .await
+            .ok()
+            .map(|u| u.0);
+        Ok(OptionalAuthUser(user))
     }
 }

@@ -94,12 +94,20 @@ impl Storage {
     }
 }
 
+/// One-time access ticket for cross-domain app authorization.
+#[derive(Clone, Debug)]
+pub struct AccessTicket {
+    pub app_id: String,
+    pub expires_at: std::time::Instant,
+}
+
 /// In-memory runtime state.
 #[derive(Clone)]
 pub struct Runtime {
     pub log_bus: LogBus,
     pub proxy_sync_trigger: Arc<Notify>,
     pub operations: OperationRegistry,
+    pub app_access_tickets: Arc<RwLock<std::collections::HashMap<String, AccessTicket>>>,
 }
 
 impl Runtime {
@@ -121,7 +129,53 @@ impl Runtime {
             log_bus: LogBus::new(duckdb_pool),
             proxy_sync_trigger,
             operations: OperationRegistry::new(),
+            app_access_tickets: Arc::new(RwLock::new(std::collections::HashMap::new())),
         })
+    }
+
+    /// Generates a single-use 30-second access ticket for an application.
+    ///
+    /// # Arguments
+    ///
+    /// * `app_id` - Unique application identifier string.
+    ///
+    /// # Returns
+    ///
+    /// A ticket string.
+    pub async fn create_access_ticket(&self, app_id: &str) -> String {
+        let ticket = format!("otk_{}", uuid::Uuid::new_v4().simple());
+        let expires_at = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let mut tickets = self.app_access_tickets.write().await;
+
+        tickets.retain(|_, t| std::time::Instant::now() < t.expires_at);
+        tickets.insert(
+            ticket.clone(),
+            AccessTicket {
+                app_id: app_id.to_string(),
+                expires_at,
+            },
+        );
+        ticket
+    }
+
+    /// Consumes and returns the app ID for a valid access ticket.
+    ///
+    /// # Arguments
+    ///
+    /// * `ticket` - Access ticket string to redeem.
+    ///
+    /// # Returns
+    ///
+    /// Option containing the associated app ID string if valid.
+    pub async fn consume_access_ticket(&self, ticket: &str) -> Option<String> {
+        let mut tickets = self.app_access_tickets.write().await;
+        if let Some(entry) = tickets.remove(ticket)
+            && std::time::Instant::now() < entry.expires_at
+        {
+            return Some(entry.app_id);
+        }
+
+        None
     }
 }
 
@@ -182,6 +236,13 @@ impl Config {
     ///
     /// A new [`Config`] instance.
     pub fn new(env: Env, jwt_secret: String, platform_domain: String, port: u16) -> Self {
+        let platform_domain = platform_domain
+            .trim()
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .trim_end_matches('/')
+            .to_string();
+
         Self {
             env,
             jwt_secret,

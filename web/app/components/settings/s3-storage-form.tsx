@@ -38,7 +38,7 @@ export function S3StorageForm(props: S3StorageFormProps) {
     storage?.force_path_style ?? false
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!storage && !secretAccessKey.trim()) {

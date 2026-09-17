@@ -34,6 +34,7 @@ import { getUsersOptions } from '~/queries/users';
 import { PageHeader } from '~/components/interface/page-header';
 import { DangerZone } from '~/components/global/danger-zone';
 import { AppTransferOwnershipDialog } from '~/components/apps/app-transfer-ownership-dialog';
+import { AppVisibilityManager } from '~/components/apps/app-visibility-manager';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
@@ -151,6 +152,7 @@ export default function AppSettingsPage() {
               <DomainManager appSlug={slug!} />
               <StorageManager appSlug={slug!} />
               <BackupManager appSlug={slug!} />
+              <AppVisibilityManager app={app} />
             </>
           )}
 

@@ -6,13 +6,13 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
 };
 use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
     DbPool, DbResult,
-    app::{AppMemberPermissions, AppSource, NewApp},
+    app::{AppMemberPermissions, AppSource, AppVisibility, NewApp},
     deployment::{Deployment, DeploymentStatus},
     git_connection::NewGitConnection,
     github_connection::{ConnectionStatus, NewGithubConnection},
@@ -33,7 +33,7 @@ use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::{
-    HttpError, HttpResult,
+    HttpError, HttpResult, auth,
     connections::{
         GithubError, sync_external_app, sync_selected_git_repository,
         sync_selected_github_repository,
@@ -45,7 +45,10 @@ use crate::{
         auth::AuthUser,
     },
     operations,
-    routing::api::{deserialize::trim_string, validation::not_empty},
+    routing::api::{
+        deserialize::{trim_optional_string, trim_string},
+        validation::not_empty,
+    },
     state::{AppState, Config, Runtime, Storage},
 };
 
@@ -59,6 +62,7 @@ pub fn router() -> Router<AppState> {
         .route("/{slug}/scales", get(list_scales))
         .route("/{slug}", delete(delete_app))
         .route("/{slug}/settings", put(update_settings))
+        .route("/{slug}/visibility", patch(update_visibility))
         .route(
             "/{slug}/connection/github",
             put(reconnect_github).delete(disconnect_github),
@@ -927,4 +931,49 @@ async fn transfer_ownership(
     Ok(Json(serde_json::json!({
         "member": member,
     })))
+}
+
+#[derive(Deserialize, Validate)]
+struct UpdateVisibilityReq {
+    #[garde(skip)]
+    visibility: AppVisibility,
+    #[serde(default, deserialize_with = "trim_optional_string")]
+    #[garde(skip)]
+    password: Option<String>,
+}
+
+async fn update_visibility(
+    State(state): State<AppState>,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
+    ValidatedJson(payload): ValidatedJson<UpdateVisibilityReq>,
+) -> HttpResult<impl IntoResponse> {
+    let password_hash = match payload.visibility {
+        AppVisibility::Password => {
+            let pass = payload.password.as_deref().unwrap_or_default();
+            if pass.is_empty() && app.visibility_password_hash.is_none() {
+                return Err(HttpError::bad_request(
+                    "Password is required when setting password visibility",
+                ));
+            }
+
+            if !pass.is_empty() {
+                Some(auth::hash_password(pass).map_err(HttpError::internal)?)
+            } else {
+                app.visibility_password_hash.clone()
+            }
+        }
+        _ => None,
+    };
+
+    AppRepo::update_visibility(
+        &state.storage.db_pool,
+        &app.id,
+        payload.visibility,
+        password_hash,
+    )
+    .await?;
+
+    state.runtime.proxy_sync_trigger.notify_one();
+
+    Ok(Json(serde_json::json!({ "success": true })))
 }

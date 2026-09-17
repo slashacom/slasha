@@ -1,5 +1,11 @@
 import { queryOptions, useMutation } from '@tanstack/react-query';
-import { httpDelete, httpGet, httpPost, httpPut } from '~/utils/http';
+import {
+  httpDelete,
+  httpGet,
+  httpPatch,
+  httpPost,
+  httpPut,
+} from '~/utils/http';
 import type {
   App,
   AppDomain,
@@ -7,6 +13,7 @@ import type {
   AppMemberPermissions,
   AppMemberWithUser,
   AppSource,
+  AppVisibility,
 } from '~/models/app';
 import type { AppScale } from '~/models/app-scale';
 import type { DomainHealth } from '~/models/domain-health';
@@ -352,6 +359,31 @@ export function useTransferAppOwnership() {
         {
           user_id: data.user_id,
         }
+      ),
+  });
+}
+
+export function useUpdateAppVisibility() {
+  return useMutation({
+    mutationFn: (data: {
+      appSlug: string;
+      visibility: AppVisibility;
+      password?: string;
+    }) =>
+      httpPatch<{ success: boolean }>(`apps/${data.appSlug}/visibility`, {
+        visibility: data.visibility,
+        password: data.password,
+      }),
+  });
+}
+
+export function useVerifyAppAccess() {
+  return useMutation({
+    mutationFn: (data: { appSlug: string; password?: string }) =>
+      httpPost<{ ticket: string; app_id: string }>(
+        `/_slasha/app-access/${data.appSlug}/verify`,
+        { password: data.password },
+        { handleUnauthorized: false }
       ),
   });
 }

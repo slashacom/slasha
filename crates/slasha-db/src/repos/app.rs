@@ -6,15 +6,15 @@ use crate::{
     error::{DbError, DbResult},
     models::{
         app::{
-            App, AppEnvVar, AppMember, AppMemberPermissions, AppMemberWithUser, AppSource, NewApp,
-            NewAppEnvVar,
+            App, AppDomain, AppEnvVar, AppMember, AppMemberPermissions, AppMemberWithUser,
+            AppSource, AppVisibility, NewApp, NewAppEnvVar,
         },
         deployment::Deployment,
         git_connection::NewGitConnection,
         github_connection::NewGithubConnection,
         schema::{
-            app_env_vars, app_members, apps, deployments, git_connections, github_connections,
-            users,
+            app_domains, app_env_vars, app_members, apps, deployments, git_connections,
+            github_connections, users,
         },
         user::{User, UserRole},
     },
@@ -76,6 +76,55 @@ impl AppRepo {
             Ok(apps::table
                 .filter(apps::id.eq_any(&ids))
                 .load::<App>(&mut conn)?)
+        })
+        .await?
+    }
+
+    pub async fn find_by_slug(pool: &DbPool, slug: &str) -> DbResult<Option<App>> {
+        let pool = pool.clone();
+        let slug = slug.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(apps::table
+                .filter(apps::slug.eq(&slug))
+                .first::<App>(&mut conn)
+                .optional()?)
+        })
+        .await?
+    }
+
+    pub async fn find_by_host(
+        pool: &DbPool,
+        host: &str,
+        platform_domain: &str,
+    ) -> DbResult<Option<App>> {
+        let pool = pool.clone();
+        let host = host.to_string();
+        let platform_domain = platform_domain.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+
+            // first check if host is a custom domain in app_domains
+            if let Some(domain_row) = app_domains::table
+                .filter(app_domains::domain.eq(&host))
+                .first::<AppDomain>(&mut conn)
+                .optional()?
+            {
+                return Ok(apps::table
+                    .filter(apps::id.eq(&domain_row.app_id))
+                    .first::<App>(&mut conn)
+                    .optional()?);
+            }
+
+            // then check if host matches slug.platform_domain pattern
+            if let Some(slug) = host.strip_suffix(&format!(".{}", platform_domain)) {
+                return Ok(apps::table
+                    .filter(apps::slug.eq(slug))
+                    .first::<App>(&mut conn)
+                    .optional()?);
+            }
+
+            Ok(None)
         })
         .await?
     }
@@ -649,6 +698,30 @@ impl AppRepo {
 
                 Ok(promoted_member)
             })
+        })
+        .await?
+    }
+
+    pub async fn update_visibility(
+        pool: &DbPool,
+        id: &str,
+        visibility: AppVisibility,
+        password_hash: Option<String>,
+    ) -> DbResult<()> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let updated = diesel::update(apps::table.filter(apps::id.eq(&id)))
+                .set((
+                    apps::visibility.eq(visibility),
+                    apps::visibility_password_hash.eq(password_hash),
+                ))
+                .execute(&mut conn)?;
+            if updated == 0 {
+                return Err(DbError::NotFound(format!("app '{}' not found", id)));
+            }
+            Ok(())
         })
         .await?
     }

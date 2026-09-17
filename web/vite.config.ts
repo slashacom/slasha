@@ -11,6 +11,10 @@ export default defineConfig(({ mode, command }) => {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     server: {
       proxy: {
+        '/_slasha': {
+          target: `http://localhost:${port}`,
+          changeOrigin: true,
+        },
         '/api': {
           target: `http://localhost:${port}`,
           changeOrigin: true,

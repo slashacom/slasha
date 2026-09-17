@@ -27,7 +27,9 @@ export async function httpCall<ResponseType = AppResponse>(
   url: string,
   options?: HttpOptionsType
 ): Promise<ApiReturn<ResponseType>> {
-  const fullUrl = url.startsWith('http') ? url : `/api/${url}`;
+  const fullUrl =
+    url.startsWith('http') || url.startsWith('/') ? url : `/api/${url}`;
+
   try {
     const isMultiPartFormData = options?.body instanceof FormData;
     const token = getAuthToken();

@@ -29,6 +29,55 @@ pub struct App {
     pub source: AppSource,
     pub node_id: String,
     pub root_dir: String,
+    pub visibility: AppVisibility,
+    #[serde(skip, default)]
+    #[ts(skip)]
+    pub visibility_password_hash: Option<String>,
+}
+
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    FromSqlRow,
+    AsExpression,
+    Display,
+    Copy,
+    Clone,
+    EnumString,
+    Serialize,
+    Deserialize,
+    TS,
+)]
+#[strum(serialize_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+#[diesel(sql_type = Text)]
+#[ts(export, export_to = "./app.ts")]
+#[derive(Default)]
+pub enum AppVisibility {
+    #[default]
+    Public,
+    Password,
+    Private,
+}
+
+impl ToSql<Text, Sqlite> for AppVisibility
+where
+    str: ToSql<Text, Sqlite>,
+{
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        out.set_value(self.to_string());
+        Ok(IsNull::No)
+    }
+}
+
+impl FromSql<Text, Sqlite> for AppVisibility {
+    fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        <String as FromSql<Text, Sqlite>>::from_sql(bytes).and_then(|value| {
+            AppVisibility::from_str(&value)
+                .map_err(|_| format!("invalid app visibility '{}'", value).into())
+        })
+    }
 }
 
 #[derive(Insertable)]

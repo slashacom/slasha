@@ -131,6 +131,8 @@ diesel::table! {
         source -> Text,
         node_id -> Text,
         root_dir -> Text,
+        visibility -> Text,
+        visibility_password_hash -> Nullable<Text>,
     }
 }
 
