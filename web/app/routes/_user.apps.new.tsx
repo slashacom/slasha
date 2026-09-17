@@ -32,8 +32,8 @@ export function meta() {
 
 export async function clientLoader() {
   await Promise.all([
-    queryClient.ensureQueryData(getGithubStatusOptions()),
-    queryClient.ensureQueryData(getNodesOptions()),
+    queryClient.query({ ...getGithubStatusOptions(), staleTime: 'static' }),
+    queryClient.query({ ...getNodesOptions(), staleTime: 'static' }),
   ]);
 }
 

@@ -50,8 +50,11 @@ export async function clientLoader(args: {
 }) {
   const { params } = args;
   await Promise.all([
-    queryClient.ensureQueryData(getAppOptions(params.slug)),
-    queryClient.ensureQueryData(getDeploymentOptions(params.slug, params.id)),
+    queryClient.query({ ...getAppOptions(params.slug), staleTime: 'static' }),
+    queryClient.query({
+      ...getDeploymentOptions(params.slug, params.id),
+      staleTime: 'static',
+    }),
   ]);
 }
 

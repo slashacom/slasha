@@ -21,7 +21,10 @@ import { TabActions } from '~/components/interface/tab-actions';
 import { TableRowActions } from '~/components/interface/table-row-actions';
 
 export async function clientLoader() {
-  await queryClient.ensureQueryData(getAlertChannelsOptions());
+  await queryClient.query({
+    ...getAlertChannelsOptions(),
+    staleTime: 'static',
+  });
   return null;
 }
 

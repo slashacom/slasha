@@ -31,7 +31,12 @@ async fn apply_remote_routes_via_ssh(
     self_signed_domains: &[String],
     config: &Config,
 ) -> ProxyResult<()> {
-    let caddy_config = CaddyClient::build_routes_config(routes, self_signed_domains, config.env);
+    let caddy_config = CaddyClient::build_routes_config(
+        routes,
+        self_signed_domains,
+        config.env,
+        &format!("{}:443", config.platform_domain),
+    );
 
     let caddy_config = serde_json::to_string(&caddy_config)
         .map_err(|e| ProxyError::Caddy(format!("failed to serialize caddy config: {e}")))?;
@@ -174,6 +179,7 @@ pub async fn sync_routes(
         }],
         tls_root_ca: None,
         tls_server_name: None,
+        visibility: slasha_db::app::AppVisibility::Public,
     });
 
     let mut filters: HashMap<String, Vec<String>> = HashMap::new();
@@ -251,6 +257,13 @@ pub async fn sync_routes(
             .map(|(app_id, _)| app_id.clone())
             .collect();
 
+        let app_visibility_map: HashMap<String, slasha_db::app::AppVisibility> =
+            slasha_db::repos::app::AppRepo::find_by_ids(db_pool, app_ids.clone())
+                .await?
+                .into_iter()
+                .map(|a| (a.id, a.visibility))
+                .collect();
+
         let custom_domains = AppDomainRepo::list_for_apps(db_pool, app_ids).await?;
         let mut domains_by_app: HashMap<String, Vec<String>> = HashMap::new();
         for domain in custom_domains {
@@ -265,6 +278,10 @@ pub async fn sync_routes(
                 let default_domain = format!("{}.{}", app_slug, config.platform_domain);
                 let custom_domains = domains_by_app.remove(&app_id).unwrap_or_default();
                 let all_domains = std::iter::once(default_domain).chain(custom_domains);
+                let visibility = app_visibility_map
+                    .get(&app_id)
+                    .copied()
+                    .unwrap_or(slasha_db::app::AppVisibility::Public);
 
                 for domain in all_domains {
                     local_routes.push(RouteEntry {
@@ -272,6 +289,7 @@ pub async fn sync_routes(
                         upstreams: upstreams.clone(),
                         tls_root_ca: None,
                         tls_server_name: None,
+                        visibility,
                     });
                 }
             }
@@ -287,6 +305,10 @@ pub async fn sync_routes(
                 let default_domain = format!("{}.{}", app_slug, config.platform_domain);
                 let custom_domains = domains_by_app.remove(&app_id).unwrap_or_default();
                 let all_domains = std::iter::once(default_domain.clone()).chain(custom_domains);
+                let visibility = app_visibility_map
+                    .get(&app_id)
+                    .copied()
+                    .unwrap_or(slasha_db::app::AppVisibility::Public);
 
                 for domain in all_domains {
                     node_routes.push(RouteEntry {
@@ -294,6 +316,7 @@ pub async fn sync_routes(
                         upstreams: upstreams.clone(),
                         tls_root_ca: None,
                         tls_server_name: None,
+                        visibility,
                     });
 
                     local_routes.push(RouteEntry {
@@ -307,6 +330,7 @@ pub async fn sync_routes(
                         // even when routing a custom domain.
                         tls_root_ca: node.internal_root_ca.clone(),
                         tls_server_name: Some(default_domain.clone()),
+                        visibility,
                     });
                 }
             }
@@ -348,6 +372,7 @@ pub async fn sync_routes(
             &local_routes,
             &self_signed_domains,
             config.env,
+            &format!("host.docker.internal:{}", config.port),
             "http://127.0.0.1:2019",
         )
         .await?;

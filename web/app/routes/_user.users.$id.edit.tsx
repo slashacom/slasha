@@ -4,21 +4,23 @@ import { toast } from 'sonner';
 import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { getUserOptions, useUpdateUser } from '~/queries/users';
-import { getAppsOptions } from '~/queries/apps';
 import { Page } from '~/components/global/page';
 import { UserForm } from '~/components/users/user-form';
 import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader(args: { params: { id: string } }) {
   const { params } = args;
-  const me = await queryClient.ensureQueryData(getAuthMeOptions());
+  const me = await queryClient.query({
+    ...getAuthMeOptions(),
+    staleTime: 'static',
+  });
   if (me.user.role !== 'Admin') {
     return redirect('/apps');
   }
-  await Promise.all([
-    queryClient.ensureQueryData(getUserOptions(params.id)),
-    queryClient.ensureQueryData(getAppsOptions()),
-  ]);
+  await queryClient.query({
+    ...getUserOptions(params.id),
+    staleTime: 'static',
+  });
   return null;
 }
 
@@ -30,7 +32,6 @@ export default function EditUser() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: userData } = useSuspenseQuery(getUserOptions(id!));
-  const { data: appsData } = useSuspenseQuery(getAppsOptions());
   const updateUser = useUpdateUser(id!);
 
   const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
@@ -39,13 +40,10 @@ export default function EditUser() {
     const email = formData.get('email') as string;
     const role = formData.get('role') as string;
     const password = formData.get('password') as string;
-    const app_ids =
-      role === 'User' ? (formData.getAll('app_ids') as string[]) : [];
 
     const payload: Record<string, any> = {
       email,
       role,
-      app_ids,
     };
     if (password && password.trim().length > 0) {
       payload.password = password;
@@ -64,8 +62,7 @@ export default function EditUser() {
     });
   };
 
-  const { user, app_ids: initialAppIds } = userData;
-  const apps = appsData.apps.map((item) => item.app);
+  const { user } = userData;
 
   return (
     <Page>
@@ -81,8 +78,6 @@ export default function EditUser() {
       <div className="mt-6">
         <UserForm
           initialData={user}
-          initialAppIds={initialAppIds}
-          apps={apps}
           onSubmit={handleSubmit}
           onCancel={() => navigate('/users')}
           isPending={updateUser.isPending}

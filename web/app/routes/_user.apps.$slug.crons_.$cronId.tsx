@@ -28,8 +28,11 @@ export async function clientLoader(args: {
 }) {
   const { params } = args;
   await Promise.all([
-    queryClient.ensureQueryData(getCronsOptions(params.slug)),
-    queryClient.ensureQueryData(getCronRunsOptions(params.slug, params.cronId)),
+    queryClient.query({ ...getCronsOptions(params.slug), staleTime: 'static' }),
+    queryClient.query({
+      ...getCronRunsOptions(params.slug, params.cronId),
+      staleTime: 'static',
+    }),
   ]);
 }
 

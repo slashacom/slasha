@@ -13,7 +13,7 @@ use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
 use slasha_db::app::AppSource;
 
 use crate::{
-    AppState, HttpError, HttpResult, connections::sync_external_app, extractors::app::ActiveApp,
+    AppState, HttpError, HttpResult, connections::sync_external_app, extractors::app::AppPullAccess,
 };
 
 #[derive(serde::Serialize)]
@@ -49,7 +49,7 @@ fn get_all_commits(repo_path: &str, branch_name: &str) -> anyhow::Result<Vec<Com
 
 async fn list_commits(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppPullAccess { app, .. }: AppPullAccess,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Local {
         let github = state.github_client().await;

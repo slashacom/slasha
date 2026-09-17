@@ -21,7 +21,10 @@ use slasha_db::{
 use crate::{
     HttpError, HttpResult, cron,
     docker::cron::run_cron_job,
-    extractors::{ValidatedJson, app::ActiveApp},
+    extractors::{
+        ValidatedJson,
+        app::{AppAccess, AppSettingsAccess},
+    },
     logs::LogBus,
     routing::api::{
         deserialize::{trim_optional_string, trim_string},
@@ -125,7 +128,7 @@ fn validate(input: CronInput) -> HttpResult<ValidatedCron> {
 
 async fn list_crons(
     State(db_pool): State<DbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let crons = CronJobRepo::list_for_app(&db_pool, &app.id).await?;
 
@@ -147,7 +150,7 @@ async fn list_crons(
 
 async fn get_cron(
     State(db_pool): State<DbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, cron_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let cron = CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
@@ -156,7 +159,7 @@ async fn get_cron(
 
 async fn create_cron(
     State(db_pool): State<DbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
     ValidatedJson(input): ValidatedJson<CronInput>,
 ) -> HttpResult<impl IntoResponse> {
     let valid = validate(input)?;
@@ -178,7 +181,7 @@ async fn create_cron(
 
 async fn update_cron(
     State(db_pool): State<DbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
     Path((_, cron_id)): Path<(String, String)>,
     ValidatedJson(input): ValidatedJson<CronInput>,
 ) -> HttpResult<impl IntoResponse> {
@@ -204,7 +207,7 @@ async fn delete_cron(
     State(db_pool): State<DbPool>,
     State(duckdb_pool): State<DuckdbPool>,
     State(log_bus): State<LogBus>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
     Path((_, cron_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
@@ -222,7 +225,7 @@ async fn delete_cron(
 
 async fn run_now(
     State(app_state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
     Path((_, cron_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     let db_pool = app_state.storage.db_pool.clone();
@@ -254,7 +257,7 @@ async fn run_now(
 
 async fn list_runs(
     State(db_pool): State<DbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, cron_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;
@@ -263,7 +266,7 @@ async fn list_runs(
 }
 
 async fn preview_schedule(
-    ActiveApp { .. }: ActiveApp,
+    AppAccess { .. }: AppAccess,
     ValidatedJson(input): ValidatedJson<PreviewInput>,
 ) -> HttpResult<impl IntoResponse> {
     let timezone = input
@@ -281,7 +284,7 @@ async fn preview_schedule(
 async fn get_run_logs(
     State(db_pool): State<DbPool>,
     State(duckdb_pool): State<DuckdbPool>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, cron_id, run_id)): Path<(String, String, String)>,
     Query(query): Query<LogQuery>,
 ) -> HttpResult<impl IntoResponse> {
@@ -293,7 +296,7 @@ async fn get_run_logs(
 async fn stream_run_logs(
     State(db_pool): State<DbPool>,
     State(log_bus): State<LogBus>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
     Path((_, cron_id, run_id)): Path<(String, String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     CronJobRepo::find(&db_pool, &cron_id, &app.id).await?;

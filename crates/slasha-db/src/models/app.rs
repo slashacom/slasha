@@ -29,6 +29,55 @@ pub struct App {
     pub source: AppSource,
     pub node_id: String,
     pub root_dir: String,
+    pub visibility: AppVisibility,
+    #[serde(skip, default)]
+    #[ts(skip)]
+    pub visibility_password_hash: Option<String>,
+}
+
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    FromSqlRow,
+    AsExpression,
+    Display,
+    Copy,
+    Clone,
+    EnumString,
+    Serialize,
+    Deserialize,
+    TS,
+)]
+#[strum(serialize_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+#[diesel(sql_type = Text)]
+#[ts(export, export_to = "./app.ts")]
+#[derive(Default)]
+pub enum AppVisibility {
+    #[default]
+    Public,
+    Password,
+    Private,
+}
+
+impl ToSql<Text, Sqlite> for AppVisibility
+where
+    str: ToSql<Text, Sqlite>,
+{
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        out.set_value(self.to_string());
+        Ok(IsNull::No)
+    }
+}
+
+impl FromSql<Text, Sqlite> for AppVisibility {
+    fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        <String as FromSql<Text, Sqlite>>::from_sql(bytes).and_then(|value| {
+            AppVisibility::from_str(&value)
+                .map_err(|_| format!("invalid app visibility '{}'", value).into())
+        })
+    }
 }
 
 #[derive(Insertable)]
@@ -127,51 +176,78 @@ pub struct NewAppDomain {
     pub domain: String,
 }
 
-#[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(
+    Queryable, Selectable, Insertable, AsChangeset, Debug, Clone, Serialize, Deserialize, TS,
+)]
 #[diesel(table_name = crate::models::schema::app_members)]
 #[ts(export, export_to = "./app.ts")]
 pub struct AppMember {
     pub app_id: String,
     pub user_id: String,
-    pub role: AppMemberRole,
+    pub is_owner: bool,
+    pub can_pull: bool,
+    pub can_push: bool,
+    pub can_deploy: bool,
+    pub can_manage_services: bool,
+    pub can_manage_settings: bool,
+    pub can_manage_members: bool,
     pub added_at: chrono::NaiveDateTime,
 }
 
-#[derive(
-    Debug,
-    PartialEq,
-    FromSqlRow,
-    AsExpression,
-    Display,
-    Copy,
-    Clone,
-    EnumString,
-    Serialize,
-    Deserialize,
-    TS,
-)]
-#[strum(serialize_all = "lowercase")] // db uses lowercase
-#[diesel(sql_type = diesel::sql_types::Text)]
+impl AppMember {
+    pub fn is_owner(&self) -> bool {
+        self.is_owner
+    }
+
+    pub fn can_pull(&self) -> bool {
+        self.is_owner || self.can_pull
+    }
+
+    pub fn can_push(&self) -> bool {
+        self.is_owner || self.can_push
+    }
+
+    pub fn can_deploy(&self) -> bool {
+        self.is_owner || self.can_deploy
+    }
+
+    pub fn can_manage_services(&self) -> bool {
+        self.is_owner || self.can_manage_services
+    }
+
+    pub fn can_manage_settings(&self) -> bool {
+        self.is_owner || self.can_manage_settings
+    }
+
+    pub fn can_manage_members(&self) -> bool {
+        self.is_owner || self.can_manage_members
+    }
+}
+
+#[derive(AsChangeset, Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[diesel(table_name = crate::models::schema::app_members)]
 #[ts(export, export_to = "./app.ts")]
-pub enum AppMemberRole {
-    Owner,
-    Admin,
-    Member,
+pub struct AppMemberPermissions {
+    pub can_pull: bool,
+    pub can_push: bool,
+    pub can_deploy: bool,
+    pub can_manage_services: bool,
+    pub can_manage_settings: bool,
+    pub can_manage_members: bool,
 }
 
-impl ToSql<Text, diesel::sqlite::Sqlite> for AppMemberRole
-where
-    str: ToSql<Text, diesel::sqlite::Sqlite>,
-{
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, diesel::sqlite::Sqlite>) -> serialize::Result {
-        out.set_value(self.to_string());
-        Ok(IsNull::No)
-    }
-}
-
-impl FromSql<Text, Sqlite> for AppMemberRole {
-    fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
-        <String as FromSql<Text, Sqlite>>::from_sql(bytes)
-            .map(|s| AppMemberRole::from_str(&s).unwrap())
-    }
+#[derive(Queryable, Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./app.ts")]
+pub struct AppMemberWithUser {
+    pub app_id: String,
+    pub user_id: String,
+    pub email: String,
+    pub is_owner: bool,
+    pub can_pull: bool,
+    pub can_push: bool,
+    pub can_deploy: bool,
+    pub can_manage_services: bool,
+    pub can_manage_settings: bool,
+    pub can_manage_members: bool,
+    pub added_at: chrono::NaiveDateTime,
 }

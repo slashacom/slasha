@@ -5,7 +5,10 @@ import { getAuthMeOptions } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader() {
-  const me = await queryClient.ensureQueryData(getAuthMeOptions());
+  const me = await queryClient.query({
+    ...getAuthMeOptions(),
+    staleTime: 'static',
+  });
   if (me.user.role !== 'Admin') {
     throw redirect('/apps');
   }

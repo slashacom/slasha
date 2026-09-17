@@ -11,6 +11,7 @@ export type App = {
   source: AppSource;
   node_id: string;
   root_dir: string;
+  visibility: AppVisibility;
 };
 
 export type AppDomain = {
@@ -32,10 +33,39 @@ export type AppEnvVar = {
 export type AppMember = {
   app_id: string;
   user_id: string;
-  role: AppMemberRole;
+  is_owner: boolean;
+  can_pull: boolean;
+  can_push: boolean;
+  can_deploy: boolean;
+  can_manage_services: boolean;
+  can_manage_settings: boolean;
+  can_manage_members: boolean;
   added_at: string;
 };
 
-export type AppMemberRole = 'Owner' | 'Admin' | 'Member';
+export type AppMemberPermissions = {
+  can_pull: boolean;
+  can_push: boolean;
+  can_deploy: boolean;
+  can_manage_services: boolean;
+  can_manage_settings: boolean;
+  can_manage_members: boolean;
+};
+
+export type AppMemberWithUser = {
+  app_id: string;
+  user_id: string;
+  email: string;
+  is_owner: boolean;
+  can_pull: boolean;
+  can_push: boolean;
+  can_deploy: boolean;
+  can_manage_services: boolean;
+  can_manage_settings: boolean;
+  can_manage_members: boolean;
+  added_at: string;
+};
 
 export type AppSource = 'local' | 'github' | 'git';
+
+export type AppVisibility = 'public' | 'password' | 'private';

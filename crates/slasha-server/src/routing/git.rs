@@ -151,6 +151,22 @@ async fn info_refs(auth: GitAuth, req: Request<Body>) -> HttpResult<Response> {
         .into());
     };
 
+    if service == "git-upload-pack" && !auth.can_pull() {
+        return Ok(git_error_response(
+            "upload-pack",
+            "You do not have permission to pull from this repository",
+            true,
+        ));
+    }
+
+    if service == "git-receive-pack" && !auth.can_push() {
+        return Ok(git_error_response(
+            "receive-pack",
+            "You do not have permission to push to this repository",
+            true,
+        ));
+    }
+
     if !auth.app.source.accepts_pushes() && service == "git-receive-pack" {
         return Ok(git_error_response(
             "receive-pack",
@@ -215,6 +231,14 @@ async fn info_refs(auth: GitAuth, req: Request<Body>) -> HttpResult<Response> {
 }
 
 async fn upload_pack(auth: GitAuth, req: Request<Body>) -> HttpResult<Response> {
+    if !auth.can_pull() {
+        return Ok(git_error_response(
+            "upload-pack",
+            "You do not have permission to pull from this repository",
+            false,
+        ));
+    }
+
     handle_git_service("upload-pack", auth, req, None).await
 }
 
@@ -223,6 +247,14 @@ async fn receive_pack(
     auth: GitAuth,
     req: Request<Body>,
 ) -> HttpResult<Response> {
+    if !auth.can_push() {
+        return Ok(git_error_response(
+            "receive-pack",
+            "You do not have permission to push to this repository",
+            false,
+        ));
+    }
+
     if !auth.app.source.accepts_pushes() {
         return Ok(git_error_response(
             "receive-pack",

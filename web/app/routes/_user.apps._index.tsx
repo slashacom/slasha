@@ -9,7 +9,7 @@ import { queryClient } from '~/utils/query-client';
 import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
-  await queryClient.ensureQueryData(getAppsOptions());
+  await queryClient.query({ ...getAppsOptions(), staleTime: 'static' });
 }
 
 export default function AppsIndex() {

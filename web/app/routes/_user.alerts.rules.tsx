@@ -26,9 +26,9 @@ import { TableRowActions } from '~/components/interface/table-row-actions';
 
 export async function clientLoader() {
   await Promise.all([
-    queryClient.ensureQueryData(getAlertRulesOptions()),
-    queryClient.ensureQueryData(getAlertChannelsOptions()),
-    queryClient.ensureQueryData(getAppsOptions()),
+    queryClient.query({ ...getAlertRulesOptions(), staleTime: 'static' }),
+    queryClient.query({ ...getAlertChannelsOptions(), staleTime: 'static' }),
+    queryClient.query({ ...getAppsOptions(), staleTime: 'static' }),
   ]);
   return null;
 }

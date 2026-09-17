@@ -12,11 +12,14 @@ import { NodeCard } from '~/components/nodes/node-card';
 import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
-  const me = await queryClient.ensureQueryData(getAuthMeOptions());
+  const me = await queryClient.query({
+    ...getAuthMeOptions(),
+    staleTime: 'static',
+  });
   if (me.user.role !== 'Admin') {
     throw redirect('/apps');
   }
-  await queryClient.ensureQueryData(getNodesOptions());
+  await queryClient.query({ ...getNodesOptions(), staleTime: 'static' });
   return null;
 }
 

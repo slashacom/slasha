@@ -1,20 +1,20 @@
 import { useNavigate, redirect } from 'react-router';
-import { useSuspenseQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryClient } from '~/utils/query-client';
 import { getAuthMeOptions } from '~/queries/auth';
 import { useCreateUser } from '~/queries/users';
-import { getAppsOptions } from '~/queries/apps';
 import { Page } from '~/components/global/page';
 import { UserForm } from '~/components/users/user-form';
 import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
-  const me = await queryClient.ensureQueryData(getAuthMeOptions());
+  const me = await queryClient.query({
+    ...getAuthMeOptions(),
+    staleTime: 'static',
+  });
   if (me.user.role !== 'Admin') {
     return redirect('/apps');
   }
-  await queryClient.ensureQueryData(getAppsOptions());
   return null;
 }
 
@@ -25,8 +25,6 @@ export function meta() {
 export default function NewUser() {
   const navigate = useNavigate();
   const createUser = useCreateUser();
-  const { data: appsData } = useSuspenseQuery(getAppsOptions());
-  const apps = appsData.apps.map((item) => item.app);
 
   const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -34,10 +32,8 @@ export default function NewUser() {
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
     const role = formData.get('role') as string;
-    const app_ids =
-      role === 'User' ? (formData.getAll('app_ids') as string[]) : [];
 
-    const promise = createUser.mutateAsync({ email, password, role, app_ids });
+    const promise = createUser.mutateAsync({ email, password, role });
 
     toast.promise(promise, {
       loading: 'Creating user...',
@@ -62,7 +58,6 @@ export default function NewUser() {
           onSubmit={handleSubmit}
           onCancel={() => navigate('/users')}
           isPending={createUser.isPending}
-          apps={apps}
           submitLabel="Create user"
         />
       </div>

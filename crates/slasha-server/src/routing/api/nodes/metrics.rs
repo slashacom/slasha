@@ -9,7 +9,6 @@ use slasha_db::repos::node_metrics::NodeMetricsRepo;
 
 use crate::{
     HttpResult,
-    extractors::auth::AuthUser,
     state::{AppState, Storage},
 };
 
@@ -36,7 +35,6 @@ fn bucket_seconds(start: chrono::DateTime<chrono::Utc>, end: chrono::DateTime<ch
 
 pub async fn get_node_metrics(
     State(storage): State<Storage>,
-    AuthUser(_user): AuthUser,
     Path(id): Path<String>,
     Query(query): Query<MetricsQuery>,
 ) -> HttpResult<impl IntoResponse> {
@@ -59,7 +57,6 @@ pub async fn get_node_metrics(
 
 pub async fn get_latest_metrics(
     State(storage): State<Storage>,
-    AuthUser(_user): AuthUser,
     Path(id): Path<String>,
 ) -> HttpResult<impl IntoResponse> {
     let metric = NodeMetricsRepo::get_latest(&storage.duckdb_pool, &id).await?;

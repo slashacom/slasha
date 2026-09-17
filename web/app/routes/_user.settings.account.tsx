@@ -15,7 +15,7 @@ export function meta() {
 }
 
 export async function clientLoader() {
-  await queryClient.ensureQueryData(getAuthMeOptions());
+  await queryClient.query({ ...getAuthMeOptions(), staleTime: 'static' });
   return null;
 }
 

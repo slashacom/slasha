@@ -37,13 +37,25 @@ export function meta() {
 }
 
 export async function clientLoader() {
-  const authMe = await queryClient.ensureQueryData(getAuthMeOptions());
-  const status = await queryClient.ensureQueryData(getGithubStatusOptions());
+  const authMe = await queryClient.query({
+    ...getAuthMeOptions(),
+    staleTime: 'static',
+  });
+  const status = await queryClient.query({
+    ...getGithubStatusOptions(),
+    staleTime: 'static',
+  });
   if (status.enabled) {
-    await queryClient.ensureQueryData(getGithubRepositoriesOptions());
+    await queryClient.query({
+      ...getGithubRepositoriesOptions(),
+      staleTime: 'static',
+    });
   }
   if (authMe.user.role === 'Admin') {
-    await queryClient.ensureQueryData(getGithubSetupStatusOptions());
+    await queryClient.query({
+      ...getGithubSetupStatusOptions(),
+      staleTime: 'static',
+    });
   }
   return null;
 }

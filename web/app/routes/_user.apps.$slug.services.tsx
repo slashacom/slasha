@@ -5,7 +5,10 @@ import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
-  await queryClient.ensureQueryData(getAppServicesOptions(params.slug));
+  await queryClient.query({
+    ...getAppServicesOptions(params.slug),
+    staleTime: 'static',
+  });
 }
 
 export default function AppServicesPage() {

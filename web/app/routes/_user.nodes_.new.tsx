@@ -8,7 +8,10 @@ import { NodeForm } from '~/components/nodes/node-form';
 import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
-  const me = await queryClient.ensureQueryData(getAuthMeOptions());
+  const me = await queryClient.query({
+    ...getAuthMeOptions(),
+    staleTime: 'static',
+  });
   if (me.user.role !== 'Admin') {
     throw redirect('/apps');
   }

@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde_json::{Value, json};
+use slasha_db::app::AppVisibility;
 
 use super::{ProxyError, error::ProxyResult};
 use crate::state::Env;
@@ -24,6 +25,7 @@ pub struct RouteEntry {
     pub upstreams: Vec<Upstream>,
     pub tls_root_ca: Option<String>,
     pub tls_server_name: Option<String>,
+    pub visibility: slasha_db::app::AppVisibility,
 }
 
 impl CaddyClient {
@@ -42,6 +44,7 @@ impl CaddyClient {
         routes: &[RouteEntry],
         self_signed_domains: &[String],
         env: Env,
+        slasha_upstream: &str,
     ) -> Value {
         let security_headers = Self::security_headers(env);
 
@@ -89,15 +92,75 @@ impl CaddyClient {
                     });
                 }
 
-                json!({
-                    "match": [{ "host": [entry.domain] }],
-                    "handle": [
-                        {
+                let is_public = matches!(entry.visibility, AppVisibility::Public);
+
+                let handle_chain = if is_public {
+                    vec![
+                        json!({
                             "handler": "headers",
                             "response": { "set": security_headers }
-                        },
-                        reverse_proxy
+                        }),
+                        reverse_proxy,
                     ]
+                } else {
+                    vec![
+                        json!({
+                            "handler": "headers",
+                            "response": { "set": security_headers }
+                        }),
+                        json!({
+                            "handler": "subroute",
+                            "routes": [
+                                {
+                                    "match": [{ "path": ["/_slasha/*"] }],
+                                    "handle": [
+                                        {
+                                            "handler": "reverse_proxy",
+                                            "upstreams": [{ "dial": slasha_upstream }]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "handle": [
+                                        json!({
+                                            "handler": "reverse_proxy",
+                                            "upstreams": [{ "dial": slasha_upstream }],
+                                            "rewrite": {
+                                                "method": "GET",
+                                                "uri": "/_slasha/app-access/check"
+                                            },
+                                            "headers": {
+                                                "request": {
+                                                    "set": {
+                                                        "X-Forwarded-Method": ["{http.request.method}"],
+                                                        "X-Forwarded-Uri": ["{http.request.uri}"]
+                                                    }
+                                                }
+                                            },
+                                            "handle_response": [
+                                                {
+                                                    "match": { "status_code": [2] },
+                                                    "routes": [
+                                                        {
+                                                            "handle": [
+                                                                { "handler": "vars" }
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }),
+                                        reverse_proxy
+                                    ]
+                                }
+                            ]
+                        }),
+                    ]
+                };
+
+                json!({
+                    "match": [{ "host": [entry.domain] }],
+                    "handle": handle_chain
                 })
             })
             .collect();
@@ -165,9 +228,10 @@ impl CaddyClient {
         routes: &[RouteEntry],
         self_signed_domains: &[String],
         env: Env,
+        slasha_upstream: &str,
         base_url: &str,
     ) -> ProxyResult<()> {
-        let config = Self::build_routes_config(routes, self_signed_domains, env);
+        let config = Self::build_routes_config(routes, self_signed_domains, env, slasha_upstream);
         self.apply_config(&config, base_url).await
     }
 

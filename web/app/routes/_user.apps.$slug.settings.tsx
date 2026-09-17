@@ -1,17 +1,20 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useSuspenseQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   getAppDomainsOptions,
   getAppConnectionOptions,
   getAppEnvSuggestionsOptions,
   getAppEnvVarsOptions,
+  getAppMembersOptions,
   getAppOptions,
   useDeleteApp,
   getAppDirectoriesOptions,
 } from '~/queries/apps';
 import { getNodesOptions } from '~/queries/nodes';
 import { AppEnvEditor } from '~/components/apps/app-env-editor';
+import { AppMembersManager } from '~/components/apps/app-members-manager';
 import { AppNameManager } from '~/components/apps/app-name-manager';
 import { AppRootDirManager } from '~/components/apps/app-root-dir-manager';
 import { AppNodeManager } from '~/components/apps/app-node-manager';
@@ -26,83 +29,168 @@ import { ConfirmationDialog } from '~/components/interface/confirmation-dialog';
 import { getBackupOptions, getVolumesOptions } from '~/queries/storage';
 import { queryClient } from '~/utils/query-client';
 import { getGithubStatusOptions } from '~/queries/connections';
+import { getAuthMeOptions } from '~/queries/auth';
+import { getUsersOptions } from '~/queries/users';
+import { PageHeader } from '~/components/interface/page-header';
 import { DangerZone } from '~/components/global/danger-zone';
+import { AppTransferOwnershipDialog } from '~/components/apps/app-transfer-ownership-dialog';
+import { AppVisibilityManager } from '~/components/apps/app-visibility-manager';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
-  void queryClient.prefetchQuery(getGithubStatusOptions());
-  void queryClient.prefetchQuery(getAppEnvVarsOptions(params.slug));
-  void queryClient.prefetchQuery(getAppEnvSuggestionsOptions(params.slug));
-  void queryClient.prefetchQuery(getAppDomainsOptions(params.slug));
-  void queryClient.prefetchQuery(getVolumesOptions(params.slug));
-  void queryClient.prefetchQuery(getBackupOptions(params.slug));
-  void queryClient.prefetchQuery(getNodesOptions());
-  void queryClient.prefetchQuery(getAppDirectoriesOptions(params.slug));
 
-  await Promise.all([
-    queryClient.ensureQueryData(getAppOptions(params.slug)),
-    queryClient.ensureQueryData(getAppConnectionOptions(params.slug)),
+  const [appData, authData] = await Promise.all([
+    queryClient.query({ ...getAppOptions(params.slug), staleTime: 'static' }),
+    queryClient.query({ ...getAuthMeOptions(), staleTime: 'static' }),
+    queryClient.query({
+      ...getAppConnectionOptions(params.slug),
+      staleTime: 'static',
+    }),
   ]);
+
+  const isAdmin = authData.user.role === 'Admin';
+  const isOwner = isAdmin || !!appData.membership?.is_owner;
+  const canManageSettings =
+    isAdmin || isOwner || !!appData.membership?.can_manage_settings;
+  const canManageMembers =
+    isAdmin || isOwner || !!appData.membership?.can_manage_members;
+
+  if (canManageSettings) {
+    void queryClient.query(getGithubStatusOptions()).catch(() => {});
+    void queryClient.query(getAppEnvVarsOptions(params.slug)).catch(() => {});
+    void queryClient
+      .query(getAppEnvSuggestionsOptions(params.slug))
+      .catch(() => {});
+    void queryClient.query(getAppDomainsOptions(params.slug)).catch(() => {});
+    void queryClient.query(getVolumesOptions(params.slug)).catch(() => {});
+    void queryClient.query(getBackupOptions(params.slug)).catch(() => {});
+    void queryClient.query(getNodesOptions()).catch(() => {});
+    void queryClient
+      .query(getAppDirectoriesOptions(params.slug))
+      .catch(() => {});
+  }
+
+  if (canManageMembers) {
+    void queryClient.query(getAppMembersOptions(params.slug)).catch(() => {});
+    void queryClient.query(getUsersOptions()).catch(() => {});
+  }
 }
 
 export default function AppSettingsPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const deleteApp = useDeleteApp();
+  const { data: authData } = useSuspenseQuery(getAuthMeOptions());
   const { data } = useSuspenseQuery(getAppOptions(slug!));
   const { data: connectionData } = useSuspenseQuery(
     getAppConnectionOptions(slug!)
   );
   const app = data.app;
+  const user = authData.user;
+  const membership = data.membership;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showTransferConfirm, setShowTransferConfirm] = useState(false);
+
+  const isAdmin = user.role === 'Admin';
+  const isOwner = isAdmin || !!membership?.is_owner;
+  const canManageSettings =
+    isAdmin || isOwner || !!membership?.can_manage_settings;
+  const canManageMembers =
+    isAdmin || isOwner || !!membership?.can_manage_members;
 
   if (!app) {
     return null;
+  }
+
+  if (!canManageSettings && !canManageMembers) {
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col">
+        <div className="flex-1 overflow-y-auto px-8 py-6">
+          <PageHeader
+            title="Access Denied"
+            description="You do not have permission to view or manage settings for this application."
+          />
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="max-w-3xl space-y-8">
-          <AppNameManager app={app} />
-          <AppRootDirManager app={app} />
-          <AppNodeManager app={app} />
-          <AutoDeployManager app={app} />
-          <HealthCheckManager appSlug={slug!} />
-          <AppEnvEditor appSlug={slug!} />
-          {app.source === 'github' && (
-            <GithubConnectionManager
-              app={app}
-              connection={
-                connectionData.connection &&
-                'repository' in connectionData.connection
-                  ? connectionData.connection
-                  : undefined
-              }
+          {canManageSettings && (
+            <>
+              <AppNameManager app={app} />
+              <AppRootDirManager app={app} />
+              <AppNodeManager app={app} />
+              <AutoDeployManager app={app} />
+              <HealthCheckManager appSlug={slug!} />
+              <AppEnvEditor appSlug={slug!} />
+              {app.source === 'github' && (
+                <GithubConnectionManager
+                  app={app}
+                  connection={
+                    connectionData.connection &&
+                    'repository' in connectionData.connection
+                      ? connectionData.connection
+                      : undefined
+                  }
+                />
+              )}
+              {app.source === 'git' && (
+                <GitConnectionManager
+                  app={app}
+                  connection={
+                    connectionData.connection &&
+                    'clone_url' in connectionData.connection
+                      ? connectionData.connection
+                      : undefined
+                  }
+                />
+              )}
+              <DomainManager appSlug={slug!} />
+              <StorageManager appSlug={slug!} />
+              <BackupManager appSlug={slug!} />
+              <AppVisibilityManager app={app} />
+            </>
+          )}
+
+          {canManageMembers && (
+            <AppMembersManager appSlug={slug!} appName={app.name} />
+          )}
+
+          {isOwner && (
+            <DangerZone
+              description="Actions with significant impact on your application."
+              items={[
+                {
+                  title: 'Transfer ownership',
+                  description:
+                    'Transfer this application to another user on the platform.',
+                  label: 'Transfer Ownership',
+                  color: 'neutral',
+                  onAction: () => setShowTransferConfirm(true),
+                },
+                {
+                  title: 'Delete this application',
+                  description:
+                    'Once you delete an application, there is no going back. Please be certain.',
+                  label: 'Delete App',
+                  color: 'error',
+                  onAction: () => setShowDeleteConfirm(true),
+                },
+              ]}
             />
           )}
-          {app.source === 'git' && (
-            <GitConnectionManager
-              app={app}
-              connection={
-                connectionData.connection &&
-                'clone_url' in connectionData.connection
-                  ? connectionData.connection
-                  : undefined
-              }
-            />
-          )}
-          <DomainManager appSlug={slug!} />
-          <StorageManager appSlug={slug!} />
-          <BackupManager appSlug={slug!} />
-          <DangerZone
-            description="Destructive actions for your application."
-            actionTitle="Delete this application"
-            actionDescription="Once you delete an application, there is no going back. Please be certain."
-            actionLabel="Delete App"
-            onAction={() => setShowDeleteConfirm(true)}
-          />
         </div>
+
+        <AppTransferOwnershipDialog
+          open={showTransferConfirm}
+          onOpenChange={setShowTransferConfirm}
+          appSlug={app.slug}
+          appName={app.name}
+        />
 
         <ConfirmationDialog
           open={showDeleteConfirm}
@@ -112,13 +200,17 @@ export default function AppSettingsPage() {
           confirmLabel="Delete application"
           confirmText={app.slug}
           isPending={deleteApp.isPending}
-          onConfirm={() => {
-            deleteApp.mutate(app.slug, {
-              onSuccess: () => {
-                queryClient.invalidateQueries({ queryKey: ['apps'] });
-                navigate('/apps');
-              },
-            });
+          onConfirm={async () => {
+            try {
+              await deleteApp.mutateAsync(app.slug);
+              toast.success('Application deleted successfully');
+              queryClient.invalidateQueries({ queryKey: ['apps'] });
+              setShowDeleteConfirm(false);
+              navigate('/apps');
+            } catch (err: any) {
+              toast.error(err?.message || 'Failed to delete application');
+              setShowDeleteConfirm(false);
+            }
           }}
         />
       </div>

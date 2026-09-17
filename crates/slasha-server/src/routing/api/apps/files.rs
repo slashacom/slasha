@@ -3,7 +3,7 @@ use axum::{Json, Router, extract::Path, response::IntoResponse, routing::get};
 use git2::ObjectType;
 use serde::Serialize;
 
-use crate::{HttpError, HttpResult, extractors::app::ActiveApp, state::AppState};
+use crate::{HttpError, HttpResult, extractors::app::AppPullAccess, state::AppState};
 
 const MAX_FILE_SIZE: usize = 1024 * 1024;
 
@@ -118,7 +118,7 @@ fn build_tree_recursive(
     Ok(nodes)
 }
 
-async fn get_file_tree(ActiveApp { app, .. }: ActiveApp) -> HttpResult<impl IntoResponse> {
+async fn get_file_tree(AppPullAccess { app, .. }: AppPullAccess) -> HttpResult<impl IntoResponse> {
     let repo = git2::Repository::open_bare(&app.repo_path).context("Failed to open repository")?;
 
     let tree = resolve_head_tree(&repo)?;
@@ -141,7 +141,7 @@ async fn get_file_tree(ActiveApp { app, .. }: ActiveApp) -> HttpResult<impl Into
 }
 
 async fn get_file_content(
-    ActiveApp { app, .. }: ActiveApp,
+    AppPullAccess { app, .. }: AppPullAccess,
     Path((_, file_path)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
     tracing::debug!(
@@ -245,7 +245,9 @@ fn collect_directories_recursive(
     }
 }
 
-async fn get_directories(ActiveApp { app, .. }: ActiveApp) -> HttpResult<impl IntoResponse> {
+async fn get_directories(
+    AppPullAccess { app, .. }: AppPullAccess,
+) -> HttpResult<impl IntoResponse> {
     let repo = git2::Repository::open_bare(&app.repo_path).context("Failed to open repository")?;
     let tree = resolve_head_tree(&repo)?;
 

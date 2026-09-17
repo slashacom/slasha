@@ -5,7 +5,10 @@ import { queryClient } from '~/utils/query-client';
 import { NodeConsole } from '~/components/nodes/node-console';
 
 export async function clientLoader({ params }: { params: { id: string } }) {
-  await queryClient.ensureQueryData(getNodeOptions(params.id));
+  await queryClient.query({
+    ...getNodeOptions(params.id),
+    staleTime: 'static',
+  });
   return null;
 }
 

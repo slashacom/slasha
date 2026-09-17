@@ -16,7 +16,10 @@ use slasha_db::{
 use crate::{
     AppState, HttpError, HttpResult,
     docker::app::{litestream, process::is_web_running},
-    extractors::{ValidatedJson, app::ActiveApp},
+    extractors::{
+        ValidatedJson,
+        app::{AppAccess, AppSettingsAccess},
+    },
     routing::api::{
         deserialize::{trim_optional_string, trim_string},
         validation::not_empty,
@@ -64,7 +67,7 @@ impl From<AppBackup> for BackupView {
 
 async fn get_backup(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
 ) -> HttpResult<impl IntoResponse> {
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
@@ -99,7 +102,7 @@ struct SaveBackupRequest {
 
 async fn save_backup(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
     ValidatedJson(payload): ValidatedJson<SaveBackupRequest>,
 ) -> HttpResult<impl IntoResponse> {
     let existing = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
@@ -172,7 +175,7 @@ async fn save_backup(
 
 async fn delete_backup(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
 ) -> HttpResult<impl IntoResponse> {
     AppBackupRepo::delete(&storage.db_pool, &app.id).await?;
 
@@ -181,7 +184,7 @@ async fn delete_backup(
 
 async fn restore_backup(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
 ) -> HttpResult<impl IntoResponse> {
     let backup = AppBackupRepo::get(&storage.db_pool, &app.id).await?;
 
@@ -228,7 +231,7 @@ impl BackupStatus {
 
 async fn backup_status(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let backup = AppBackupRepo::get(&state.storage.db_pool, &app.id).await?;
 
@@ -260,7 +263,7 @@ async fn backup_status(
 
 async fn refresh_status(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
 ) -> HttpResult<impl IntoResponse> {
     let backup = AppBackupRepo::get(&state.storage.db_pool, &app.id).await?;
 

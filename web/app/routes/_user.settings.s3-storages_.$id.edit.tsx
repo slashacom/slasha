@@ -15,7 +15,10 @@ export function meta() {
 }
 
 export async function clientLoader(args: { params: { id: string } }) {
-  await queryClient.ensureQueryData(getS3StorageOptions(args.params.id));
+  await queryClient.query({
+    ...getS3StorageOptions(args.params.id),
+    staleTime: 'static',
+  });
 }
 
 export default function EditS3Storage() {

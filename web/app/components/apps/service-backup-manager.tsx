@@ -263,16 +263,44 @@ function ServiceBackupContent(props: ServiceBackupManagerProps) {
     } catch {}
   };
 
-  const handleDownloadBackup = (backup: ServiceBackup) => {
-    const token = getAuthToken();
-    const query = token ? `?token=${encodeURIComponent(token)}` : '';
-    const downloadUrl = `/api/apps/${appSlug}/services/${service.id}/backups/${backup.id}/download${query}`;
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = backup.file_name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownloadBackup = async (backup: ServiceBackup) => {
+    const downloadPromise = (async () => {
+      const token = getAuthToken();
+      const headers = new Headers();
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`);
+      }
+
+      const res = await fetch(
+        `/api/apps/${appSlug}/services/${service.id}/backups/${backup.id}/download`,
+        { headers }
+      );
+
+      if (!res.ok) {
+        let message = 'Failed to download backup';
+        try {
+          const err = await res.json();
+          message = err.message || err.error || message;
+        } catch {}
+        throw new Error(message);
+      }
+
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = backup.file_name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    })();
+
+    toast.promise(downloadPromise, {
+      loading: `Downloading backup "${backup.file_name}"...`,
+      success: 'Backup downloaded successfully',
+      error: (err) => err.message || 'Failed to download backup.',
+    });
   };
 
   const s3StorageObj = storages.find((s) => s.id === config?.s3_storage_id);

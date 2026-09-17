@@ -3,16 +3,16 @@ use std::collections::HashMap;
 use anyhow::Context;
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
 };
 use garde::Validate;
 use serde::Deserialize;
 use slasha_db::{
     DbPool, DbResult,
-    app::{AppSource, NewApp},
+    app::{AppMemberPermissions, AppSource, AppVisibility, NewApp},
     deployment::{Deployment, DeploymentStatus},
     git_connection::NewGitConnection,
     github_connection::{ConnectionStatus, NewGithubConnection},
@@ -25,13 +25,15 @@ use slasha_db::{
         git_connection::GitConnectionRepo,
         github_connection::GithubConnectionRepo,
         node::NodeRepo,
+        user::UserRepo,
     },
+    user::UserRole,
 };
 use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::{
-    HttpError, HttpResult,
+    HttpError, HttpResult, auth,
     connections::{
         GithubError, sync_external_app, sync_selected_git_repository,
         sync_selected_github_repository,
@@ -39,11 +41,14 @@ use crate::{
     docker::{AppDocker, app::network::create_app_network},
     extractors::{
         ValidatedJson,
-        app::{ActiveApp, ActiveAppOwner},
+        app::{AppAccess, AppMembersAccess, AppOwnerAccess, AppSettingsAccess},
         auth::AuthUser,
     },
     operations,
-    routing::api::{deserialize::trim_string, validation::not_empty},
+    routing::api::{
+        deserialize::{trim_optional_string, trim_string},
+        validation::not_empty,
+    },
     state::{AppState, Config, Runtime, Storage},
 };
 
@@ -57,6 +62,7 @@ pub fn router() -> Router<AppState> {
         .route("/{slug}/scales", get(list_scales))
         .route("/{slug}", delete(delete_app))
         .route("/{slug}/settings", put(update_settings))
+        .route("/{slug}/visibility", patch(update_visibility))
         .route(
             "/{slug}/connection/github",
             put(reconnect_github).delete(disconnect_github),
@@ -64,6 +70,12 @@ pub fn router() -> Router<AppState> {
         .route("/{slug}/connection/branch", put(update_connection_branch))
         .route("/{slug}/sync", post(sync_app))
         .route("/{slug}/node", put(move_app_node))
+        .route("/{slug}/members", get(list_members).post(add_member))
+        .route(
+            "/{slug}/members/{user_id}",
+            put(update_member).delete(remove_member),
+        )
+        .route("/{slug}/transfer-ownership", post(transfer_ownership))
 }
 
 #[derive(Deserialize, Validate)]
@@ -366,7 +378,9 @@ async fn get_app(
     State(storage): State<Storage>,
     State(config): State<Config>,
     State(runtime): State<Runtime>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess {
+        app, membership, ..
+    }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let domains = AppDomainRepo::list_for_app(&storage.db_pool, &app.id).await?;
     let url = match domains.first() {
@@ -394,12 +408,13 @@ async fn get_app(
         "app": app,
         "url": url,
         "runtime_status": runtime_status,
+        "membership": membership,
     })))
 }
 
 async fn get_connection(
     State(state): State<AppState>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let connection = match app.source {
         AppSource::Local => None,
@@ -466,7 +481,7 @@ async fn get_connection(
 
 async fn delete_app(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppOwnerAccess { app, .. }: AppOwnerAccess,
 ) -> HttpResult<impl IntoResponse> {
     AppDocker::new(state, app.clone())
         .await?
@@ -556,7 +571,7 @@ async fn list_apps(
 
 async fn list_scales(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppAccess { app, .. }: AppAccess,
 ) -> HttpResult<impl IntoResponse> {
     let scales = AppScaleRepo::list_for_app(&storage.db_pool, &app.id).await?;
 
@@ -604,7 +619,7 @@ struct UpdateSettingsReq {
 
 async fn update_settings(
     State(storage): State<Storage>,
-    ActiveApp { app, .. }: ActiveApp,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
     ValidatedJson(payload): ValidatedJson<UpdateSettingsReq>,
 ) -> HttpResult<impl IntoResponse> {
     if let Some(auto_deploy) = payload.auto_deploy {
@@ -636,7 +651,7 @@ struct ReconnectGithubReq {
 
 async fn reconnect_github(
     State(state): State<AppState>,
-    ActiveAppOwner { app, user, .. }: ActiveAppOwner,
+    AppSettingsAccess { app, user, .. }: AppSettingsAccess,
     ValidatedJson(payload): ValidatedJson<ReconnectGithubReq>,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Github {
@@ -677,7 +692,7 @@ async fn reconnect_github(
 
 async fn disconnect_github(
     State(state): State<AppState>,
-    ActiveAppOwner { app, user: _, .. }: ActiveAppOwner,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
 ) -> HttpResult<impl IntoResponse> {
     if app.source != AppSource::Github {
         return Err(HttpError::bad_request("App does not use GitHub"));
@@ -702,9 +717,7 @@ struct UpdateBranchReq {
 
 async fn update_connection_branch(
     State(state): State<AppState>,
-    ActiveAppOwner {
-        mut app, user: _, ..
-    }: ActiveAppOwner,
+    AppSettingsAccess { mut app, .. }: AppSettingsAccess,
     ValidatedJson(payload): ValidatedJson<UpdateBranchReq>,
 ) -> HttpResult<impl IntoResponse> {
     if !matches!(app.source, AppSource::Git | AppSource::Github) {
@@ -732,7 +745,7 @@ async fn update_connection_branch(
 
 async fn sync_app(
     State(state): State<AppState>,
-    ActiveAppOwner { app, user: _, .. }: ActiveAppOwner,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
 ) -> HttpResult<impl IntoResponse> {
     if !matches!(app.source, AppSource::Git | AppSource::Github) {
         return Err(HttpError::bad_request(
@@ -760,7 +773,7 @@ struct MoveAppNodeReq {
 
 async fn move_app_node(
     State(state): State<AppState>,
-    ActiveAppOwner { app, .. }: ActiveAppOwner,
+    AppOwnerAccess { app, .. }: AppOwnerAccess,
     ValidatedJson(payload): ValidatedJson<MoveAppNodeReq>,
 ) -> HttpResult<impl IntoResponse> {
     AppDocker::new(state, app)
@@ -771,4 +784,207 @@ async fn move_app_node(
     Ok(Json(serde_json::json!({
         "migrating": true,
     })))
+}
+
+#[derive(Deserialize, Validate)]
+struct AddMemberReq {
+    #[serde(deserialize_with = "trim_string")]
+    #[garde(custom(not_empty))]
+    user_id: String,
+    #[garde(skip)]
+    #[serde(flatten)]
+    permissions: AppMemberPermissions,
+}
+
+#[derive(Deserialize, Validate)]
+struct UpdateMemberReq {
+    #[garde(skip)]
+    #[serde(flatten)]
+    permissions: AppMemberPermissions,
+}
+
+async fn list_members(
+    State(storage): State<Storage>,
+    AppAccess { app, .. }: AppAccess,
+) -> HttpResult<impl IntoResponse> {
+    let members = AppRepo::list_members_with_users(&storage.db_pool, &app.id).await?;
+
+    Ok(Json(serde_json::json!({
+        "members": members,
+    })))
+}
+
+async fn add_member(
+    State(storage): State<Storage>,
+    AppMembersAccess { app, .. }: AppMembersAccess,
+    ValidatedJson(payload): ValidatedJson<AddMemberReq>,
+) -> HttpResult<impl IntoResponse> {
+    let target_user = UserRepo::find_by_id(&storage.db_pool, &payload.user_id).await?;
+
+    if target_user.role == UserRole::Admin {
+        return Err(HttpError::bad_request(
+            "System administrators already have full access to all applications",
+        ));
+    }
+
+    let existing = AppRepo::find_membership(&storage.db_pool, &app.id, &payload.user_id).await?;
+    if existing.is_some() {
+        return Err(HttpError::bad_request(
+            "User is already a member of this application",
+        ));
+    }
+
+    let member = AppRepo::upsert_member(
+        &storage.db_pool,
+        &app.id,
+        &payload.user_id,
+        payload.permissions,
+    )
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "member": member,
+    })))
+}
+
+async fn update_member(
+    State(storage): State<Storage>,
+    AppMembersAccess {
+        app,
+        user,
+        membership,
+    }: AppMembersAccess,
+    Path((_, user_id)): Path<(String, String)>,
+    ValidatedJson(payload): ValidatedJson<UpdateMemberReq>,
+) -> HttpResult<impl IntoResponse> {
+    let is_owner = user.role == UserRole::Admin || membership.as_ref().is_some_and(|m| m.is_owner);
+    if user.id == user_id && !is_owner {
+        return Err(HttpError::bad_request(
+            "You cannot modify your own permissions",
+        ));
+    }
+    let target_user = UserRepo::find_by_id(&storage.db_pool, &user_id).await?;
+    if target_user.role == UserRole::Admin {
+        return Err(HttpError::bad_request(
+            "Cannot modify permissions for system administrators",
+        ));
+    }
+
+    let target = AppRepo::find_membership(&storage.db_pool, &app.id, &user_id).await?;
+    if target.as_ref().is_some_and(|m| m.is_owner) {
+        return Err(HttpError::bad_request(
+            "Cannot modify permissions for the app owner",
+        ));
+    }
+
+    let member =
+        AppRepo::upsert_member(&storage.db_pool, &app.id, &user_id, payload.permissions).await?;
+
+    Ok(Json(serde_json::json!({
+        "member": member,
+    })))
+}
+
+async fn remove_member(
+    State(storage): State<Storage>,
+    AppAccess {
+        app,
+        user,
+        membership,
+    }: AppAccess,
+    Path((_, member_user_id)): Path<(String, String)>,
+) -> HttpResult<impl IntoResponse> {
+    let is_self = user.id == member_user_id;
+    let is_admin = user.role == UserRole::Admin;
+    let can_manage_members =
+        is_admin || membership.as_ref().is_some_and(|m| m.can_manage_members());
+
+    if !is_self && !can_manage_members {
+        return Err(HttpError::forbidden(
+            "You do not have permission to manage members for this application",
+        ));
+    }
+
+    let target_user = UserRepo::find_by_id(&storage.db_pool, &member_user_id).await?;
+    if target_user.role == UserRole::Admin {
+        return Err(HttpError::bad_request(
+            "Cannot remove system administrators",
+        ));
+    }
+
+    let target = AppRepo::find_membership(&storage.db_pool, &app.id, &member_user_id).await?;
+    if target.as_ref().is_some_and(|m| m.is_owner) {
+        return Err(HttpError::bad_request(
+            "App owner cannot leave without transferring ownership",
+        ));
+    }
+
+    AppRepo::remove_member(&storage.db_pool, &app.id, &member_user_id).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, Validate)]
+struct TransferOwnershipReq {
+    #[garde(custom(not_empty))]
+    user_id: String,
+}
+
+async fn transfer_ownership(
+    State(storage): State<Storage>,
+    AppOwnerAccess { app, .. }: AppOwnerAccess,
+    ValidatedJson(payload): ValidatedJson<TransferOwnershipReq>,
+) -> HttpResult<impl IntoResponse> {
+    let target_user = UserRepo::find_by_id(&storage.db_pool, &payload.user_id).await?;
+
+    let member = AppRepo::transfer_ownership(&storage.db_pool, &app.id, &target_user.id).await?;
+
+    Ok(Json(serde_json::json!({
+        "member": member,
+    })))
+}
+
+#[derive(Deserialize, Validate)]
+struct UpdateVisibilityReq {
+    #[garde(skip)]
+    visibility: AppVisibility,
+    #[serde(default, deserialize_with = "trim_optional_string")]
+    #[garde(skip)]
+    password: Option<String>,
+}
+
+async fn update_visibility(
+    State(state): State<AppState>,
+    AppSettingsAccess { app, .. }: AppSettingsAccess,
+    ValidatedJson(payload): ValidatedJson<UpdateVisibilityReq>,
+) -> HttpResult<impl IntoResponse> {
+    let password_hash = match payload.visibility {
+        AppVisibility::Password => {
+            let pass = payload.password.as_deref().unwrap_or_default();
+            if pass.is_empty() && app.visibility_password_hash.is_none() {
+                return Err(HttpError::bad_request(
+                    "Password is required when setting password visibility",
+                ));
+            }
+
+            if !pass.is_empty() {
+                Some(auth::hash_password(pass).map_err(HttpError::internal)?)
+            } else {
+                app.visibility_password_hash.clone()
+            }
+        }
+        _ => None,
+    };
+
+    AppRepo::update_visibility(
+        &state.storage.db_pool,
+        &app.id,
+        payload.visibility,
+        password_hash,
+    )
+    .await?;
+
+    state.runtime.proxy_sync_trigger.notify_one();
+
+    Ok(Json(serde_json::json!({ "success": true })))
 }

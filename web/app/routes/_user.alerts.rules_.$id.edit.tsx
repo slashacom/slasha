@@ -13,11 +13,11 @@ import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
   await Promise.all([
-    queryClient.ensureQueryData(getAlertRulesOptions()),
-    queryClient.ensureQueryData(getAlertChannelsOptions()),
-    queryClient.ensureQueryData(getAppsOptions()),
-    queryClient.ensureQueryData(getAllCronsOptions()),
-    queryClient.ensureQueryData(getNodesOptions()),
+    queryClient.query({ ...getAlertRulesOptions(), staleTime: 'static' }),
+    queryClient.query({ ...getAlertChannelsOptions(), staleTime: 'static' }),
+    queryClient.query({ ...getAppsOptions(), staleTime: 'static' }),
+    queryClient.query({ ...getAllCronsOptions(), staleTime: 'static' }),
+    queryClient.query({ ...getNodesOptions(), staleTime: 'static' }),
   ]);
   return null;
 }

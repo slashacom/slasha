@@ -63,10 +63,7 @@ struct SetupStatus {
     created_at: Option<chrono::NaiveDateTime>,
 }
 
-async fn get_setup_status(
-    State(state): State<AppState>,
-    AuthUser(_user): AuthUser,
-) -> HttpResult<impl IntoResponse> {
+async fn get_setup_status(State(state): State<AppState>) -> HttpResult<impl IntoResponse> {
     let config = GithubAppConfigRepo::get(&state.storage.db_pool).await?;
     Ok(Json(match config {
         Some(c) => SetupStatus {

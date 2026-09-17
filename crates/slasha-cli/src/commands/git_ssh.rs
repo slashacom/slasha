@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use slasha_db::{
     create_pool_with_max_size,
     repos::{app::AppRepo, user::UserRepo},
+    user::UserRole,
 };
 
 pub async fn handle(user_id: String) -> Result<()> {
@@ -40,6 +41,24 @@ pub async fn handle(user_id: String) -> Result<()> {
     if !["git-upload-pack", "git-receive-pack"].contains(&service) {
         anyhow::bail!("Unsupported Git service: {}", service);
     }
+
+    let membership = AppRepo::find_membership(&pool, &app.id, &user.id).await?;
+    let is_admin = user.role == UserRole::Admin;
+
+    if service == "git-upload-pack"
+        && !is_admin
+        && !membership.as_ref().is_some_and(|m| m.can_pull())
+    {
+        anyhow::bail!("Permission denied: cannot pull from this repository");
+    }
+
+    if service == "git-receive-pack"
+        && !is_admin
+        && !membership.as_ref().is_some_and(|m| m.can_push())
+    {
+        anyhow::bail!("Permission denied: cannot push to this repository");
+    }
+
     if !app.source.accepts_pushes() && service == "git-receive-pack" {
         anyhow::bail!("Externally sourced apps do not accept direct pushes");
     }

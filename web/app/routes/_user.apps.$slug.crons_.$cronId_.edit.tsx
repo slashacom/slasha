@@ -8,7 +8,10 @@ import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
-  await queryClient.ensureQueryData(getCronsOptions(params.slug));
+  await queryClient.query({
+    ...getCronsOptions(params.slug),
+    staleTime: 'static',
+  });
 }
 
 export default function EditCronPage() {

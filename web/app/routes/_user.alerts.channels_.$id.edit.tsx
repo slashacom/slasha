@@ -6,7 +6,10 @@ import { queryClient } from '~/utils/query-client';
 import { PageHeader } from '~/components/interface/page-header';
 
 export async function clientLoader() {
-  await queryClient.ensureQueryData(getAlertChannelsOptions());
+  await queryClient.query({
+    ...getAlertChannelsOptions(),
+    staleTime: 'static',
+  });
   return null;
 }
 

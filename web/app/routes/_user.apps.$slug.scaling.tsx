@@ -16,8 +16,14 @@ import { queryClient } from '~/utils/query-client';
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
   await Promise.all([
-    queryClient.ensureQueryData(getScalesOptions(params.slug)),
-    queryClient.ensureQueryData(getDeploymentsOptions(params.slug)),
+    queryClient.query({
+      ...getScalesOptions(params.slug),
+      staleTime: 'static',
+    }),
+    queryClient.query({
+      ...getDeploymentsOptions(params.slug),
+      staleTime: 'static',
+    }),
   ]);
 }
 

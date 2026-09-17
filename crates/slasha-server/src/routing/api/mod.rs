@@ -19,7 +19,7 @@ pub mod validation;
 
 pub use error::{HttpError, HttpResult};
 
-use crate::middleware::admin::admin_middleware;
+use crate::middleware::{admin::admin_middleware, auth::auth_middleware};
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
@@ -31,19 +31,28 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/alerts",
             alerts::router().route_layer(from_fn_with_state(state.clone(), admin_middleware)),
         )
-        .nest("/services", service_kinds::router())
+        .nest(
+            "/services",
+            service_kinds::router().route_layer(from_fn_with_state(state.clone(), auth_middleware)),
+        )
         .nest(
             "/s3-storages",
-            s3_storages::router().route_layer(from_fn_with_state(state.clone(), admin_middleware)),
+            s3_storages::router(state.clone())
+                .route_layer(from_fn_with_state(state.clone(), auth_middleware)),
         )
-        .nest("/ssh-keys", ssh_keys::router())
+        .nest(
+            "/ssh-keys",
+            ssh_keys::router().route_layer(from_fn_with_state(state.clone(), auth_middleware)),
+        )
         .nest(
             "/users",
-            users::router().route_layer(from_fn_with_state(state.clone(), admin_middleware)),
+            users::router(state.clone())
+                .route_layer(from_fn_with_state(state.clone(), auth_middleware)),
         )
         .nest(
             "/nodes",
-            nodes::router().route_layer(from_fn_with_state(state, admin_middleware)),
+            nodes::router(state.clone())
+                .route_layer(from_fn_with_state(state.clone(), auth_middleware)),
         )
 }
 

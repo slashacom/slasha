@@ -1,4 +1,5 @@
 pub mod api;
+pub mod app_access;
 pub mod git;
 
 use axum::Router;
@@ -12,6 +13,7 @@ use crate::assets::static_handler;
 
 pub fn router(state: AppState) -> Router<AppState> {
     let router = Router::new()
+        .nest("/_slasha/app-access", app_access::router())
         .nest("/api", api::router(state))
         .nest("/git", git::router())
         .layer(TraceLayer::new_for_http());

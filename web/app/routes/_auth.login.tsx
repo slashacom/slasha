@@ -1,5 +1,5 @@
 import { MailIcon, KeyRoundIcon } from 'lucide-react';
-import { redirect, useNavigate } from 'react-router';
+import { redirect, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { Button } from '~/components/interface/button';
 import { Input } from '~/components/interface/input';
@@ -10,7 +10,10 @@ import { getAuthStatusOptions, useLogin } from '~/queries/auth';
 import { queryClient } from '~/utils/query-client';
 
 export async function clientLoader() {
-  const status = await queryClient.ensureQueryData(getAuthStatusOptions());
+  const status = await queryClient.query({
+    ...getAuthStatusOptions(),
+    staleTime: 'static',
+  });
   if (!status.has_admin) {
     throw redirect('/signup');
   }
@@ -24,7 +27,10 @@ export function meta() {
 
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const login = useLogin();
+
+  const returnTo = searchParams.get('return_to');
 
   const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -37,7 +43,18 @@ export default function Login() {
     toast.promise(promise, {
       loading: 'Signing in...',
       success: () => {
-        navigate('/apps');
+        if (returnTo) {
+          if (
+            returnTo.startsWith('http://') ||
+            returnTo.startsWith('https://')
+          ) {
+            window.location.href = returnTo;
+          } else {
+            navigate(returnTo);
+          }
+        } else {
+          navigate('/apps');
+        }
         return `Welcome back, ${email}`;
       },
       error: (err) =>

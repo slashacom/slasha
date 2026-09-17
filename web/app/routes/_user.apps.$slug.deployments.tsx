@@ -8,8 +8,11 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 export async function clientLoader(args: { params: { slug: string } }) {
   const { params } = args;
   await Promise.all([
-    queryClient.ensureQueryData(getDeploymentsOptions(params.slug)),
-    queryClient.ensureQueryData(getAppOptions(params.slug)),
+    queryClient.query({
+      ...getDeploymentsOptions(params.slug),
+      staleTime: 'static',
+    }),
+    queryClient.query({ ...getAppOptions(params.slug), staleTime: 'static' }),
   ]);
 }
 

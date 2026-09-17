@@ -17,7 +17,7 @@ export async function clientLoader() {
     throw redirect('/login');
   }
 
-  await queryClient.ensureQueryData(getAuthMeOptions());
+  await queryClient.query({ ...getAuthMeOptions(), staleTime: 'static' });
   return null;
 }
 

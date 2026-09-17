@@ -5,13 +5,16 @@ use crate::{
     crypto,
     error::{DbError, DbResult},
     models::{
-        app::{App, AppEnvVar, AppMember, AppMemberRole, AppSource, NewApp, NewAppEnvVar},
+        app::{
+            App, AppDomain, AppEnvVar, AppMember, AppMemberPermissions, AppMemberWithUser,
+            AppSource, AppVisibility, NewApp, NewAppEnvVar,
+        },
         deployment::Deployment,
         git_connection::NewGitConnection,
         github_connection::NewGithubConnection,
         schema::{
-            app_env_vars, app_members, apps, deployments, git_connections, github_connections,
-            users,
+            app_domains, app_env_vars, app_members, apps, deployments, git_connections,
+            github_connections, users,
         },
         user::{User, UserRole},
     },
@@ -73,6 +76,55 @@ impl AppRepo {
             Ok(apps::table
                 .filter(apps::id.eq_any(&ids))
                 .load::<App>(&mut conn)?)
+        })
+        .await?
+    }
+
+    pub async fn find_by_slug(pool: &DbPool, slug: &str) -> DbResult<Option<App>> {
+        let pool = pool.clone();
+        let slug = slug.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(apps::table
+                .filter(apps::slug.eq(&slug))
+                .first::<App>(&mut conn)
+                .optional()?)
+        })
+        .await?
+    }
+
+    pub async fn find_by_host(
+        pool: &DbPool,
+        host: &str,
+        platform_domain: &str,
+    ) -> DbResult<Option<App>> {
+        let pool = pool.clone();
+        let host = host.to_string();
+        let platform_domain = platform_domain.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+
+            // first check if host is a custom domain in app_domains
+            if let Some(domain_row) = app_domains::table
+                .filter(app_domains::domain.eq(&host))
+                .first::<AppDomain>(&mut conn)
+                .optional()?
+            {
+                return Ok(apps::table
+                    .filter(apps::id.eq(&domain_row.app_id))
+                    .first::<App>(&mut conn)
+                    .optional()?);
+            }
+
+            // then check if host matches slug.platform_domain pattern
+            if let Some(slug) = host.strip_suffix(&format!(".{}", platform_domain)) {
+                return Ok(apps::table
+                    .filter(apps::slug.eq(slug))
+                    .first::<App>(&mut conn)
+                    .optional()?);
+            }
+
+            Ok(None)
         })
         .await?
     }
@@ -141,7 +193,13 @@ impl AppRepo {
                 let member = AppMember {
                     app_id: inserted_app.id.clone(),
                     user_id: owner_id,
-                    role: AppMemberRole::Owner,
+                    is_owner: true,
+                    can_pull: true,
+                    can_push: true,
+                    can_deploy: true,
+                    can_manage_services: true,
+                    can_manage_settings: true,
+                    can_manage_members: true,
                     added_at: chrono::Utc::now().naive_utc(),
                 };
                 diesel::insert_into(app_members::table)
@@ -187,7 +245,13 @@ impl AppRepo {
                 let member = AppMember {
                     app_id: inserted_app.id.clone(),
                     user_id: owner_id,
-                    role: AppMemberRole::Owner,
+                    is_owner: true,
+                    can_pull: true,
+                    can_push: true,
+                    can_deploy: true,
+                    can_manage_services: true,
+                    can_manage_settings: true,
+                    can_manage_members: true,
                     added_at: chrono::Utc::now().naive_utc(),
                 };
                 diesel::insert_into(app_members::table)
@@ -235,18 +299,17 @@ impl AppRepo {
         pool: &DbPool,
         app_id: &str,
         user_id: &str,
-    ) -> DbResult<AppMember> {
+    ) -> DbResult<Option<AppMember>> {
         let pool = pool.clone();
         let app_id = app_id.to_string();
         let user_id = user_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            app_members::table
+            Ok(app_members::table
                 .filter(app_members::app_id.eq(&app_id))
                 .filter(app_members::user_id.eq(&user_id))
                 .first::<AppMember>(&mut conn)
-                .optional()?
-                .ok_or_else(|| DbError::NotFound("membership not found".into()))
+                .optional()?)
         })
         .await?
     }
@@ -315,7 +378,7 @@ impl AppRepo {
 
     pub async fn is_owner(pool: &DbPool, app_id: &str, user_id: &str) -> DbResult<bool> {
         let member = Self::find_membership(pool, app_id, user_id).await?;
-        Ok(member.role == AppMemberRole::Owner)
+        Ok(member.map(|m| m.is_owner).unwrap_or(false))
     }
 
     pub async fn update_auto_deploy(pool: &DbPool, id: &str, auto_deploy: bool) -> DbResult<()> {
@@ -393,53 +456,272 @@ impl AppRepo {
         .await?
     }
 
-    pub async fn list_memberships_for_user(
+    pub async fn list_members_with_users(
         pool: &DbPool,
-        user_id: &str,
-    ) -> DbResult<Vec<AppMember>> {
+        app_id: &str,
+    ) -> DbResult<Vec<AppMemberWithUser>> {
         let pool = pool.clone();
-        let user_id = user_id.to_string();
+        let app_id = app_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            Ok(app_members::table
-                .filter(app_members::user_id.eq(&user_id))
-                .load::<AppMember>(&mut conn)?)
+            let results = app_members::table
+                .inner_join(users::table)
+                .filter(app_members::app_id.eq(&app_id))
+                .order(app_members::added_at.asc())
+                .select((
+                    app_members::app_id,
+                    app_members::user_id,
+                    users::email,
+                    app_members::is_owner,
+                    app_members::can_pull,
+                    app_members::can_push,
+                    app_members::can_deploy,
+                    app_members::can_manage_services,
+                    app_members::can_manage_settings,
+                    app_members::can_manage_members,
+                    app_members::added_at,
+                ))
+                .load::<AppMemberWithUser>(&mut conn)?;
+            Ok(results)
         })
         .await?
     }
 
-    pub async fn set_user_memberships(
+    pub async fn upsert_member(
+        pool: &DbPool,
+        app_id: &str,
+        user_id: &str,
+        permissions: AppMemberPermissions,
+    ) -> DbResult<AppMember> {
+        let pool = pool.clone();
+        let app_id = app_id.to_string();
+        let user_id = user_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let existing = app_members::table
+                .filter(app_members::app_id.eq(&app_id))
+                .filter(app_members::user_id.eq(&user_id))
+                .first::<AppMember>(&mut conn)
+                .optional()?;
+
+            if let Some(member) = existing {
+                if member.is_owner {
+                    return Ok(member);
+                }
+                diesel::update(
+                    app_members::table
+                        .filter(app_members::app_id.eq(&app_id))
+                        .filter(app_members::user_id.eq(&user_id)),
+                )
+                .set((
+                    app_members::can_pull.eq(permissions.can_pull),
+                    app_members::can_push.eq(permissions.can_push),
+                    app_members::can_deploy.eq(permissions.can_deploy),
+                    app_members::can_manage_services.eq(permissions.can_manage_services),
+                    app_members::can_manage_settings.eq(permissions.can_manage_settings),
+                    app_members::can_manage_members.eq(permissions.can_manage_members),
+                ))
+                .returning(AppMember::as_returning())
+                .get_result(&mut conn)
+                .map_err(Into::into)
+            } else {
+                let new_member = AppMember {
+                    app_id,
+                    user_id,
+                    is_owner: false,
+                    can_pull: permissions.can_pull,
+                    can_push: permissions.can_push,
+                    can_deploy: permissions.can_deploy,
+                    can_manage_services: permissions.can_manage_services,
+                    can_manage_settings: permissions.can_manage_settings,
+                    can_manage_members: permissions.can_manage_members,
+                    added_at: chrono::Utc::now().naive_utc(),
+                };
+                diesel::insert_into(app_members::table)
+                    .values(&new_member)
+                    .returning(AppMember::as_returning())
+                    .get_result(&mut conn)
+                    .map_err(Into::into)
+            }
+        })
+        .await?
+    }
+
+    pub async fn remove_member(pool: &DbPool, app_id: &str, user_id: &str) -> DbResult<()> {
+        let pool = pool.clone();
+        let app_id = app_id.to_string();
+        let user_id = user_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let is_owner = app_members::table
+                .filter(app_members::app_id.eq(&app_id))
+                .filter(app_members::user_id.eq(&user_id))
+                .select(app_members::is_owner)
+                .first::<bool>(&mut conn)
+                .optional()?;
+
+            if is_owner == Some(true) {
+                return Err(DbError::PreconditionFailed(
+                    "cannot remove app owner".into(),
+                ));
+            }
+
+            diesel::delete(
+                app_members::table
+                    .filter(app_members::app_id.eq(&app_id))
+                    .filter(app_members::user_id.eq(&user_id)),
+            )
+            .execute(&mut conn)?;
+            Ok(())
+        })
+        .await?
+    }
+
+    pub async fn remove_non_owner_memberships_for_user(
         pool: &DbPool,
         user_id: &str,
-        app_ids: Vec<String>,
     ) -> DbResult<()> {
         let pool = pool.clone();
         let user_id = user_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get()?;
-            conn.transaction::<_, DbError, _>(|tx| {
-                diesel::delete(app_members::table.filter(app_members::user_id.eq(&user_id)))
-                    .execute(tx)?;
+            diesel::delete(
+                app_members::table
+                    .filter(app_members::user_id.eq(&user_id))
+                    .filter(app_members::is_owner.eq(false)),
+            )
+            .execute(&mut conn)?;
+            Ok(())
+        })
+        .await?
+    }
 
-                if !app_ids.is_empty() {
-                    let now = chrono::Utc::now().naive_utc();
-                    let new_members: Vec<_> = app_ids
-                        .into_iter()
-                        .map(|app_id| {
-                            (
-                                app_members::app_id.eq(app_id),
-                                app_members::user_id.eq(user_id.clone()),
-                                app_members::role.eq(AppMemberRole::Member),
-                                app_members::added_at.eq(now),
-                            )
-                        })
-                        .collect();
-                    diesel::insert_into(app_members::table)
-                        .values(&new_members)
+    pub async fn transfer_ownership(
+        pool: &DbPool,
+        app_id: &str,
+        new_owner_id: &str,
+    ) -> DbResult<AppMember> {
+        let pool = pool.clone();
+        let app_id = app_id.to_string();
+        let new_owner_id = new_owner_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            conn.transaction::<_, DbError, _>(|tx| {
+                let current_owner = app_members::table
+                    .filter(app_members::app_id.eq(&app_id))
+                    .filter(app_members::is_owner.eq(true))
+                    .first::<AppMember>(tx)
+                    .optional()?;
+
+                if let Some(current_owner) = current_owner {
+                    if current_owner.user_id == new_owner_id {
+                        return Err(DbError::PreconditionFailed(
+                            "user is already the owner of this application".into(),
+                        ));
+                    }
+
+                    let prev_owner_user = users::table
+                        .filter(users::id.eq(&current_owner.user_id))
+                        .first::<User>(tx)
+                        .optional()?;
+
+                    if prev_owner_user
+                        .as_ref()
+                        .is_some_and(|u| u.role == UserRole::Admin)
+                    {
+                        diesel::delete(
+                            app_members::table
+                                .filter(app_members::app_id.eq(&app_id))
+                                .filter(app_members::user_id.eq(&current_owner.user_id)),
+                        )
                         .execute(tx)?;
+                    } else {
+                        diesel::update(
+                            app_members::table
+                                .filter(app_members::app_id.eq(&app_id))
+                                .filter(app_members::user_id.eq(&current_owner.user_id)),
+                        )
+                        .set((
+                            app_members::is_owner.eq(false),
+                            app_members::can_pull.eq(true),
+                            app_members::can_push.eq(false),
+                            app_members::can_deploy.eq(false),
+                            app_members::can_manage_services.eq(false),
+                            app_members::can_manage_settings.eq(false),
+                            app_members::can_manage_members.eq(false),
+                        ))
+                        .execute(tx)?;
+                    }
                 }
-                Ok(())
+
+                let target_membership = app_members::table
+                    .filter(app_members::app_id.eq(&app_id))
+                    .filter(app_members::user_id.eq(&new_owner_id))
+                    .first::<AppMember>(tx)
+                    .optional()?;
+
+                let promoted_member = if target_membership.is_some() {
+                    diesel::update(
+                        app_members::table
+                            .filter(app_members::app_id.eq(&app_id))
+                            .filter(app_members::user_id.eq(&new_owner_id)),
+                    )
+                    .set((
+                        app_members::is_owner.eq(true),
+                        app_members::can_pull.eq(true),
+                        app_members::can_push.eq(true),
+                        app_members::can_deploy.eq(true),
+                        app_members::can_manage_services.eq(true),
+                        app_members::can_manage_settings.eq(true),
+                        app_members::can_manage_members.eq(true),
+                    ))
+                    .returning(AppMember::as_returning())
+                    .get_result(tx)?
+                } else {
+                    let new_member = AppMember {
+                        app_id: app_id.clone(),
+                        user_id: new_owner_id,
+                        is_owner: true,
+                        can_pull: true,
+                        can_push: true,
+                        can_deploy: true,
+                        can_manage_services: true,
+                        can_manage_settings: true,
+                        can_manage_members: true,
+                        added_at: chrono::Utc::now().naive_utc(),
+                    };
+                    diesel::insert_into(app_members::table)
+                        .values(&new_member)
+                        .returning(AppMember::as_returning())
+                        .get_result(tx)?
+                };
+
+                Ok(promoted_member)
             })
+        })
+        .await?
+    }
+
+    pub async fn update_visibility(
+        pool: &DbPool,
+        id: &str,
+        visibility: AppVisibility,
+        password_hash: Option<String>,
+    ) -> DbResult<()> {
+        let pool = pool.clone();
+        let id = id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            let updated = diesel::update(apps::table.filter(apps::id.eq(&id)))
+                .set((
+                    apps::visibility.eq(visibility),
+                    apps::visibility_password_hash.eq(password_hash),
+                ))
+                .execute(&mut conn)?;
+            if updated == 0 {
+                return Err(DbError::NotFound(format!("app '{}' not found", id)));
+            }
+            Ok(())
         })
         .await?
     }

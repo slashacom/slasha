@@ -99,7 +99,13 @@ diesel::table! {
     app_members (app_id, user_id) {
         app_id -> Text,
         user_id -> Text,
-        role -> Text,
+        is_owner -> Bool,
+        can_pull -> Bool,
+        can_push -> Bool,
+        can_deploy -> Bool,
+        can_manage_services -> Bool,
+        can_manage_settings -> Bool,
+        can_manage_members -> Bool,
         added_at -> Timestamp,
     }
 }
@@ -125,6 +131,8 @@ diesel::table! {
         source -> Text,
         node_id -> Text,
         root_dir -> Text,
+        visibility -> Text,
+        visibility_password_hash -> Nullable<Text>,
     }
 }
 
