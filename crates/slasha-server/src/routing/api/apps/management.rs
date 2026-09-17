@@ -887,12 +887,21 @@ async fn update_member(
 
 async fn remove_member(
     State(storage): State<Storage>,
-    AppMembersAccess { app, user, .. }: AppMembersAccess,
+    AppAccess {
+        app,
+        user,
+        membership,
+    }: AppAccess,
     Path((_, member_user_id)): Path<(String, String)>,
 ) -> HttpResult<impl IntoResponse> {
-    if user.id == member_user_id {
-        return Err(HttpError::bad_request(
-            "You cannot remove yourself from the app",
+    let is_self = user.id == member_user_id;
+    let is_admin = user.role == UserRole::Admin;
+    let can_manage_members =
+        is_admin || membership.as_ref().is_some_and(|m| m.can_manage_members());
+
+    if !is_self && !can_manage_members {
+        return Err(HttpError::forbidden(
+            "You do not have permission to manage members for this application",
         ));
     }
 
@@ -905,7 +914,9 @@ async fn remove_member(
 
     let target = AppRepo::find_membership(&storage.db_pool, &app.id, &member_user_id).await?;
     if target.as_ref().is_some_and(|m| m.is_owner) {
-        return Err(HttpError::bad_request("Cannot remove the app owner"));
+        return Err(HttpError::bad_request(
+            "App owner cannot leave without transferring ownership",
+        ));
     }
 
     AppRepo::remove_member(&storage.db_pool, &app.id, &member_user_id).await?;

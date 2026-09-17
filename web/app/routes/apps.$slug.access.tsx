@@ -8,6 +8,7 @@ import {
   Home,
   Loader2,
   LogIn,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useVerifyAppAccess } from '~/queries/apps';
@@ -34,6 +35,7 @@ export default function AppAccessPage(props: Props) {
   const verifyAccess = useVerifyAppAccess();
   const [password, setPassword] = useState('');
   const [forbiddenReason, setForbiddenReason] = useState<string | null>(null);
+  const [errorReason, setErrorReason] = useState<string | null>(null);
   const [unauthenticated, setUnauthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
 
@@ -44,24 +46,27 @@ export default function AppAccessPage(props: Props) {
         password: pwd,
       });
 
-      const appOrigin = returnTo.startsWith('http')
-        ? new URL(returnTo).origin
-        : window.location.origin;
+      // The access cookie must be set at the target application's origin (not the dashboard domain)
+      // so that the cookie is host-scoped correctly when redirected back to the app.
+      const appOrigin = new URL(returnTo, window.location.origin).origin;
 
       const callbackUrl = `${appOrigin}/_slasha/app-access/callback?ticket=${encodeURIComponent(result.ticket)}&return_to=${encodeURIComponent(returnTo)}`;
       window.location.href = callbackUrl;
     } catch (e: any) {
       setChecking(false);
-      if (e?.status === 401) {
+      const msg = e?.message || '';
+      const status = e?.status;
+
+      if (status === 401) {
         setUnauthenticated(true);
-      } else if (e?.status === 403) {
-        setForbiddenReason(
-          e?.message || 'You are not a member of this application.'
-        );
-      } else if (pwd) {
-        toast.error(
-          e?.message || 'Incorrect password or unable to verify access.'
-        );
+      } else if (status === 403) {
+        setForbiddenReason(msg || 'You are not a member of this application.');
+      } else if (msg.toLowerCase().includes('password')) {
+        if (pwd !== undefined) {
+          toast.error(msg || 'Incorrect password.');
+        }
+      } else {
+        setErrorReason(msg || 'Unable to verify application access.');
       }
     }
   };
@@ -134,6 +139,26 @@ export default function AppAccessPage(props: Props) {
                 you to this application.
               </p>
 
+              <VStack space={2} className="mt-6 w-full">
+                <Button
+                  onClick={() => navigate('/apps')}
+                  label="Go to Dashboard"
+                  icon={<Home className="size-4" />}
+                  className="h-11 w-full justify-center bg-white text-bg font-medium hover:bg-white/90 focus:ring-0 focus:ring-offset-0"
+                />
+              </VStack>
+            </div>
+          ) : errorReason ? (
+            <div className="flex flex-col items-center text-center">
+              <div className="mb-4 flex size-12 items-center justify-center rounded-2xl border border-amber-500/20 bg-amber-500/10 text-amber-400 shadow-inner">
+                <AlertTriangle className="size-5" />
+              </div>
+              <h1 className="text-xl font-semibold tracking-tight text-text">
+                Invalid Verification Request
+              </h1>
+              <p className="mt-2 text-xs leading-relaxed text-text-tertiary">
+                {errorReason}
+              </p>
               <VStack space={2} className="mt-6 w-full">
                 <Button
                   onClick={() => navigate('/apps')}

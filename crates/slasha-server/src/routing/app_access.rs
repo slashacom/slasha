@@ -5,9 +5,17 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use axum_extra::extract::{CookieJar, cookie::Cookie};
+use axum_extra::extract::{
+    CookieJar,
+    cookie::{Cookie, SameSite},
+};
 use serde::{Deserialize, Serialize};
-use slasha_db::{app::AppVisibility, repos::app::AppRepo, user::UserRole};
+use sha2::{Digest, Sha256};
+use slasha_db::{
+    app::{App, AppVisibility},
+    repos::app::AppRepo,
+    user::UserRole,
+};
 use time::Duration;
 
 use crate::{AppState, HttpError, HttpResult, auth, extractors::auth::OptionalAuthUser};
@@ -22,13 +30,24 @@ pub fn router() -> Router<AppState> {
 #[derive(Serialize, Deserialize)]
 struct AppAccessClaims {
     app_id: String,
+    version_hash: String,
     exp: usize,
 }
 
-fn create_access_cookie_token(app_id: &str, secret: &str) -> anyhow::Result<String> {
+fn compute_visibility_hash(app: &App) -> String {
+    let payload = format!(
+        "{}:{}",
+        app.visibility,
+        app.visibility_password_hash.as_deref().unwrap_or("")
+    );
+    hex::encode(Sha256::digest(payload.as_bytes()))
+}
+
+fn create_access_cookie_token(app: &App, secret: &str) -> anyhow::Result<String> {
     let exp = (chrono::Utc::now() + chrono::Duration::days(30)).timestamp() as usize;
     let claims = AppAccessClaims {
-        app_id: app_id.to_string(),
+        app_id: app.id.clone(),
+        version_hash: compute_visibility_hash(app),
         exp,
     };
     let key = jsonwebtoken::EncodingKey::from_secret(secret.as_bytes());
@@ -36,8 +55,8 @@ fn create_access_cookie_token(app_id: &str, secret: &str) -> anyhow::Result<Stri
         .map_err(anyhow::Error::from)
 }
 
-fn has_valid_access_cookie(jar: &CookieJar, app_id: &str, secret: &str) -> bool {
-    let cookie_name = format!("slasha_app_access_{}", app_id);
+fn has_valid_access_cookie(jar: &CookieJar, app: &App, secret: &str) -> bool {
+    let cookie_name = format!("slasha_app_access_{}", app.id);
     let Some(cookie) = jar.get(&cookie_name) else {
         return false;
     };
@@ -46,12 +65,42 @@ fn has_valid_access_cookie(jar: &CookieJar, app_id: &str, secret: &str) -> bool 
     let mut val = jsonwebtoken::Validation::default();
     val.validate_exp = true;
     if let Ok(data) = jsonwebtoken::decode::<AppAccessClaims>(cookie.value(), &key, &val)
-        && data.claims.app_id == app_id
+        && data.claims.app_id == app.id
+        && data.claims.version_hash == compute_visibility_hash(app)
     {
         return true;
     }
 
     false
+}
+
+async fn validate_return_to_for_app(
+    pool: &slasha_db::DbPool,
+    return_to: &str,
+    app: &App,
+    platform_domain: &str,
+) -> Option<String> {
+    let trimmed = return_to.trim();
+    if trimmed.is_empty() || trimmed.contains('\r') || trimmed.contains('\n') {
+        return None;
+    }
+
+    if trimmed.starts_with('/') && !trimmed.starts_with("//") && !trimmed.starts_with("/\\") {
+        return Some(trimmed.to_string());
+    }
+
+    if let Ok(url) = reqwest::Url::parse(trimmed)
+        && let Some(raw_host) = url.host_str()
+    {
+        let host = raw_host.trim_matches('[').trim_matches(']');
+        if let Ok(Some(found_app)) = AppRepo::find_by_host(pool, host, platform_domain).await
+            && found_app.id == app.id
+        {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    None
 }
 
 async fn access_check_handler(
@@ -81,7 +130,7 @@ async fn access_check_handler(
         AppVisibility::Public => Ok(StatusCode::OK.into_response()),
 
         AppVisibility::Password => {
-            if has_valid_access_cookie(&jar, &app.id, &state.config.jwt_secret) {
+            if has_valid_access_cookie(&jar, &app, &state.config.jwt_secret) {
                 return Ok(StatusCode::OK.into_response());
             }
             Ok(redirect_to_access_page(
@@ -92,7 +141,7 @@ async fn access_check_handler(
         }
 
         AppVisibility::Private => {
-            if has_valid_access_cookie(&jar, &app.id, &state.config.jwt_secret) {
+            if has_valid_access_cookie(&jar, &app, &state.config.jwt_secret) {
                 return Ok(StatusCode::OK.into_response());
             }
 
@@ -165,17 +214,29 @@ async fn access_callback_handler(
         .await
         .ok_or_else(|| HttpError::bad_request("Invalid or expired access ticket"))?;
 
-    let token = create_access_cookie_token(&app_id, &state.config.jwt_secret)?;
+    let app = AppRepo::find_by_id(&state.storage.db_pool, &app_id)
+        .await
+        .map_err(HttpError::internal)?;
+
+    let token = create_access_cookie_token(&app, &state.config.jwt_secret)?;
 
     let cookie_name = format!("slasha_app_access_{}", app_id);
     let cookie = Cookie::build((cookie_name, token))
         .path("/")
         .max_age(Duration::days(30))
         .http_only(true)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .same_site(SameSite::Lax)
         .build();
 
-    let return_to = query.return_to.unwrap_or_else(|| "/".to_string());
+    let raw_return_to = query.return_to.as_deref().unwrap_or("/");
+    let return_to = validate_return_to_for_app(
+        &state.storage.db_pool,
+        raw_return_to,
+        &app,
+        &state.config.platform_domain,
+    )
+    .await
+    .ok_or_else(|| HttpError::bad_request("Invalid return URL"))?;
 
     tracing::info!(app_id = %app_id, "app access ticket consumed and cookie granted");
 

@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
-import { Crown, Pencil, Plus, Shield, Trash2, Users } from 'lucide-react';
+import {
+  Crown,
+  LogOut,
+  Pencil,
+  Plus,
+  Shield,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import type { AppMemberPermissions, AppMemberWithUser } from '~/models/app';
 import {
@@ -237,13 +245,22 @@ export function AppMembersManager(props: AppMembersManagerProps) {
       allUsers.find((u) => u.id === removingMember.user_id)?.role === 'Admin';
     if (isMemberAdmin) return;
 
+    const isSelf = removingMember.user_id === me?.user?.id;
+
     try {
       await removeMember.mutateAsync({
         appSlug,
         user_id: removingMember.user_id,
       });
-      toast.success('Team member removed successfully');
+      toast.success(
+        isSelf
+          ? 'You have left the application'
+          : 'Team member removed successfully'
+      );
       setRemovingMember(null);
+      queryClient.invalidateQueries({
+        queryKey: ['apps'],
+      });
       queryClient.invalidateQueries({
         queryKey: ['apps', appSlug, 'members'],
       });
@@ -374,14 +391,24 @@ export function AppMembersManager(props: AppMembersManagerProps) {
                       {member.is_owner || isMemberAdmin ? null : (
                         <TableRowActions
                           actions={[
+                            ...(member.user_id === me?.user?.id
+                              ? []
+                              : [
+                                  {
+                                    label: 'Edit permissions',
+                                    icon: Pencil,
+                                    onClick: () => handleOpenEdit(member),
+                                  },
+                                ]),
                             {
-                              label: 'Edit permissions',
-                              icon: Pencil,
-                              onClick: () => handleOpenEdit(member),
-                            },
-                            {
-                              label: 'Remove member',
-                              icon: Trash2,
+                              label:
+                                member.user_id === me?.user?.id
+                                  ? 'Leave application'
+                                  : 'Remove member',
+                              icon:
+                                member.user_id === me?.user?.id
+                                  ? LogOut
+                                  : Trash2,
                               isDestructive: true,
                               onClick: () => setRemovingMember(member),
                             },
@@ -606,13 +633,23 @@ export function AppMembersManager(props: AppMembersManagerProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Remove Member Confirmation */}
+      {/* Remove / Leave Member Confirmation */}
       <ConfirmationDialog
         open={Boolean(removingMember)}
         onOpenChange={(open) => !open && setRemovingMember(null)}
-        title="Remove Team Member"
-        description={`Are you sure you want to remove ${removingMember?.email} from this application? They will immediately lose access to repository code, deployments, and app settings.`}
-        confirmLabel="Remove"
+        title={
+          removingMember?.user_id === me?.user?.id
+            ? 'Leave Application'
+            : 'Remove Team Member'
+        }
+        description={
+          removingMember?.user_id === me?.user?.id
+            ? `Are you sure you want to leave ${appName || appSlug}? You will immediately lose access until another team member adds you back.`
+            : `Are you sure you want to remove ${removingMember?.email} from this application? They will immediately lose access to repository code, deployments, and app settings.`
+        }
+        confirmLabel={
+          removingMember?.user_id === me?.user?.id ? 'Leave' : 'Remove'
+        }
         isDestructive={true}
         isPending={removeMember.isPending}
         onConfirm={handleConfirmRemove}
