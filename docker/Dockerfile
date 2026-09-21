@@ -26,7 +26,7 @@ RUN cargo build --release -p slasha-cli
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && \
-    apt-get install -y openssh-server git ca-certificates curl gnupg && \
+    apt-get install -y openssh-server git ca-certificates curl gnupg tini && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     chmod a+r /etc/apt/keyrings/docker.gpg && \
@@ -56,4 +56,4 @@ COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/slasha /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 3000 2222
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]

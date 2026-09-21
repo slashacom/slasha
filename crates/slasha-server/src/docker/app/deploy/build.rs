@@ -12,7 +12,7 @@ use tokio::{
 };
 
 use crate::{
-    docker::{DockerError, DockerResult, app::image::image_tag},
+    docker::{DockerError, DockerResult, app::image::image_tag, spawn_failed},
     logs::LogWriter,
     node_registry::DockerSshEnv,
 };
@@ -77,7 +77,8 @@ pub async fn build_railpack(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
-        .spawn()?;
+        .spawn()
+        .map_err(|err| spawn_failed("railpack prepare", &err))?;
 
     stream_command_output(prepare_child, log, "railpack prepare").await?;
 
@@ -169,7 +170,8 @@ async fn build_git_tar(repo_path: &Path, commit_sha: &str) -> DockerResult<Bytes
         .args(["archive", "--format=tar", commit_sha])
         .current_dir(repo_path)
         .output()
-        .await?;
+        .await
+        .map_err(|err| spawn_failed("git archive", &err))?;
 
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
@@ -190,7 +192,8 @@ async fn tar_to_directory(tar_bytes: Bytes, dest: &Path) -> DockerResult<()> {
         .args(["-xf", "-"])
         .current_dir(dest)
         .stdin(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .map_err(|err| spawn_failed("tar", &err))?;
 
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(&tar_bytes).await?;
@@ -310,7 +313,8 @@ async fn build_image_cli(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
-        .spawn()?;
+        .spawn()
+        .map_err(|err| spawn_failed("docker buildx build", &err))?;
 
     stream_command_output(child, log, "docker buildx build").await?;
 

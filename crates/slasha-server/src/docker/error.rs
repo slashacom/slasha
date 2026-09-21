@@ -22,6 +22,9 @@ pub enum DockerError {
     #[error("Build failed: {0}")]
     BuildFailed(String),
 
+    #[error("{0}")]
+    SpawnFailed(String),
+
     #[error("Service \"{0}\" not found")]
     ServiceNotFound(String),
 
@@ -75,6 +78,17 @@ pub enum DockerError {
 
     #[error("{0}")]
     Other(#[from] anyhow::Error),
+}
+
+pub fn spawn_failed(command: &str, err: &std::io::Error) -> DockerError {
+    let hint = match err.raw_os_error() {
+        Some(11) | Some(12) => {
+            " - the slasha container could not fork a new process. Its pids limit is full (check `pids.current` against `pids.max`, usually unreaped children); restarting the slasha container clears them"
+        }
+        _ => "",
+    };
+
+    DockerError::SpawnFailed(format!("Failed to start `{command}`: {err}{hint}"))
 }
 
 pub type DockerResult<T> = std::result::Result<T, DockerError>;
