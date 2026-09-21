@@ -129,6 +129,7 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
 
         {draft.kind === 'node_cpu' ||
         draft.kind === 'node_memory' ||
+        draft.kind === 'node_storage' ||
         draft.kind === 'node_load_average' ? (
           <FormField label="Node">
             <Select
@@ -150,7 +151,9 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
           </FormField>
         ) : null}
 
-        {draft.kind === 'node_cpu' || draft.kind === 'node_memory' ? (
+        {draft.kind === 'node_cpu' ||
+        draft.kind === 'node_memory' ||
+        draft.kind === 'node_storage' ? (
           <NumberField
             label="Threshold percent"
             value={draft.threshold_percent}

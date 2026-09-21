@@ -25,6 +25,7 @@ function unitFor(config: AlertRuleConfig | undefined) {
   switch (config.kind) {
     case 'node_cpu':
     case 'node_memory':
+    case 'node_storage':
     case 'app_cpu':
     case 'app_memory':
       return '%';

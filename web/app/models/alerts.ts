@@ -66,6 +66,7 @@ export type AlertRule = {
 export type AlertRuleConfig =
   | { kind: 'node_cpu'; node_id: string; threshold_percent: number }
   | { kind: 'node_memory'; node_id: string; threshold_percent: number }
+  | { kind: 'node_storage'; node_id: string; threshold_percent: number }
   | { kind: 'node_load_average'; node_id: string; threshold: number }
   | { kind: 'app_cpu'; app_id: string; threshold_percent: number }
   | { kind: 'app_memory'; app_id: string; threshold_percent: number }

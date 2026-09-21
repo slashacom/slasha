@@ -144,6 +144,10 @@ pub enum AlertRuleConfig {
         node_id: String,
         threshold_percent: f64,
     },
+    NodeStorage {
+        node_id: String,
+        threshold_percent: f64,
+    },
     NodeLoadAverage {
         node_id: String,
         threshold: f64,
@@ -177,6 +181,7 @@ impl AlertRuleConfig {
         match self {
             AlertRuleConfig::NodeCpu { .. } => "node_cpu",
             AlertRuleConfig::NodeMemory { .. } => "node_memory",
+            AlertRuleConfig::NodeStorage { .. } => "node_storage",
             AlertRuleConfig::NodeLoadAverage { .. } => "node_load_average",
             AlertRuleConfig::AppCpu { .. } => "app_cpu",
             AlertRuleConfig::AppMemory { .. } => "app_memory",
@@ -192,6 +197,7 @@ impl AlertRuleConfig {
         match self {
             AlertRuleConfig::NodeCpu { node_id, .. }
             | AlertRuleConfig::NodeMemory { node_id, .. }
+            | AlertRuleConfig::NodeStorage { node_id, .. }
             | AlertRuleConfig::NodeLoadAverage { node_id, .. } => {
                 format!("{kind}:{node_id}")
             }
