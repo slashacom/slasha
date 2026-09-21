@@ -13,7 +13,7 @@ pub mod utils;
 pub mod workflow;
 
 pub use app::AppDocker;
-pub use error::{DockerError, DockerResult};
+pub use error::{DockerError, DockerResult, spawn_failed};
 pub use exec::AttachedExec;
 pub use naming::*;
 pub use rollback::Rollback;

@@ -30,6 +30,8 @@ PasswordAuthentication no
 ChallengeResponseAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
+LoginGraceTime 30
+MaxStartups 10:30:60
 EOF
 
   for type in "${SSH_KEY_TYPES[@]}"; do
@@ -38,7 +40,7 @@ EOF
 } > /etc/ssh/sshd_config.d/slasha.conf
 
 # start sshd as root in the background
-/usr/sbin/sshd -D &
+/usr/sbin/sshd -D -e &
 
 # run app as slasha user
 exec runuser -u slasha -- /usr/local/bin/slasha serve
