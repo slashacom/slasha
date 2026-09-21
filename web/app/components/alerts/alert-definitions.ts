@@ -140,6 +140,18 @@ export const alertRuleRegistry = {
     summary: (config) =>
       `Node memory (${config.node_id}) >= ${config.threshold_percent}%`,
   },
+  node_storage: {
+    label: 'Node Storage',
+    description: 'Trigger when node disk usage crosses a threshold.',
+    defaults: { node_id: 'local', threshold_percent: '80' },
+    buildConfig: (draft) => ({
+      kind: 'node_storage',
+      node_id: draft.node_id || 'local',
+      threshold_percent: Number(draft.threshold_percent) || 0,
+    }),
+    summary: (config) =>
+      `Node storage (${config.node_id}) >= ${config.threshold_percent}%`,
+  },
   node_load_average: {
     label: 'Node Load Average',
     description: 'Trigger when node load average crosses a threshold.',

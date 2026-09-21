@@ -99,6 +99,7 @@ async fn build_snapshot(
         match &rule.config {
             AlertRuleConfig::NodeCpu { node_id, .. }
             | AlertRuleConfig::NodeMemory { node_id, .. }
+            | AlertRuleConfig::NodeStorage { node_id, .. }
             | AlertRuleConfig::NodeLoadAverage { node_id, .. } => {
                 metric_node_ids.insert(node_id.clone());
             }

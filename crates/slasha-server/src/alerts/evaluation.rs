@@ -24,6 +24,10 @@ pub fn evaluate_rule(rule: &AlertRule, snapshot: &AlertSnapshot) -> Option<Evalu
             node_id,
             threshold_percent,
         } => evaluate_node_memory(snapshot, node_id, *threshold_percent),
+        AlertRuleConfig::NodeStorage {
+            node_id,
+            threshold_percent,
+        } => evaluate_node_storage(snapshot, node_id, *threshold_percent),
         AlertRuleConfig::NodeLoadAverage { node_id, threshold } => {
             evaluate_node_load_average(snapshot, node_id, *threshold)
         }
@@ -83,6 +87,24 @@ fn evaluate_node_memory(
         recovery_value: Some(current),
         threshold_value: Some(threshold),
         detail_display: format!("Node Memory usage at {current:.1}%, threshold {threshold:.1}%"),
+        triggered: current >= threshold,
+    })
+}
+
+fn evaluate_node_storage(
+    snapshot: &AlertSnapshot,
+    node_id: &str,
+    threshold: f64,
+) -> Option<EvaluationResult> {
+    let metric = snapshot.node_metrics.get(node_id)?.as_ref()?;
+    let current = percent(metric.disk_used, metric.disk_total);
+    Some(EvaluationResult {
+        target_key: String::new(),
+        trigger_value: Some(current),
+        current_value: Some(current),
+        recovery_value: Some(current),
+        threshold_value: Some(threshold),
+        detail_display: format!("Node Storage usage at {current:.1}%, threshold {threshold:.1}%"),
         triggered: current >= threshold,
     })
 }

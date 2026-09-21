@@ -155,6 +155,13 @@ enum RuleConfigInput {
         #[garde(range(min = 0.0, max = 100.0))]
         threshold_percent: f64,
     },
+    NodeStorage {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(custom(not_empty))]
+        node_id: String,
+        #[garde(range(min = 0.0, max = 100.0))]
+        threshold_percent: f64,
+    },
     NodeLoadAverage {
         #[serde(deserialize_with = "trim_string")]
         #[garde(custom(not_empty))]
@@ -405,6 +412,10 @@ impl_config_conversion!(RuleConfigInput => DbAlertRuleConfig {
         threshold_percent
     },
     NodeMemory {
+        node_id,
+        threshold_percent
+    },
+    NodeStorage {
         node_id,
         threshold_percent
     },
