@@ -35,6 +35,7 @@ use crate::{
         workflow::runner::WorkflowContext,
     },
     logs::LogWriter,
+    proxy::sync::sync_routes,
     state::AppState,
 };
 
@@ -502,9 +503,33 @@ impl<'a> DeploymentRunner<'a> {
         DeploymentRepo::update_status(db_pool, &self.deployment.id, DeploymentStatus::Running)
             .await?;
 
-        self.state.runtime.proxy_sync_trigger.notify_one();
+        if let Err(e) = sync_routes(
+            &self.state.node_registry,
+            &self.state.clients,
+            db_pool,
+            &self.state.config,
+        )
+        .await
+        {
+            tracing::warn!(
+                app_slug = %self.app.slug,
+                error = ?e,
+                "Failed to sync proxy routes before stopping previous deployment"
+            );
+            self.state.runtime.proxy_sync_trigger.notify_one();
+        }
 
         for previous_deployment in &previous_deployments {
+            if let Err(e) = stop_deployment_processes(self.docker_client, previous_deployment).await
+            {
+                tracing::warn!(
+                    app_slug = %self.app.slug,
+                    deployment_id = %previous_deployment.id,
+                    error = ?e,
+                    "Failed to stop previous deployment processes"
+                );
+            }
+
             if let Err(e) =
                 remove_deployment_processes(self.docker_client, previous_deployment).await
             {
