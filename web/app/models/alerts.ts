@@ -73,4 +73,5 @@ export type AlertRuleConfig =
   | { kind: 'domain_tls_expiry'; domain: string; days_before: number }
   | { kind: 'domain_dns_misconfigured'; domain: string }
   | { kind: 'app_health_check'; app_id: string; health_check_url: string }
-  | { kind: 'cron_failed'; cron_job_id: string };
+  | { kind: 'cron_failed'; cron_job_id: string }
+  | { kind: 'deployment_failed'; app_id: string };

@@ -289,6 +289,27 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
           </>
         ) : null}
 
+        {draft.kind === 'deployment_failed' ? (
+          <FormField label="App">
+            <Select
+              value={draft.app_id}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  app_id: event.target.value,
+                }))
+              }
+            >
+              <option value="">Select an app</option>
+              {apps.map((app) => (
+                <option key={app.id} value={app.id}>
+                  {app.name}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        ) : null}
+
         {draft.kind === 'cron_failed' ? (
           <FormField label="Cron job">
             <Select

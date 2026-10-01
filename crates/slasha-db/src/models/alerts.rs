@@ -174,6 +174,9 @@ pub enum AlertRuleConfig {
     CronFailed {
         cron_job_id: String,
     },
+    DeploymentFailed {
+        app_id: String,
+    },
 }
 
 impl AlertRuleConfig {
@@ -189,6 +192,7 @@ impl AlertRuleConfig {
             AlertRuleConfig::DomainDnsMisconfigured { .. } => "domain_dns_misconfigured",
             AlertRuleConfig::AppHealthCheck { .. } => "app_health_check",
             AlertRuleConfig::CronFailed { .. } => "cron_failed",
+            AlertRuleConfig::DeploymentFailed { .. } => "deployment_failed",
         }
     }
 
@@ -203,7 +207,8 @@ impl AlertRuleConfig {
             }
             AlertRuleConfig::AppCpu { app_id, .. }
             | AlertRuleConfig::AppMemory { app_id, .. }
-            | AlertRuleConfig::AppHealthCheck { app_id, .. } => {
+            | AlertRuleConfig::AppHealthCheck { app_id, .. }
+            | AlertRuleConfig::DeploymentFailed { app_id } => {
                 format!("{kind}:{app_id}")
             }
             AlertRuleConfig::DomainTlsExpiry { domain, .. }

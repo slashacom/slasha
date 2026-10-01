@@ -6,6 +6,7 @@ use slasha_db::{
     DbPool, DuckdbPool,
     app_metrics::AppMetrics,
     cron::CronRun,
+    deployment::Deployment,
     models::alerts::{
         AlertIncident, AlertIncidentStatus, AlertNotification, AlertNotificationKind, AlertRule,
         AlertRuleConfig,
@@ -15,6 +16,7 @@ use slasha_db::{
         alerts::{AlertIncidentRepo, AlertNotificationRepo, AlertRuleRepo},
         app_metrics::AppMetricsRepo,
         cron::CronRunRepo,
+        deployment::DeploymentRepo,
         node_metrics::NodeMetricsRepo,
     },
 };
@@ -37,6 +39,7 @@ pub struct AlertSnapshot {
     pub apps: HashMap<String, AppSnapshot>,
     pub domains: HashMap<String, domain_health::DomainHealth>,
     pub crons: HashMap<String, Option<CronRun>>,
+    pub deployments: HashMap<String, Option<Deployment>>,
 }
 
 pub fn spawn_alert_worker(db_pool: DbPool, duckdb_pool: DuckdbPool, config: Config) {
@@ -94,6 +97,7 @@ async fn build_snapshot(
     let mut domains_to_check = HashSet::new();
     let mut health_check_urls = HashMap::new();
     let mut cron_job_ids = HashSet::new();
+    let mut deployment_app_ids = HashSet::new();
 
     for rule in rules {
         match &rule.config {
@@ -122,6 +126,10 @@ async fn build_snapshot(
 
             AlertRuleConfig::CronFailed { cron_job_id } => {
                 cron_job_ids.insert(cron_job_id.clone());
+            }
+
+            AlertRuleConfig::DeploymentFailed { app_id } => {
+                deployment_app_ids.insert(app_id.clone());
             }
         }
     }
@@ -171,11 +179,18 @@ async fn build_snapshot(
         crons.insert(cron_job_id, latest);
     }
 
+    let mut deployments = HashMap::new();
+    for app_id in deployment_app_ids {
+        let latest = get_deployment_outcome(db_pool, &app_id).await;
+        deployments.insert(app_id, latest);
+    }
+
     AlertSnapshot {
         node_metrics,
         apps,
         domains,
         crons,
+        deployments,
     }
 }
 
@@ -202,6 +217,15 @@ async fn get_cron_outcome(db_pool: &DbPool, cron_job_id: &str) -> Option<CronRun
         .await
         .unwrap_or_else(|err| {
             warn!(target: "slasha::alerts", cron_job_id = %cron_job_id, error = ?err, "failed to load cron run for alert rule");
+            None
+        })
+}
+
+async fn get_deployment_outcome(db_pool: &DbPool, app_id: &str) -> Option<Deployment> {
+    DeploymentRepo::latest_outcome_for_app(db_pool, app_id)
+        .await
+        .unwrap_or_else(|err| {
+            warn!(target: "slasha::alerts", app_id = %app_id, error = ?err, "failed to load deployments for alert rule");
             None
         })
 }

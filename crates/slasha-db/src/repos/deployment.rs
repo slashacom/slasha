@@ -60,6 +60,34 @@ impl DeploymentRepo {
         .await?
     }
 
+    /// Returns the deployment whose outcome is most recent: the last one to
+    /// fail or to start running.
+    ///
+    /// Stopped deployments are left out because a deployment is marked stopped
+    /// when a newer one replaces it or someone stops it, neither of which says
+    /// whether the latest deploy worked.
+    pub async fn latest_outcome_for_app(
+        pool: &DbPool,
+        app_id: &str,
+    ) -> DbResult<Option<Deployment>> {
+        let pool = pool.clone();
+        let app_id = app_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(deployments::table
+                .filter(deployments::app_id.eq(&app_id))
+                .filter(
+                    deployments::status
+                        .eq(DeploymentStatus::Failed.to_string())
+                        .or(deployments::status.eq(DeploymentStatus::Running.to_string())),
+                )
+                .order(deployments::updated_at.desc())
+                .first::<Deployment>(&mut conn)
+                .optional()?)
+        })
+        .await?
+    }
+
     pub async fn find(pool: &DbPool, id: &str, app_id: &str) -> DbResult<Deployment> {
         let pool = pool.clone();
         let id = id.to_string();

@@ -234,6 +234,18 @@ export const alertRuleRegistry = {
     }),
     summary: () => 'Latest run failed',
   },
+  deployment_failed: {
+    label: 'Deployment Failed',
+    description:
+      "Trigger when an application's latest deployment fails, and resolve once a deployment succeeds.",
+    defaults: { app_id: '' },
+    buildConfig: (draft) => ({
+      kind: 'deployment_failed',
+      app_id: draft.app_id,
+    }),
+    summary: (config, apps) =>
+      `Latest deployment of ${appName(config.app_id, apps)} failed`,
+  },
 } satisfies { [K in RuleKind]: RuleDefinition<K> };
 
 export const alertChannelKinds = Object.keys(

@@ -1,4 +1,7 @@
-use slasha_db::{alerts::AlertRule, cron::CronRunStatus, models::alerts::AlertRuleConfig};
+use slasha_db::{
+    alerts::AlertRule, cron::CronRunStatus, deployment::DeploymentStatus,
+    models::alerts::AlertRuleConfig,
+};
 
 use super::worker::{AlertSnapshot, AppSnapshot};
 
@@ -49,6 +52,9 @@ pub fn evaluate_rule(rule: &AlertRule, snapshot: &AlertSnapshot) -> Option<Evalu
             health_check_url,
         } => evaluate_app_health_check(snapshot.apps.get(app_id)?, health_check_url),
         AlertRuleConfig::CronFailed { cron_job_id } => evaluate_cron_failed(snapshot, cron_job_id),
+        AlertRuleConfig::DeploymentFailed { app_id } => {
+            evaluate_deployment_failed(snapshot, app_id)
+        }
     }?;
 
     result.target_key = target_key;
@@ -267,10 +273,107 @@ fn evaluate_cron_failed(snapshot: &AlertSnapshot, cron_job_id: &str) -> Option<E
     })
 }
 
+fn evaluate_deployment_failed(snapshot: &AlertSnapshot, app_id: &str) -> Option<EvaluationResult> {
+    let latest = snapshot.deployments.get(app_id)?;
+    let (triggered, detail_display) = match latest {
+        Some(deployment) => {
+            let commit = deployment
+                .commit_sha
+                .get(..7)
+                .unwrap_or(&deployment.commit_sha);
+            let failed = deployment.status == DeploymentStatus::Failed;
+            let detail = if failed {
+                format!(
+                    "Deployment {} (commit {commit}) failed; the previous deployment, if any, is still serving",
+                    deployment.id
+                )
+            } else {
+                format!(
+                    "Deployment {} (commit {commit}) is {}",
+                    deployment.id, deployment.status
+                )
+            };
+            (failed, detail)
+        }
+        None => (false, "No finished deployments yet".to_string()),
+    };
+
+    Some(EvaluationResult {
+        target_key: String::new(),
+        trigger_value: None,
+        current_value: None,
+        recovery_value: None,
+        threshold_value: None,
+        detail_display,
+        triggered,
+    })
+}
+
 fn percent(used: i64, total: i64) -> f64 {
     if total == 0 {
         0.0
     } else {
         used as f64 / total as f64 * 100.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use chrono::Utc;
+    use slasha_db::deployment::{Deployment, DeploymentStatus};
+
+    use super::{AlertSnapshot, evaluate_deployment_failed};
+
+    fn snapshot(app_id: &str, latest: Option<DeploymentStatus>) -> AlertSnapshot {
+        let now = Utc::now().naive_utc();
+        let deployment = latest.map(|status| Deployment {
+            id: "dep-1".to_string(),
+            app_id: app_id.to_string(),
+            commit_sha: "0123456789abcdef".to_string(),
+            commit_message: "Add migrations".to_string(),
+            status,
+            created_at: now,
+            updated_at: now,
+            node_id: "local".to_string(),
+        });
+
+        AlertSnapshot {
+            node_metrics: HashMap::new(),
+            apps: HashMap::new(),
+            domains: HashMap::new(),
+            crons: HashMap::new(),
+            deployments: HashMap::from([(app_id.to_string(), deployment)]),
+        }
+    }
+
+    #[test]
+    fn a_failed_latest_deployment_triggers() {
+        let eval =
+            evaluate_deployment_failed(&snapshot("app", Some(DeploymentStatus::Failed)), "app")
+                .unwrap();
+        assert!(eval.triggered);
+        assert!(eval.detail_display.contains("dep-1"));
+        assert!(eval.detail_display.contains("0123456"));
+    }
+
+    #[test]
+    fn a_running_latest_deployment_resolves() {
+        let eval =
+            evaluate_deployment_failed(&snapshot("app", Some(DeploymentStatus::Running)), "app")
+                .unwrap();
+        assert!(!eval.triggered);
+    }
+
+    #[test]
+    fn no_finished_deployment_does_not_trigger() {
+        let eval = evaluate_deployment_failed(&snapshot("app", None), "app").unwrap();
+        assert!(!eval.triggered);
+    }
+
+    #[test]
+    fn an_app_missing_from_the_snapshot_is_skipped() {
+        assert!(evaluate_deployment_failed(&snapshot("app", None), "other").is_none());
     }
 }
