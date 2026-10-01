@@ -6,7 +6,11 @@ use slasha_db::deployment::{Deployment, DeploymentStatus};
 
 use crate::{
     clap_app::{DeploymentsCommand, LogArgs},
-    commands::{logs::display_logs, resolve::resolve_deployment_id, responses::OkResponse},
+    commands::{
+        logs::{LogSource, display_logs},
+        resolve::resolve_deployment_id,
+        responses::OkResponse,
+    },
     context::Context,
     http::ApiClient,
     output::{
@@ -84,13 +88,18 @@ pub async fn handle_trigger(
             app_slug,
             &LogArgs {
                 follow: true,
-                limit: 0,
+                limit: 2000,
                 search: None,
                 prefix: None,
                 stream: None,
             },
+            LogSource::Deployment,
         )
-        .await?;
+        .await?
+        .filter(|status| *status == DeploymentStatus::Failed)
+        .map_or(Ok(()), |_| {
+            Err(anyhow::anyhow!("Deployment {} failed", res.deployment.id))
+        })?;
     } else {
         cli_info("\nFollow logs: slasha logs --follow");
     }
@@ -141,8 +150,11 @@ pub async fn handle_logs(
         &format!("/api/apps/{}/deployments/{}", slug, deployment_id),
         slug,
         &args,
+        LogSource::Deployment,
     )
-    .await
+    .await?;
+
+    Ok(())
 }
 
 async fn handle_stop(

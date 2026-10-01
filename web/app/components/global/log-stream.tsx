@@ -40,6 +40,7 @@ type LogStreamProps = {
   className?: string;
   emptyMessage?: string;
   title?: string;
+  live?: boolean;
 };
 
 export function formatLogPrefix(prefix?: LogPrefix | null | string): string {
@@ -325,7 +326,14 @@ function logReducer(state: LogState, action: LogAction): LogState {
 }
 
 export function LogStream(props: LogStreamProps) {
-  const { url, resourceKind, className, emptyMessage, title } = props;
+  const {
+    url,
+    resourceKind,
+    className,
+    emptyMessage,
+    title,
+    live = true,
+  } = props;
 
   const [state, dispatch] = useReducer(logReducer, {
     logs: [],
@@ -336,6 +344,8 @@ export function LogStream(props: LogStreamProps) {
   });
 
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyAttempt, setHistoryAttempt] = useState(0);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [loadingNewer, setLoadingNewer] = useState(false);
 
@@ -386,7 +396,10 @@ export function LogStream(props: LogStreamProps) {
       const res = await fetch(`${url}/logs?${queryParams.toString()}`, {
         headers: { Authorization: `Bearer ${getAuthToken()}` },
       });
-      if (!res.ok) throw res;
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || `${res.status} ${res.statusText}`);
+      }
       const data = await res.json();
       return data?.logs && Array.isArray(data.logs)
         ? (data.logs as LogRecord[])
@@ -401,6 +414,7 @@ export function LogStream(props: LogStreamProps) {
 
     const timeoutId = setTimeout(() => {
       setLoadingHistory(true);
+      setHistoryError(null);
 
       fetchLogs({ limit: 2000 })
         .then((fetchedLogs) => {
@@ -408,7 +422,13 @@ export function LogStream(props: LogStreamProps) {
             dispatch({ type: 'INIT', logs: fetchedLogs });
           }
         })
-        .catch(() => {})
+        .catch((error: unknown) => {
+          if (isSubscribed) {
+            setHistoryError(
+              error instanceof Error ? error.message : 'Request failed'
+            );
+          }
+        })
         .finally(() => {
           if (isSubscribed) setLoadingHistory(false);
         });
@@ -418,10 +438,14 @@ export function LogStream(props: LogStreamProps) {
       isSubscribed = false;
       clearTimeout(timeoutId);
     };
-  }, [fetchLogs]);
+  }, [fetchLogs, historyAttempt]);
 
   // listen to live sse stream
   useEffect(() => {
+    if (!live) {
+      return;
+    }
+
     const token = getAuthToken();
     const queryParams = new URLSearchParams();
     if (token) queryParams.set('token', token);
@@ -447,7 +471,7 @@ export function LogStream(props: LogStreamProps) {
     es.onerror = () => es.close();
 
     return () => es.close();
-  }, [url, resourceKind]);
+  }, [url, resourceKind, live]);
 
   // handle upward scrolling pagination
   const loadOlderLogs = useCallback(() => {
@@ -597,10 +621,25 @@ export function LogStream(props: LogStreamProps) {
                   Fetching log history...
                 </p>
               </>
+            ) : historyError ? (
+              <>
+                <p className="text-sm font-medium text-red-400">
+                  Could not load log history: {historyError}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setHistoryAttempt((n) => n + 1)}
+                  className="h-7 rounded border border-border bg-surface px-3 text-[11px] font-medium text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text"
+                >
+                  Retry
+                </button>
+              </>
             ) : (
               <p>
                 {emptyMessage ||
-                  'No log entries found. Waiting for new logs...'}
+                  (live
+                    ? 'No log entries found. Waiting for new logs...'
+                    : 'No log entries found.')}
               </p>
             )}
           </div>

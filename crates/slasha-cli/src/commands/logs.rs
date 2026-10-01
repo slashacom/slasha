@@ -1,10 +1,13 @@
-use std::fmt::Write;
+use std::{collections::HashSet, fmt::Write, time::Duration};
 
 use anyhow::Result;
 use colored::Colorize;
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
-use slasha_db::models::logs::{LogRecord, LogStream};
+use slasha_db::{
+    deployment::{Deployment, DeploymentStatus},
+    models::logs::{LogRecord, LogStream},
+};
 
 use crate::{
     clap_app::LogArgs,
@@ -12,12 +15,32 @@ use crate::{
     output::{cli_error, cli_info, format_local_datetime_secs},
 };
 
+const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(3);
+
 #[derive(serde::Deserialize)]
 struct LogsResponse {
     logs: Vec<LogRecord>,
 }
 
-/// Fetches historical logs or streams live logs based on [`LogArgs`].
+#[derive(serde::Deserialize)]
+struct DeploymentResponse {
+    deployment: Deployment,
+}
+
+/// What the logs belong to, which decides when following them stops.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LogSource {
+    /// Follows until interrupted.
+    Service,
+    /// Stops following once the deployment has failed or been stopped; a
+    /// deployment that is already finished is not followed at all.
+    Deployment,
+}
+
+/// Prints a resource's stored logs, then follows live ones when asked to.
+///
+/// Following subscribes to the live stream before reading the history, so a
+/// line written in between arrives on the stream and is printed once.
 ///
 /// # Arguments
 ///
@@ -25,53 +48,122 @@ struct LogsResponse {
 /// * `resource_path` - Base API endpoint path (e.g. `/api/apps/app-slug/deployments/dep_123`).
 /// * `target_label` - Human-readable label for the target application or service (e.g. `epic-owl-49a`).
 /// * `args` - Log command filter and paging flags ([`LogArgs`]).
+/// * `source` - What the logs belong to ([`LogSource`]).
+///
+/// # Returns
+///
+/// The deployment's status when following stopped, for a [`LogSource::Deployment`].
 pub async fn display_logs(
     client: &ApiClient,
     resource_path: &str,
     target_label: &str,
     args: &LogArgs,
-) -> Result<()> {
-    let filter_opts = LogFilterOptions {
+    source: LogSource,
+) -> Result<Option<DeploymentStatus>> {
+    if !args.follow {
+        let logs = fetch_history(client, resource_path, args).await?;
+        page_logs(target_label, &logs)?;
+        return Ok(None);
+    }
+
+    let filter = LogFilterOptions {
         search: args.search.as_deref(),
         prefix: args.prefix.as_deref(),
         stream: args.stream,
     };
 
-    if args.follow {
-        let res = client
-            .get_stream(&format!("{}/stream", resource_path))
-            .await?;
+    let live = client
+        .get_stream(&format!("{}/stream", resource_path))
+        .await?;
 
-        stream_logs(res, filter_opts).await?;
-    } else {
-        let mut query_params = vec![format!("limit={}", args.limit)];
-
-        if let Some(ref s) = args.search {
-            let encoded: String = url::form_urlencoded::byte_serialize(s.as_bytes()).collect();
-            query_params.push(format!("search={}", encoded));
-        }
-        if let Some(ref p) = args.prefix {
-            let encoded: String = url::form_urlencoded::byte_serialize(p.as_bytes()).collect();
-            query_params.push(format!("prefix={}", encoded));
-        }
-        if let Some(st) = args.stream {
-            let encoded: String =
-                url::form_urlencoded::byte_serialize(st.to_string().as_bytes()).collect();
-            query_params.push(format!("stream={}", encoded));
-        }
-
-        let data: LogsResponse = client
-            .get(&format!(
-                "{}/logs?{}",
-                resource_path,
-                query_params.join("&")
-            ))
-            .await?;
-
-        page_logs(target_label, &data.logs)?;
+    let history = fetch_history(client, resource_path, args).await?;
+    let seen: HashSet<String> = history.iter().map(|rec| rec.id.clone()).collect();
+    for rec in &history {
+        print_log_record(rec);
     }
 
-    Ok(())
+    if source == LogSource::Service {
+        stream_logs(live, filter, &seen).await?;
+        return Ok(None);
+    }
+
+    let status = fetch_deployment_status(client, resource_path).await?;
+    if is_finished(status) {
+        if history.is_empty() {
+            cli_info("No logs available.");
+        }
+        cli_info(format!(
+            "\nDeployment is {}; nothing more to follow.",
+            status
+        ));
+        return Ok(Some(status));
+    }
+
+    let finished = async {
+        loop {
+            tokio::time::sleep(STATUS_POLL_INTERVAL).await;
+            if let Ok(status) = fetch_deployment_status(client, resource_path).await
+                && is_finished(status)
+            {
+                return status;
+            }
+        }
+    };
+
+    tokio::select! {
+        res = stream_logs(live, filter, &seen) => {
+            res?;
+            Ok(None)
+        }
+        status = finished => {
+            cli_info(format!("\nDeployment is {}.", status));
+            Ok(Some(status))
+        }
+    }
+}
+
+fn is_finished(status: DeploymentStatus) -> bool {
+    matches!(status, DeploymentStatus::Failed | DeploymentStatus::Stopped)
+}
+
+async fn fetch_deployment_status(
+    client: &ApiClient,
+    resource_path: &str,
+) -> Result<DeploymentStatus> {
+    let res: DeploymentResponse = client.get(resource_path).await?;
+    Ok(res.deployment.status)
+}
+
+fn history_query(args: &LogArgs) -> String {
+    let encode = |value: &str| -> String {
+        url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
+    };
+
+    let mut query_params = vec![format!("limit={}", args.limit)];
+
+    if let Some(ref s) = args.search {
+        query_params.push(format!("search={}", encode(s)));
+    }
+    if let Some(ref p) = args.prefix {
+        query_params.push(format!("prefix={}", encode(p)));
+    }
+    if let Some(st) = args.stream {
+        query_params.push(format!("stream={}", encode(&st.to_string())));
+    }
+
+    query_params.join("&")
+}
+
+async fn fetch_history(
+    client: &ApiClient,
+    resource_path: &str,
+    args: &LogArgs,
+) -> Result<Vec<LogRecord>> {
+    let data: LogsResponse = client
+        .get(&format!("{}/logs?{}", resource_path, history_query(args)))
+        .await?;
+
+    Ok(data.logs)
 }
 
 /// Formats a log record into a colorized single line string.
@@ -181,7 +273,11 @@ fn page_logs(target_label: &str, logs: &[LogRecord]) -> Result<()> {
 }
 
 /// Streams Server-Sent Events (SSE) formatted log records to stdout.
-async fn stream_logs(res: reqwest::Response, filter: LogFilterOptions<'_>) -> Result<()> {
+async fn stream_logs(
+    res: reqwest::Response,
+    filter: LogFilterOptions<'_>,
+    seen: &HashSet<String>,
+) -> Result<()> {
     let mut stream = res.bytes_stream().eventsource();
 
     while let Some(event) = stream.next().await {
@@ -195,7 +291,7 @@ async fn stream_logs(res: reqwest::Response, filter: LogFilterOptions<'_>) -> Re
 
                 if let Some(rec) = serde_json::from_str::<LogRecord>(data)
                     .ok()
-                    .filter(|r| filter.matches(r))
+                    .filter(|r| filter.matches(r) && !seen.contains(&r.id))
                 {
                     print_log_record(&rec);
                 }

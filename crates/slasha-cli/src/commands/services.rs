@@ -7,7 +7,10 @@ use slasha_db::service::{Service, ServiceKind};
 use crate::{
     clap_app::{LogArgs, ServicesCommand},
     commands::{
-        logs::display_logs, proxy, resolve::resolve_service_id, responses::OkResponse,
+        logs::{LogSource, display_logs},
+        proxy,
+        resolve::resolve_service_id,
+        responses::OkResponse,
         service_backup, service_env,
     },
     context::Context,
@@ -242,8 +245,11 @@ async fn handle_logs(client: &ApiClient, slug: &str, service: &str, args: LogArg
         &format!("/api/apps/{}/services/{}", slug, service_id),
         &format!("{}/{}", slug, service),
         &args,
+        LogSource::Service,
     )
-    .await
+    .await?;
+
+    Ok(())
 }
 
 /// Fetches default environment variables associated with a service kind.
