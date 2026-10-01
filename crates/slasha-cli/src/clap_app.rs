@@ -542,7 +542,7 @@ pub struct LogArgs {
 mod tests {
     use clap::{CommandFactory, Parser};
 
-    use super::{ClapApp, Command, DeploymentsCommand};
+    use super::{AppEnvCommand, AppsCommand, ClapApp, Command, DeploymentsCommand};
 
     fn parse(args: &[&str]) -> ClapApp {
         ClapApp::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"))
@@ -551,6 +551,50 @@ mod tests {
     #[test]
     fn command_definition_is_valid() {
         ClapApp::command().debug_assert();
+    }
+
+    #[test]
+    fn app_flag_is_accepted_in_every_position() {
+        for args in [
+            &["slasha", "--app", "api", "env", "list"][..],
+            &["slasha", "env", "--app", "api", "list"],
+            &["slasha", "env", "list", "--app", "api"],
+        ] {
+            let cli = parse(args);
+            assert_eq!(cli.app_override.as_deref(), Some("api"), "{args:?}");
+            assert!(matches!(
+                cli.command,
+                Command::Env {
+                    command: AppEnvCommand::List
+                }
+            ));
+        }
+
+        for args in [
+            &["slasha", "deployments", "--app", "api", "list"][..],
+            &["slasha", "deployments", "list", "--app", "api"],
+        ] {
+            assert_eq!(parse(args).app_override.as_deref(), Some("api"));
+        }
+
+        for args in [
+            &["slasha", "--app", "api", "apps", "info"][..],
+            &["slasha", "apps", "info", "--app", "api"],
+        ] {
+            let cli = parse(args);
+            assert_eq!(cli.app_override.as_deref(), Some("api"));
+            assert!(matches!(
+                cli.command,
+                Command::Apps {
+                    command: AppsCommand::Info
+                }
+            ));
+        }
+    }
+
+    #[test]
+    fn app_flag_is_optional_so_the_link_file_can_supply_it() {
+        assert_eq!(parse(&["slasha", "env", "list"]).app_override, None);
     }
 
     #[test]
