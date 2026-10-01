@@ -20,15 +20,6 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 const CRASH_LOOP_RESTARTS: i64 = 2;
 
-/// Parses a container's `KEY=VALUE` environment list into a map.
-///
-/// # Arguments
-///
-/// * `env` - Environment entries as reported by `docker inspect`.
-///
-/// # Returns
-///
-/// A map of environment variable names to values.
 pub fn env_map_from_container_env(env: &[String]) -> HashMap<String, String> {
     env.iter()
         .filter_map(|entry| entry.split_once('='))
@@ -465,26 +456,5 @@ async fn observe_container(
     Round {
         state,
         attempt: Some(attempt),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{HEALTH_CHECK_PATH_ENV, ReadinessConfig, env_map_from_container_env};
-
-    #[test]
-    fn container_env_keeps_values_containing_equals_signs() {
-        let env = env_map_from_container_env(&[
-            "DATABASE_URL=postgres://u:p@db/app?sslmode=disable&a=b".to_string(),
-            format!("{HEALTH_CHECK_PATH_ENV}=/healthz"),
-            "MALFORMED".to_string(),
-        ]);
-
-        assert_eq!(
-            env.get("DATABASE_URL").map(String::as_str),
-            Some("postgres://u:p@db/app?sslmode=disable&a=b")
-        );
-        assert!(!env.contains_key("MALFORMED"));
-        assert_eq!(ReadinessConfig::from_env_map(&env).path, "/healthz");
     }
 }

@@ -44,22 +44,6 @@ use crate::{
     state::AppState,
 };
 
-/// Starts every process container of a stopped deployment again and waits for
-/// its web processes to pass the readiness check.
-///
-/// Used when a stateful deploy fails after the previous deployment was stopped
-/// to free its volumes. All of that deployment's containers still exist at the
-/// counts it was scaled to, so starting each of them restores it as it was.
-/// The readiness check uses the health check settings in each container's own
-/// environment, since the failed deployment may have changed them.
-///
-/// # Arguments
-///
-/// * `state` - Application state ([`AppState`]).
-/// * `docker_client` - Docker API client ([`Docker`]).
-/// * `app` - Target application model ([`App`]).
-/// * `deployment` - The previous deployment to bring back ([`Deployment`]).
-/// * `log` - The failed deployment's log, where the outcome is reported ([`LogWriter`]).
 async fn restore_deployment(
     state: &AppState,
     docker_client: &Docker,

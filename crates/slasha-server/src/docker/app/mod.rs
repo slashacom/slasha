@@ -131,18 +131,6 @@ impl AppDocker {
             .await
     }
 
-    /// Creates a deployment record and runs the deployment workflow for it in the background.
-    ///
-    /// # Arguments
-    ///
-    /// * `commit_sha` - Commit to deploy.
-    /// * `commit_message` - Summary of that commit.
-    /// * `node_id` - Node the deployment runs on.
-    /// * `source_image` - Optional retained image tag to reuse instead of building.
-    ///
-    /// # Returns
-    ///
-    /// A [`DockerResult`] containing the created [`Deployment`].
     async fn start_new_deployment(
         &self,
         commit_sha: String,
@@ -200,11 +188,7 @@ impl AppDocker {
         });
     }
 
-    /// Rebuilds and redeploys an existing deployment's commit.
-    ///
-    /// A running deployment is redeployed as a new deployment so it is replaced
-    /// without downtime. Any other deployment is retried under its own id, and
-    /// its earlier logs are kept above the new attempt's.
+    /// Redeploys an existing deployment.
     ///
     /// # Arguments
     ///
@@ -212,15 +196,11 @@ impl AppDocker {
     ///
     /// # Returns
     ///
-    /// A [`DockerResult`] containing the [`Deployment`] that is now pending.
+    /// A [`DockerResult`] containing the pending [`Deployment`] model.
     pub async fn redeploy(&self, deployment_id: &str) -> DockerResult<Deployment> {
         let existing =
             DeploymentRepo::find(&self.state.storage.db_pool, deployment_id, &self.app.id).await?;
 
-        // Containers are named after their deployment, so rebuilding a running
-        // deployment under its own id would have to remove the containers that
-        // are serving traffic before their replacements exist. A fresh
-        // deployment gets the same handover as any other deploy instead.
         if existing.status == DeploymentStatus::Running {
             return self
                 .start_new_deployment(

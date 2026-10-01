@@ -118,7 +118,6 @@ impl Runtime {
     ///
     /// * `duckdb_pool` - DuckDB connection pool for the log bus ([`DuckdbPool`]).
     /// * `proxy_sync_trigger` - Shared notification trigger for proxy route sync ([`Notify`]).
-    /// * `alert_check_trigger` - Asks the alert worker to evaluate its rules now ([`Notify`]).
     ///
     /// # Returns
     ///

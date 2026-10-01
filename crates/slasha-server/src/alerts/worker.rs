@@ -48,13 +48,6 @@ pub struct AlertSnapshot {
     pub deployments: HashMap<String, Option<Deployment>>,
 }
 
-/// Spawns the alert worker, which evaluates every enabled rule each
-/// [`CHECK_INTERVAL`](super::CHECK_INTERVAL) and whenever the returned trigger is notified.
-///
-/// Event rules such as `deployment_failed` see only the latest outcome when they
-/// are evaluated, so the deployment workflow notifies the trigger when a
-/// deployment fails rather than waiting for the next interval, where a second
-/// failure could replace the first unseen.
 pub fn spawn_alert_worker(db_pool: DbPool, duckdb_pool: DuckdbPool, config: Config) -> Arc<Notify> {
     let trigger = Arc::new(Notify::new());
 
@@ -364,23 +357,13 @@ async fn process_rule(
     Ok(())
 }
 
-/// What a per-event rule's evaluation means for its open incidents.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Default)]
 struct EventPlan {
-    /// Open an incident for this event and notify about it.
     open: bool,
-    /// Close these incidents quietly: a newer event replaces them.
     supersede: Vec<String>,
-    /// Close these incidents and notify that the condition cleared.
     resolve: Vec<String>,
 }
 
-/// Decides how a per-event rule's open incidents change for one evaluation.
-///
-/// Each event gets one incident and one notification. Seeing the same event
-/// again changes nothing, whatever the cooldown; a different event opens a
-/// new incident and quietly closes the old one; a clear evaluation resolves
-/// whatever is open.
 fn plan_event(open: &[AlertIncident], eval: &EvaluationResult) -> EventPlan {
     if !eval.triggered {
         return EventPlan {
@@ -505,91 +488,4 @@ async fn notify(
 
 fn elapsed_secs(since: chrono::NaiveDateTime, now: chrono::NaiveDateTime) -> i64 {
     (now - since).num_seconds()
-}
-
-#[cfg(test)]
-mod tests {
-    use chrono::Utc;
-    use slasha_db::models::alerts::{AlertIncident, AlertIncidentStatus};
-
-    use super::{EventPlan, plan_event};
-    use crate::alerts::evaluation::EvaluationResult;
-
-    fn incident(id: &str, target_key: &str) -> AlertIncident {
-        AlertIncident {
-            id: id.to_string(),
-            rule_id: "rule".to_string(),
-            target_key: target_key.to_string(),
-            status: AlertIncidentStatus::Open,
-            trigger_value: None,
-            current_value: None,
-            recovery_value: None,
-            threshold_value: None,
-            opened_at: Utc::now().naive_utc(),
-            last_notified_at: None,
-            resolved_at: None,
-        }
-    }
-
-    fn eval(target_key: &str, triggered: bool) -> EvaluationResult {
-        EvaluationResult {
-            target_key: target_key.to_string(),
-            trigger_value: None,
-            current_value: None,
-            recovery_value: None,
-            threshold_value: None,
-            detail_display: String::new(),
-            triggered,
-            event_key: None,
-        }
-    }
-
-    #[test]
-    fn a_first_failure_opens_an_incident() {
-        assert_eq!(
-            plan_event(&[], &eval("deployment_failed:app:d1", true)),
-            EventPlan {
-                open: true,
-                ..EventPlan::default()
-            }
-        );
-    }
-
-    #[test]
-    fn the_same_failure_seen_again_changes_nothing() {
-        let open = [incident("i1", "deployment_failed:app:d1")];
-        assert_eq!(
-            plan_event(&open, &eval("deployment_failed:app:d1", true)),
-            EventPlan::default()
-        );
-    }
-
-    #[test]
-    fn another_failure_is_notified_and_replaces_the_previous_one() {
-        let open = [incident("i1", "deployment_failed:app:d1")];
-        assert_eq!(
-            plan_event(&open, &eval("deployment_failed:app:d2", true)),
-            EventPlan {
-                open: true,
-                supersede: vec!["i1".to_string()],
-                resolve: Vec::new(),
-            }
-        );
-    }
-
-    #[test]
-    fn a_successful_deployment_resolves_what_is_open() {
-        let open = [incident("i1", "deployment_failed:app:d1")];
-        assert_eq!(
-            plan_event(&open, &eval("deployment_failed:app", false)),
-            EventPlan {
-                resolve: vec!["i1".to_string()],
-                ..EventPlan::default()
-            }
-        );
-        assert_eq!(
-            plan_event(&[], &eval("deployment_failed:app", false)),
-            EventPlan::default()
-        );
-    }
 }

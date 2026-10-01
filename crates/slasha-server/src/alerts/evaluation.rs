@@ -14,8 +14,6 @@ pub struct EvaluationResult {
     pub threshold_value: Option<f64>,
     pub detail_display: String,
     pub triggered: bool,
-    /// Identifies the occurrence that triggered a per-event rule, and becomes
-    /// part of the incident's target key.
     pub event_key: Option<String>,
 }
 

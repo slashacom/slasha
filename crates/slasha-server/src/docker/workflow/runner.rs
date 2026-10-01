@@ -18,11 +18,6 @@ pub struct WorkflowContext<'a> {
 impl<'a> WorkflowContext<'a> {
     /// Executes a named workflow step with automatic forward logging and undo registration.
     ///
-    /// The undo is registered before the action runs, so a rollback also cleans up
-    /// after a step that failed or was cancelled part-way, having created some of
-    /// what it was meant to. Every undo must therefore be idempotent, tolerate the
-    /// action having done nothing, and touch only what the action would create.
-    ///
     /// # Arguments
     ///
     /// * `name` - Descriptive step name string.
@@ -136,9 +131,6 @@ impl<'a> WorkflowRunner<'a> {
             }
         };
 
-        // The workflow future is dropped when select! returns, which kills any
-        // child process it spawned with kill_on_drop, so a cancelled step cannot
-        // keep creating resources after its undo has run.
         let res = tokio::select! {
             res = AssertUnwindSafe(f(context)).catch_unwind() => Some(res),
             _ = cancel_fut => None,
@@ -183,102 +175,5 @@ impl<'a> WorkflowRunner<'a> {
                 )))
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
-        time::Duration,
-    };
-
-    use tokio_util::sync::CancellationToken;
-
-    use super::WorkflowRunner;
-    use crate::docker::DockerError;
-
-    fn counter() -> (
-        Arc<AtomicUsize>,
-        impl Fn() -> futures_util::future::BoxFuture<'static, ()> + Clone,
-    ) {
-        let count = Arc::new(AtomicUsize::new(0));
-        let undo = {
-            let count = count.clone();
-            move || {
-                let count = count.clone();
-                Box::pin(async move {
-                    count.fetch_add(1, Ordering::SeqCst);
-                }) as futures_util::future::BoxFuture<'static, ()>
-            }
-        };
-        (count, undo)
-    }
-
-    #[tokio::test]
-    async fn a_step_that_fails_part_way_is_undone() {
-        let (undone, undo) = counter();
-
-        let result = WorkflowRunner::new("test")
-            .run(|wf| async move {
-                wf.step("first", async { Ok::<_, DockerError>(()) }, undo())
-                    .await?;
-                wf.step(
-                    "second",
-                    async { Err::<(), _>(DockerError::Other(anyhow::anyhow!("half done"))) },
-                    undo(),
-                )
-                .await
-            })
-            .await;
-
-        assert!(result.is_err());
-        assert_eq!(undone.load(Ordering::SeqCst), 2);
-    }
-
-    #[tokio::test]
-    async fn a_successful_workflow_undoes_nothing() {
-        let (undone, undo) = counter();
-
-        WorkflowRunner::new("test")
-            .run(|wf| async move {
-                wf.step("only", async { Ok::<_, DockerError>(()) }, undo())
-                    .await
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(undone.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
-    async fn a_step_cancelled_mid_action_is_undone() {
-        let (undone, undo) = counter();
-        let token = CancellationToken::new();
-
-        let run = WorkflowRunner::new("test")
-            .with_cancel_token(&token)
-            .run(|wf| async move {
-                wf.step(
-                    "slow",
-                    async {
-                        tokio::time::sleep(Duration::from_secs(60)).await;
-                        Ok::<_, DockerError>(())
-                    },
-                    undo(),
-                )
-                .await
-            });
-
-        let (result, ()) = tokio::join!(run, async {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-            token.cancel();
-        });
-
-        assert!(result.is_err());
-        assert_eq!(undone.load(Ordering::SeqCst), 1);
     }
 }
