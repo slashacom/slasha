@@ -194,7 +194,10 @@ pub enum DeploymentsCommand {
         deployment_id: Option<String>,
     },
 
-    #[command(name = "restart", about = "Restart a deployment")]
+    #[command(
+        name = "restart",
+        about = "Restart a deployment's containers (keeps the environment it started with)"
+    )]
     Restart {
         #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
         deployment_id: Option<String>,
@@ -226,7 +229,10 @@ pub enum AppEnvCommand {
     #[command(name = "list", about = "List environment variables")]
     List,
 
-    #[command(name = "set", about = "Set environment variables")]
+    #[command(
+        name = "set",
+        about = "Set environment variables (applied on the next deployment)"
+    )]
     Set {
         #[arg(
             value_name = "KEY=VALUE",
@@ -235,9 +241,15 @@ pub enum AppEnvCommand {
             help = "KEY=VALUE pairs"
         )]
         pairs: Vec<String>,
+
+        #[arg(long, alias = "apply", help = APPLY_HELP)]
+        deploy: bool,
     },
 
-    #[command(name = "unset", about = "Remove environment variables")]
+    #[command(
+        name = "unset",
+        about = "Remove environment variables (applied on the next deployment)"
+    )]
     Unset {
         #[arg(
             value_name = "KEY",
@@ -246,8 +258,20 @@ pub enum AppEnvCommand {
             help = "Environment variable keys"
         )]
         keys: Vec<String>,
+
+        #[arg(long, alias = "apply", help = APPLY_HELP)]
+        deploy: bool,
     },
+
+    #[command(
+        name = "apply",
+        about = "Apply the current environment to the running deployment"
+    )]
+    Apply,
 }
+
+const APPLY_HELP: &str =
+    "Apply now: release the running deployment's image again with the new environment";
 
 #[derive(Subcommand)]
 pub enum ServicesCommand {
@@ -641,5 +665,38 @@ mod tests {
         };
         assert_eq!(logs.deployment_id().as_deref(), Some("dep1"));
         assert_eq!(cli.app_override.as_deref(), Some("api"));
+    }
+
+    #[test]
+    fn env_changes_can_be_applied_in_the_same_command() {
+        for (args, expected) in [
+            (&["slasha", "env", "set", "K=V"][..], false),
+            (&["slasha", "env", "set", "K=V", "--deploy"], true),
+            (&["slasha", "env", "set", "--apply", "K=V"], true),
+        ] {
+            let Command::Env {
+                command: AppEnvCommand::Set { deploy, .. },
+            } = parse(args).command
+            else {
+                panic!("expected env set");
+            };
+            assert_eq!(deploy, expected, "{args:?}");
+        }
+
+        let Command::Env {
+            command: AppEnvCommand::Unset { deploy, keys },
+        } = parse(&["slasha", "env", "unset", "K", "--deploy"]).command
+        else {
+            panic!("expected env unset");
+        };
+        assert!(deploy);
+        assert_eq!(keys, ["K"]);
+
+        assert!(matches!(
+            parse(&["slasha", "env", "--app", "api", "apply"]).command,
+            Command::Env {
+                command: AppEnvCommand::Apply
+            }
+        ));
     }
 }

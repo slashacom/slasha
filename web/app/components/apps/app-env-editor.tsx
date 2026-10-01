@@ -8,6 +8,10 @@ import {
   useUpdateAppEnvVars,
 } from '~/queries/apps';
 import {
+  getDeploymentsOptions,
+  useRollbackDeployment,
+} from '~/queries/deployments';
+import {
   APP_SLASHA_REFS,
   type SuggestionGroup,
 } from '~/components/apps/env-dotenv-editor';
@@ -27,6 +31,23 @@ export function AppEnvEditor(props: AppEnvEditorProps) {
     getAppEnvSuggestionsOptions(appSlug)
   );
   const updateEnvVars = useUpdateAppEnvVars();
+  const { data: deploymentsData } = useQuery(getDeploymentsOptions(appSlug));
+  const rollbackDeployment = useRollbackDeployment();
+
+  const runningDeployment = deploymentsData?.deployments.find(
+    (deployment) => deployment.status === 'Running'
+  );
+
+  // Env vars are read when a deployment is created, so applying them means a
+  // new deployment from the running one's image; a restart keeps the old values.
+  const applyToRunningDeployment = async (deploymentId: string) => {
+    try {
+      await rollbackDeployment.mutateAsync({ appSlug, deploymentId });
+      toast.success('Deploying the running image with the new environment');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to apply environment variables');
+    }
+  };
 
   const extraGroups = useMemo<SuggestionGroup[]>(() => {
     const out: SuggestionGroup[] = [];
@@ -46,7 +67,22 @@ export function AppEnvEditor(props: AppEnvEditorProps) {
         appSlug,
         vars,
       });
-      toast.success('Environment variables saved');
+      if (!runningDeployment) {
+        toast.success('Environment variables saved', {
+          description: 'They take effect on the next deployment.',
+        });
+      } else {
+        const deploymentId = runningDeployment.id;
+        toast.success('Environment variables saved', {
+          description:
+            'The running deployment still has the old values. Apply them now, or they take effect on the next deployment.',
+          duration: 15000,
+          action: {
+            label: 'Apply now',
+            onClick: () => applyToRunningDeployment(deploymentId),
+          },
+        });
+      }
       queryClient.invalidateQueries({
         queryKey: ['apps', appSlug, 'env-vars'],
       });

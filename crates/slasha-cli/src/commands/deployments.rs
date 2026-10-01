@@ -197,6 +197,11 @@ async fn handle_restart(
         .await?;
 
     cli_success(format!("Deployment {} restart triggered.", deployment_id));
+    cli_info(format!(
+        "A restart keeps the environment the deployment started with. \
+         To apply env changes: slasha env --app {} apply",
+        slug
+    ));
 
     Ok(())
 }
