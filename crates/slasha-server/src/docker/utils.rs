@@ -6,7 +6,7 @@ use bollard::{
     models::VolumeCreateRequest,
     query_parameters::{
         LogsOptionsBuilder, RemoveContainerOptionsBuilder, RemoveVolumeOptions,
-        StopContainerOptionsBuilder,
+        StopContainerOptionsBuilder, WaitContainerOptions,
     },
 };
 use futures_util::StreamExt;
@@ -94,6 +94,47 @@ pub async fn remove_container(docker_client: &Docker, name: &str) -> DockerResul
             Ok(())
         }
         Err(e) => Err(DockerError::from(e)),
+    }
+}
+
+/// Waits for a container to stop and returns its exit code.
+///
+/// Bollard reports a non-zero exit as an error rather than a status, so a
+/// caller that propagated it with `?` would skip whatever cleanup follows and
+/// never learn the code. Here a non-zero exit is an ordinary result.
+///
+/// # Arguments
+///
+/// * `docker_client` - Docker API client ([`Docker`]).
+/// * `name` - Target container name string.
+///
+/// # Returns
+///
+/// A [`DockerResult`] containing the container's exit code.
+pub async fn wait_for_exit(docker_client: &Docker, name: &str) -> DockerResult<i64> {
+    let next = docker_client
+        .wait_container(
+            name,
+            Some(WaitContainerOptions {
+                condition: "not-running".to_string(),
+            }),
+        )
+        .next()
+        .await;
+
+    exit_code_from_wait(next)
+}
+
+fn exit_code_from_wait(
+    next: Option<Result<bollard::models::ContainerWaitResponse, bollard::errors::Error>>,
+) -> DockerResult<i64> {
+    match next {
+        Some(Ok(res)) => Ok(res.status_code),
+        Some(Err(bollard::errors::Error::DockerContainerWaitError { code, .. })) => Ok(code),
+        Some(Err(e)) => Err(DockerError::from(e)),
+        None => Err(DockerError::Other(anyhow::anyhow!(
+            "container wait stream ended before the container stopped"
+        ))),
     }
 }
 
@@ -205,5 +246,40 @@ fn flush_lines(buffer: &mut String, chunk: &str, mut emit: impl FnMut(&str)) {
         let line = buffer[..pos].trim_end_matches('\r');
         emit(line);
         buffer.drain(..=pos);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bollard::{errors::Error, models::ContainerWaitResponse};
+
+    use super::exit_code_from_wait;
+
+    #[test]
+    fn zero_exit_is_a_status() {
+        let res = ContainerWaitResponse {
+            status_code: 0,
+            error: None,
+        };
+        assert_eq!(exit_code_from_wait(Some(Ok(res))).unwrap(), 0);
+    }
+
+    #[test]
+    fn non_zero_exit_is_a_status_not_an_error() {
+        let err = Error::DockerContainerWaitError {
+            error: String::new(),
+            code: 1,
+        };
+        assert_eq!(exit_code_from_wait(Some(Err(err))).unwrap(), 1);
+    }
+
+    #[test]
+    fn other_errors_and_a_closed_stream_fail() {
+        let err = Error::DockerResponseServerError {
+            status_code: 404,
+            message: "no such container".to_string(),
+        };
+        assert!(exit_code_from_wait(Some(Err(err))).is_err());
+        assert!(exit_code_from_wait(None).is_err());
     }
 }
