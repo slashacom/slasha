@@ -116,13 +116,16 @@ slasha link --app my-app     # link the cwd to an app (writes .slasha)
 git push slasha main         # deploy by pushing
 slasha deploy                # trigger a deployment manually
 slasha deployments list
-slasha deployments logs --follow
+slasha logs --follow         # stored logs of the latest deployment, then live ones
+slasha logs <deployment-id>  # any deployment's logs, including failed ones
 ```
 
 Environment variables and scaling:
 
 ```bash
-slasha env set DATABASE_URL=... LOG_LEVEL=info
+slasha env set DATABASE_URL=... LOG_LEVEL=info            # applies on the next deployment
+slasha env set LOG_LEVEL=debug --deploy                    # ...or apply it right away
+slasha env apply                                           # apply saved changes to the running app
 slasha env list
 slasha scale web=3 worker=1
 ```
