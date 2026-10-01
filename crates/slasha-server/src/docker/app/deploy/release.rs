@@ -13,11 +13,6 @@ use crate::{
     logs::LogWriter,
 };
 
-/// Removes a one-off container when dropped, unless disarmed first.
-///
-/// A cancelled deployment drops the release future mid-await, so the explicit
-/// removal at the end never runs. The guard covers that path by spawning the
-/// removal instead.
 struct ContainerGuard {
     docker_client: Docker,
     name: String,
@@ -41,11 +36,6 @@ impl Drop for ContainerGuard {
 }
 
 /// Runs an ephemeral release phase container and waits for completion.
-///
-/// The container is always removed afterwards, whether the command succeeded,
-/// failed or the deployment was cancelled, and a container left over from an
-/// earlier attempt of the same deployment is removed before this one is
-/// created, since both share a name.
 ///
 /// # Arguments
 ///

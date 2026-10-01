@@ -38,8 +38,6 @@ export function AppEnvEditor(props: AppEnvEditorProps) {
     (deployment) => deployment.status === 'Running'
   );
 
-  // Env vars are read when a deployment is created, so applying them means a
-  // new deployment from the running one's image; a restart keeps the old values.
   const applyToRunningDeployment = async (deploymentId: string) => {
     try {
       await rollbackDeployment.mutateAsync({ appSlug, deploymentId });

@@ -38,8 +38,6 @@ pub async fn dispatch(
     }
 }
 
-/// Env vars are read when a deployment is created, so a change reaches
-/// containers only through a new deployment; a restart keeps the old values.
 async fn after_change(client: &ApiClient, slug: &str, deploy: bool) -> Result<()> {
     if deploy {
         return apply(client, slug).await;
@@ -53,12 +51,6 @@ async fn after_change(client: &ApiClient, slug: &str, deploy: bool) -> Result<()
     Ok(())
 }
 
-/// Releases the running deployment's image again with the current env vars.
-///
-/// This goes through the rollback endpoint, which creates a new deployment
-/// from an existing one's commit and retained image (rebuilding only if the
-/// image is gone), resolves the environment afresh, runs the release command
-/// and switches traffic once the web process is ready.
 async fn apply(client: &ApiClient, slug: &str) -> Result<()> {
     let running_id = resolve_running_deployment_id(client, slug).await.context(
         "Nothing to apply the environment to; it will be used by the next `slasha deploy`",

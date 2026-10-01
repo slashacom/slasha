@@ -60,12 +60,6 @@ impl DeploymentRepo {
         .await?
     }
 
-    /// Returns the deployment whose outcome is most recent: the last one to
-    /// fail or to start running.
-    ///
-    /// Stopped deployments are left out because a deployment is marked stopped
-    /// when a newer one replaces it or someone stops it, neither of which says
-    /// whether the latest deploy worked.
     pub async fn latest_outcome_for_app(
         pool: &DbPool,
         app_id: &str,

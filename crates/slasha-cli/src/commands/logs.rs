@@ -27,20 +27,13 @@ struct DeploymentResponse {
     deployment: Deployment,
 }
 
-/// What the logs belong to, which decides when following them stops.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LogSource {
-    /// Follows until interrupted.
     Service,
-    /// Stops following once the deployment has failed or been stopped; a
-    /// deployment that is already finished is not followed at all.
     Deployment,
 }
 
-/// Prints a resource's stored logs, then follows live ones when asked to.
-///
-/// Following subscribes to the live stream before reading the history, so a
-/// line written in between arrives on the stream and is printed once.
+/// Fetches historical logs or streams live logs based on [`LogArgs`].
 ///
 /// # Arguments
 ///
@@ -48,11 +41,6 @@ pub enum LogSource {
 /// * `resource_path` - Base API endpoint path (e.g. `/api/apps/app-slug/deployments/dep_123`).
 /// * `target_label` - Human-readable label for the target application or service (e.g. `epic-owl-49a`).
 /// * `args` - Log command filter and paging flags ([`LogArgs`]).
-/// * `source` - What the logs belong to ([`LogSource`]).
-///
-/// # Returns
-///
-/// The deployment's status when following stopped, for a [`LogSource::Deployment`].
 pub async fn display_logs(
     client: &ApiClient,
     resource_path: &str,
