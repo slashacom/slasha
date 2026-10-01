@@ -5,7 +5,7 @@ use serde_json::json;
 use slasha_db::deployment::{Deployment, DeploymentStatus};
 
 use crate::{
-    clap_app::{DeploymentsCommand, LogArgs},
+    clap_app::{DeploymentLogsArgs, DeploymentsCommand, LogArgs},
     commands::{
         logs::{LogSource, display_logs},
         resolve::resolve_deployment_id,
@@ -39,6 +39,7 @@ pub async fn dispatch(
 
     match cmd {
         DeploymentsCommand::List => handle_list(client, slug).await,
+        DeploymentsCommand::Logs(logs) => show_logs(client, slug, logs).await,
         DeploymentsCommand::Stop { deployment_id } => {
             handle_stop(client, slug, deployment_id).await
         }
@@ -101,7 +102,7 @@ pub async fn handle_trigger(
             Err(anyhow::anyhow!("Deployment {} failed", res.deployment.id))
         })?;
     } else {
-        cli_info("\nFollow logs: slasha logs --follow");
+        print_follow_hint(app_slug, &res.deployment.id);
     }
 
     Ok(())
@@ -135,21 +136,24 @@ async fn handle_list(client: &ApiClient, slug: &str) -> Result<()> {
 }
 
 pub async fn handle_logs(
-    deployment_id_arg: Option<String>,
-    args: LogArgs,
+    logs: DeploymentLogsArgs,
     server_override: Option<&str>,
     app_override: Option<&str>,
 ) -> Result<()> {
     let ctx = Context::new(server_override, app_override)?;
     let (client, slug) = ctx.require_context()?;
 
-    let deployment_id = resolve_deployment_id(client, slug, deployment_id_arg).await?;
+    show_logs(client, slug, logs).await
+}
+
+async fn show_logs(client: &ApiClient, slug: &str, logs: DeploymentLogsArgs) -> Result<()> {
+    let deployment_id = resolve_deployment_id(client, slug, logs.deployment_id()).await?;
 
     display_logs(
         client,
         &format!("/api/apps/{}/deployments/{}", slug, deployment_id),
         slug,
-        &args,
+        &logs.args,
         LogSource::Deployment,
     )
     .await?;
@@ -216,7 +220,7 @@ async fn handle_redeploy(
         "Redeploy triggered for deployment {}.",
         res.deployment.id
     ));
-    cli_info("\nFollow logs: slasha logs --follow");
+    print_follow_hint(slug, &res.deployment.id);
 
     Ok(())
 }
@@ -261,6 +265,7 @@ async fn handle_rollback(
         res.deployment.id
     ));
     cli_label("Commit", &res.deployment.commit_sha);
+    print_follow_hint(slug, &res.deployment.id);
 
     Ok(())
 }
@@ -285,6 +290,13 @@ async fn handle_delete(
     cli_success(format!("Deployment {} deleted.", deployment_id));
 
     Ok(())
+}
+
+fn print_follow_hint(slug: &str, deployment_id: &str) {
+    cli_info(format!(
+        "\nFollow logs: slasha logs --app {} {} --follow",
+        slug, deployment_id
+    ));
 }
 
 /// Formats a deployment status enum into an ANSI colored string.

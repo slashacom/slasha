@@ -67,12 +67,7 @@ pub enum Command {
     },
 
     #[command(name = "logs", about = "View deployment logs")]
-    Logs {
-        #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
-        deployment_id: Option<String>,
-        #[command(flatten)]
-        args: LogArgs,
-    },
+    Logs(DeploymentLogsArgs),
 
     #[command(name = "scale", about = "Scale process instances")]
     Scale {
@@ -189,6 +184,9 @@ pub enum DomainsCommand {
 pub enum DeploymentsCommand {
     #[command(name = "list", about = "List deployments")]
     List,
+
+    #[command(name = "logs", about = "View deployment logs")]
+    Logs(DeploymentLogsArgs),
 
     #[command(name = "stop", about = "Stop a deployment")]
     Stop {
@@ -476,6 +474,31 @@ pub enum AuthCommand {
 }
 
 #[derive(clap::Args, Clone, Debug)]
+pub struct DeploymentLogsArgs {
+    #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
+    pub deployment_id: Option<String>,
+
+    #[arg(
+        long = "deployment-id",
+        value_name = "ID",
+        conflicts_with = "deployment_id",
+        help = "Deployment ID (defaults to latest)"
+    )]
+    pub deployment_id_flag: Option<String>,
+
+    #[command(flatten)]
+    pub args: LogArgs,
+}
+
+impl DeploymentLogsArgs {
+    pub fn deployment_id(&self) -> Option<String> {
+        self.deployment_id
+            .clone()
+            .or_else(|| self.deployment_id_flag.clone())
+    }
+}
+
+#[derive(clap::Args, Clone, Debug)]
 pub struct LogArgs {
     #[arg(short = 'f', long, help = "Follow log stream")]
     pub follow: bool,
@@ -513,4 +536,66 @@ pub struct LogArgs {
         help = "Filter by output stream"
     )]
     pub stream: Option<LogStream>,
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::{CommandFactory, Parser};
+
+    use super::{ClapApp, Command, DeploymentsCommand};
+
+    fn parse(args: &[&str]) -> ClapApp {
+        ClapApp::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"))
+    }
+
+    #[test]
+    fn command_definition_is_valid() {
+        ClapApp::command().debug_assert();
+    }
+
+    #[test]
+    fn logs_take_the_deployment_as_an_argument_or_a_flag() {
+        let Command::Logs(logs) = parse(&["slasha", "logs", "--app", "api", "dep1", "-f"]).command
+        else {
+            panic!("expected logs");
+        };
+        assert_eq!(logs.deployment_id().as_deref(), Some("dep1"));
+        assert!(logs.args.follow);
+
+        let Command::Logs(logs) = parse(&["slasha", "logs", "--deployment-id", "dep2"]).command
+        else {
+            panic!("expected logs");
+        };
+        assert_eq!(logs.deployment_id().as_deref(), Some("dep2"));
+
+        let Command::Logs(logs) = parse(&["slasha", "logs"]).command else {
+            panic!("expected logs");
+        };
+        assert_eq!(logs.deployment_id(), None);
+
+        assert!(
+            ClapApp::try_parse_from(["slasha", "logs", "dep1", "--deployment-id", "dep2"]).is_err()
+        );
+    }
+
+    #[test]
+    fn deployments_logs_matches_the_top_level_command() {
+        let cli = parse(&[
+            "slasha",
+            "deployments",
+            "--app",
+            "api",
+            "logs",
+            "--deployment-id",
+            "dep1",
+        ]);
+        let Command::Deployments {
+            command: DeploymentsCommand::Logs(logs),
+        } = cli.command
+        else {
+            panic!("expected deployments logs");
+        };
+        assert_eq!(logs.deployment_id().as_deref(), Some("dep1"));
+        assert_eq!(cli.app_override.as_deref(), Some("api"));
+    }
 }
