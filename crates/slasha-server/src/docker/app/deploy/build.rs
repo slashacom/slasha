@@ -192,6 +192,7 @@ async fn tar_to_directory(tar_bytes: Bytes, dest: &Path) -> DockerResult<()> {
         .args(["-xf", "-"])
         .current_dir(dest)
         .stdin(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(|err| spawn_failed("tar", &err))?;
 
