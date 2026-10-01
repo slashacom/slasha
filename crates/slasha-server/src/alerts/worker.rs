@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use chrono::Utc;
 use reqwest::Client;
@@ -20,11 +23,14 @@ use slasha_db::{
         node_metrics::NodeMetricsRepo,
     },
 };
-use tokio::time::sleep;
+use tokio::{sync::Notify, time::sleep};
 use tracing::{error, info, warn};
 
 use crate::{
-    alerts::{delivery, evaluation::evaluate_rule},
+    alerts::{
+        delivery,
+        evaluation::{EvaluationResult, evaluate_rule},
+    },
     domain_health,
     state::Config,
 };
@@ -42,20 +48,37 @@ pub struct AlertSnapshot {
     pub deployments: HashMap<String, Option<Deployment>>,
 }
 
-pub fn spawn_alert_worker(db_pool: DbPool, duckdb_pool: DuckdbPool, config: Config) {
-    tokio::spawn(async move {
-        let http_client = Client::new();
+/// Spawns the alert worker, which evaluates every enabled rule each
+/// [`CHECK_INTERVAL`](super::CHECK_INTERVAL) and whenever the returned trigger is notified.
+///
+/// Event rules such as `deployment_failed` see only the latest outcome when they
+/// are evaluated, so the deployment workflow notifies the trigger when a
+/// deployment fails rather than waiting for the next interval, where a second
+/// failure could replace the first unseen.
+pub fn spawn_alert_worker(db_pool: DbPool, duckdb_pool: DuckdbPool, config: Config) -> Arc<Notify> {
+    let trigger = Arc::new(Notify::new());
 
-        info!("alert worker started");
+    tokio::spawn({
+        let trigger = trigger.clone();
+        async move {
+            let http_client = Client::new();
 
-        loop {
-            if let Err(err) = run_tick(&db_pool, &duckdb_pool, &config, &http_client).await {
-                error!(target: "slasha::alerts", error = ?err, "alert worker tick failed");
+            info!("alert worker started");
+
+            loop {
+                if let Err(err) = run_tick(&db_pool, &duckdb_pool, &config, &http_client).await {
+                    error!(target: "slasha::alerts", error = ?err, "alert worker tick failed");
+                }
+
+                tokio::select! {
+                    _ = sleep(super::CHECK_INTERVAL) => {}
+                    _ = trigger.notified() => {}
+                }
             }
-
-            sleep(super::CHECK_INTERVAL).await;
         }
     });
+
+    trigger
 }
 
 async fn run_tick(
@@ -253,6 +276,10 @@ async fn process_rule(
         return Ok(());
     };
 
+    if rule.config.is_per_event() {
+        return process_event_rule(db_pool, http_client, rule, &eval).await;
+    }
+
     let now = Utc::now().naive_utc();
     let open_incident = AlertIncidentRepo::find_open(db_pool, &rule.id, &eval.target_key).await?;
 
@@ -323,13 +350,136 @@ async fn process_rule(
         return Ok(());
     }
 
-    let message = delivery::render_alert_message(rule, &eval, notification_kind, opened_at);
+    notify(
+        db_pool,
+        http_client,
+        rule,
+        &eval,
+        notification_kind,
+        &incident_id,
+        opened_at,
+    )
+    .await;
+
+    Ok(())
+}
+
+/// What a per-event rule's evaluation means for its open incidents.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct EventPlan {
+    /// Open an incident for this event and notify about it.
+    open: bool,
+    /// Close these incidents quietly: a newer event replaces them.
+    supersede: Vec<String>,
+    /// Close these incidents and notify that the condition cleared.
+    resolve: Vec<String>,
+}
+
+/// Decides how a per-event rule's open incidents change for one evaluation.
+///
+/// Each event gets one incident and one notification. Seeing the same event
+/// again changes nothing, whatever the cooldown; a different event opens a
+/// new incident and quietly closes the old one; a clear evaluation resolves
+/// whatever is open.
+fn plan_event(open: &[AlertIncident], eval: &EvaluationResult) -> EventPlan {
+    if !eval.triggered {
+        return EventPlan {
+            resolve: open.iter().map(|incident| incident.id.clone()).collect(),
+            ..EventPlan::default()
+        };
+    }
+
+    EventPlan {
+        open: !open
+            .iter()
+            .any(|incident| incident.target_key == eval.target_key),
+        supersede: open
+            .iter()
+            .filter(|incident| incident.target_key != eval.target_key)
+            .map(|incident| incident.id.clone())
+            .collect(),
+        resolve: Vec::new(),
+    }
+}
+
+async fn process_event_rule(
+    db_pool: &DbPool,
+    http_client: &Client,
+    rule: &AlertRule,
+    eval: &EvaluationResult,
+) -> anyhow::Result<()> {
+    let open = AlertIncidentRepo::list_open_for_rule(db_pool, &rule.id).await?;
+    let plan = plan_event(&open, eval);
+
+    for id in &plan.supersede {
+        AlertIncidentRepo::resolve(db_pool, id, None).await?;
+    }
+
+    for id in &plan.resolve {
+        let incident = AlertIncidentRepo::resolve(db_pool, id, eval.recovery_value).await?;
+        notify(
+            db_pool,
+            http_client,
+            rule,
+            eval,
+            AlertNotificationKind::Resolved,
+            &incident.id,
+            Some(incident.opened_at),
+        )
+        .await;
+    }
+
+    if plan.open {
+        let now = Utc::now().naive_utc();
+        let incident = AlertIncidentRepo::create(
+            db_pool,
+            AlertIncident {
+                id: uuid::Uuid::new_v4().to_string(),
+                rule_id: rule.id.clone(),
+                target_key: eval.target_key.clone(),
+                status: AlertIncidentStatus::Open,
+                trigger_value: eval.trigger_value,
+                current_value: eval.current_value,
+                recovery_value: None,
+                threshold_value: eval.threshold_value,
+                opened_at: now,
+                last_notified_at: Some(now),
+                resolved_at: None,
+            },
+        )
+        .await?;
+
+        notify(
+            db_pool,
+            http_client,
+            rule,
+            eval,
+            AlertNotificationKind::Triggered,
+            &incident.id,
+            None,
+        )
+        .await;
+    }
+
+    Ok(())
+}
+
+async fn notify(
+    db_pool: &DbPool,
+    http_client: &Client,
+    rule: &AlertRule,
+    eval: &EvaluationResult,
+    notification_kind: AlertNotificationKind,
+    incident_id: &str,
+    opened_at: Option<chrono::NaiveDateTime>,
+) {
+    let message = delivery::render_alert_message(rule, eval, notification_kind, opened_at);
     let notification = AlertNotification {
         id: uuid::Uuid::new_v4().to_string(),
-        incident_id: incident_id.clone(),
+        incident_id: incident_id.to_string(),
         kind: notification_kind,
         message: message.clone(),
-        created_at: now,
+        created_at: Utc::now().naive_utc(),
     };
 
     if let Err(err) = AlertNotificationRepo::create(db_pool, notification).await {
@@ -345,16 +495,101 @@ async fn process_rule(
     delivery::deliver_alert(
         db_pool,
         rule,
-        &eval,
+        eval,
         notification_kind,
         &message,
         http_client,
     )
     .await;
-
-    Ok(())
 }
 
 fn elapsed_secs(since: chrono::NaiveDateTime, now: chrono::NaiveDateTime) -> i64 {
     (now - since).num_seconds()
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use slasha_db::models::alerts::{AlertIncident, AlertIncidentStatus};
+
+    use super::{EventPlan, plan_event};
+    use crate::alerts::evaluation::EvaluationResult;
+
+    fn incident(id: &str, target_key: &str) -> AlertIncident {
+        AlertIncident {
+            id: id.to_string(),
+            rule_id: "rule".to_string(),
+            target_key: target_key.to_string(),
+            status: AlertIncidentStatus::Open,
+            trigger_value: None,
+            current_value: None,
+            recovery_value: None,
+            threshold_value: None,
+            opened_at: Utc::now().naive_utc(),
+            last_notified_at: None,
+            resolved_at: None,
+        }
+    }
+
+    fn eval(target_key: &str, triggered: bool) -> EvaluationResult {
+        EvaluationResult {
+            target_key: target_key.to_string(),
+            trigger_value: None,
+            current_value: None,
+            recovery_value: None,
+            threshold_value: None,
+            detail_display: String::new(),
+            triggered,
+            event_key: None,
+        }
+    }
+
+    #[test]
+    fn a_first_failure_opens_an_incident() {
+        assert_eq!(
+            plan_event(&[], &eval("deployment_failed:app:d1", true)),
+            EventPlan {
+                open: true,
+                ..EventPlan::default()
+            }
+        );
+    }
+
+    #[test]
+    fn the_same_failure_seen_again_changes_nothing() {
+        let open = [incident("i1", "deployment_failed:app:d1")];
+        assert_eq!(
+            plan_event(&open, &eval("deployment_failed:app:d1", true)),
+            EventPlan::default()
+        );
+    }
+
+    #[test]
+    fn another_failure_is_notified_and_replaces_the_previous_one() {
+        let open = [incident("i1", "deployment_failed:app:d1")];
+        assert_eq!(
+            plan_event(&open, &eval("deployment_failed:app:d2", true)),
+            EventPlan {
+                open: true,
+                supersede: vec!["i1".to_string()],
+                resolve: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_successful_deployment_resolves_what_is_open() {
+        let open = [incident("i1", "deployment_failed:app:d1")];
+        assert_eq!(
+            plan_event(&open, &eval("deployment_failed:app", false)),
+            EventPlan {
+                resolve: vec!["i1".to_string()],
+                ..EventPlan::default()
+            }
+        );
+        assert_eq!(
+            plan_event(&[], &eval("deployment_failed:app", false)),
+            EventPlan::default()
+        );
+    }
 }

@@ -395,15 +395,17 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
           <TemplateVarHelp />
         </FormField>
 
-        <NumberField
-          label="Cooldown seconds"
-          value={draft.cooldown_secs}
-          min={1}
-          step={1}
-          onChange={(cooldown_secs) =>
-            setDraft((current) => ({ ...current, cooldown_secs }))
-          }
-        />
+        {draft.kind !== 'deployment_failed' ? (
+          <NumberField
+            label="Cooldown seconds"
+            value={draft.cooldown_secs}
+            min={1}
+            step={1}
+            onChange={(cooldown_secs) =>
+              setDraft((current) => ({ ...current, cooldown_secs }))
+            }
+          />
+        ) : null}
 
         <div className="flex items-center justify-between">
           <div>

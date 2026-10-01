@@ -282,6 +282,20 @@ impl AlertIncidentRepo {
         .await?
     }
 
+    pub async fn list_open_for_rule(pool: &DbPool, rule_id: &str) -> DbResult<Vec<AlertIncident>> {
+        let pool = pool.clone();
+        let rule_id = rule_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(alert_incidents::table
+                .filter(alert_incidents::rule_id.eq(rule_id))
+                .filter(alert_incidents::status.eq(AlertIncidentStatus::Open))
+                .order(alert_incidents::opened_at.asc())
+                .load::<AlertIncident>(&mut conn)?)
+        })
+        .await?
+    }
+
     pub async fn find_open(
         pool: &DbPool,
         rule_id: &str,

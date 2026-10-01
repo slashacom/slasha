@@ -196,6 +196,16 @@ impl AlertRuleConfig {
         }
     }
 
+    /// Whether each occurrence of this rule's condition is a separate event to
+    /// notify about, rather than one condition that holds until it clears.
+    ///
+    /// Every failed deployment is its own event: a second failure is news even
+    /// while the first is unresolved. Thresholds, health checks and the like
+    /// describe a state, where repeating the alert is governed by the cooldown.
+    pub fn is_per_event(&self) -> bool {
+        matches!(self, AlertRuleConfig::DeploymentFailed { .. })
+    }
+
     pub fn generate_target_key(&self) -> String {
         let kind = self.kind();
         match self {
