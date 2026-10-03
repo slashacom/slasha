@@ -121,6 +121,11 @@ command -v docker >/dev/null 2>&1 || err "failed to install docker. please insta
 docker compose version >/dev/null 2>&1 || err "failed to install docker compose plugin. please install it manually."
 docker buildx version >/dev/null 2>&1 || err "failed to install docker buildx plugin. please install it manually."
 
+# keep needrestart from restarting containerd underneath a running dockerd
+if [[ -d /etc/needrestart/conf.d ]]; then
+    echo '$nrconf{override_rc}{qr(^containerd)} = 0;' > /etc/needrestart/conf.d/slasha.conf
+fi
+
 # verify minimum docker version
 MIN_DOCKER_VERSION=24
 INSTALLED_DOCKER_VERSION=$(docker version --format '{{.Server.Version}}' 2>/dev/null | cut -d. -f1 || true)

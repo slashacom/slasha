@@ -267,6 +267,11 @@ if ! docker buildx version >/dev/null 2>&1; then
     err "failed to install docker buildx plugin. please install it manually."
 fi
 
+# keep needrestart from restarting containerd underneath a running dockerd
+if [[ -d /etc/needrestart/conf.d ]]; then
+    echo '$nrconf{override_rc}{qr(^containerd)} = 0;' | $SUDO tee /etc/needrestart/conf.d/slasha.conf >/dev/null
+fi
+
 # verify minimum docker version
 MIN_DOCKER_VERSION=24
 INSTALLED_DOCKER_VERSION=$(docker version --format '{{.Server.Version}}' 2>/dev/null | cut -d. -f1 || true)
