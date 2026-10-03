@@ -23,7 +23,7 @@ use crate::{
                 create::{CreateContainerContext, create_process_container},
                 release::run_release_container,
             },
-            image::{image_tag, prune_app_images, tag_deployment_image},
+            image::{image_tag, prune_app_images, prune_build_artifacts, tag_deployment_image},
             litestream,
             parser::{BuildStrategy, Procfile},
             process::{
@@ -547,6 +547,14 @@ impl<'a> DeploymentRunner<'a> {
                 app_slug = %self.app.slug,
                 error = ?e,
                 "Failed to prune old deployment images"
+            );
+        }
+
+        if let Err(e) = prune_build_artifacts(self.docker_client).await {
+            tracing::warn!(
+                app_slug = %self.app.slug,
+                error = ?e,
+                "Failed to prune build artifacts"
             );
         }
 

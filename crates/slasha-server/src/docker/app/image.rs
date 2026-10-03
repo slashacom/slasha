@@ -2,7 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use bollard::{
     Docker,
-    query_parameters::{ListImagesOptionsBuilder, RemoveImageOptions, TagImageOptionsBuilder},
+    query_parameters::{
+        ListImagesOptionsBuilder, PruneBuildOptionsBuilder, PruneImagesOptionsBuilder,
+        RemoveImageOptions, TagImageOptionsBuilder,
+    },
 };
 use slasha_db::{
     DbPool,
@@ -14,6 +17,7 @@ use slasha_db::{
 use crate::docker::{DockerError, DockerResult};
 
 const RETAINED_IMAGES_PER_APP: usize = 10;
+const MAX_BUILD_CACHE_BYTES: i64 = 10 * 1024 * 1024 * 1024;
 
 /// Generates the base Docker image name for an application.
 ///
@@ -180,6 +184,33 @@ pub async fn prune_app_images(
             tracing::info!(image_tag = %tag, "Deployment image pruned");
         }
     }
+
+    Ok(())
+}
+
+/// Prunes dangling images and trims the BuildKit cache down to [`MAX_BUILD_CACHE_BYTES`].
+///
+/// # Arguments
+///
+/// * `docker_client` - Docker API client ([`Docker`]).
+pub async fn prune_build_artifacts(docker_client: &Docker) -> DockerResult<()> {
+    let mut filters = HashMap::new();
+    filters.insert("dangling".to_string(), vec!["true".to_string()]);
+    let image_options = PruneImagesOptionsBuilder::new().filters(&filters).build();
+
+    let images = docker_client.prune_images(Some(image_options)).await?;
+
+    let build_options = PruneBuildOptionsBuilder::new()
+        .max_used_space(MAX_BUILD_CACHE_BYTES)
+        .build();
+
+    let cache = docker_client.prune_build(Some(build_options)).await?;
+
+    tracing::info!(
+        images_reclaimed = images.space_reclaimed.unwrap_or_default(),
+        cache_reclaimed = cache.space_reclaimed.unwrap_or_default(),
+        "Build artifacts pruned"
+    );
 
     Ok(())
 }
