@@ -33,6 +33,11 @@ use tracing::{info, warn};
 
 use crate::state::{Clients, Config, Env, Runtime, Storage};
 
+pub const VERSION: &str = match option_env!("SLASHA_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 fn setup_tracing() {
     tracing_subscriber::fmt()
         .with_env_filter(

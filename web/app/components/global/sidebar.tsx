@@ -9,9 +9,10 @@ import {
   Users,
 } from 'lucide-react';
 
-import { useSuspenseQuery } from '@tanstack/react-query';
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { cn } from '~/utils/classname';
 import { getAuthMeOptions } from '~/queries/auth';
+import { getHealthOptions } from '~/queries/health';
 import { removeAuthToken } from '~/utils/jwt';
 
 type SidebarItemProps = {
@@ -49,6 +50,7 @@ export function Sidebar(props: SidebarProps) {
   const { onSearch } = props;
   const navigate = useNavigate();
   const { data } = useSuspenseQuery(getAuthMeOptions());
+  const { data: health } = useQuery(getHealthOptions());
   const isAdmin = data.user?.role === 'Admin';
 
   const handleLogout = () => {
@@ -101,6 +103,11 @@ export function Sidebar(props: SidebarProps) {
         >
           Logout
         </button>
+        {health?.version && (
+          <span className="block pt-3 font-mono text-[11px] text-text-tertiary">
+            v{health.version}
+          </span>
+        )}
       </div>
     </aside>
   );

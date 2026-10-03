@@ -87,7 +87,7 @@ async fn health_check(State(state): State<AppState>) -> HttpResult<Json<Value>> 
 
     Ok(Json(json!({
         "status": status,
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": crate::VERSION,
         "services": {
             "database": db_status,
             "docker": docker_status,
