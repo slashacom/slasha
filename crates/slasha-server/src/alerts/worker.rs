@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use chrono::Utc;
 use reqwest::Client;
@@ -20,11 +23,14 @@ use slasha_db::{
         node_metrics::NodeMetricsRepo,
     },
 };
-use tokio::time::sleep;
+use tokio::{sync::Notify, time::sleep};
 use tracing::{error, info, warn};
 
 use crate::{
-    alerts::{delivery, evaluation::evaluate_rule},
+    alerts::{
+        delivery,
+        evaluation::{EvaluationResult, evaluate_rule},
+    },
     domain_health,
     state::Config,
 };
@@ -42,20 +48,30 @@ pub struct AlertSnapshot {
     pub deployments: HashMap<String, Option<Deployment>>,
 }
 
-pub fn spawn_alert_worker(db_pool: DbPool, duckdb_pool: DuckdbPool, config: Config) {
-    tokio::spawn(async move {
-        let http_client = Client::new();
+pub fn spawn_alert_worker(db_pool: DbPool, duckdb_pool: DuckdbPool, config: Config) -> Arc<Notify> {
+    let trigger = Arc::new(Notify::new());
 
-        info!("alert worker started");
+    tokio::spawn({
+        let trigger = trigger.clone();
+        async move {
+            let http_client = Client::new();
 
-        loop {
-            if let Err(err) = run_tick(&db_pool, &duckdb_pool, &config, &http_client).await {
-                error!(target: "slasha::alerts", error = ?err, "alert worker tick failed");
+            info!("alert worker started");
+
+            loop {
+                if let Err(err) = run_tick(&db_pool, &duckdb_pool, &config, &http_client).await {
+                    error!(target: "slasha::alerts", error = ?err, "alert worker tick failed");
+                }
+
+                tokio::select! {
+                    _ = sleep(super::CHECK_INTERVAL) => {}
+                    _ = trigger.notified() => {}
+                }
             }
-
-            sleep(super::CHECK_INTERVAL).await;
         }
     });
+
+    trigger
 }
 
 async fn run_tick(
@@ -253,6 +269,10 @@ async fn process_rule(
         return Ok(());
     };
 
+    if rule.config.is_per_event() {
+        return process_event_rule(db_pool, http_client, rule, &eval).await;
+    }
+
     let now = Utc::now().naive_utc();
     let open_incident = AlertIncidentRepo::find_open(db_pool, &rule.id, &eval.target_key).await?;
 
@@ -323,13 +343,126 @@ async fn process_rule(
         return Ok(());
     }
 
-    let message = delivery::render_alert_message(rule, &eval, notification_kind, opened_at);
+    notify(
+        db_pool,
+        http_client,
+        rule,
+        &eval,
+        notification_kind,
+        &incident_id,
+        opened_at,
+    )
+    .await;
+
+    Ok(())
+}
+
+#[derive(Default)]
+struct EventPlan {
+    open: bool,
+    supersede: Vec<String>,
+    resolve: Vec<String>,
+}
+
+fn plan_event(open: &[AlertIncident], eval: &EvaluationResult) -> EventPlan {
+    if !eval.triggered {
+        return EventPlan {
+            resolve: open.iter().map(|incident| incident.id.clone()).collect(),
+            ..EventPlan::default()
+        };
+    }
+
+    EventPlan {
+        open: !open
+            .iter()
+            .any(|incident| incident.target_key == eval.target_key),
+        supersede: open
+            .iter()
+            .filter(|incident| incident.target_key != eval.target_key)
+            .map(|incident| incident.id.clone())
+            .collect(),
+        resolve: Vec::new(),
+    }
+}
+
+async fn process_event_rule(
+    db_pool: &DbPool,
+    http_client: &Client,
+    rule: &AlertRule,
+    eval: &EvaluationResult,
+) -> anyhow::Result<()> {
+    let open = AlertIncidentRepo::list_open_for_rule(db_pool, &rule.id).await?;
+    let plan = plan_event(&open, eval);
+
+    for id in &plan.supersede {
+        AlertIncidentRepo::resolve(db_pool, id, None).await?;
+    }
+
+    for id in &plan.resolve {
+        let incident = AlertIncidentRepo::resolve(db_pool, id, eval.recovery_value).await?;
+        notify(
+            db_pool,
+            http_client,
+            rule,
+            eval,
+            AlertNotificationKind::Resolved,
+            &incident.id,
+            Some(incident.opened_at),
+        )
+        .await;
+    }
+
+    if plan.open {
+        let now = Utc::now().naive_utc();
+        let incident = AlertIncidentRepo::create(
+            db_pool,
+            AlertIncident {
+                id: uuid::Uuid::new_v4().to_string(),
+                rule_id: rule.id.clone(),
+                target_key: eval.target_key.clone(),
+                status: AlertIncidentStatus::Open,
+                trigger_value: eval.trigger_value,
+                current_value: eval.current_value,
+                recovery_value: None,
+                threshold_value: eval.threshold_value,
+                opened_at: now,
+                last_notified_at: Some(now),
+                resolved_at: None,
+            },
+        )
+        .await?;
+
+        notify(
+            db_pool,
+            http_client,
+            rule,
+            eval,
+            AlertNotificationKind::Triggered,
+            &incident.id,
+            None,
+        )
+        .await;
+    }
+
+    Ok(())
+}
+
+async fn notify(
+    db_pool: &DbPool,
+    http_client: &Client,
+    rule: &AlertRule,
+    eval: &EvaluationResult,
+    notification_kind: AlertNotificationKind,
+    incident_id: &str,
+    opened_at: Option<chrono::NaiveDateTime>,
+) {
+    let message = delivery::render_alert_message(rule, eval, notification_kind, opened_at);
     let notification = AlertNotification {
         id: uuid::Uuid::new_v4().to_string(),
-        incident_id: incident_id.clone(),
+        incident_id: incident_id.to_string(),
         kind: notification_kind,
         message: message.clone(),
-        created_at: now,
+        created_at: Utc::now().naive_utc(),
     };
 
     if let Err(err) = AlertNotificationRepo::create(db_pool, notification).await {
@@ -345,14 +478,12 @@ async fn process_rule(
     delivery::deliver_alert(
         db_pool,
         rule,
-        &eval,
+        eval,
         notification_kind,
         &message,
         http_client,
     )
     .await;
-
-    Ok(())
 }
 
 fn elapsed_secs(since: chrono::NaiveDateTime, now: chrono::NaiveDateTime) -> i64 {

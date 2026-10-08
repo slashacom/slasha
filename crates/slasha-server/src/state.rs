@@ -106,6 +106,7 @@ pub struct AccessTicket {
 pub struct Runtime {
     pub log_bus: LogBus,
     pub proxy_sync_trigger: Arc<Notify>,
+    pub alert_check_trigger: Arc<Notify>,
     pub operations: OperationRegistry,
     pub app_access_tickets: Arc<RwLock<std::collections::HashMap<String, AccessTicket>>>,
 }
@@ -124,10 +125,12 @@ impl Runtime {
     pub async fn new(
         duckdb_pool: DuckdbPool,
         proxy_sync_trigger: Arc<Notify>,
+        alert_check_trigger: Arc<Notify>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             log_bus: LogBus::new(duckdb_pool),
             proxy_sync_trigger,
+            alert_check_trigger,
             operations: OperationRegistry::new(),
             app_access_tickets: Arc::new(RwLock::new(std::collections::HashMap::new())),
         })

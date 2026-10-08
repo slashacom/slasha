@@ -16,6 +16,7 @@ pub use env::resolve_app_env;
 use slasha_db::{
     app::{App, AppSource},
     deployment::{Deployment, DeploymentStatus, NewDeployment},
+    logs::ResourceKind,
     models::{
         app_scale::{ProcessContainer, ProcessType},
         node::NodeStatus,
@@ -116,9 +117,6 @@ impl AppDocker {
             .await?;
         }
 
-        let deployment_id = Uuid::new_v4().to_string();
-        let (guard, cancel_token) = self.get_deployment_guard(&deployment_id)?;
-
         let (commit_sha, commit_message) = match commit_sha {
             Some(sha) => {
                 let msg = deploy::context::resolve_commit_message(&self.app.repo_path, &sha)?;
@@ -129,22 +127,47 @@ impl AppDocker {
             }
         };
 
+        self.start_new_deployment(commit_sha, commit_message, self.app.node_id.clone(), None)
+            .await
+    }
+
+    async fn start_new_deployment(
+        &self,
+        commit_sha: String,
+        commit_message: String,
+        node_id: String,
+        source_image: Option<String>,
+    ) -> DockerResult<Deployment> {
+        let deployment_id = Uuid::new_v4().to_string();
+        let (guard, cancel_token) = self.get_deployment_guard(&deployment_id)?;
+
         let deployment = NewDeployment {
             id: deployment_id,
             app_id: self.app.id.clone(),
             commit_sha,
             commit_message,
             status: DeploymentStatus::Pending,
-            node_id: self.app.node_id.clone(),
+            node_id,
         };
 
         let deployment = DeploymentRepo::create(&self.state.storage.db_pool, deployment).await?;
 
+        self.spawn_workflow(guard, cancel_token, deployment.clone(), source_image);
+
+        Ok(deployment)
+    }
+
+    fn spawn_workflow(
+        &self,
+        guard: operations::OperationGuard,
+        cancel_token: tokio_util::sync::CancellationToken,
+        deployment: Deployment,
+        source_image: Option<String>,
+    ) {
         tokio::spawn({
             let state = self.state.clone();
             let app = self.app.clone();
             let docker_client = self.docker_client.clone();
-            let deployment = deployment.clone();
 
             async move {
                 let _guard = guard;
@@ -154,7 +177,7 @@ impl AppDocker {
                     app,
                     docker_client,
                     deployment,
-                    None,
+                    source_image,
                     cancel_token,
                 )
                 .await
@@ -163,8 +186,6 @@ impl AppDocker {
                 }
             }
         });
-
-        Ok(deployment)
     }
 
     /// Redeploys an existing deployment.
@@ -175,8 +196,22 @@ impl AppDocker {
     ///
     /// # Returns
     ///
-    /// A [`DockerResult`] containing the reset [`Deployment`] model.
+    /// A [`DockerResult`] containing the pending [`Deployment`] model.
     pub async fn redeploy(&self, deployment_id: &str) -> DockerResult<Deployment> {
+        let existing =
+            DeploymentRepo::find(&self.state.storage.db_pool, deployment_id, &self.app.id).await?;
+
+        if existing.status == DeploymentStatus::Running {
+            return self
+                .start_new_deployment(
+                    existing.commit_sha,
+                    existing.commit_message,
+                    existing.node_id,
+                    None,
+                )
+                .await;
+        }
+
         let (guard, cancel_token) = self.get_deployment_guard(deployment_id)?;
 
         let now = Utc::now().naive_utc();
@@ -184,31 +219,14 @@ impl AppDocker {
             DeploymentRepo::reset_to_pending(&self.state.storage.db_pool, deployment_id, now)
                 .await?;
 
-        LogsRepo::delete_by_resource_id(&self.state.storage.duckdb_pool, deployment_id).await?;
+        self.state
+            .runtime
+            .log_bus
+            .writer(ResourceKind::Deployment, deployment_id)
+            .app_id(&self.app.id)
+            .stdout("Redeploying; the lines above are from the previous attempt");
 
-        tokio::spawn({
-            let state = self.state.clone();
-            let app = self.app.clone();
-            let docker_client = self.docker_client.clone();
-            let deployment = deployment.clone();
-
-            async move {
-                let _guard = guard;
-
-                if let Err(e) = deploy::run_deployment_workflow(
-                    state,
-                    app,
-                    docker_client,
-                    deployment,
-                    None,
-                    cancel_token,
-                )
-                .await
-                {
-                    tracing::error!(error = ?e, "redeployment workflow failed");
-                }
-            }
-        });
+        self.spawn_workflow(guard, cancel_token, deployment.clone(), None);
 
         Ok(deployment)
     }
@@ -229,9 +247,6 @@ impl AppDocker {
         let source_deployment =
             DeploymentRepo::find(&self.state.storage.db_pool, deployment_id, &self.app.id).await?;
 
-        let new_deployment_id = Uuid::new_v4().to_string();
-        let (guard, cancel_token) = self.get_deployment_guard(&new_deployment_id)?;
-
         let source_image = image::find_deployment_image(
             &self.docker_client,
             &self.app.slug,
@@ -240,42 +255,13 @@ impl AppDocker {
         .await
         .ok();
 
-        let deployment = NewDeployment {
-            id: new_deployment_id,
-            app_id: self.app.id.clone(),
-            commit_sha: source_deployment.commit_sha,
-            commit_message: source_deployment.commit_message,
-            status: DeploymentStatus::Pending,
-            node_id: source_deployment.node_id,
-        };
-
-        let deployment = DeploymentRepo::create(&self.state.storage.db_pool, deployment).await?;
-
-        tokio::spawn({
-            let state = self.state.clone();
-            let app = self.app.clone();
-            let docker_client = self.docker_client.clone();
-            let deployment = deployment.clone();
-
-            async move {
-                let _guard = guard;
-
-                if let Err(e) = deploy::run_deployment_workflow(
-                    state,
-                    app,
-                    docker_client,
-                    deployment,
-                    source_image,
-                    cancel_token,
-                )
-                .await
-                {
-                    tracing::error!(error = ?e, "rollback workflow failed");
-                }
-            }
-        });
-
-        Ok(deployment)
+        self.start_new_deployment(
+            source_deployment.commit_sha,
+            source_deployment.commit_message,
+            source_deployment.node_id,
+            source_image,
+        )
+        .await
     }
 
     /// Scales active process containers for a deployment to a target replica count.

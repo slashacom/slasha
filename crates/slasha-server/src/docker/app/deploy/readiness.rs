@@ -20,6 +20,13 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 const CRASH_LOOP_RESTARTS: i64 = 2;
 
+pub fn env_map_from_container_env(env: &[String]) -> HashMap<String, String> {
+    env.iter()
+        .filter_map(|entry| entry.split_once('='))
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect()
+}
+
 #[derive(Debug, Clone)]
 pub struct ReadinessConfig {
     pub path: String,

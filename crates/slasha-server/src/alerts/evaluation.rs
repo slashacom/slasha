@@ -14,6 +14,7 @@ pub struct EvaluationResult {
     pub threshold_value: Option<f64>,
     pub detail_display: String,
     pub triggered: bool,
+    pub event_key: Option<String>,
 }
 
 pub fn evaluate_rule(rule: &AlertRule, snapshot: &AlertSnapshot) -> Option<EvaluationResult> {
@@ -57,7 +58,10 @@ pub fn evaluate_rule(rule: &AlertRule, snapshot: &AlertSnapshot) -> Option<Evalu
         }
     }?;
 
-    result.target_key = target_key;
+    result.target_key = match &result.event_key {
+        Some(event_key) => format!("{target_key}:{event_key}"),
+        None => target_key,
+    };
     Some(result)
 }
 
@@ -76,6 +80,7 @@ fn evaluate_node_cpu(
         threshold_value: Some(threshold),
         detail_display: format!("Node CPU usage at {current:.1}%, threshold {threshold:.1}%"),
         triggered: current >= threshold,
+        event_key: None,
     })
 }
 
@@ -94,6 +99,7 @@ fn evaluate_node_memory(
         threshold_value: Some(threshold),
         detail_display: format!("Node Memory usage at {current:.1}%, threshold {threshold:.1}%"),
         triggered: current >= threshold,
+        event_key: None,
     })
 }
 
@@ -112,6 +118,7 @@ fn evaluate_node_storage(
         threshold_value: Some(threshold),
         detail_display: format!("Node Storage usage at {current:.1}%, threshold {threshold:.1}%"),
         triggered: current >= threshold,
+        event_key: None,
     })
 }
 
@@ -130,6 +137,7 @@ fn evaluate_node_load_average(
         threshold_value: Some(threshold),
         detail_display: format!("Node Load Average at {current:.2}, threshold {threshold:.2}"),
         triggered: current >= threshold,
+        event_key: None,
     })
 }
 
@@ -143,6 +151,7 @@ fn evaluate_app_cpu(snapshot: &AppSnapshot, threshold: f64) -> Option<Evaluation
         threshold_value: Some(threshold),
         detail_display: format!("App CPU at {current:.1}%, threshold {threshold:.1}%"),
         triggered: current >= threshold,
+        event_key: None,
     })
 }
 
@@ -157,6 +166,7 @@ fn evaluate_app_memory(snapshot: &AppSnapshot, threshold: f64) -> Option<Evaluat
         threshold_value: Some(threshold),
         detail_display: format!("App Memory at {current:.1}%, threshold {threshold:.1}%"),
         triggered: current >= threshold,
+        event_key: None,
     })
 }
 
@@ -190,6 +200,7 @@ fn evaluate_domain_tls_expiry(
         threshold_value: Some(days_before as f64),
         detail_display,
         triggered,
+        event_key: None,
     })
 }
 
@@ -227,6 +238,7 @@ fn evaluate_domain_dns(snapshot: &AlertSnapshot, domain: &str) -> Option<Evaluat
         threshold_value: None,
         detail_display,
         triggered,
+        event_key: None,
     })
 }
 
@@ -245,6 +257,7 @@ fn evaluate_app_health_check(snapshot: &AppSnapshot, url: &str) -> Option<Evalua
         threshold_value: None,
         detail_display,
         triggered: !healthy,
+        event_key: None,
     })
 }
 
@@ -270,32 +283,48 @@ fn evaluate_cron_failed(snapshot: &AlertSnapshot, cron_job_id: &str) -> Option<E
         threshold_value: None,
         detail_display,
         triggered,
+        event_key: None,
     })
 }
 
 fn evaluate_deployment_failed(snapshot: &AlertSnapshot, app_id: &str) -> Option<EvaluationResult> {
     let latest = snapshot.deployments.get(app_id)?;
-    let (triggered, detail_display) = match latest {
-        Some(deployment) => {
-            let commit = deployment
-                .commit_sha
-                .get(..7)
-                .unwrap_or(&deployment.commit_sha);
-            let failed = deployment.status == DeploymentStatus::Failed;
-            let detail = if failed {
-                format!(
-                    "Deployment {} (commit {commit}) failed; the previous deployment, if any, is still serving",
-                    deployment.id
-                )
-            } else {
-                format!(
-                    "Deployment {} (commit {commit}) is {}",
-                    deployment.id, deployment.status
-                )
-            };
-            (failed, detail)
-        }
-        None => (false, "No finished deployments yet".to_string()),
+
+    let Some(deployment) = latest else {
+        return Some(EvaluationResult {
+            target_key: String::new(),
+            trigger_value: None,
+            current_value: None,
+            recovery_value: None,
+            threshold_value: None,
+            detail_display: "No finished deployments yet".to_string(),
+            triggered: false,
+            event_key: None,
+        });
+    };
+
+    if matches!(
+        deployment.status,
+        DeploymentStatus::Pending | DeploymentStatus::Building
+    ) {
+        return None;
+    }
+
+    let commit = deployment
+        .commit_sha
+        .get(..7)
+        .unwrap_or(&deployment.commit_sha);
+    let failed = deployment.status == DeploymentStatus::Failed;
+    let detail_display = if failed {
+        format!(
+            "Deployment {} (commit {commit}) failed; the previous deployment, if any, is still serving",
+            deployment.id
+        )
+    } else {
+        format!(
+            "Deployment {} (commit {commit}) is {}",
+            deployment.id, deployment.status
+        )
     };
 
     Some(EvaluationResult {
@@ -305,7 +334,8 @@ fn evaluate_deployment_failed(snapshot: &AlertSnapshot, app_id: &str) -> Option<
         recovery_value: None,
         threshold_value: None,
         detail_display,
-        triggered,
+        triggered: failed,
+        event_key: failed.then(|| deployment.id.clone()),
     })
 }
 

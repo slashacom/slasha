@@ -237,7 +237,7 @@ export const alertRuleRegistry = {
   deployment_failed: {
     label: 'Deployment Failed',
     description:
-      "Trigger when an application's latest deployment fails, and resolve once a deployment succeeds.",
+      'Notify once for every failed deployment of an application, and resolve once a deployment succeeds.',
     defaults: { app_id: '' },
     buildConfig: (draft) => ({
       kind: 'deployment_failed',

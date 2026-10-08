@@ -42,12 +42,9 @@ impl<'a> WorkflowContext<'a> {
             log.stdout(format!("{}", step_name));
         }
 
-        let result = action.await;
-        if result.is_ok() {
-            self.journal.push(step_name.to_string(), undo);
-        }
+        self.journal.push(step_name.to_string(), undo);
 
-        result
+        action.await
     }
 }
 
@@ -135,12 +132,16 @@ impl<'a> WorkflowRunner<'a> {
         };
 
         let res = tokio::select! {
-            res = AssertUnwindSafe(f(context)).catch_unwind() => res,
-            _ = cancel_fut => {
-                tracing::warn!(workflow = %self.name, "workflow cancelled by user; triggering rollback");
-                journal.compensate(self.log).await;
-                return Err(DockerError::BuildFailed("deployment was cancelled by user".to_string()));
-            }
+            res = AssertUnwindSafe(f(context)).catch_unwind() => Some(res),
+            _ = cancel_fut => None,
+        };
+
+        let Some(res) = res else {
+            tracing::warn!(workflow = %self.name, "workflow cancelled by user; triggering rollback");
+            journal.compensate(self.log).await;
+            return Err(DockerError::BuildFailed(
+                "deployment was cancelled by user".to_string(),
+            ));
         };
 
         match res {

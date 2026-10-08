@@ -70,11 +70,7 @@ impl DeploymentRepo {
             let mut conn = pool.get()?;
             Ok(deployments::table
                 .filter(deployments::app_id.eq(&app_id))
-                .filter(
-                    deployments::status
-                        .eq(DeploymentStatus::Failed.to_string())
-                        .or(deployments::status.eq(DeploymentStatus::Running.to_string())),
-                )
+                .filter(deployments::status.ne(DeploymentStatus::Stopped.to_string()))
                 .order(deployments::updated_at.desc())
                 .first::<Deployment>(&mut conn)
                 .optional()?)

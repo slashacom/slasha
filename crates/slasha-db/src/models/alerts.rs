@@ -196,6 +196,10 @@ impl AlertRuleConfig {
         }
     }
 
+    pub fn is_per_event(&self) -> bool {
+        matches!(self, AlertRuleConfig::DeploymentFailed { .. })
+    }
+
     pub fn generate_target_key(&self) -> String {
         let kind = self.kind();
         match self {
