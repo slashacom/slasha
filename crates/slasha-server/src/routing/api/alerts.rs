@@ -208,6 +208,11 @@ enum RuleConfigInput {
         #[garde(custom(not_empty))]
         cron_job_id: String,
     },
+    DeploymentFailed {
+        #[serde(deserialize_with = "trim_string")]
+        #[garde(custom(not_empty))]
+        app_id: String,
+    },
 }
 
 async fn list_channels(State(storage): State<Storage>) -> HttpResult<impl IntoResponse> {
@@ -435,4 +440,5 @@ impl_config_conversion!(RuleConfigInput => DbAlertRuleConfig {
     DomainDnsMisconfigured { domain },
     AppHealthCheck { app_id, health_check_url },
     CronFailed { cron_job_id },
+    DeploymentFailed { app_id },
 });

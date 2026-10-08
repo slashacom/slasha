@@ -67,12 +67,7 @@ pub enum Command {
     },
 
     #[command(name = "logs", about = "View deployment logs")]
-    Logs {
-        #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
-        deployment_id: Option<String>,
-        #[command(flatten)]
-        args: LogArgs,
-    },
+    Logs(DeploymentLogsArgs),
 
     #[command(name = "scale", about = "Scale process instances")]
     Scale {
@@ -190,13 +185,19 @@ pub enum DeploymentsCommand {
     #[command(name = "list", about = "List deployments")]
     List,
 
+    #[command(name = "logs", about = "View deployment logs")]
+    Logs(DeploymentLogsArgs),
+
     #[command(name = "stop", about = "Stop a deployment")]
     Stop {
         #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
         deployment_id: Option<String>,
     },
 
-    #[command(name = "restart", about = "Restart a deployment")]
+    #[command(
+        name = "restart",
+        about = "Restart a deployment's containers (keeps the environment it started with)"
+    )]
     Restart {
         #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
         deployment_id: Option<String>,
@@ -228,7 +229,10 @@ pub enum AppEnvCommand {
     #[command(name = "list", about = "List environment variables")]
     List,
 
-    #[command(name = "set", about = "Set environment variables")]
+    #[command(
+        name = "set",
+        about = "Set environment variables (applied on the next deployment)"
+    )]
     Set {
         #[arg(
             value_name = "KEY=VALUE",
@@ -237,9 +241,15 @@ pub enum AppEnvCommand {
             help = "KEY=VALUE pairs"
         )]
         pairs: Vec<String>,
+
+        #[arg(long, alias = "apply", help = APPLY_HELP)]
+        deploy: bool,
     },
 
-    #[command(name = "unset", about = "Remove environment variables")]
+    #[command(
+        name = "unset",
+        about = "Remove environment variables (applied on the next deployment)"
+    )]
     Unset {
         #[arg(
             value_name = "KEY",
@@ -248,8 +258,20 @@ pub enum AppEnvCommand {
             help = "Environment variable keys"
         )]
         keys: Vec<String>,
+
+        #[arg(long, alias = "apply", help = APPLY_HELP)]
+        deploy: bool,
     },
+
+    #[command(
+        name = "apply",
+        about = "Apply the current environment to the running deployment"
+    )]
+    Apply,
 }
+
+const APPLY_HELP: &str =
+    "Apply now: release the running deployment's image again with the new environment";
 
 #[derive(Subcommand)]
 pub enum ServicesCommand {
@@ -473,6 +495,31 @@ pub enum AuthCommand {
 
     #[command(name = "status", about = "Show authentication status")]
     Status,
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct DeploymentLogsArgs {
+    #[arg(value_name = "ID", help = "Deployment ID (defaults to latest)")]
+    pub deployment_id: Option<String>,
+
+    #[arg(
+        long = "deployment-id",
+        value_name = "ID",
+        conflicts_with = "deployment_id",
+        help = "Deployment ID (defaults to latest)"
+    )]
+    pub deployment_id_flag: Option<String>,
+
+    #[command(flatten)]
+    pub args: LogArgs,
+}
+
+impl DeploymentLogsArgs {
+    pub fn deployment_id(&self) -> Option<String> {
+        self.deployment_id
+            .clone()
+            .or_else(|| self.deployment_id_flag.clone())
+    }
 }
 
 #[derive(clap::Args, Clone, Debug)]

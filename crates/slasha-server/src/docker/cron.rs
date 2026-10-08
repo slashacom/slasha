@@ -6,10 +6,7 @@ use bollard::{
         ContainerCreateBody, EndpointSettings, HostConfig, Mount, MountType, NetworkingConfig,
         RestartPolicy, RestartPolicyNameEnum,
     },
-    query_parameters::{
-        CreateContainerOptions, CreateImageOptions, RemoveContainerOptionsBuilder,
-        WaitContainerOptions,
-    },
+    query_parameters::{CreateContainerOptions, CreateImageOptions, RemoveContainerOptionsBuilder},
 };
 use chrono::Utc;
 use futures_util::StreamExt;
@@ -319,28 +316,15 @@ async fn run_cron_container(ctx: RunCronContainerContext<'_>) -> DockerResult<Cr
     let stream_handle =
         stream_container_logs(ctx.docker.clone(), ctx.log.clone(), container_name.clone());
 
-    let wait = async {
-        ctx.docker
-            .wait_container(
-                &container_name,
-                Some(WaitContainerOptions {
-                    condition: "not-running".to_string(),
-                }),
-            )
-            .next()
-            .await
-    };
+    let wait = utils::wait_for_exit(ctx.docker, &container_name);
 
     let outcome = match tokio::time::timeout(Duration::from_secs(ctx.timeout_secs), wait).await {
-        Ok(Some(Ok(res))) => CronOutcome::Completed {
-            exit_code: res.status_code,
-        },
-        Ok(Some(Err(err))) => {
+        Ok(Ok(exit_code)) => CronOutcome::Completed { exit_code },
+        Ok(Err(err)) => {
             ctx.log
                 .stderr(format!("Error while waiting for container: {}", err));
             CronOutcome::Completed { exit_code: -1 }
         }
-        Ok(None) => CronOutcome::Completed { exit_code: -1 },
         Err(_) => {
             ctx.log.stderr(format!(
                 "Command exceeded timeout of {}s; terminating",

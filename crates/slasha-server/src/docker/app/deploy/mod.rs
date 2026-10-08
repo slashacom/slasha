@@ -103,6 +103,8 @@ pub async fn run_deployment_workflow(
         )
         .await;
 
+        state.runtime.alert_check_trigger.notify_one();
+
         return Err(error);
     }
 
@@ -112,6 +114,8 @@ pub async fn run_deployment_workflow(
         status = "success",
         "deployment finish"
     );
+
+    state.runtime.alert_check_trigger.notify_one();
 
     Ok(())
 }

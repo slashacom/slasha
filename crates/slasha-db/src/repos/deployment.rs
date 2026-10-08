@@ -60,6 +60,24 @@ impl DeploymentRepo {
         .await?
     }
 
+    pub async fn latest_outcome_for_app(
+        pool: &DbPool,
+        app_id: &str,
+    ) -> DbResult<Option<Deployment>> {
+        let pool = pool.clone();
+        let app_id = app_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get()?;
+            Ok(deployments::table
+                .filter(deployments::app_id.eq(&app_id))
+                .filter(deployments::status.ne(DeploymentStatus::Stopped.to_string()))
+                .order(deployments::updated_at.desc())
+                .first::<Deployment>(&mut conn)
+                .optional()?)
+        })
+        .await?
+    }
+
     pub async fn find(pool: &DbPool, id: &str, app_id: &str) -> DbResult<Deployment> {
         let pool = pool.clone();
         let id = id.to_string();

@@ -96,35 +96,64 @@ For more details and step-by-step guidance, see the [documentation](https://slas
 
 ## CLI usage
 
-The `slasha` CLI manages everything the dashboard can. Most commands operate on the app linked in the
-current directory; pass `--app <slug>` to target another, or `--output json` for scriptable output.
+The `slasha` CLI manages everything the dashboard can. Commands that act on an app use the app linked
+in the current directory (`slasha link` writes it to `.slasha`); pass `--app <slug>` to target another.
+`--app` and `--server-url` are accepted anywhere on the command line, before or after the subcommand.
 
-Authentication and account:
+Setup and account:
 
 ```bash
-slasha login                 # authenticate against your server
-slasha me                    # show the current user
-slasha status                # check server health
-slasha ssh-keys add --file ~/.ssh/id_ed25519.pub
+slasha config set server-url https://paas.example.com
+slasha auth login                # authenticate against your server
+slasha auth status
+slasha health                    # check the server is reachable
+slasha ssh-keys add laptop --file ~/.ssh/id_ed25519.pub
 ```
 
-Apps and deployments:
+Apps:
 
 ```bash
-slasha create my-app         # create an app
-slasha link --app my-app     # link the cwd to an app (writes .slasha)
-git push slasha main         # deploy by pushing
-slasha deploy                # trigger a deployment manually
+slasha apps create my-app
+slasha link --app my-app         # link the cwd to an app (writes .slasha)
+slasha apps list
+slasha apps info
+```
+
+Deploying and logs:
+
+```bash
+git push slasha main             # deploy by pushing
+slasha deploy                    # deploy the default branch's HEAD
+slasha deploy --commit <sha> -f  # deploy a commit and follow its logs; exits non-zero if it fails
+slasha logs                      # stored logs of the latest deployment, including failed ones
+slasha logs <deployment-id> -f   # a deployment's stored logs, then live ones while it is active
+slasha logs --search error -p web.0 -s stderr   # filter by text, process and stream
+```
+
+`slasha deploy`, `deployments redeploy` and `deployments rollback` print the exact `slasha logs`
+command for the deployment they started.
+
+Managing deployments:
+
+```bash
 slasha deployments list
-slasha deployments logs --follow
+slasha deployments redeploy [<id>]   # rebuild a deployment's commit; a running one is replaced without downtime
+slasha deployments rollback [<id>]   # redeploy an earlier deployment's image (defaults to the previous one)
+slasha deployments restart [<id>]    # restart the containers; keeps the environment they started with
+slasha deployments stop [<id>]
+slasha scale web=3 worker=1
 ```
 
-Environment variables and scaling:
+Environment variables are read when a deployment starts, so a change reaches the running app with
+the next deployment. `--deploy` (or `slasha env apply`) applies it straight away by starting a new
+deployment from the running one's image, without a rebuild and with the usual readiness check:
 
 ```bash
-slasha env set DATABASE_URL=... LOG_LEVEL=info
 slasha env list
-slasha scale web=3 worker=1
+slasha env set DATABASE_URL=... LOG_LEVEL=info   # applies on the next deployment
+slasha env set LOG_LEVEL=debug --deploy          # ...or right away
+slasha env unset LOG_LEVEL --deploy
+slasha env apply                                 # apply saved changes to the running app
 ```
 
 Release health checks: after a deploy starts your web process, Slasha probes it over HTTP and only
@@ -141,18 +170,22 @@ slasha env set SLASHA_HEALTH_CHECK_TIMEOUT=120     # seconds to wait before fail
 Managed services:
 
 ```bash
-slasha provision --kind postgres --name db --version 16
+slasha services provision postgresql db --version 16
 slasha services list
-slasha services logs db --follow
-slasha services backup db --file db.dump
+slasha services logs db -f
+slasha services env db set POSTGRES_DB=app
+slasha services backups db trigger
+slasha services backups db download --file db.dump
 slasha services proxy db --port 5432      # tunnel a remote service to localhost
 ```
 
-Custom domains:
+Custom domains and nodes:
 
 ```bash
 slasha domains add app.example.com
 slasha domains list
+slasha nodes list
+slasha nodes console <node>
 ```
 
 Run `slasha --help` (or `slasha <command> --help`) for the full list of commands and flags.

@@ -61,10 +61,9 @@ pub async fn execute(clap_app: ClapApp) -> anyhow::Result<()> {
         Command::Deploy { commit, follow } => {
             deployments::handle_trigger(commit, follow, server_override, app_override).await?
         }
-        Command::Logs {
-            deployment_id,
-            args,
-        } => deployments::handle_logs(deployment_id, args, server_override, app_override).await?,
+        Command::Logs(logs) => {
+            deployments::handle_logs(logs, server_override, app_override).await?
+        }
         Command::Scale { pairs } => {
             scale::handle_scale(pairs, server_override, app_override).await?
         }

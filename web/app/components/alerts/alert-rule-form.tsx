@@ -289,6 +289,27 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
           </>
         ) : null}
 
+        {draft.kind === 'deployment_failed' ? (
+          <FormField label="App">
+            <Select
+              value={draft.app_id}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  app_id: event.target.value,
+                }))
+              }
+            >
+              <option value="">Select an app</option>
+              {apps.map((app) => (
+                <option key={app.id} value={app.id}>
+                  {app.name}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        ) : null}
+
         {draft.kind === 'cron_failed' ? (
           <FormField label="Cron job">
             <Select
@@ -374,15 +395,17 @@ export function AlertRuleForm(props: AlertRuleFormProps) {
           <TemplateVarHelp />
         </FormField>
 
-        <NumberField
-          label="Cooldown seconds"
-          value={draft.cooldown_secs}
-          min={1}
-          step={1}
-          onChange={(cooldown_secs) =>
-            setDraft((current) => ({ ...current, cooldown_secs }))
-          }
-        />
+        {draft.kind !== 'deployment_failed' ? (
+          <NumberField
+            label="Cooldown seconds"
+            value={draft.cooldown_secs}
+            min={1}
+            step={1}
+            onChange={(cooldown_secs) =>
+              setDraft((current) => ({ ...current, cooldown_secs }))
+            }
+          />
+        ) : null}
 
         <div className="flex items-center justify-between">
           <div>

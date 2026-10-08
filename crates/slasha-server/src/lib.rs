@@ -149,7 +149,7 @@ pub async fn serve() -> anyhow::Result<()> {
         node_registry.clone(),
     )
     .spawn();
-    alerts::spawn_alert_worker(
+    let alert_check_trigger = alerts::spawn_alert_worker(
         storage.db_pool.clone(),
         storage.duckdb_pool.clone(),
         config.clone(),
@@ -162,7 +162,12 @@ pub async fn serve() -> anyhow::Result<()> {
         config.clone(),
     );
 
-    let runtime = Runtime::new(storage.duckdb_pool.clone(), proxy_sync_trigger).await?;
+    let runtime = Runtime::new(
+        storage.duckdb_pool.clone(),
+        proxy_sync_trigger,
+        alert_check_trigger,
+    )
+    .await?;
 
     cron::spawn_cron_scheduler(
         storage.db_pool.clone(),

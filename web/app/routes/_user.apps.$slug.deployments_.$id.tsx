@@ -141,6 +141,9 @@ export default function DeploymentDetailPage() {
             url={`/api/apps/${slug}/deployments/${id}`}
             title="Logs"
             resourceKind="deployment"
+            live={
+              deployment.status !== 'Failed' && deployment.status !== 'Stopped'
+            }
             className="min-h-0 flex-1"
           />
         </VStack>

@@ -91,7 +91,10 @@ export function DeploymentRow(props: DeploymentRowProps) {
         deploymentId: deployment.id,
       });
       invalidate();
-      toast.success('App restarted');
+      toast.success('App restarted', {
+        description:
+          'A restart keeps the environment this deployment started with. Save env changes and choose Apply now to use them.',
+      });
     } catch (e) {
       toast.error('Failed to restart app: ' + e);
     }

@@ -2,6 +2,7 @@ use bollard::{Docker, query_parameters::RemoveImageOptions};
 use slasha_db::{
     app::App,
     deployment::{Deployment, DeploymentStatus},
+    logs::ResourceKind,
     models::app_scale::{AppScale, ProcessType},
     node::LOCAL_NODE_ID,
     repos::{
@@ -13,7 +14,9 @@ use slasha_db::{
 use super::{
     build::{build_docker, build_railpack},
     context::DeploymentContext,
-    readiness::{ReadinessConfig, ReadinessOutcome, wait_for_web_ready},
+    readiness::{
+        ReadinessConfig, ReadinessOutcome, env_map_from_container_env, wait_for_web_ready,
+    },
 };
 use crate::{
     docker::{
@@ -27,9 +30,11 @@ use crate::{
             litestream,
             parser::{BuildStrategy, Procfile},
             process::{
-                remove_deployment_processes, start_process_container, stop_deployment_processes,
+                list_deployment_processes, remove_deployment_processes, start_process_container,
+                stop_deployment_processes,
             },
         },
+        labels::LABEL_CONTAINER_PORT,
         naming::process_container_name,
         utils,
         workflow::runner::WorkflowContext,
@@ -38,6 +43,90 @@ use crate::{
     proxy::sync::sync_routes,
     state::AppState,
 };
+
+async fn restore_deployment(
+    state: &AppState,
+    docker_client: &Docker,
+    app: &App,
+    deployment: &Deployment,
+    log: &LogWriter,
+) {
+    let processes = match list_deployment_processes(docker_client, &deployment.id).await {
+        Ok(processes) => processes,
+        Err(e) => {
+            log.stderr(format!(
+                "Could not list deployment {}'s containers to restart them: {e}",
+                deployment.id
+            ));
+            return;
+        }
+    };
+
+    let deployment_log = state
+        .runtime
+        .log_bus
+        .writer(ResourceKind::Deployment, &deployment.id)
+        .app_id(&app.id);
+
+    for process in &processes {
+        if let Err(e) = start_process_container(
+            docker_client,
+            &deployment_log,
+            app,
+            deployment,
+            process.process_type,
+            process.instance_index,
+        )
+        .await
+        {
+            log.stderr(format!("Could not restart {}: {e}", process.name));
+        }
+    }
+
+    log.stdout(format!(
+        "Restarted {} container(s) of deployment {}",
+        processes.len(),
+        deployment.id
+    ));
+
+    let is_local = app.node_id == LOCAL_NODE_ID;
+    for process in processes
+        .iter()
+        .filter(|p| p.process_type == ProcessType::Web)
+    {
+        let Ok(inspection) = docker_client.inspect_container(&process.name, None).await else {
+            continue;
+        };
+        let config = inspection.config.unwrap_or_default();
+        let Some(port) = config
+            .labels
+            .as_ref()
+            .and_then(|labels| labels.get(LABEL_CONTAINER_PORT))
+            .and_then(|port| port.parse::<u16>().ok())
+        else {
+            continue;
+        };
+        let readiness = ReadinessConfig::from_env_map(&env_map_from_container_env(
+            config.env.as_deref().unwrap_or_default(),
+        ));
+
+        match wait_for_web_ready(docker_client, &process.name, port, &readiness, is_local).await {
+            ReadinessOutcome::Ready { elapsed } => log.stdout(format!(
+                "{} is serving again (ready in {:.1}s)",
+                process.name,
+                elapsed.as_secs_f64()
+            )),
+            ReadinessOutcome::NotReady { reason } => log.stderr(format!(
+                "{} did not become ready again: {reason}",
+                process.name
+            )),
+            ReadinessOutcome::Unreachable => log.stderr(format!(
+                "{} did not become ready again: unreachable on the network",
+                process.name
+            )),
+        }
+    }
+}
 
 struct ProcessTarget {
     process_type: ProcessType,
@@ -164,20 +253,14 @@ impl<'a> DeploymentRunner<'a> {
                         "Stopping previous deployment processes for stateful application",
                         self.stop_previous_deployments(),
                         {
+                            let state = self.state.clone();
                             let docker_client = self.docker_client.clone();
                             let app = self.app.clone();
                             let log = self.log.clone();
                             async move {
                                 for prev in &previous_deployments {
-                                    let _ = start_process_container(
-                                        &docker_client,
-                                        &log,
-                                        &app,
-                                        prev,
-                                        ProcessType::Web,
-                                        0,
-                                    )
-                                    .await;
+                                    restore_deployment(&state, &docker_client, &app, prev, &log)
+                                        .await;
                                 }
                             }
                         },

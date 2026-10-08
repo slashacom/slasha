@@ -6,7 +6,7 @@ use bollard::{
     models::VolumeCreateRequest,
     query_parameters::{
         LogsOptionsBuilder, RemoveContainerOptionsBuilder, RemoveVolumeOptions,
-        StopContainerOptionsBuilder,
+        StopContainerOptionsBuilder, WaitContainerOptions,
     },
 };
 use futures_util::StreamExt;
@@ -94,6 +94,33 @@ pub async fn remove_container(docker_client: &Docker, name: &str) -> DockerResul
             Ok(())
         }
         Err(e) => Err(DockerError::from(e)),
+    }
+}
+
+pub async fn wait_for_exit(docker_client: &Docker, name: &str) -> DockerResult<i64> {
+    let next = docker_client
+        .wait_container(
+            name,
+            Some(WaitContainerOptions {
+                condition: "not-running".to_string(),
+            }),
+        )
+        .next()
+        .await;
+
+    exit_code_from_wait(next)
+}
+
+fn exit_code_from_wait(
+    next: Option<Result<bollard::models::ContainerWaitResponse, bollard::errors::Error>>,
+) -> DockerResult<i64> {
+    match next {
+        Some(Ok(res)) => Ok(res.status_code),
+        Some(Err(bollard::errors::Error::DockerContainerWaitError { code, .. })) => Ok(code),
+        Some(Err(e)) => Err(DockerError::from(e)),
+        None => Err(DockerError::Other(anyhow::anyhow!(
+            "container wait stream ended before the container stopped"
+        ))),
     }
 }
 
