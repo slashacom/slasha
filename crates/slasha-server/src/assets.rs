@@ -28,11 +28,20 @@ pub async fn static_handler(path: Option<axum::extract::Path<String>>) -> impl I
     match Assets::get(path) {
         Some(content) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
+
+            // vite content-hashes everything under assets/, so it can be cached forever
+            let cache_control = if path.starts_with("assets/") {
+                "public, max-age=31536000, immutable"
+            } else {
+                "no-cache"
+            };
+
             Response::builder()
                 .header(
                     header::CONTENT_TYPE,
                     HeaderValue::from_str(mime.as_ref()).unwrap(),
                 )
+                .header(header::CACHE_CONTROL, cache_control)
                 .body(Body::from(content.data))
                 .unwrap()
         }

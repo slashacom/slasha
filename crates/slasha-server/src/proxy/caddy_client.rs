@@ -94,8 +94,15 @@ impl CaddyClient {
 
                 let is_public = matches!(entry.visibility, AppVisibility::Public);
 
+                let encode = json!({
+                    "handler": "encode",
+                    "encodings": { "zstd": {}, "gzip": {} },
+                    "prefer": ["zstd", "gzip"]
+                });
+
                 let handle_chain = if is_public {
                     vec![
+                        encode,
                         json!({
                             "handler": "headers",
                             "response": { "set": security_headers }
@@ -104,6 +111,7 @@ impl CaddyClient {
                     ]
                 } else {
                     vec![
+                        encode,
                         json!({
                             "handler": "headers",
                             "response": { "set": security_headers }
