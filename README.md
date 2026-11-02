@@ -3,11 +3,9 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/logo-dark.svg">
-    <img alt="Slasha" src=".github/logo-light.svg" width="220" />
+    <img alt="Slasha" src=".github/logo-light.svg" width="200" />
   </picture>
 </p>
-
-<h3 align="center">Your own little cloud.</h3>
 
 <p align="center">
   Deploy apps to a server you own with a git push.
