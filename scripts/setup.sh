@@ -35,6 +35,12 @@ warn()    { echo -e "  ${COLOR_YELLOW}! $*${COLOR_OFF}"; }
 header()  { echo -e "\n${COLOR_BOLD}$*${COLOR_OFF}"; }
 ask()     { read -rp "  $1" "$2" </dev/tty; }
 
+# set SLASHA_DOMAIN to run without prompts (e.g. from a coding agent over ssh)
+UNATTENDED=""
+if [[ -n "${SLASHA_DOMAIN:-}" ]]; then
+    UNATTENDED=1
+fi
+
 SUDO=""
 if [[ "$(id -u)" -ne 0 ]]; then
     command -v sudo >/dev/null 2>&1 || err "this script requires root or sudo."
@@ -304,8 +310,11 @@ fi
 if command -v slasha >/dev/null 2>&1 || [[ -x "/usr/local/bin/slasha" ]]; then
     success "slasha is already installed"
 else
-    ask "slasha is not installed. do you want to run the automatic install script? (Y/n): " choice
-    choice="${choice:-Y}"
+    choice="Y"
+    if [[ -z "$UNATTENDED" ]]; then
+        ask "slasha is not installed. do you want to run the automatic install script? (Y/n): " choice
+        choice="${choice:-Y}"
+    fi
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         if command -v curl >/dev/null 2>&1; then
             SLASHA_INSTALL_DIR=/usr/local/bin bash <(curl -fsSL "$INSTALL_URL")
@@ -338,24 +347,45 @@ fi
 # collect configuration
 header "configuration"
 
-while true; do
-    ask "platform domain (e.g. slasha.example.com): " domain
-    [[ -n "${domain:-}" ]] && break
-    warn "domain cannot be empty."
-done
+if [[ -n "$UNATTENDED" ]]; then
+    domain="$SLASHA_DOMAIN"
+    info "platform domain: $domain"
+else
+    while true; do
+        ask "platform domain (e.g. slasha.example.com): " domain
+        [[ -n "${domain:-}" ]] && break
+        warn "domain cannot be empty."
+    done
+fi
 
-auto_secret="$(set +o pipefail; LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 64)"
-echo -e "\n  ${COLOR_DIM}auto-generated jwt secret (SLASHA_JWT_SECRET):${COLOR_OFF}"
-echo -e "  ${COLOR_DIM}$auto_secret${COLOR_OFF}\n"
-ask "press enter to use it, or enter your own jwt secret: " custom_secret
-jwt_secret="${custom_secret:-$auto_secret}"
+existing_env() {
+    [[ -f "$CONF_DIR/.env" ]] || return 0
+    { $SUDO grep -E "^$1=" "$CONF_DIR/.env" || true; } | head -n 1 | cut -d= -f2-
+}
+
+jwt_secret="$(existing_env SLASHA_JWT_SECRET)"
+slasha_key="$(existing_env SLASHA_KEY)"
+
+if [[ -n "$jwt_secret" && -n "$slasha_key" ]]; then
+    success "keeping existing jwt secret and encryption key from $CONF_DIR/.env"
+elif [[ -n "$UNATTENDED" ]]; then
+    jwt_secret="$(set +o pipefail; LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 64)"
+    slasha_key="$(set +o pipefail; LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 64)"
+    success "generated jwt secret and encryption key"
+else
+    auto_secret="$(set +o pipefail; LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 64)"
+    echo -e "\n  ${COLOR_DIM}auto-generated jwt secret (SLASHA_JWT_SECRET):${COLOR_OFF}"
+    echo -e "  ${COLOR_DIM}$auto_secret${COLOR_OFF}\n"
+    ask "press enter to use it, or enter your own jwt secret: " custom_secret
+    jwt_secret="${custom_secret:-$auto_secret}"
+
+    auto_key="$(set +o pipefail; LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 64)"
+    echo -e "\n  ${COLOR_DIM}auto-generated encryption key (SLASHA_KEY):${COLOR_OFF}"
+    echo -e "  ${COLOR_DIM}$auto_key${COLOR_OFF}\n"
+    ask "press enter to use it, or enter your own encryption key: " custom_key
+    slasha_key="${custom_key:-$auto_key}"
+fi
 [[ -n "$jwt_secret" ]] || err "jwt secret cannot be empty."
-
-auto_key="$(set +o pipefail; LC_ALL=C tr -dc 'a-f0-9' </dev/urandom | head -c 64)"
-echo -e "\n  ${COLOR_DIM}auto-generated encryption key (SLASHA_KEY):${COLOR_OFF}"
-echo -e "  ${COLOR_DIM}$auto_key${COLOR_OFF}\n"
-ask "press enter to use it, or enter your own encryption key: " custom_key
-slasha_key="${custom_key:-$auto_key}"
 [[ -n "$slasha_key" ]] || err "encryption key cannot be empty."
 
 # write env file
