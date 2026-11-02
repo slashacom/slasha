@@ -2,22 +2,21 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/banner-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset=".github/banner.svg">
-    <img alt="Slasha" src=".github/banner.svg" width="280" />
+    <source media="(prefers-color-scheme: dark)" srcset=".github/logo-dark.svg">
+    <img alt="Slasha" src=".github/logo-light.svg" width="220" />
   </picture>
 </p>
 
+<h3 align="center">Your own little cloud.</h3>
+
 <p align="center">
-  Self-hosted platform to deploy your apps with a git push.
+  Deploy apps to a server you own with a git push.
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f" alt="MIT License" /></a>
-  <a href="https://slasha.com"><img src="https://img.shields.io/badge/visit-website-1f6feb" alt="Visit website" /></a>
   <a href="https://slasha.com/docs/getting-started/server-setup"><img src="https://img.shields.io/badge/read-docs-8957e5" alt="Read docs" /></a>
   <a href="https://github.com/slashacom/slasha/actions"><img src="https://img.shields.io/github/actions/workflow/status/slashacom/slasha/ci.yml?branch=main&label=ci" alt="CI status" /></a>
-  <img src="https://img.shields.io/badge/built%20with-Rust-dea584" alt="Built with Rust" />
 </p>
 <br />
 
