@@ -162,6 +162,12 @@ pub async fn serve() -> anyhow::Result<()> {
         config.clone(),
     );
 
+    proxy::spawn_container_watcher(
+        node_registry.clone(),
+        storage.db_pool.clone(),
+        proxy_sync_trigger.clone(),
+    );
+
     let runtime = Runtime::new(
         storage.duckdb_pool.clone(),
         proxy_sync_trigger,
