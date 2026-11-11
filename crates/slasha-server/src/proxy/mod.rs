@@ -2,8 +2,10 @@ pub mod caddy_client;
 pub mod container;
 pub mod error;
 pub mod sync;
+pub mod watch;
 
 pub use caddy_client::{CaddyClient, RouteEntry, Upstream};
 pub use container::PROXY_NETWORK_NAME;
 pub use error::ProxyError;
 pub use sync::spawn_route_syncer;
+pub use watch::spawn_container_watcher;
